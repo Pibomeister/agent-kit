@@ -137,7 +137,9 @@ function closed<T extends string>(reason: string): ParsedVerdict<T> {
 
 /** Quoted, newline-safe echo of model text in a closed reason, capped at 64 characters. */
 function echo(value: string): string {
-  return JSON.stringify(value).slice(0, 64);
+  const text = JSON.stringify(value).slice(0, 64);
+  const last = text.charCodeAt(text.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? text.slice(0, -1) : text;
 }
 
 /**

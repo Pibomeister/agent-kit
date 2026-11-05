@@ -441,7 +441,8 @@ sends it to the veto seat named in the private `--council-config`. No judgment i
 The service tries the seat's substitutes in order, only when a launcher fails or returns no valid
 answer, and records the result on the card apart from the two judgments. The same whole-stdout
 rule applies to each veto launcher. An exhausted veto chain with no valid answer records `REJECT` from
-actor `fail-closed` when `REJECT` is an option, not from the last launcher. A missing configuration,
+actor `fail-closed` when `REJECT` is an option, not from the last launcher. The actor and lineage
+name `fail-closed` is reserved. A council configuration that names it is refused. A missing configuration,
 an exhausted chain, a refused payload, a veto that shares a lineage with either primary seat or an
 excluded actor, or a non-approving veto returns `needs-input` with a `runner:council-veto`
 escalation. The veto is not a third seat or a third judgment, and it never approves alone.

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { FAIL_CLOSED } from "../../src/council/config.ts";
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { judgeSeat, launchSeat } from "../../src/firstmate/seat.ts";
 import { parseJson, updated } from "../helpers/json.ts";
@@ -216,6 +217,23 @@ describe("stock Firstmate seat launcher", () => {
     expect(() => fixture.judge(fixture.token)).toThrow("seat judgment changed after its first submission");
     expect(existsSync(fixture.submitted)).toBe(false);
     expect(JSON.parse(readFileSync(request, "utf8"))).toEqual(first);
+  });
+
+  test("refuses actor fail-closed", () => {
+    const fixture = judgmentFixture();
+    expect(() =>
+      judgeSeat({
+        fmHome: fixture.f.home,
+        taskId: "seat-a-align-1",
+        packetPath: fixture.f.packet,
+        seat: "seat-a",
+        actor: FAIL_CLOSED,
+        runnerSocket: join(fixture.f.intake, "runner.sock"),
+        adminTokenFile: fixture.token,
+        akRoot: join(fixture.f.home, "fake-ak"),
+      }),
+    ).toThrow("invalid seat identity");
+    expect(existsSync(fixture.submitted)).toBe(false);
   });
 
   test("submits the report's final bounded judgment with the supervisor token", () => {

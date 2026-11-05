@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } fr
 import { dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { FAIL_CLOSED } from "../council/config.ts";
 import { readAdminToken } from "../runner/token.ts";
 import { parseVerdict } from "../verdict.ts";
 
@@ -191,7 +192,8 @@ export interface SeatJudgeArgs {
 }
 
 export function judgeSeat(args: SeatJudgeArgs) {
-  if (![args.taskId, args.seat, args.actor].every((id) => ID.test(id))) throw new Error("invalid seat identity");
+  if (![args.taskId, args.seat, args.actor].every((id) => ID.test(id)) || args.actor === FAIL_CLOSED)
+    throw new Error("invalid seat identity");
   const home = realpathSync(args.fmHome);
   const packet = packetFrom(home, args.packetPath);
   scoutWorktree(home, args.taskId);

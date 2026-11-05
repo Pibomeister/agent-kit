@@ -435,14 +435,23 @@ describe("ak council run parses a seat verdict strictly", () => {
     const s = worthySetup(`${worthy}\n${reject}`);
     const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
     expect(result.code).toBe(1);
-    expect(record(s.out)).toMatchObject({ seats: [{}, {}, { role: "veto", choice: "REJECT" }] });
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      causes: ["the blind veto seat gave no valid verdict; recorded REJECT fail-closed"],
+      seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
+    });
   });
 
   test("conflicting choice keys fail closed to REJECT", async () => {
     const s = worthySetup('{"choice":"WORTHY","choice":"REJECT","rationale":"both"}');
     const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
     expect(result.code).toBe(1);
-    expect(record(s.out)).toMatchObject({ seats: [{}, {}, { role: "veto", choice: "REJECT" }] });
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      causes: ["the blind veto seat gave no valid verdict; recorded REJECT fail-closed"],
+      seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
+    });
+    expect(JSON.stringify(record(s.out))).toContain("conflicting choice");
   });
 
   for (const [name, text] of [

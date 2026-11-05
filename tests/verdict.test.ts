@@ -14,4 +14,13 @@ describe("parseVerdict", () => {
     expect(parsed.reason).toContain(JSON.stringify(value).slice(0, 64));
     expect(parsed.reason.length).toBeLessThanOrEqual("choice ".length + 64 + " is not in the enum".length);
   });
+
+  test("a sliced echo does not leave a trailing high surrogate", () => {
+    const value = `${"a".repeat(62)}\u{1F600}`;
+    const parsed = parseVerdict(JSON.stringify({ choice: value, rationale: "r" }), "choice", ["WORTHY", "REJECT"]);
+    expect(parsed.status).toBe("closed");
+    if (parsed.status !== "closed") return;
+    expect(parsed.reason).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    expect(parsed.reason).not.toContain("\u{1F600}");
+  });
 });
