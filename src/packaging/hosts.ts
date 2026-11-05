@@ -43,6 +43,11 @@ export function packagedBinFile(host: HostId, name: string): string {
   return host === "cursor" ? `.cursor/bin/${name}` : `bin/${name}`;
 }
 
+/** Path of the maintenance CLI script bun runs. Cursor's `ak` is a POSIX launcher over `ak.js`. */
+export function packagedAkScriptFile(host: HostId): string {
+  return host === "cursor" ? packagedBinFile(host, "ak.js") : packagedBinFile(host, "ak");
+}
+
 /**
  * Relocate a bundle-relative path for this host. Cursor nests the content tree
  * under `.cursor/` so a vendored overlay is what Cloud Agents clone-discover.
@@ -97,6 +102,19 @@ export function rewriteExplicitStarts(
   }
   if (native.size === 0) return text;
   return text.replace(explicitStartPattern([...native.keys()]), (found) => native.get(found) ?? found);
+}
+
+/**
+ * Cursor Cloud Agent tool shells often have no bun on PATH. Skills that run the
+ * bundled maintenance CLI name `.cursor/bin/ak`, which finds the pin without
+ * that PATH entry. `build`, `validate` and `attach` stay `ak`: those are the
+ * source CLI, not the overlay binary.
+ */
+const CURSOR_AK_VERBS = "firstmate|delegation|runner|learn|kb|guard|lifecycle|tracker|council|doctor|update";
+
+export function rewriteAkCommands(text: string, host: HostId): string {
+  if (host !== "cursor") return text;
+  return text.replace(new RegExp(`\`(?:bun run )?ak (${CURSOR_AK_VERBS})(?=[\\s\`])`, "g"), "`.cursor/bin/ak $1");
 }
 
 /**

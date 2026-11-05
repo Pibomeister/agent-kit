@@ -63,7 +63,7 @@ for explicit invocation rather than reproducing the delegated effect through a s
 needs explicit authority or a charter grant.
 
 Under a Firstmate binding, Firstmate is the delegated controller and the host validates the grant with
-`ak firstmate grant --binding <path> --operation ship.prepare`. Exit 0 is the grant: cite the record it
+`.cursor/bin/ak firstmate grant --binding <path> --operation ship.prepare`. Exit 0 is the grant: cite the record it
 prints in the ship record. A refusal means stop and report `needs-decision` to Firstmate. The grant
 covers the binding's delivery action and nothing more; merge is never on it (ADR-0004).
 
@@ -113,7 +113,7 @@ The project's own release checks, discovered rather than assumed.
 1. Check how this run was started, before any other step and before any tool call but the grant
    check. It is started only when the human's message begins with `/super-ship`, or when a
    controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
-   binding the grant check is the `ak firstmate grant` call in Authority, and under a bypass grant
+   binding the grant check is the `.cursor/bin/ak firstmate grant` call in Authority, and under a bypass grant
    it is the bypass check there; under the unattended policy it is the unattended check there; a
    refusal is a stop. A request in prose is not a start, even when
    it names this skill or the command, or asks for this work without naming either. With neither,

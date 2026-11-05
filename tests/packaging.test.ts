@@ -30,6 +30,7 @@ import {
   RESTRICTIONS,
   explicitStartPattern,
   loadHostCapabilities,
+  packagedAkScriptFile,
   packagedBinFile,
   packagedSkillFile,
   relocateForHost,
@@ -3014,8 +3015,8 @@ describe("ak build and --check", () => {
       );
       const built = writeBundles(ctx, {});
       for (const host of HOST_IDS) {
-        const executablePath = join(ctx.root, "dist", host, packagedBinFile(host, "ak"));
-        expect(existsSync(executablePath) && readFileSync(executablePath, "utf8").includes(marker)).toBe(false);
+        const scriptPath = join(ctx.root, "dist", host, packagedAkScriptFile(host));
+        expect(existsSync(scriptPath) && readFileSync(scriptPath, "utf8").includes(marker)).toBe(false);
       }
       expectError(built.issues, "packaging.maintenance-build-failed", "inlined schema leaves its source tree");
       expect(existsSync(join(ctx.root, "dist"))).toBe(false);
@@ -3048,7 +3049,7 @@ describe("ak build and --check", () => {
       const built = writeBundles(ctx, {});
       expect(built.issues.filter((issue) => issue.severity === "error")).toEqual([]);
       for (const host of HOST_IDS) {
-        const script = readFileSync(join(ctx.root, "dist", host, packagedBinFile(host, "ak")), "utf8");
+        const script = readFileSync(join(ctx.root, "dist", host, packagedAkScriptFile(host)), "utf8");
         expect(script).toContain(marker);
         expect(script).not.toContain("UNUSED_EXTERNAL_SCHEMA");
         expect(existsSync(join(ctx.root, "dist", host, "schemas/unused.schema.json"))).toBe(false);

@@ -11,6 +11,7 @@ import {
   packagedBinFile,
   packagedSkillFile,
   relocateForHost,
+  rewriteAkCommands,
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
 import { schemaRefs } from "../src/packaging/mentions.ts";
@@ -93,6 +94,13 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
         "compound",
       ]),
     ).toBe("/compound /ak:compound-refresh /ak:super-scout ordinary prose");
+  });
+
+  test("Cursor skills run .cursor/bin/ak for the bundled CLI, not bun run ak", () => {
+    expect(rewriteAkCommands("`ak firstmate grant` and `ak build` and `bun run ak learn memory show`", "cursor")).toBe(
+      "`.cursor/bin/ak firstmate grant` and `ak build` and `.cursor/bin/ak learn memory show`",
+    );
+    expect(rewriteAkCommands("`ak firstmate grant`", "claude-code")).toBe("`ak firstmate grant`");
   });
 
   test("the Cursor bundle is the catalog in a Cloud-discoverable layout", () => {
@@ -219,6 +227,15 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     ).toBe("super-review");
     expect(cursor.files.has(".cursor/bin/ak-gate.mjs")).toBe(true);
     expect(cursor.files.has(packagedBinFile("cursor", "ak"))).toBe(true);
+    expect(cursor.files.has(".cursor/bin/ak.js")).toBe(true);
+    expect(cursor.files.get(packagedBinFile("cursor", "ak"))?.contents.startsWith("#!/bin/sh\n")).toBe(true);
+    expect(cursor.files.get(".cursor/bin/ak.js")?.contents.startsWith("#!")).toBe(false);
+    expect(cursor.files.get(packagedSkillFile("cursor", "super-review"))?.contents).toContain(
+      "`.cursor/bin/ak firstmate grant",
+    );
+    expect(cursor.files.get(packagedSkillFile("cursor", "super-review"))?.contents).not.toContain(
+      "`ak firstmate grant",
+    );
     expect(cursor.files.get(agentPath("trail-auditor"))?.contents).toContain(
       "](../templates/trail-audit.example.json)",
     );

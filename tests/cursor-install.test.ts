@@ -3,24 +3,16 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { CURSOR_BUN_PIN, cursorAkLauncher } from "../src/packaging/cursor-ak.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
 
 const repo = join(import.meta.dir, "..");
 const install = join(repo, "tools/cursor/install.sh");
 
-function systemBun() {
-  const dst = "/usr/local/bin/bun";
-  if (!existsSync(dst)) return { exists: false, target: "" };
-  const link = spawnSync("readlink", [dst], { encoding: "utf8" });
-  return { exists: true, target: (link.stdout ?? "").trim() };
-}
-
 function runFn(
   env: {
     HOME: string;
     PATH: string;
-    CURSOR_AGENT?: string;
-    CURSOR_AGENT_CLI_LOCAL_MODE?: string;
   },
   body: string,
 ) {
@@ -33,11 +25,9 @@ function runFn(
       TERM: "dumb",
       USER: "tester",
       LOGNAME: "tester",
-      CURSOR_AGENT: env.CURSOR_AGENT ?? "",
-      CURSOR_AGENT_CLI_LOCAL_MODE: env.CURSOR_AGENT_CLI_LOCAL_MODE ?? "",
     },
   });
-  return { status: result.status ?? 1, stderr: result.stderr ?? "" };
+  return { status: result.status ?? 1, stderr: result.stderr ?? "", stdout: result.stdout ?? "" };
 }
 
 function scratchHome() {
@@ -46,7 +36,9 @@ function scratchHome() {
   const sudoLog = join(home, "sudo.log");
   mkdirSync(join(home, ".bun/bin"), { recursive: true });
   mkdirSync(trap, { recursive: true });
-  writeFileSync(join(trap, "sudo"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${sudoLog}'\nexit 0\n`, { mode: 0o755 });
+  writeFileSync(join(trap, "sudo"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${sudoLog}'\nexit 0\n`, {
+    mode: 0o755,
+  });
   return {
     home,
     sudoLog,
@@ -55,54 +47,95 @@ function scratchHome() {
   };
 }
 
-describe("tools/cursor/install.sh system bun link", () => {
-  test("a maintainer machine stays inside HOME, does not call sudo, and prints the skip", () => {
-    const before = systemBun();
-    const fx = scratchHome();
-    writeFileSync(fx.bun, "#!/bin/sh\necho 1.3.14\n", { mode: 0o755 });
-    const result = runFn(
-      { HOME: fx.home, PATH: `${fx.path}:${process.env.PATH ?? "/usr/bin:/bin"}` },
-      "link_system_bun",
-    );
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain("skipping /usr/local/bin/bun");
-    expect(result.stderr).toContain("not a Cursor cloud worker");
-    expect(result.stderr).toContain(`${fx.home}/.bun/bin/bun`);
-    expect(existsSync(fx.sudoLog)).toBe(false);
-    expect(systemBun()).toEqual(before);
+function writeFakeBun(path: string, version: string, mark: string) {
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo ${version}
+  exit 0
+fi
+printf '%s\\n' "${mark} $*" > "\${HOME}/launcher.out"
+`,
+    { mode: 0o755 },
+  );
+}
+
+function runLauncher(home: string, path: string, args: string[]) {
+  const dir = join(home, "overlay-bin");
+  mkdirSync(dir, { recursive: true });
+  const launcher = join(dir, "ak");
+  writeFileSync(launcher, cursorAkLauncher(), { mode: 0o755 });
+  writeFileSync(join(dir, "ak.js"), "placeholder\n");
+  return spawnSync(launcher, args, {
+    encoding: "utf8",
+    env: { HOME: home, PATH: path, TERM: "dumb" },
+  });
+}
+
+describe("tools/cursor/install.sh", () => {
+  test("the installer text never names sudo", () => {
+    expect(readFileSync(install, "utf8")).not.toMatch(/\bsudo\b/);
   });
 
-  test("CURSOR_AGENT=1 with CLI local mode and no worker markers does not call sudo", () => {
-    const before = systemBun();
+  test("ensure_home_bun never calls sudo", () => {
     const fx = scratchHome();
     writeFileSync(fx.bun, "#!/bin/sh\necho 1.3.14\n", { mode: 0o755 });
-    const result = runFn(
-      {
-        HOME: fx.home,
-        PATH: `${fx.path}:${process.env.PATH ?? "/usr/bin:/bin"}`,
-        CURSOR_AGENT: "1",
-        CURSOR_AGENT_CLI_LOCAL_MODE: "true",
-      },
-      "link_system_bun",
-    );
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, "ensure_home_bun");
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stderr).toContain("skipping /usr/local/bin/bun");
-    expect(result.stderr).toContain("not a Cursor cloud worker");
     expect(existsSync(fx.sudoLog)).toBe(false);
-    expect(systemBun()).toEqual(before);
   });
 
-  test("off-cloud leaves an existing home bun that is not the pin", () => {
+  test("leaves an existing home bun that is not the pin", () => {
     const fx = scratchHome();
     const body = "#!/bin/sh\necho 1.2.0\n";
     writeFileSync(fx.bun, body, { mode: 0o755 });
-    const result = runFn(
-      { HOME: fx.home, PATH: `${fx.path}:${process.env.PATH ?? "/usr/bin:/bin"}` },
-      "ensure_home_bun",
-    );
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, "ensure_home_bun");
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain(`leaving ${fx.bun} in place`);
     expect(readFileSync(fx.bun, "utf8")).toBe(body);
     expect(existsSync(fx.sudoLog)).toBe(false);
+  });
+});
+
+describe("cursor ak launcher", () => {
+  test("the launcher pin matches the installer pin", () => {
+    const pin = readFileSync(install, "utf8").match(/^PIN=(.+)$/m)?.[1];
+    expect(pin).toBe(CURSOR_BUN_PIN);
+    expect(cursorAkLauncher()).toContain(`pin=${CURSOR_BUN_PIN}`);
+  });
+
+  test("uses $HOME/.bun/bin/bun when PATH has no bun", () => {
+    const home = processScratch("ak-cursor-launcher-home-");
+    mkdirSync(join(home, ".bun/bin"), { recursive: true });
+    writeFakeBun(join(home, ".bun/bin/bun"), CURSOR_BUN_PIN, "HOME");
+    const result = runLauncher(home, "/usr/bin:/bin", ["--version"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(
+      `HOME ${join(home, "overlay-bin/ak.js")} --version`,
+    );
+  });
+
+  test("uses PATH bun when it is the pin", () => {
+    const home = processScratch("ak-cursor-launcher-path-");
+    mkdirSync(join(home, ".bun/bin"), { recursive: true });
+    mkdirSync(join(home, "path-bin"), { recursive: true });
+    writeFakeBun(join(home, "path-bin/bun"), CURSOR_BUN_PIN, "PATH");
+    writeFakeBun(join(home, ".bun/bin/bun"), "1.2.0", "HOME");
+    const result = runLauncher(home, `${join(home, "path-bin")}:/usr/bin:/bin`, ["firstmate", "grant"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(
+      `PATH ${join(home, "overlay-bin/ak.js")} firstmate grant`,
+    );
+  });
+
+  test("fails when neither PATH bun nor home bun is the pin", () => {
+    const home = processScratch("ak-cursor-launcher-fail-");
+    mkdirSync(join(home, ".bun/bin"), { recursive: true });
+    writeFakeBun(join(home, ".bun/bin/bun"), "1.2.0", "HOME");
+    const result = runLauncher(home, "/usr/bin:/bin", ["--version"]);
+    expect(result.status).toBe(127);
+    expect(result.stderr).toContain(`need bun ${CURSOR_BUN_PIN}`);
+    expect(result.stderr).toContain(`${home}/.bun/bin/bun`);
   });
 });

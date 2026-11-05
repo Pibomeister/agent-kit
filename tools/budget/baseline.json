@@ -2243,8 +2243,8 @@
     },
     "bundle/cursor:.cursor/skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17111,
-      "tokens": 4271
+      "bytes": 17159,
+      "tokens": 4283
     },
     "bundle/cursor:.cursor/skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -2273,13 +2273,13 @@
     },
     "bundle/cursor:.cursor/skills/compound-refresh/SKILL.md": {
       "file": "skills/compound-refresh/SKILL.md",
-      "bytes": 8272,
-      "tokens": 2064
+      "bytes": 8344,
+      "tokens": 2082
     },
     "bundle/cursor:.cursor/skills/compound/SKILL.md": {
       "file": "skills/compound/SKILL.md",
-      "bytes": 9242,
-      "tokens": 2309
+      "bytes": 9266,
+      "tokens": 2315
     },
     "bundle/cursor:.cursor/skills/deprecate/SKILL.md": {
       "file": "skills/deprecate/SKILL.md",
@@ -2463,8 +2463,8 @@
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23569,
-      "tokens": 5885
+      "bytes": 23593,
+      "tokens": 5891
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -2473,8 +2473,8 @@
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25631,
-      "tokens": 6401
+      "bytes": 25643,
+      "tokens": 6404
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2493,8 +2493,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23049,
-      "tokens": 5759
+      "bytes": 23073,
+      "tokens": 5765
     },
     "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",

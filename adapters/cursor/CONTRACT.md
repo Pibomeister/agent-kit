@@ -225,8 +225,10 @@ acceptance cases, not this bundle's offline proof.
 
 A Cursor Cloud Agent on a branch or PR starts review by invoking `/super-review`
 (model-started `full` and `readiness` per ADR-0013; `delta` stays inside an open
-run). The skill body, roles and `bin/ak-gate.mjs` travel in the vendored
-`.cursor/` tree.
+run). The skill body, roles, `.cursor/bin/ak` and `.cursor/bin/ak-gate.mjs`
+travel in the vendored `.cursor/` tree. Run `.cursor/bin/ak` from the repo root,
+not `ak` or `bun run ak`. The Firstmate grant is `.cursor/bin/ak firstmate grant`.
+The gate is `node .cursor/bin/ak-gate.mjs`.
 
 Context separation on Cursor is **partial**:
 
