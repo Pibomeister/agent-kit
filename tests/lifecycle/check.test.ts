@@ -879,6 +879,21 @@ describe("ak lifecycle check, standalone", () => {
     expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
   });
 
+  test("ship-preflight is refused when the ticket declares criteria but no named verification", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "ship-half-declared", {
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const shipped = ak(dir, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("has no acceptance criteria or named verification");
+    expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
+  });
+
   test("a wrong-task receipt is refused by name", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "wrong-task");

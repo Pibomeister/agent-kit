@@ -11,11 +11,11 @@
  * An opened run has no fork-point bound and prints no note. A run never closed by `ship-preflight`
  * stays the branch's default until a new `open`, so every new task opens a new run.
  *
- * Recording `ship-preflight` in the legacy policy is judged the same way when the run is opened,
- * unbound and its ticket declares criteria and named verification: it runs the pre-ship check for
- * the exact head first and records nothing on a refusal. A run with no task-bound record, a
- * Firstmate-bound run (audited by `firstmate status`), or a ticket declaring neither, keeps the
- * route it had.
+ * Recording `ship-preflight` in the legacy policy is judged the same way when the run is opened
+ * and unbound: it runs the pre-ship check for the exact head first and records nothing on a
+ * refusal. A run with no task-bound record, a Firstmate-bound run (audited by `firstmate
+ * status`), or a verified ticket declaring neither criteria nor named verification, keeps the
+ * route it had; a ticket that cannot be confirmed minimal is judged and refused by name.
  *
  * An opened run, or a check given `--evidence`, is also judged on evidence. `open` and
  * `record --gate verify --receipt` copy the ticket, each receipt and every artifact it lists into
@@ -1414,31 +1414,29 @@ function writeDecision(a: CheckArgs, decision: DecisionRecord): string {
 }
 
 /**
- * Whether the opened run's ticket declares the evidence a ship can be judged on: acceptance criteria
- * and named verification, the two halves `evaluateEvidence` requires. A ticket declaring neither is
- * the minimal-ticket route (a bypass span, a fixture), which ship-preflight leaves as it was.
+ * Whether ship-preflight for the opened run is judged on evidence. False only where the check
+ * cannot be the boundary: the run has no task-bound record, or its stored ticket — verified
+ * against the recorded hash — declares neither acceptance criteria nor named verification, the
+ * minimal-ticket route (a bypass span, a fixture). A ticket that is absent, altered, malformed
+ * or half-declared cannot be confirmed minimal, so it is judged and the check names why.
  */
 function ticketDeclaresEvidence(dir: string, run: string): boolean {
   const record = readRunRecord(dir, run);
   if (record === undefined) return false;
   const path = artifactPath(dir, run, record.ticket.hash);
-  if (path === undefined || !existsSync(path)) return false;
+  if (path === undefined || !existsSync(path)) return true;
+  const bytes = readFileSync(path);
+  if (sha256(bytes) !== record.ticket.hash) return true;
   let ticket: ReturnType<typeof object>;
   try {
-    ticket = object(JSON.parse(new TextDecoder().decode(readFileSync(path))));
+    ticket = object(JSON.parse(new TextDecoder().decode(bytes)));
   } catch {
-    return false;
+    return true;
   }
-  if (ticket === undefined) return false;
-  const criteria = (Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : []).filter((value) => {
-    const criterion = object(value);
-    return criterion !== undefined && nonempty(criterion.id) && AC.test(criterion.id);
-  });
-  const checks = (Array.isArray(ticket.verification) ? ticket.verification : []).filter((value) => {
-    const check = object(value);
-    return check !== undefined && nonempty(check.id) && KEBAB.test(check.id);
-  });
-  return criteria.length > 0 && checks.length > 0;
+  if (ticket === undefined) return true;
+  const criteria = Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : [];
+  const checks = Array.isArray(ticket.verification) ? ticket.verification : [];
+  return criteria.length > 0 || checks.length > 0;
 }
 
 export function checkGates(a: CheckArgs): CheckResult {
