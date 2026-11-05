@@ -135,6 +135,11 @@ function closed<T extends string>(reason: string): ParsedVerdict<T> {
   return { status: "closed", reason };
 }
 
+/** Quoted, newline-safe echo of model text in a closed reason, capped at 64 characters. */
+function echo(value: string): string {
+  return JSON.stringify(value).slice(0, 64);
+}
+
 /**
  * The value of `field` in `source`. The trimmed source must be exactly one
  * JSON object, the key may appear once, and the value must be an exact
@@ -149,13 +154,13 @@ export function parseVerdict<T extends string>(source: string, field: string, al
   if (!scanned.keys.includes(field)) return closed(`missing ${field}`);
   const seen = new Set<string>();
   for (const key of scanned.keys) {
-    if (seen.has(key)) return closed(key === field ? `conflicting ${field}` : `duplicate key ${key}`);
+    if (seen.has(key)) return closed(key === field ? `conflicting ${field}` : `duplicate key ${echo(key)}`);
     seen.add(key);
   }
   const value = object[field];
   if (!isJsonString(value)) return closed(`${field} is not a string`);
   const match = allowed.find((item) => item === value);
-  if (match === undefined) return closed(`${field} ${value} is not in the enum`);
+  if (match === undefined) return closed(`${field} ${echo(value)} is not in the enum`);
   return { status: "exact", value: match, object };
 }
 

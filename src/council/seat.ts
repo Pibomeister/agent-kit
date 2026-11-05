@@ -9,6 +9,8 @@
 import { exhaustedReject, invalidAnswerError, parseVerdict } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
+export { FAIL_CLOSED } from "./config.ts";
+
 export interface ChildOutput {
   exitCode: number;
   stdout: Buffer;
@@ -32,8 +34,6 @@ export type SeatResult =
 export const UNSPECIFIED = "unspecified";
 /** What the record says about a served model the launcher did not report. */
 export const UNVERIFIED = "unverified";
-/** Actor recorded for a fail-closed REJECT after the substitute chain is exhausted. */
-export const FAIL_CLOSED = "fail-closed";
 
 function reason(cause: unknown): string {
   return (cause instanceof Error ? cause.message : String(cause)).slice(0, 500);

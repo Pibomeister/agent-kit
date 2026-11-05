@@ -310,6 +310,30 @@ describe("ak council run", () => {
     expect(result.err.join("\n")).toContain("owner only");
   });
 
+  test("a roster that names fail-closed as a veto actor is refused", async () => {
+    const s = setup();
+    const spoofed = updated(record(s.config), ["veto"], () => ({
+      seat: "veto",
+      chain: [{ actor: "fail-closed", lineage: ["fail-closed"], command: ["true"] }],
+    }));
+    writeFileSync(s.config, JSON.stringify(spoofed), { mode: 0o600 });
+    const result = await run(["run", "--card", s.card, "--council-config", s.config]);
+    expect(result.code).toBe(2);
+    expect(result.err.join("\n")).toContain("must not name actor fail-closed");
+  });
+
+  test("a roster that names fail-closed in a veto lineage is refused", async () => {
+    const s = setup();
+    const spoofed = updated(record(s.config), ["veto"], () => ({
+      seat: "veto",
+      chain: [{ actor: "v9", lineage: ["v9", "fail-closed"], command: ["true"] }],
+    }));
+    writeFileSync(s.config, JSON.stringify(spoofed), { mode: 0o600 });
+    const result = await run(["run", "--card", s.card, "--council-config", s.config]);
+    expect(result.code).toBe(2);
+    expect(result.err.join("\n")).toContain("must not name actor fail-closed");
+  });
+
   test("a roster whose veto shares a lineage with the pair is refused", async () => {
     const s = setup();
     const shared = updated(record(s.config), ["veto"], () => ({
@@ -440,7 +464,7 @@ describe("ak council run parses a seat verdict strictly", () => {
       outcome: "escalate",
       seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
     });
-    expect(JSON.stringify(record(s.out))).toContain("duplicate key rationale");
+    expect(JSON.stringify(record(s.out))).toContain("duplicate key");
   });
 
   test("two exhausted primaries escalate", async () => {

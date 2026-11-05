@@ -19,6 +19,9 @@ import { sharesLineage } from "../runner/lineage.ts";
 /** How long one launcher may run: 15 minutes. */
 export const DEFAULT_TIMEOUT_MS = 900_000;
 
+/** Reserved actor for a synthesized fail-closed REJECT. A roster launcher may not use it. */
+export const FAIL_CLOSED = "fail-closed";
+
 export interface CouncilLauncher {
   actor: string;
   lineage: string[];
@@ -93,9 +96,12 @@ export function rosterProblems(seats: readonly CouncilSeat[]): string[] {
   for (const [i, a] of seats.entries()) {
     if (new Set(a.chain.map((l) => l.actor)).size !== a.chain.length)
       problems.push(`seat ${a.seat} names an actor twice in its chain`);
-    for (const l of a.chain)
+    for (const l of a.chain) {
       if (!l.lineage.includes(l.actor))
         problems.push(`seat ${a.seat} launcher ${l.actor} omits itself from its lineage`);
+      if (l.actor === FAIL_CLOSED || l.lineage.includes(FAIL_CLOSED))
+        problems.push(`seat ${a.seat} must not name actor ${FAIL_CLOSED}`);
+    }
     for (const b of seats.slice(i + 1))
       if (a.chain.some((l) => b.chain.some((m) => sharesLineage(l, m))))
         problems.push(`seats ${a.seat} and ${b.seat} share a lineage`);
