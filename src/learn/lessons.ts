@@ -3,9 +3,9 @@
  *
  * The canonical learnings file per project is the memory ledger's lesson
  * pages (`<memory ledger>/lessons/ls-NNN.md`) plus their `lessons.md` index:
- * append-only in that a lesson is added as the next `ls-NNN` page or counted
- * as a repeat on the page it restates, and retired by supersession, never by
- * deletion. A page may carry three fields the consolidation judge does not
+ * append-only in that a lesson is added as the next `ls-NNN` page, a
+ * restatement is reported as a duplicate of the page it restates and never
+ * rewrites it, and a lesson is retired by supersession, never by deletion. A page may carry three fields the consolidation judge does not
  * invent: `failure` (what went wrong), `check` (the runnable check that now
  * guards it) and `issue` (the tracker link). Session start already loads the
  * confirmed pages (`memory/session-context.ts`); this module is what
@@ -186,11 +186,11 @@ export function lessonsFindings(
         detail: `${label} — ${row.reason}`,
         remedy: `Name a runnable check in the lesson's check field (one of: ${RUNNABLE_LESSON_CHECKS.map((c) => c.id).join(", ")}), or implement the check and add it to the registry.`,
       };
-    const doctor =
-      row.runnable === undefined
-        ? undefined
-        : doctorFindings.find((finding) => finding.check.includes(row.runnable?.doctorCheck ?? ""));
-    if (doctor?.level === "FAIL")
+    const guardLabel = row.runnable?.doctorCheck ?? "";
+    const guarded = doctorFindings.filter(
+      (finding) => finding.check === guardLabel || finding.check.endsWith(` ${guardLabel}`),
+    );
+    if (guarded.some((finding) => finding.level === "FAIL"))
       return {
         level: "FAIL",
         check: "lessons coverage",
@@ -237,9 +237,9 @@ function normalizeKeyPart(value: string): string {
     .trim();
 }
 
-/** A failure normalized for dedup: case, punctuation and whitespace do not make a new lesson. */
-export function lessonKey(failure: string, lesson: string): string {
-  return `${normalizeKeyPart(failure)}::${normalizeKeyPart(lesson)}`;
+/** A lesson statement normalized for dedup: case, punctuation and whitespace do not make a new lesson. */
+export function lessonKey(lesson: string): string {
+  return normalizeKeyPart(lesson);
 }
 
 export interface TriageResult {
@@ -260,32 +260,39 @@ export function nextLessonId(lessons: readonly LessonRecord[]): string {
 
 /**
  * Deduped triage of run failures into lesson records. A failure whose
- * normalized failure+lesson matches a live lesson, or an earlier failure in
- * the same batch, is a duplicate of that lesson — counted, not rewritten.
- * New lessons start as `hypothesis`: consolidation confirms them from
- * evidence later, and session start loads only confirmed lessons.
+ * normalized lesson statement matches a live lesson, or an earlier failure
+ * in the same batch, is a duplicate of that lesson — reported, not
+ * rewritten; the failure text is detail, not identity. A lesson already
+ * carrying an issue link, or already named in `recordedCandidates` (the ids
+ * an earlier triage queued), is not queued again. New lessons start as
+ * `hypothesis`: consolidation confirms them from evidence later, and
+ * session start loads only confirmed lessons.
  */
-export function triageFailures(existing: readonly LessonRecord[], failures: readonly FailureRecord[]): TriageResult {
+export function triageFailures(
+  existing: readonly LessonRecord[],
+  failures: readonly FailureRecord[],
+  recordedCandidates: ReadonlySet<string> = new Set(),
+): TriageResult {
   const created: LessonRecord[] = [];
   const duplicates: TriageResult["duplicates"] = [];
   const issueCandidates: TriageResult["issueCandidates"] = [];
-  const byKey = new Map<string, string>();
+  const byKey = new Map<string, LessonRecord>();
   for (const lesson of existing) {
     if (HISTORY_STATUSES.has(lesson.status)) continue;
-    byKey.set(lessonKey(lesson.failure || lesson.statement, lesson.statement), lesson.id);
+    byKey.set(lessonKey(lesson.statement), lesson);
   }
   const live: LessonRecord[] = [...existing];
-  const candidateIds = new Set<string>();
-  const candidate = (failure: FailureRecord, lessonId: string) => {
-    if ((failure.issue ?? "") !== "" || candidateIds.has(lessonId)) return;
-    candidateIds.add(lessonId);
-    issueCandidates.push({ failure: failure.failure, lesson: failure.lesson, lessonId });
+  const candidateIds = new Set(recordedCandidates);
+  const candidate = (failure: FailureRecord, lesson: LessonRecord) => {
+    if ((failure.issue ?? "") !== "" || lesson.issue !== "" || candidateIds.has(lesson.id)) return;
+    candidateIds.add(lesson.id);
+    issueCandidates.push({ failure: failure.failure, lesson: failure.lesson, lessonId: lesson.id });
   };
   for (const failure of failures) {
-    const key = lessonKey(failure.failure, failure.lesson);
+    const key = lessonKey(failure.lesson);
     const known = byKey.get(key);
     if (known !== undefined) {
-      duplicates.push({ failure, lessonId: known });
+      duplicates.push({ failure, lessonId: known.id });
       candidate(failure, known);
       continue;
     }
@@ -300,8 +307,8 @@ export function triageFailures(existing: readonly LessonRecord[], failures: read
     };
     created.push(record);
     live.push(record);
-    byKey.set(key, record.id);
-    candidate(failure, record.id);
+    byKey.set(key, record);
+    candidate(failure, record);
   }
   return { created, duplicates, issueCandidates };
 }

@@ -12,6 +12,9 @@ import {
   type FailureRecord,
 } from "../../src/learn/lessons.ts";
 import { loadLessons, memoryDir } from "../../src/learn/memory/ledger.ts";
+import { sessionRoot } from "../../src/learn/memory/session-context.ts";
+import { loadConfig } from "../../src/learn/core/config.ts";
+import { loopDir } from "../../src/learn/core/paths.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
 import { memoryArea } from "../../src/learn/memory/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
@@ -88,6 +91,16 @@ describe("lesson enforcement coverage", () => {
     expect(summary.detail).toContain("2 prose-only");
   });
 
+  test("an enforced lesson fails when any host's guarded check fails, not just the first label match", () => {
+    const dir = scratch("ak-lessons-plugin-");
+    lessonPage(dir, "ls-001", { statement: "Keep ak enabled", status: "confirmed", check: "plugin-enabled" });
+    const findings = lessonsFindings(classifyLessons(readLessons(dir)), [
+      { check: "Claude Code plugin", level: "PASS" },
+      { check: "Codex plugin", level: "FAIL" },
+    ]);
+    expect(findings.find((f) => f.detail.includes("ls-001"))?.level).toBe("FAIL");
+  });
+
   test("an absent or empty lessons source is one honest warning, not silence", () => {
     const findings = lessonsFindings(classifyLessons(readLessons(scratch("ak-lessons-none-"))), []);
     expect(findings).toHaveLength(1);
@@ -97,6 +110,39 @@ describe("lesson enforcement coverage", () => {
 });
 
 describe("ak doctor lessons coverage", () => {
+  test("doctor in a linked worktree reads the main repository's ledger, the one triage writes", () => {
+    const main = scratch("ak-doctor-main-");
+    const git = (cwd: string, ...args: string[]) =>
+      spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+    git(main, "init", "-q");
+    git(main, "commit", "-q", "--allow-empty", "-m", "seed");
+    const worktree = join(scratch("ak-doctor-wt-"), "wt");
+    git(main, "worktree", "add", "-q", worktree);
+    const home = scratch("ak-doctor-home-");
+    const env = {
+      ...process.env,
+      PATH: "/usr/bin:/bin",
+      CLAUDE_CONFIG_DIR: join(home, "claude-home"),
+      CODEX_HOME: join(home, "codex-home"),
+      AK_PUBLISHED_ROOT: join(home, "missing-published"),
+    };
+    const root = sessionRoot(worktree);
+    if (root === null) throw new Error("worktree has no session root");
+    lessonPage(loopDir(loadConfig(env), root, "memory"), "ls-001", {
+      statement: "Run the dry run before dispatch",
+      status: "confirmed",
+      check: "tracker-token",
+    });
+    const run = spawnSync(
+      process.execPath,
+      [join(import.meta.dir, "../../src/maintenance/cli.ts"), "doctor", "--json"],
+      { cwd: worktree, env, encoding: "utf8" },
+    );
+    const parsed = JSON.parse(run.stdout) as { findings: { check: string; detail: string }[] };
+    const coverage = parsed.findings.filter((f) => f.check === "lessons coverage");
+    expect(coverage.some((f) => f.detail.includes("ls-001"))).toBe(true);
+  });
+
   test("doctor --json reports enforced and prose-only lessons from --lessons", () => {
     const root = scratch("ak-doctor-lessons-");
     spawnSync("git", ["init", "-q", root]);
@@ -168,6 +214,19 @@ describe("after-run failure triage", () => {
     expect(result.issueCandidates.map((c) => c.failure)).toEqual(["Watchdog retried with no backoff"]);
   });
 
+  test("a restated lesson with reworded failure is a duplicate, and a linked or queued lesson is not queued again", () => {
+    const existing = readLessons(fixtureLedger());
+    const restated = [
+      { failure: "dispatch went out with no preflight", lesson: "Run the dry run before dispatch." },
+      { failure: "nobody challenged the park", lesson: "Park challenges need a named challenger" },
+    ];
+    const first = triageFailures(existing, restated);
+    expect(first.created).toHaveLength(0);
+    expect(first.duplicates.map((d) => d.lessonId)).toEqual(["ls-001", "ls-002"]);
+    expect(first.issueCandidates.map((c) => c.lessonId)).toEqual(["ls-002"]);
+    expect(triageFailures(existing, restated, new Set(["ls-002"])).issueCandidates).toHaveLength(0);
+  });
+
   test("memory triage writes only the new lesson, records issue candidates, and is idempotent", () => {
     const repo = gitRepo(scratch("ak-triage-repo-"));
     const ctx = testContext({ cwd: repo });
@@ -181,6 +240,7 @@ describe("after-run failure triage", () => {
     const outBefore = ctx.out.length;
     expect(run()).toBe(0);
     expect(ctx.out.slice(outBefore).join("\n")).toContain("0 created");
+    expect(ctx.out.slice(outBefore).join("\n")).toContain("0 issue candidate");
     // The ledger the verb wrote is the canonical one session start reads.
     const written = loadLessons(new Ledger(memoryDir(ctx.config, repo)));
     expect([...written.keys()]).toEqual(["ls-001", "ls-002"]);

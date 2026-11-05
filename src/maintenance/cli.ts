@@ -30,6 +30,7 @@ import { hookMain } from "../../tools/hooks/semantic-lint.ts";
 import { probedHostVersionFindings, readInstalledHostVersion } from "./host-probe-version.ts";
 import { loadConfig } from "../learn/core/config.ts";
 import { loopDir } from "../learn/core/paths.ts";
+import { sessionRoot } from "../learn/memory/session-context.ts";
 import { classifyLessons, lessonsFindings, readLessons, type LessonFinding } from "../learn/lessons.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
@@ -526,14 +527,12 @@ function print(items: Finding[], json = false): number {
  * ones into the worker's context. A ledger that cannot be resolved is a
  * warning naming that, never silence.
  */
-export function doctorLessonsFindings(
-  root: string,
-  lessonsDir: string | undefined,
-  ran: readonly Finding[],
-): Finding[] {
+export function doctorLessonsFindings(lessonsDir: string | undefined, ran: readonly Finding[]): Finding[] {
   let dir = lessonsDir;
   if (dir === undefined) {
     try {
+      const root = sessionRoot(process.cwd());
+      if (root === null) throw new Error("no project root");
       dir = loopDir(loadConfig(process.env), root, "memory");
     } catch {
       return [
@@ -585,7 +584,7 @@ async function doctor(json = false, lessonsDir?: string): Promise<number> {
     checkKnowledgebase(process.cwd()),
     checkSemanticLint(join(homedir(), pin.key_file), process.env.AK_JEV_ENABLED),
   ];
-  items.push(...doctorLessonsFindings(hostRoot, lessonsDir, items));
+  items.push(...doctorLessonsFindings(lessonsDir, items));
   if (!hasClaude && !hasCodex) {
     items.push(
       finding(

@@ -202,13 +202,15 @@ function triage(args: LearnArgs, ctx: LearnContext): number {
   }
   const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
   return locked(ctx, ledger, () => {
-    const result = triageFailures(readLessons(ledger.dir), failures);
+    const issueLog = ledger.path("raw", "triage-issues.jsonl");
+    const recorded = new Set(readJsonl<{ lessonId?: string }>(issueLog).flatMap((row) => row.lessonId ?? []));
+    const result = triageFailures(readLessons(ledger.dir), failures, recorded);
     const today = todayLocal();
     for (const record of result.created)
       writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today));
     if (result.created.length > 0) rewriteIndex(ledger);
     appendJsonl(
-      ledger.path("raw", "triage-issues.jsonl"),
+      issueLog,
       result.issueCandidates.map((candidate) => ({ ts: nowIso(), ...candidate })),
       ledger.dir,
     );
