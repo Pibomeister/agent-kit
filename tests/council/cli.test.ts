@@ -6,6 +6,16 @@ import { runCouncil } from "../../src/council/cli.ts";
 import { parseJson, updated, type JsonValue } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
+const transcriptLauncher = (actor: string) => ({
+  actor,
+  lineage: [actor],
+  command: [
+    "bun",
+    "-e",
+    "console.log('This looks WORTHY at first glance.\\nThe constructed failure still stands.\\nVERDICT: REJECT')",
+  ],
+});
+
 const answer = (choice: string, log: string) =>
   `const p=JSON.parse(await Bun.stdin.text());require('node:fs').appendFileSync(${JSON.stringify(log)},process.argv[1]+' '+Object.keys(p).sort().join(',')+'\\n');console.log(JSON.stringify({choice:${JSON.stringify(choice)},rationale:'blind',model_served:'served-'+process.argv[1]}));`;
 
@@ -147,6 +157,31 @@ describe("ak council run", () => {
       "b card,context,council",
       "v1 card,context,council",
     ]);
+  });
+
+  test("transcript seats mentioning WORTHY early and ending VERDICT: REJECT decline, never approve", async () => {
+    const dir = processScratch("ak-council-verdict-");
+    const config = join(dir, "council.json");
+    writeFileSync(
+      config,
+      JSON.stringify({
+        pair: [
+          { seat: "primary-a", chain: [transcriptLauncher("a")] },
+          { seat: "primary-b", chain: [transcriptLauncher("b")] },
+        ],
+        veto: { seat: "veto", chain: [transcriptLauncher("v")] },
+      }),
+      { mode: 0o600 },
+    );
+    const card = join(dir, "card.json");
+    writeFileSync(
+      card,
+      JSON.stringify({ id: "q2", question: "Merge it?", options: ["WORTHY", "REJECT"], approve: "WORTHY" }),
+    );
+    const out = join(dir, "record.json");
+    const result = await run(["run", "--card", card, "--council-config", config, "--out", out]);
+    expect(result.code).toBe(0);
+    expect(record(out)).toMatchObject({ outcome: "decline", choice: "REJECT" });
   });
 
   test("a non-approving veto escalates", async () => {

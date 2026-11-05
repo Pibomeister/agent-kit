@@ -6,6 +6,7 @@
  * the card; the first valid answer ends it.
  */
 
+import { parseFinalVerdict } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
 export interface ChildOutput {
@@ -101,7 +102,23 @@ export async function launchSeat(
       const child = await spawn(launcher, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
-      const value: unknown = JSON.parse(child.stdout.toString());
+      const text = child.stdout.toString();
+      let parsed: unknown;
+      let isJson = true;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        isJson = false;
+      }
+      if (!isJson) {
+        // A transcript answer stands only on its one structured final
+        // verdict field (issue #195); prose elsewhere is never a verdict.
+        const verdict = parseFinalVerdict(text, options);
+        if (!verdict.ok) throw new Error(`launcher returned an invalid answer: ${verdict.reason}`);
+        const prose = text.slice(0, text.lastIndexOf("VERDICT:")).trim();
+        return { ok: true, launcher, answer: { choice: verdict.verdict, rationale: prose }, attempts };
+      }
+      const value: unknown = parsed;
       if (!isCouncilAnswer(value)) throw new Error("launcher returned an invalid answer");
       if (!options.includes(value.choice)) throw new Error(`launcher chose ${value.choice}, which is not an option`);
       return { ok: true, launcher, answer: value, attempts };
