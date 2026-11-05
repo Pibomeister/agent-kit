@@ -117,7 +117,7 @@ export function rewriteExplicitStarts(
  * status and seat-judge still rewrite.
  */
 const CURSOR_AK_VERBS =
-  "firstmate(?! (?:bind|install|remove|preflight|brief)\\b)(?! status(?: [^\\n`]+)? --verify\\b)|delegation|runner call|learn|kb|guard|lifecycle|tracker|council";
+  "firstmate(?! (?:bind|install|remove|preflight|brief)\\b)(?! status(?: [^\\n`;|&]+)? --verify\\b)|delegation|runner call|learn|kb|guard|lifecycle|tracker|council";
 
 /**
  * Claude Code and Codex adapter contracts describe those hosts' CLIs, including

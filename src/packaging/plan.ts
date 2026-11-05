@@ -850,7 +850,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
     const published = relocateForHost(host, source);
-    files.set(published, { path: published, contents: text, source, verbatim: true });
+    const contents =
+      source.startsWith("schemas/") && source.endsWith(".schema.json") ? rewriteSkillCommands(text, source) : text;
+    files.set(published, { path: published, contents, source, verbatim: true });
     // Body bytes stay the source bytes, so a link keeps its source path and a code
     // span stays plain. Copy a template that link names; other deps, and the links
     // a skill follows, travel through the shared closure.

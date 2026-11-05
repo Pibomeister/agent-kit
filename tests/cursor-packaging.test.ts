@@ -120,6 +120,9 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     expect(
       rewriteAkCommands("`ak firstmate status <binding> --verify` and `ak firstmate status complete`", "cursor"),
     ).toBe("`ak firstmate status <binding> --verify` and `.cursor/bin/ak firstmate status complete`");
+    expect(rewriteAkCommands("ak firstmate status complete && ak firstmate status b --verify", "cursor")).toBe(
+      ".cursor/bin/ak firstmate status complete && ak firstmate status b --verify",
+    );
   });
 
   test("Cursor overlay keeps supervisor-side commands on bare ak", () => {
@@ -138,6 +141,27 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     expect(runnerContract).toContain("`ak runner serve");
     expect(runnerContract).not.toContain("`.cursor/bin/ak runner serve");
     expect(runnerContract).toContain("`.cursor/bin/ak runner call");
+  });
+
+  test("Cursor .cursor/schemas copies use the same ak forms as their shared twins", () => {
+    const cursor = planBundle(ctx, "cursor", { profile: "all" });
+    const akForm = /(?:\.cursor\/bin\/)?ak [a-z][a-z-]*(?: [^\s`]+)?/g;
+    const bareWorkerAk =
+      /(^|[^./a-z-])(?:bun run )?ak (?:firstmate grant|firstmate status complete|kb |tracker |delegation |runner call|learn |guard |lifecycle |council )/m;
+    const schemaFiles = [...cursor.files.keys()]
+      .filter((path) => path.startsWith(".cursor/schemas/") && path.endsWith(".schema.json"))
+      .toSorted();
+    expect(schemaFiles.length).toBeGreaterThan(0);
+    for (const path of schemaFiles) {
+      const contents = cursor.files.get(path)?.contents ?? "";
+      const twin = cursor.files.get(path.replace(".cursor/schemas/", ".cursor/references/shared/schemas/"))?.contents;
+      if (twin !== undefined) {
+        expect(`${path}:${[...contents.matchAll(akForm)].map((row) => row[0]).join("|")}`).toBe(
+          `${path}:${[...twin.matchAll(akForm)].map((row) => row[0]).join("|")}`,
+        );
+      }
+      expect(`${path}:${bareWorkerAk.test(contents)}`).toBe(`${path}:false`);
+    }
   });
 
   test("the Cursor bundle is the catalog in a Cloud-discoverable layout", () => {
