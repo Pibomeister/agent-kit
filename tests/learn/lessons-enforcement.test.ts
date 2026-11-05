@@ -89,6 +89,10 @@ describe("lesson enforcement coverage", () => {
     expect(summary?.check).toBe("lessons coverage");
     expect(summary?.detail).toContain("1 enforced");
     expect(summary?.detail).toContain("2 prose-only");
+    const failingSummary = failing.at(-1);
+    expect(failingSummary?.level).toBe("FAIL");
+    expect(failingSummary?.remedy).not.toBe("No action needed.");
+    expect(failingSummary?.remedy).toContain("failing doctor check");
   });
 
   test("an enforced lesson fails when any host's guarded check fails, not just the first label match", () => {

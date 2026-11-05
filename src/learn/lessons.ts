@@ -205,16 +205,14 @@ export function lessonsFindings(
     };
   });
   const enforced = coverage.filter((row) => row.enforced).length;
+  const failing = findings.some((finding) => finding.level === "FAIL");
   findings.push({
-    level: findings.some((finding) => finding.level === "FAIL")
-      ? "FAIL"
-      : enforced === coverage.length
-        ? "PASS"
-        : "WARN",
+    level: failing ? "FAIL" : enforced === coverage.length ? "PASS" : "WARN",
     check: "lessons coverage",
     detail: `${coverage.length} lesson(s): ${enforced} enforced, ${coverage.length - enforced} prose-only`,
-    remedy:
-      enforced === coverage.length
+    remedy: failing
+      ? "Fix the failing doctor checks that guard the enforced lessons above."
+      : enforced === coverage.length
         ? "No action needed."
         : "Convert prose-only lessons by naming a runnable doctor check, or record why they stay prose.",
   });
