@@ -1983,9 +1983,10 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle lanes release [--lane <name>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle lanes unpublished [--max-age-minutes <n>] [--project <dir>] [--json]",
   "",
-  "  Gate lanes (issue #194): one lock per worktree+branch lane, never one global gate lock. `lanes run` queues",
-  "  visibly until its lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is free, runs the command,",
-  "  and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes unpublished` alerts",
+  "  Gate lanes (issue #194): `lanes run` is the supported entry point for a gate caller that wants one lock per",
+  "  worktree+branch; only callers that wrap their run in it are covered. --lane and --label only describe the holder.",
+  "  It queues visibly until the lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is free, runs the",
+  "  command, and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes unpublished` alerts",
   "  when the oldest commit no remote holds is older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES",
   "  (default 30); it reports only and never pushes, so publication still enters the configured pipeline promptly.",
   "",
@@ -2258,7 +2259,13 @@ export function main(
   }
   if (sub.startsWith("lanes ")) {
     if (sub === "lanes unpublished") {
-      const result = checkUnpublished(project, resolveMaxAgeMinutes(str("max-age-minutes")));
+      let result: ReturnType<typeof checkUnpublished>;
+      try {
+        result = checkUnpublished(project, resolveMaxAgeMinutes(str("max-age-minutes")));
+      } catch (error) {
+        io.err(`ak lifecycle ${sub}: ${error instanceof Error ? error.message : String(error)}`);
+        return 1;
+      }
       if (flags.has("json")) io.out(JSON.stringify(result, null, 2));
       else if (result.unpublished === 0) io.out(`unpublished: none on ${result.branch}`);
       else

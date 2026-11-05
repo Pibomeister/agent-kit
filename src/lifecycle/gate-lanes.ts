@@ -1,13 +1,18 @@
 /**
- * Gate lanes: one lock per lane (worktree + branch), never one lock for every lane.
+ * Gate lanes: one lock per worktree + branch, never one lock for every lane.
  *
- * Issue #194: a single global gate lock serialized seven lanes, committed work sat
- * unpublished for 80+ minutes, and reviews then targeted stale heads. This module is
- * the per-lane replacement lanes run through `ak lifecycle lanes …` (bundled as
- * `bin/ak-gate.mjs`, so it uses only `node:` built-ins):
+ * Issue #194 reported seven lanes serialized behind one gate lock, committed work
+ * unpublished for 80+ minutes, and reviews aimed at stale heads. The lock behind that
+ * report, its owner and the caller that took it are not known from this repository,
+ * and nothing here replaces or reconfigures it. What this module provides is
+ * forward-looking: a supported entry point, `ak lifecycle lanes run -- <command>`
+ * (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins), that a gate
+ * caller wraps its run in to get per-lane exclusion and a visible queue. Only callers
+ * that use it are covered.
  *
  * - Mutual exclusion holds *within* one lane: two gate runs for the same worktree
  *   and branch cannot overlap. Different lanes hold different locks and run at once.
+ *   The lane name and label only describe the holder; they never split the lock.
  * - An optional bounded pool (`--pool <n>` / `AK_GATE_LANES_POOL`) caps how many
  *   lanes hold a gate at once; `0`/absent means no cap beyond the per-lane lock.
  *   The pool check and the lane claim are serialized by a short-lived claim mutex
@@ -91,14 +96,14 @@ function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** A filesystem-safe lane key: readable branch slug plus a hash of worktree and branch. */
+/** A filesystem-safe lane key: readable branch slug plus a hash of worktree and branch; the lane name is not part of it. */
 export function laneKey(identity: LaneIdentity): string {
   const slug = identity.branch
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
-  return `${slug === "" ? "lane" : slug}-${sha(`${identity.worktree}\n${identity.branch}\n${identity.lane}`).slice(0, 16)}`;
+  return `${slug === "" ? "lane" : slug}-${sha(`${identity.worktree}\n${identity.branch}`).slice(0, 16)}`;
 }
 
 function isNonArrayObject(value: unknown): value is object {
@@ -486,13 +491,13 @@ export function checkUnpublished(
 ): UnpublishedResult {
   const git = options.git ?? runGit;
   const nowMs = (options.now ?? Date.now)();
+  const head = git(project, ["rev-parse", "--short", "HEAD"]);
+  if (head.code !== 0 || head.text === "") throw new Error(`${project} has no readable HEAD: ${head.stderr}`);
   const branchResult = git(project, ["branch", "--show-current"]);
-  const branch =
-    branchResult.code === 0 && branchResult.text !== ""
-      ? branchResult.text
-      : git(project, ["rev-parse", "--short", "HEAD"]).text;
+  const branch = branchResult.code === 0 && branchResult.text !== "" ? branchResult.text : head.text;
   const log = git(project, ["log", "--format=%ct", "HEAD", "--not", "--remotes"]);
-  const stamps = log.code === 0 && log.text !== "" ? log.text.split("\n").map(Number).filter(Number.isFinite) : [];
+  if (log.code !== 0) throw new Error(`git log failed in ${project}: ${log.stderr}`);
+  const stamps = log.text === "" ? [] : log.text.split("\n").map(Number).filter(Number.isFinite);
   if (stamps.length === 0) return { branch, unpublished: 0, max_age_minutes: maxAgeMinutes, overdue: false };
   const oldestSeconds = Math.min(...stamps);
   const ageMinutes = Math.max(0, Math.floor((nowMs / 1000 - oldestSeconds) / 60));

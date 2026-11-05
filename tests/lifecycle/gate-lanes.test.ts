@@ -198,6 +198,17 @@ got.release();
     if (held.ok) held.release();
   });
 
+  test("a lane name only labels the holder: the same worktree and branch still exclude", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const first = acquireLane(dir, { ...laneA, lane: "review" }, { sleep: noSleep });
+    expect(first.ok).toBe(true);
+    const second = acquireLane(dir, laneA, { sleep: noSleep });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.holder?.lane).toBe("review");
+    expect(releaseLane(dir, laneA).ok).toBe(true);
+    if (first.ok) first.release();
+  });
+
   test("pool and unpublished limits resolve flag over env over default", () => {
     expect(resolvePool(undefined, undefined)).toBeUndefined();
     expect(resolvePool(undefined, "3")).toBe(3);
@@ -220,7 +231,73 @@ function git(project: string, args: string[], env: Record<string, string> = {}):
   return result.stdout.trim();
 }
 
+function capture() {
+  const out: string[] = [];
+  const err: string[] = [];
+  return { out, err, io: { out: (line: string) => out.push(line), err: (line: string) => err.push(line) } };
+}
+
+function scratchRepo(prefix: string): { dir: string; repo: string } {
+  const dir = processScratch(prefix);
+  const repo = join(dir, "repo");
+  spawnSync("git", ["init", "-b", "fm/run", repo], { encoding: "utf8" });
+  git(repo, ["config", "user.email", "lane@example.invalid"]);
+  git(repo, ["config", "user.name", "Lane"]);
+  writeFileSync(join(repo, "base.txt"), "base\n");
+  git(repo, ["add", "base.txt"]);
+  git(repo, ["commit", "-m", "base"]);
+  return { dir, repo };
+}
+
+describe("lanes run entry point (issue #194)", () => {
+  test("runs the command under the lane lock, releases it, and refuses a held lane", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-run-");
+    const store = join(dir, "evidence");
+    const ran = capture();
+    expect(main(["lanes", "run", "--dir", store, "--project", repo, "--", "true"], ran.io, repo)).toBe(0);
+    expect(laneStatus(join(store, "gate-lanes"), Date.now())).toEqual({ holders: [], waiters: [] });
+    const failing = capture();
+    expect(main(["lanes", "run", "--dir", store, "--project", repo, "--", "false"], failing.io, repo)).toBe(1);
+    const held = acquireLane(
+      join(store, "gate-lanes"),
+      { lane: "other", branch: "fm/run", worktree: git(repo, ["rev-parse", "--show-toplevel"]) },
+      { sleep: noSleep },
+    );
+    expect(held.ok).toBe(true);
+    const refused = capture();
+    const code = main(
+      ["lanes", "run", "--lane", "mine", "--timeout-minutes", "0", "--dir", store, "--project", repo, "--", "true"],
+      refused.io,
+      repo,
+    );
+    expect(code).toBe(1);
+    expect(refused.err.join("\n")).toContain("refused");
+    if (held.ok) held.release();
+  });
+
+  test("an invalid --timeout-minutes is a usage error, not an unbounded wait", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-run-");
+    const bad = capture();
+    const code = main(
+      ["lanes", "run", "--timeout-minutes", "abc", "--dir", join(dir, "evidence"), "--project", repo, "--", "true"],
+      bad.io,
+      repo,
+    );
+    expect(code).toBe(2);
+    expect(bad.err.join("\n")).toContain("--timeout-minutes");
+  });
+});
+
 describe("unpublished-commit age check (issue #194)", () => {
+  test("a git failure is an error, never a clean 'none unpublished'", () => {
+    const outside = processScratch("ak-gate-unpublished-nogit-");
+    expect(() => checkUnpublished(outside, 30, { now: UNPUBLISHED_NOW })).toThrow();
+    const result = capture();
+    expect(main(["lanes", "unpublished", "--project", outside], result.io, outside)).toBe(1);
+    expect(result.out).toEqual([]);
+    expect(result.err.join("\n")).toContain("no readable HEAD");
+  });
+
   test("an old commit no remote holds is overdue; a generous limit and a pushed branch are not", () => {
     const dir = processScratch("ak-gate-unpublished-");
     const repo = join(dir, "repo");
