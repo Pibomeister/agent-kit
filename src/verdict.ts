@@ -147,8 +147,11 @@ export function parseVerdict<T extends string>(source: string, field: string, al
   const object = decodeJson(trimmed);
   if (!isJsonObject(object)) return closed("not a JSON object");
   if (!scanned.keys.includes(field)) return closed(`missing ${field}`);
-  if (new Set(scanned.keys).size !== scanned.keys.length) return closed(`conflicting ${field}`);
-  if (scanned.keys.filter((key) => key === field).length !== 1) return closed(`conflicting ${field}`);
+  const seen = new Set<string>();
+  for (const key of scanned.keys) {
+    if (seen.has(key)) return closed(key === field ? `conflicting ${field}` : `duplicate key ${key}`);
+    seen.add(key);
+  }
   const value = object[field];
   if (!isJsonString(value)) return closed(`${field} is not a string`);
   const match = allowed.find((item) => item === value);

@@ -24,6 +24,7 @@ import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilSeat
 import { checkOutbound, describeRefusals, type OutboundItem } from "./outbound.ts";
 import { councilOutcome, type CouncilResult } from "./rule.ts";
 import {
+  closeVeto,
   collectDetached,
   FAIL_CLOSED,
   killGroup,
@@ -214,7 +215,7 @@ async function run(args: RunArgs, io: Io): Promise<number> {
       const choices = seats.map((entry) => entry.choice);
       let veto: string | null | undefined;
       if (choices.every((choice) => choice === card.approve)) {
-        const result = await launchSeat(config.veto, payload, card.options, spawn);
+        const result = closeVeto(await launchSeat(config.veto, payload, card.options, spawn), card.options);
         const entry = seatEntry("veto", config.veto, result);
         seats.push(entry);
         veto = entry.choice;

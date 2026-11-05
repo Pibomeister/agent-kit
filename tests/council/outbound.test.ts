@@ -147,15 +147,12 @@ describe("council seats", () => {
     expect(JSON.stringify(result)).toContain("invalid answer");
   });
 
-  test("an exhausted chain with REJECT as an option closes to REJECT", async () => {
+  test("an exhausted chain with REJECT as an option stays unavailable", async () => {
     const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], () => Promise.resolve(raw("")));
     expect(result).toMatchObject({
-      ok: true,
-      synthesized: true,
-      answer: { choice: "REJECT" },
+      ok: false,
       attempts: [{ actor: "v1" }, { actor: "v2" }],
     });
-    expect("launcher" in result).toBe(false);
     expect(JSON.stringify(result)).toContain("invalid answer");
   });
 

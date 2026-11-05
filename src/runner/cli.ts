@@ -13,6 +13,7 @@ import { checkOutbound, describeRefusals } from "../council/outbound.ts";
 import { workerVeto } from "../council/rule.ts";
 import {
   chainFailures,
+  closeVeto,
   collectDetached,
   FAIL_CLOSED,
   killGroup,
@@ -220,8 +221,11 @@ async function dispatchVeto(
     return;
   }
   const options = runner.status(runId).cards[cardId]?.options ?? [];
-  const result = await launchSeat(council.veto, packet, options, (launcher, stdin) =>
-    spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
+  const result = closeVeto(
+    await launchSeat(council.veto, packet, options, (launcher, stdin) =>
+      spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
+    ),
+    options,
   );
   if (!result.ok) {
     runner.veto(runId, cardId, {

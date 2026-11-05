@@ -113,9 +113,14 @@ export async function launchSeat(
       attempt.error = reason(cause);
     }
   }
-  const closed = exhaustedReject(options);
-  if (closed !== null) return { ok: true, synthesized: true, answer: closed, attempts };
   return { ok: false, attempts };
+}
+
+/** Fail-closed REJECT for an exhausted veto chain, when REJECT is an option. */
+export function closeVeto(result: SeatResult, options: readonly string[]): SeatResult {
+  if (result.ok) return result;
+  const closed = exhaustedReject(options);
+  return closed === null ? result : { ok: true, synthesized: true, answer: closed, attempts: result.attempts };
 }
 
 /** The failures of an exhausted chain, one per attempt. */

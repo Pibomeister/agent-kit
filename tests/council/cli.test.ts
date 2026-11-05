@@ -326,14 +326,14 @@ describe("ak council run", () => {
 const emit = (text: string, log: string, actor: string) =>
   `require('node:fs').appendFileSync(${JSON.stringify(log)},${JSON.stringify(actor)}+'\\n');console.log(${JSON.stringify(text)});`;
 
-function worthySetup(vetoText: string, substitute?: string) {
+function worthySetup(vetoText: string, substitute?: string, primaries?: [string, string]) {
   const dir = processScratch("ak-council-");
   const log = join(dir, "seats.log");
   const worthy = JSON.stringify({ choice: "WORTHY", rationale: "blind" });
-  const pair = (actor: string) => ({
+  const pair = (actor: string, text: string) => ({
     actor,
     lineage: [actor],
-    command: ["bun", "-e", emit(worthy, log, actor)],
+    command: ["bun", "-e", emit(text, log, actor)],
   });
   const vetoChain = [{ actor: "v1", lineage: ["v1"], command: ["bun", "-e", emit(vetoText, log, "v1")] }];
   if (substitute !== undefined)
@@ -343,8 +343,8 @@ function worthySetup(vetoText: string, substitute?: string) {
     config,
     JSON.stringify({
       pair: [
-        { seat: "primary-a", chain: [pair("a")] },
-        { seat: "primary-b", chain: [pair("b")] },
+        { seat: "primary-a", chain: [pair("a", primaries?.[0] ?? worthy)] },
+        { seat: "primary-b", chain: [pair("b", primaries?.[1] ?? worthy)] },
       ],
       veto: { seat: "veto", chain: vetoChain },
     }),
@@ -428,6 +428,49 @@ describe("ak council run parses a seat verdict strictly", () => {
       expect(result.code).toBe(1);
       expect(record(s.out)).toMatchObject({ seats: [{}, {}, { role: "veto", choice: "REJECT" }] });
     });
+
+  test("a duplicated non-choice key is invalid", async () => {
+    const s = worthySetup('{"choice":"WORTHY","rationale":"a","rationale":"b"}');
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
+    });
+    expect(JSON.stringify(record(s.out))).toContain("duplicate key rationale");
+  });
+
+  test("two exhausted primaries escalate", async () => {
+    const s = worthySetup(worthy, undefined, ["not a verdict", "also not a verdict"]);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      seats: [
+        { role: "primary", actor: null, choice: null },
+        { role: "primary", actor: null, choice: null },
+      ],
+    });
+    expect(JSON.stringify(record(s.out))).toContain("a primary seat was unavailable");
+    expect(readFileSync(s.log, "utf8")).not.toContain("v1");
+  });
+
+  test("one exhausted primary and one REJECT escalate rather than decline", async () => {
+    const s = worthySetup(worthy, undefined, ["not a verdict", reject]);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      seats: [
+        { role: "primary", actor: null, choice: null },
+        { role: "primary", actor: "b", choice: "REJECT" },
+      ],
+    });
+    expect(JSON.stringify(record(s.out))).toContain("a primary seat was unavailable");
+    expect(readFileSync(s.log, "utf8")).not.toContain("v1");
+  });
 
   test("an exact WORTHY object still approves", async () => {
     const s = worthySetup(worthy);

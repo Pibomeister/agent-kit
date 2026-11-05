@@ -440,7 +440,7 @@ and before `decide` accepts it, the service runs the outbound gate on the same f
 sends it to the veto seat named in the private `--council-config`. No judgment is in that input.
 The service tries the seat's substitutes in order, only when a launcher fails or returns no valid
 answer, and records the result on the card apart from the two judgments. The same whole-stdout
-rule applies to each veto launcher. An exhausted chain with no valid answer records `REJECT` from
+rule applies to each veto launcher. An exhausted veto chain with no valid answer records `REJECT` from
 actor `fail-closed` when `REJECT` is an option, not from the last launcher. A missing configuration,
 an exhausted chain, a refused payload, a veto that shares a lineage with either primary seat or an
 excluded actor, or a non-approving veto returns `needs-input` with a `runner:council-veto`
