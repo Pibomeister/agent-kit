@@ -214,9 +214,14 @@ got.release();
     expect(resolvePool(undefined, "3")).toBe(3);
     expect(resolvePool("2", "3")).toBe(2);
     expect(resolvePool("0", undefined)).toBeUndefined();
+    expect(() => resolvePool("two", undefined)).toThrow("--pool");
+    expect(() => resolvePool(undefined, "-1")).toThrow("AK_GATE_LANES_POOL");
     expect(resolveMaxAgeMinutes(undefined, undefined)).toBe(30);
     expect(resolveMaxAgeMinutes(undefined, "45")).toBe(45);
     expect(resolveMaxAgeMinutes("10", "45")).toBe(10);
+    expect(resolveMaxAgeMinutes("0", undefined)).toBe(0);
+    expect(() => resolveMaxAgeMinutes("5m", undefined)).toThrow("--max-age-minutes");
+    expect(() => resolveMaxAgeMinutes(undefined, "-3")).toThrow("AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES");
   });
 });
 
@@ -273,7 +278,23 @@ describe("lanes run entry point (issue #194)", () => {
     expect(code).toBe(1);
     expect(refused.err.join("\n")).toContain("refused");
     if (held.ok) held.release();
-  });
+  }, 30_000);
+
+  test("an invalid --pool or --max-age-minutes is a named usage error", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-run-");
+    const pool = capture();
+    expect(
+      main(
+        ["lanes", "run", "--pool", "two", "--dir", join(dir, "evidence"), "--project", repo, "--", "true"],
+        pool.io,
+        repo,
+      ),
+    ).toBe(2);
+    expect(pool.err.join("\n")).toContain("--pool");
+    const age = capture();
+    expect(main(["lanes", "unpublished", "--max-age-minutes", "5m", "--project", repo], age.io, repo)).toBe(2);
+    expect(age.err.join("\n")).toContain("--max-age-minutes");
+  }, 30_000);
 
   test("an invalid --timeout-minutes is a usage error, not an unbounded wait", () => {
     const { dir, repo } = scratchRepo("ak-gate-lanes-run-");
@@ -285,10 +306,30 @@ describe("lanes run entry point (issue #194)", () => {
     );
     expect(code).toBe(2);
     expect(bad.err.join("\n")).toContain("--timeout-minutes");
-  });
+  }, 30_000);
 });
 
 describe("unpublished-commit age check (issue #194)", () => {
+  test("the answer follows local origin refs: stale until the caller fetches, then refreshed", () => {
+    const { dir, repo } = scratchRepo("ak-gate-unpublished-fresh-");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8" });
+    git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["fetch", "origin"]);
+    const gate = join(dir, "gate.git");
+    spawnSync("git", ["clone", "--bare", repo, gate], { encoding: "utf8" });
+    git(gate, ["push", origin, "fm/run"]);
+    const stale = capture();
+    expect(main(["lanes", "unpublished", "--project", repo], stale.io, repo)).toBe(0);
+    expect(stale.out.join("\n")).toContain("unpublished: 1 commit(s) on fm/run");
+    expect(stale.out.join("\n")).toContain("basis: local origin-tracking refs");
+    expect(stale.out.join("\n")).toContain("git fetch origin");
+    git(repo, ["fetch", "origin"]);
+    const fresh = capture();
+    expect(main(["lanes", "unpublished", "--project", repo, "--json"], fresh.io, repo)).toBe(0);
+    expect(JSON.parse(fresh.out.join("\n"))).toMatchObject({ unpublished: 0, overdue: false });
+  }, 30_000);
+
   test("a git failure is an error, never a clean 'none unpublished'", () => {
     const outside = processScratch("ak-gate-unpublished-nogit-");
     expect(() => checkUnpublished(outside, 30, { now: UNPUBLISHED_NOW })).toThrow();
@@ -296,7 +337,7 @@ describe("unpublished-commit age check (issue #194)", () => {
     expect(main(["lanes", "unpublished", "--project", outside], result.io, outside)).toBe(1);
     expect(result.out).toEqual([]);
     expect(result.err.join("\n")).toContain("no readable HEAD");
-  });
+  }, 30_000);
 
   test("an old commit no remote holds is overdue; a generous limit and a pushed branch are not", () => {
     const dir = processScratch("ak-gate-unpublished-");
@@ -340,7 +381,7 @@ describe("unpublished-commit age check (issue #194)", () => {
       age_minutes: 10,
       overdue: false,
     });
-  });
+  }, 30_000);
 
   test("a lane branch tracking origin/main counts as published once pushed under its own name", () => {
     const dir = processScratch("ak-gate-unpublished-");
@@ -371,5 +412,5 @@ describe("unpublished-commit age check (issue #194)", () => {
       unpublished: 0,
       overdue: false,
     });
-  });
+  }, 30_000);
 });

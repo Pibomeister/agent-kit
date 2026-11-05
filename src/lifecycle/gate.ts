@@ -1989,6 +1989,7 @@ export const LIFECYCLE_USAGE = [
   "  command, and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes unpublished` alerts",
   "  when the oldest commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES",
   "  (default 30); it reports only and never pushes, so publication still enters the configured pipeline promptly.",
+  "  It reads local origin-tracking refs and never fetches: run `git fetch origin` first for a current answer.",
   "",
   "  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`",
   "  and the tool runs it; ship-preflight reads the merge gate live, and with --pr <n> records final ship success.",
@@ -2259,18 +2260,25 @@ export function main(
   }
   if (sub.startsWith("lanes ")) {
     if (sub === "lanes unpublished") {
+      let maxAge: number;
+      try {
+        maxAge = resolveMaxAgeMinutes(str("max-age-minutes"));
+      } catch (error) {
+        io.err(`ak lifecycle ${sub}: ${error instanceof Error ? error.message : String(error)}`);
+        return 2;
+      }
       let result: ReturnType<typeof checkUnpublished>;
       try {
-        result = checkUnpublished(project, resolveMaxAgeMinutes(str("max-age-minutes")));
+        result = checkUnpublished(project, maxAge);
       } catch (error) {
         io.err(`ak lifecycle ${sub}: ${error instanceof Error ? error.message : String(error)}`);
         return 1;
       }
       if (flags.has("json")) io.out(JSON.stringify(result, null, 2));
-      else if (result.unpublished === 0) io.out(`unpublished: none on ${result.branch}`);
+      else if (result.unpublished === 0) io.out(`unpublished: none on ${result.branch} (basis: ${result.basis})`);
       else
         io.out(
-          `unpublished: ${result.unpublished} commit(s) on ${result.branch}; oldest ${result.oldest_at ?? ""} is ${result.age_minutes ?? 0}m old (limit ${result.max_age_minutes}m)`,
+          `unpublished: ${result.unpublished} commit(s) on ${result.branch}; oldest ${result.oldest_at ?? ""} is ${result.age_minutes ?? 0}m old (limit ${result.max_age_minutes}m; basis: ${result.basis})`,
         );
       if (result.overdue) {
         io.err(
@@ -2312,10 +2320,17 @@ export function main(
       return 2;
     }
     const timeoutMs = timeoutFlag === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Number(timeoutFlag) * 60_000);
+    let pool: number | undefined;
+    try {
+      pool = resolvePool(str("pool"));
+    } catch (error) {
+      io.err(`ak lifecycle lanes run: ${error instanceof Error ? error.message : String(error)}`);
+      return 2;
+    }
     let announced = false;
     const label = str("label");
     const acquireOptions: Parameters<typeof acquireLane>[2] = {
-      pool: resolvePool(str("pool")),
+      pool,
       timeoutMs,
       onWait: (reason, waitedMs) => {
         if (announced) return;

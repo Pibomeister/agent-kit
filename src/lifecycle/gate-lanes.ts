@@ -28,7 +28,9 @@
  *   `no-mistakes` never counts as published) and alerts when its age exceeds a configurable limit
  *   (`--max-age-minutes <n>` / `AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES`, default 30).
  *   It only reports: publication means entering the configured pipeline promptly,
- *   never bypassing it with a direct push from here.
+ *   never bypassing it with a direct push from here. It reads the local
+ *   `refs/remotes/origin/*` refs and never fetches, so its answer is only as fresh as
+ *   the caller's last `git fetch origin`; it says so rather than guess.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -481,13 +483,20 @@ export interface UnpublishedResult {
   age_minutes?: number;
   max_age_minutes: number;
   overdue: boolean;
+  basis: string;
 }
+
+/** What the unpublished answer is measured against; no network call refreshes it. */
+export const UNPUBLISHED_BASIS =
+  "local origin-tracking refs (refs/remotes/origin/*); freshness unknown, run `git fetch origin` first for a current answer";
 
 /**
  * The oldest commit on this branch that `origin` does not hold, and whether it is overdue.
  * A commit counts as published only when an `origin` remote-tracking ref contains it, so
  * a gate remote's refs cannot mask work still queued before origin; entering the
  * configured pipeline is the publication path this check guards, so it never pushes.
+ * It never fetches either: a branch the gate published since the last `git fetch origin`
+ * still counts until the caller refreshes the local refs.
  */
 export function checkUnpublished(
   project: string,
@@ -508,7 +517,8 @@ export function checkUnpublished(
   const log = git(project, ["log", "--format=%ct", "HEAD", "--not", `--remotes=${PUBLICATION_REMOTE}`]);
   if (log.code !== 0) throw new Error(`git log failed in ${project}: ${log.stderr}`);
   const stamps = log.text === "" ? [] : log.text.split("\n").map(Number).filter(Number.isFinite);
-  if (stamps.length === 0) return { branch, unpublished: 0, max_age_minutes: maxAgeMinutes, overdue: false };
+  if (stamps.length === 0)
+    return { branch, unpublished: 0, max_age_minutes: maxAgeMinutes, overdue: false, basis: UNPUBLISHED_BASIS };
   const oldestSeconds = Math.min(...stamps);
   const ageMinutes = Math.max(0, Math.floor((nowMs / 1000 - oldestSeconds) / 60));
   return {
@@ -518,10 +528,11 @@ export function checkUnpublished(
     age_minutes: ageMinutes,
     max_age_minutes: maxAgeMinutes,
     overdue: ageMinutes > maxAgeMinutes,
+    basis: UNPUBLISHED_BASIS,
   };
 }
 
-/** Pool size from flag, then `AK_GATE_LANES_POOL`; absent or invalid means no cap. */
+/** Pool size from flag, then `AK_GATE_LANES_POOL`; absent or `0` means no cap, anything else invalid throws. */
 export function resolvePool(
   flag: string | undefined,
   env: string | undefined = process.env.AK_GATE_LANES_POOL,
@@ -529,10 +540,14 @@ export function resolvePool(
   const raw = flag ?? env;
   if (raw === undefined || raw === "") return undefined;
   const value = Number(raw);
-  return Number.isInteger(value) && value > 0 ? value : undefined;
+  if (!Number.isInteger(value) || value < 0)
+    throw new Error(
+      `${flag !== undefined ? "--pool" : "AK_GATE_LANES_POOL"} must be a whole number of lanes (0 for no cap), got ${raw}`,
+    );
+  return value === 0 ? undefined : value;
 }
 
-/** Unpublished-age limit from flag, then `AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES`, then the default. */
+/** Unpublished-age limit from flag, then `AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES`, then the default; an invalid value throws. */
 export function resolveMaxAgeMinutes(
   flag: string | undefined,
   env: string | undefined = process.env.AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES,
@@ -540,7 +555,11 @@ export function resolveMaxAgeMinutes(
   const raw = flag ?? env;
   if (raw === undefined || raw === "") return DEFAULT_UNPUBLISHED_MAX_AGE_MINUTES;
   const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_UNPUBLISHED_MAX_AGE_MINUTES;
+  if (!Number.isFinite(value) || value < 0)
+    throw new Error(
+      `${flag !== undefined ? "--max-age-minutes" : "AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES"} must be a non-negative number of minutes, got ${raw}`,
+    );
+  return value;
 }
 
 export function formatDuration(ms: number): string {
