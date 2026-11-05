@@ -1,0 +1,95 @@
+# A hand-written guard policy for tests/guard/. Every value is invented for the
+# tests: no adopting project's paths, rules or articles appear here. It
+# validates against schemas/guard-policy.schema.json and loads through
+# src/guard/policy.ts.
+version: 0.1.0
+
+protected_paths:
+  - id: protected.tests
+    category: tests
+    globs: ["tests/**", "**/*.test.ts", "**/__snapshots__/**"]
+    reason: Tests are protected unless the ticket scope names them; change the code, not the test
+  - id: protected.ci-config
+    category: ci-config
+    globs: [".github/workflows/**", ".gitlab-ci.yml"]
+    reason: CI configuration is protected; change it in a reviewed change of its own
+  - id: protected.lint-config
+    category: lint-config
+    globs: [".oxlintrc.json", ".eslintrc*", "biome.json"]
+    reason: Lint configuration is protected; fix the code the rule reports
+  - id: protected.architecture-config
+    category: architecture-config
+    globs: [".dependency-cruiser.{js,cjs}", "architecture/**"]
+    reason: Architecture rules are protected; fix the dependency instead
+  - id: protected.baselines
+    category: baselines
+    globs: ["tools/oxlint/baseline.json", "**/*.baseline.json"]
+    reason: Baselines only shrink, and only through their own command
+  - id: protected.codeowners
+    category: codeowners
+    globs: ["CODEOWNERS", ".github/CODEOWNERS"]
+    reason: Ownership is protected
+  - id: protected.hook-config
+    category: hook-config
+    globs: [".claude/settings.json", ".codex/hooks.json", ".husky/**", "lefthook.yml"]
+    reason: Hook configuration is protected; a hook that guards the run cannot be edited by it
+  - id: protected.registry
+    category: registry
+    globs: ["constitution/registry/**"]
+    reason: The constitution registry changes only through an amendment
+
+destructive_commands:
+  - id: destructive.rm-recursive-force
+    program: rm
+    all_of: [["-r", "-R", "--recursive"], ["-f", "--force"]]
+    reason: A recursive forced delete is refused; delete the specific files
+  - id: destructive.git-push-force
+    program: git
+    subcommand: push
+    all_of: [["--force", "-f", "--force-with-lease", "--force-if-includes", "--mirror", "--delete", "-d"]]
+    reason: A force push or remote delete rewrites shared history
+  - id: destructive.git-reset-hard
+    program: git
+    subcommand: reset
+    all_of: [["--hard"]]
+    reason: A hard reset discards work in the tree
+  - id: destructive.git-clean
+    program: git
+    subcommand: clean
+    all_of: [["-f", "--force"]]
+    reason: git clean deletes untracked files
+  - id: destructive.mkfs
+    program: mkfs
+    reason: Formatting a device is never a coding task
+
+secret_paths:
+  - id: secret.dotenv
+    globs: ["**/.env", "**/.env.local", "**/.env.*.local", "**/.env.production"]
+    reason: Environment files hold credentials; read the example file instead
+  - id: secret.private-key
+    globs: ["**/*.pem", "**/id_rsa", "**/id_ed25519", "**/.ssh/**"]
+    reason: Private keys are never read
+  - id: secret.cloud-credentials
+    globs: ["**/.aws/credentials", "**/.config/gcloud/**"]
+    reason: Cloud credentials are never read
+
+path_tiers:
+  - id: tier.migrations
+    tier: ask-first
+    globs: ["db/migrations/**"]
+    reason: Migrations need a human's grant
+  - id: tier.vendor
+    tier: never
+    globs: ["vendor/**"]
+    reason: Vendored code is never edited in place
+
+governed_paths:
+  - id: governed.money
+    globs: ["src/billing/**", "src/ledger/**"]
+    articles:
+      - id: EXAMPLE-001
+        version: "1"
+        rule: Amounts are integer minor units, never floating point
+      - id: EXAMPLE-004
+        version: "2"
+        rule: Every ledger write is idempotent under retry
