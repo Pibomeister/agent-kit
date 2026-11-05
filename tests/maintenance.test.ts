@@ -321,12 +321,12 @@ describe("ak doctor checks", () => {
     });
     expect(valid(parsed)).toBe(true);
     expect(rejectedUpdate.status).toBe(2);
-    expect(rejectedUpdate.stderr).toContain("Usage: ak doctor [--json] | ak update");
+    expect(rejectedUpdate.stderr).toContain("Usage: ak doctor [--json] [--lessons <dir>] | ak update");
   });
 
   test("the repo CLI forwards maintenance flags instead of running a real update", () => {
     expect(repoUpdate.status).toBe(2);
-    expect(repoUpdate.stderr).toContain("Usage: ak doctor [--json] | ak update");
+    expect(repoUpdate.stderr).toContain("Usage: ak doctor [--json] [--lessons <dir>] | ak update");
   });
 
   test("the packaged CLI dispatches ak council run instead of the generic usage", () => {
