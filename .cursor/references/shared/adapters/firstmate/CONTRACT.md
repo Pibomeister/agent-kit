@@ -8,7 +8,7 @@ and retains the deprecated patched binding interface for existing users (ruling
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
 dispatcher, no watcher and no merge path, and it never writes Firstmate's state files. The runner
 and run ledger live in `src/runner/`; this binding adapter does not start that service or dispatch
-its supervisor seats. Firstmate may operate it separately through `.cursor/bin/ak runner` as described in
+its supervisor seats. Firstmate may operate it separately through `ak runner` as described in
 [`adapters/runner-contract/CONTRACT.md`](../runner-contract/CONTRACT.md) §9.
 
 ## Stock Firstmate path
@@ -187,7 +187,7 @@ that opened run, and the run record keeps the binding's run id and evidence stor
 worker's own `check` looks for the binding's grant records. Then every
 grant the run needed must have left a grant record naming this binding by path and by the hash the ledger registered,
 and the binding must still hash to it. Any refusal prints `refused: …` lines and a `needs-decision`
-hint, exits 1, and prints no `done` line. `.cursor/bin/ak firstmate status <binding> --verify` runs the same audit
+hint, exits 1, and prints no `done` line. `ak firstmate status <binding> --verify` runs the same audit
 on its own, for a supervisor that wants to check a `done` it was handed; with patch 0002 Firstmate
 runs it on every agent-kit `done:` (§3). A knowledgebase store fails
 closed here too: the audit cannot read it, so it refuses.
@@ -244,7 +244,7 @@ Every grant also requires that the binding validates against its schema; that it
 the worktree the grant is asked from and outside the bound project; and that the pinned bundle still
 hashes to the bound hash. A same-user worker can still run bind itself or edit the ledger, which
 the brief forbids; the child guard's denial of both is a tripwire for subagents, not a boundary, and
-does not cover the main thread. `.cursor/bin/ak firstmate status complete` and `status --verify` detect it by
+does not cover the main thread. `.cursor/bin/ak firstmate status complete` and the supervisor's `ak firstmate status --verify` detect it by
 comparing each kept grant record's `binding_sha256` and `binding` path with the ledger entry (§4); a
 worker that rewrites the ledger and the grant records consistently still passes. Preventing it needs the
 runner's validated grants (ADR-0004). Any other operation, merge and scope changes included, is

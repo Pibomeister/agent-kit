@@ -382,7 +382,7 @@ Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
 
 Request shapes and task setup are in `CLI.md`. This section states the trust boundary.
 
-`.cursor/bin/ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id>
+`ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id>
 --admin-token-file <path> --seat-config <path> --verify-config <path> --effect-config <path>` starts a
 task-scoped service. Firstmate owns the process, two distinct 32-character-or-longer tokens, the
 active charter, the seat configuration and the state directory. The supervisor token lives in a

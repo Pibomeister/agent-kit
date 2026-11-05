@@ -111,11 +111,13 @@ export function rewriteExplicitStarts(
  * source CLI, not the overlay binary. `doctor` and `update` stay `ak`: they do
  * not manage Cursor. Supervisor-side Firstmate verbs stay `ak`: Firstmate runs
  * bind, install, remove, preflight and brief from its own ak, and child-guard.sh
- * treats install and remove as supervisor-side, like bind. Worker-side grant,
+ * treats install and remove as supervisor-side, like bind. `firstmate status`
+ * with `--verify` stays `ak`: Firstmate audits a done line with it. `runner`
+ * stays `ak` except `runner call`, which workers issue. Worker-side grant,
  * status and seat-judge still rewrite.
  */
 const CURSOR_AK_VERBS =
-  "firstmate(?! (?:bind|install|remove|preflight|brief)\\b)|delegation|runner|learn|kb|guard|lifecycle|tracker|council";
+  "firstmate(?! (?:bind|install|remove|preflight|brief)\\b)(?! status(?: [^\\n`]+)? --verify\\b)|delegation|runner call|learn|kb|guard|lifecycle|tracker|council";
 
 /**
  * Claude Code and Codex adapter contracts describe those hosts' CLIs, including

@@ -113,6 +113,31 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     expect(
       rewriteAkCommands("`ak learn setup wire` registers `ak learn hook stop`", "cursor", "adapters/codex/CONTRACT.md"),
     ).toBe("`ak learn setup wire` registers `ak learn hook stop`");
+    expect(rewriteAkCommands("`ak runner serve` and `ak runner call status`", "cursor")).toBe(
+      "`ak runner serve` and `.cursor/bin/ak runner call status`",
+    );
+    expect(rewriteAkCommands("through `ak runner` as described", "cursor")).toBe("through `ak runner` as described");
+    expect(
+      rewriteAkCommands("`ak firstmate status <binding> --verify` and `ak firstmate status complete`", "cursor"),
+    ).toBe("`ak firstmate status <binding> --verify` and `.cursor/bin/ak firstmate status complete`");
+  });
+
+  test("Cursor overlay keeps supervisor-side commands on bare ak", () => {
+    const cursor = planBundle(ctx, "cursor", { profile: "all" });
+    const firstmateContract =
+      cursor.files.get(".cursor/references/shared/adapters/firstmate/CONTRACT.md")?.contents ?? "";
+    expect(firstmateContract).toContain("through `ak runner`");
+    expect(firstmateContract).not.toContain("through `.cursor/bin/ak runner`");
+    expect(firstmateContract).toContain("`ak firstmate status <binding> --verify`");
+    expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate status <binding> --verify`");
+    expect(firstmateContract).toContain("`.cursor/bin/ak firstmate status complete`");
+    expect(firstmateContract).toContain("the supervisor's `ak firstmate status --verify`");
+    expect(firstmateContract).not.toContain("the supervisor's `.cursor/bin/ak firstmate status --verify`");
+    const runnerContract =
+      cursor.files.get(".cursor/references/shared/adapters/runner-contract/CONTRACT.md")?.contents ?? "";
+    expect(runnerContract).toContain("`ak runner serve");
+    expect(runnerContract).not.toContain("`.cursor/bin/ak runner serve");
+    expect(runnerContract).toContain("`.cursor/bin/ak runner call");
   });
 
   test("the Cursor bundle is the catalog in a Cloud-discoverable layout", () => {

@@ -244,7 +244,7 @@ Every grant also requires that the binding validates against its schema; that it
 the worktree the grant is asked from and outside the bound project; and that the pinned bundle still
 hashes to the bound hash. A same-user worker can still run bind itself or edit the ledger, which
 the brief forbids; the child guard's denial of both is a tripwire for subagents, not a boundary, and
-does not cover the main thread. `ak firstmate status complete` and `status --verify` detect it by
+does not cover the main thread. `ak firstmate status complete` and the supervisor's `ak firstmate status --verify` detect it by
 comparing each kept grant record's `binding_sha256` and `binding` path with the ledger entry (§4); a
 worker that rewrites the ledger and the grant records consistently still passes. Preventing it needs the
 runner's validated grants (ADR-0004). Any other operation, merge and scope changes included, is
