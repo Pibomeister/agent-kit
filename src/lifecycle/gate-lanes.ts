@@ -74,7 +74,7 @@ export interface AcquireOptions {
   pid?: number;
   host?: string;
   sleep?: (ms: number) => void;
-  onWait?: (holder: LaneHolder | undefined, waitedMs: number) => void;
+  onWait?: (reason: string, waitedMs: number) => void;
 }
 
 export type AcquireResult =
@@ -390,22 +390,19 @@ export function acquireLane(dir: string, identity: LaneIdentity, options: Acquir
             };
           }
           const waited = at - started;
+          const reason =
+            laneHolder !== undefined
+              ? `lane ${identity.lane} (${identity.branch}) is held by pid ${laneHolder.pid} on ${laneHolder.host} since ${laneHolder.acquired_at}`
+              : poolFull
+                ? `gate pool is full (${holders.length}/${options.pool ?? 0} lanes holding)`
+                : `lane ${identity.lane} (${identity.branch}) has an unreadable holder record at ${holderPath}`;
           if (waited >= timeoutMs) {
-            const failure: Extract<AcquireResult, { ok: false }> = {
-              ok: false,
-              reason:
-                laneHolder !== undefined
-                  ? `lane ${identity.lane} (${identity.branch}) is held by pid ${laneHolder.pid} on ${laneHolder.host} since ${laneHolder.acquired_at}`
-                  : poolFull
-                    ? `gate pool is full (${holders.length}/${options.pool ?? 0} lanes holding)`
-                    : `lane ${identity.lane} (${identity.branch}) has an unreadable holder record at ${holderPath}`,
-              waited_ms: waited,
-            };
+            const failure: Extract<AcquireResult, { ok: false }> = { ok: false, reason, waited_ms: waited };
             if (laneHolder !== undefined) failure.holder = laneHolder;
             return failure;
           }
           registerWaiter(at);
-          options.onWait?.(laneHolder, waited);
+          options.onWait?.(reason, waited);
         } finally {
           unlock();
         }

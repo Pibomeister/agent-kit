@@ -164,7 +164,16 @@ got.release();
     mkdirSync(holdersDir(dir), { recursive: true });
     writeFileSync(join(holdersDir(dir), `${laneKey(laneA)}.json`), "{ truncated");
     const clock = fakeClock();
-    const got = acquireLane(dir, laneA, { now: clock.now, sleep: clock.sleep, pollMs: 100, timeoutMs: 1_000 });
+    const waits: string[] = [];
+    const got = acquireLane(dir, laneA, {
+      now: clock.now,
+      sleep: clock.sleep,
+      pollMs: 100,
+      timeoutMs: 1_000,
+      onWait: (reason) => waits.push(reason),
+    });
+    expect(waits.length).toBeGreaterThan(0);
+    expect(waits[0]).toContain("unreadable holder record");
     expect(got.ok).toBe(false);
     if (!got.ok) expect(got.reason).toContain("unreadable holder record");
   });

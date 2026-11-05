@@ -2312,11 +2312,11 @@ export function main(
     const acquireOptions: Parameters<typeof acquireLane>[2] = {
       pool: resolvePool(str("pool")),
       timeoutMs,
-      onWait: (holder, waitedMs) => {
+      onWait: (reason, waitedMs) => {
         if (announced) return;
         announced = true;
         io.err(
-          `queued: lane ${identity.lane} (${identity.branch}) waiting${holder === undefined ? " for a pool slot" : ` behind pid ${holder.pid} on ${holder.host}`}; waited ${Math.floor(waitedMs / 1000)}s so far (see: ak lifecycle lanes status)`,
+          `queued: lane ${identity.lane} (${identity.branch}) waiting: ${reason}; waited ${Math.floor(waitedMs / 1000)}s so far (see: ak lifecycle lanes status)`,
         );
       },
     };
