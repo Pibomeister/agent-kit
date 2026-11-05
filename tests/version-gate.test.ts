@@ -188,6 +188,28 @@ describe("bundle version gate", () => {
     expect(run.status).toBe(0);
   });
 
+  test("with --require-release-tag, an unchanged bundle passes while the tag sits at an older commit", () => {
+    const work = gateWork(["0.1.0", "same"], ["0.1.0", "same"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "release");
+    git(work, "tag", "v0.1.0");
+    writeFileSync(join(work, "later.txt"), "later\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged without a bump");
+    const run = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+  });
+
+  test("with --require-release-tag, a first publish without the tag is refused", () => {
+    const work = gateWork(null, ["0.1.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged");
+    const run = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("release tag v0.1.0 is missing");
+  });
+
   test("with --require-release-tag, a first publish with a matching tag still passes", () => {
     const work = gateWork(null, ["0.1.0", "new"]);
     git(work, "add", "-A");

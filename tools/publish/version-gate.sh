@@ -3,9 +3,10 @@
 # a package.json version that disagrees with the catalog version the bundle carries, and any
 # failure to read origin/published. Only an absent published branch counts as a first publish.
 # On success refs/remotes/origin/published is current, or deleted when there is no branch.
-# With --require-release-tag (the publication path, not pull-request CI) it also refuses when
-# the release tag v<version> is missing or points at a commit other than HEAD, the merged
-# commit being published; the tag is read locally first, then on origin.
+# With --require-release-tag (the publication path, not pull-request CI) it also refuses, when
+# the bundle would be published (a first publish or changed content), a release tag v<version>
+# that is missing or points at a commit other than HEAD, the merged commit being published; the
+# tag is read locally first, then on origin. An unchanged bundle publishes nothing and needs no tag.
 # Usage, from the repository root: tools/publish/version-gate.sh <built-dist> [--require-release-tag]
 set -eu
 current="$1"
@@ -62,7 +63,8 @@ if (currentVersion !== packagedVersion) {
 console.log(currentVersion);
 JS
 )"
-if [ "$require_release_tag" -eq 1 ]; then
+require_release_tag_at_head() {
+  [ "$require_release_tag" -eq 1 ] || return 0
   release_tag="v$current_version"
   merged_commit="$(git rev-parse HEAD 2>/dev/null || true)"
   if [ -z "$merged_commit" ]; then
@@ -85,11 +87,12 @@ if [ "$require_release_tag" -eq 1 ]; then
     echo "refused: release tag $release_tag points at $tagged_commit, not the merged commit $merged_commit" >&2
     exit 1
   fi
-fi
+}
 found=0
 git ls-remote --exit-code --heads origin published >/dev/null || found=$?
 if [ "$found" -eq 2 ]; then
   git update-ref -d refs/remotes/origin/published
+  require_release_tag_at_head
   echo "No published branch yet: first publish"
   exit 0
 fi
@@ -114,4 +117,7 @@ fi
 if [ "$diff_rc" -eq 1 ] && ! version_greater "$current_version" "$previous_version"; then
   echo "Bundle changed without a catalog.yaml and package.json version bump" >&2
   exit 1
+fi
+if [ "$diff_rc" -eq 1 ]; then
+  require_release_tag_at_head
 fi
