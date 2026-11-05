@@ -156,10 +156,10 @@ describe("cursor ak launcher", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "ak"), cursorAkLauncher(), { mode: 0o755 });
     writeFileSync(join(dir, "ak.js"), "placeholder\n");
-    const result = spawnSync("sh", ["ak", "--version"], {
+    const result = spawnSync("/bin/sh", ["ak", "--version"], {
       encoding: "utf8",
       cwd: dir,
-      env: { HOME: home, PATH: `${dir}:/bin:${noBunPath()}`, TERM: "dumb" },
+      env: { HOME: home, PATH: `${dir}:${noBunPath()}`, TERM: "dumb" },
     });
     expect(result.status, result.stderr).toBe(0);
     expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(`HOME ${join(dir, "ak.js")} --version`);

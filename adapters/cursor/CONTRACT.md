@@ -37,7 +37,8 @@ dist/cursor/
 │   ├── skills/<id>/references/
 │   ├── agents/<role>.md       # custom subagents for catalog roles
 │   ├── rules/ak-super-review.mdc
-│   ├── roles/, references/, schemas/, templates/, licenses/, bin/, catalog.yaml
+│   ├── roles/, references/, schemas/, templates/, licenses/, adapters/, bin/, catalog.yaml
+│   └── bin/ak.js              # bundled CLI; POSIX launcher is bin/ak
 └── AGENTS.md                  # merge into the consuming repo root
 ```
 

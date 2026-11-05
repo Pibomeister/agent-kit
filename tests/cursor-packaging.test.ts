@@ -258,6 +258,10 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
       "`ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex`",
     );
     expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate preflight");
+    expect(firstmateContract).toContain("`firstmate status <binding> --verify` from its own `ak`");
+    expect(firstmateContract).not.toContain(
+      "Firstmate itself runs `.cursor/bin/ak firstmate status <binding> --verify`",
+    );
     const claudeContract =
       cursor.files.get(".cursor/references/shared/adapters/claude-code/CONTRACT.md")?.contents ?? "";
     expect(claudeContract).toContain("`ak learn setup wire`");
