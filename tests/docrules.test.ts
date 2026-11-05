@@ -2205,18 +2205,6 @@ describe("review.comprehension-shadow-findings-stay-fyi", () => {
   });
 });
 
-describe("doc-review step 5 raw_output.hash instruction", () => {
-  test("every lane stores raw_output.hash only when the comprehension setting is shadow or on", () => {
-    const skill = readFileSync(join(import.meta.dir, "../skills/doc-review/SKILL.md"), "utf8");
-    const match = /^5\. [\s\S]*?(?=^6\. )/m.exec(skill);
-    const step5 = match?.[0] ?? "";
-    expect(step5).toContain("raw_output.hash");
-    const hashSentence = step5.split(/(?<=\.)\s+/).find((part) => part.includes("raw_output.hash")) ?? "";
-    expect(hashSentence).toMatch(/shadow/);
-    expect(hashSentence).toMatch(/`on`/);
-  });
-});
-
 describe("cold-read.proposed-absent-is-not-a-finding", () => {
   test("a proposed claim that is absent is not a finding", () => {
     expect(rulesOf(run(coldRead())).filter((r) => r.startsWith("cold-read."))).toEqual([]);

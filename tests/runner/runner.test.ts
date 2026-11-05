@@ -712,7 +712,7 @@ describe("runner guards", () => {
         command: [
           "bun",
           "-e",
-          "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1], JSON.stringify(e)); console.log(JSON.stringify({run:e.run,key:e.key}));",
+          "const e=JSON.parse(await Bun.stdin.text()); const t=process.argv[1]+'.tmp'; await Bun.write(t, JSON.stringify(e)); (await import('node:fs')).renameSync(t, process.argv[1]); console.log(JSON.stringify({run:e.run,key:e.key}));",
           log,
         ],
       }),
