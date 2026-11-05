@@ -11,6 +11,12 @@
  * An opened run has no fork-point bound and prints no note. A run never closed by `ship-preflight`
  * stays the branch's default until a new `open`, so every new task opens a new run.
  *
+ * Recording `ship-preflight` in the legacy policy is judged the same way when the run is opened,
+ * unbound and its ticket declares criteria and named verification: it runs the pre-ship check for
+ * the exact head first and records nothing on a refusal. A run with no task-bound record, a
+ * Firstmate-bound run (audited by `firstmate status`), or a ticket declaring neither, keeps the
+ * route it had.
+ *
  * An opened run, or a check given `--evidence`, is also judged on evidence. `open` and
  * `record --gate verify --receipt` copy the ticket, each receipt and every artifact it lists into
  * `<store>/<run>/artifacts/` by content hash, and the v2 `verify` record holds references to them, not
@@ -1407,6 +1413,34 @@ function writeDecision(a: CheckArgs, decision: DecisionRecord): string {
   return path;
 }
 
+/**
+ * Whether the opened run's ticket declares the evidence a ship can be judged on: acceptance criteria
+ * and named verification, the two halves `evaluateEvidence` requires. A ticket declaring neither is
+ * the minimal-ticket route (a bypass span, a fixture), which ship-preflight leaves as it was.
+ */
+function ticketDeclaresEvidence(dir: string, run: string): boolean {
+  const record = readRunRecord(dir, run);
+  if (record === undefined) return false;
+  const path = artifactPath(dir, run, record.ticket.hash);
+  if (path === undefined || !existsSync(path)) return false;
+  let ticket: ReturnType<typeof object>;
+  try {
+    ticket = object(JSON.parse(new TextDecoder().decode(readFileSync(path))));
+  } catch {
+    return false;
+  }
+  if (ticket === undefined) return false;
+  const criteria = (Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : []).filter((value) => {
+    const criterion = object(value);
+    return criterion !== undefined && nonempty(criterion.id) && AC.test(criterion.id);
+  });
+  const checks = (Array.isArray(ticket.verification) ? ticket.verification : []).filter((value) => {
+    const check = object(value);
+    return check !== undefined && nonempty(check.id) && KEBAB.test(check.id);
+  });
+  return criteria.length > 0 && checks.length > 0;
+}
+
 export function checkGates(a: CheckArgs): CheckResult {
   let head = a.head;
   if (head === undefined) {
@@ -2707,6 +2741,26 @@ export function main(
     }
     if (policy !== undefined && gate === "ship-preflight")
       return shipUnattended(io, dir, run, project, policy, str("pr"));
+    // The ship handoff itself judges the receipts, not only a `check` a caller remembered to run:
+    // an opened run whose ticket declares evidence may not record ship-preflight (and so may not
+    // close, merge or publish) until the pre-ship gates hold for the exact head. Runs with no
+    // task-bound record, and opened runs whose ticket declares no criteria or named verification,
+    // keep the routes they had.
+    // A Firstmate-bound run is audited by `firstmate status` against its binding and grants;
+    // that audit, not this record, is its merge boundary, so bound runs keep that route.
+    if (
+      policy === undefined &&
+      gate === "ship-preflight" &&
+      readRunRecord(dir, run)?.binding_run_id === undefined &&
+      ticketDeclaresEvidence(dir, run)
+    ) {
+      const pre = checkGates({ dir, run, gates: PRE_SHIP_GATES, project, forkBound });
+      if (!pre.ok) {
+        for (const refusal of pre.refusals) io.err(`ak lifecycle record: ${refusal}`);
+        return 1;
+      }
+      for (const note of pre.notes) io.err(note);
+    }
     const recordArgs: RecordArgs = {
       dir,
       run,

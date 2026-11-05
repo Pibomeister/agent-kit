@@ -3,9 +3,19 @@
 # a package.json version that disagrees with the catalog version the bundle carries, and any
 # failure to read origin/published. Only an absent published branch counts as a first publish.
 # On success refs/remotes/origin/published is current, or deleted when there is no branch.
-# Usage, from the repository root: tools/publish/version-gate.sh <built-dist>
+# With --require-release-tag (the publication path, not pull-request CI) it also refuses when
+# the release tag v<version> is missing or points at a commit other than HEAD, the merged
+# commit being published; the tag is read locally first, then on origin.
+# Usage, from the repository root: tools/publish/version-gate.sh <built-dist> [--require-release-tag]
 set -eu
 current="$1"
+require_release_tag=0
+if [ "${2:-}" = "--require-release-tag" ]; then
+  require_release_tag=1
+elif [ -n "${2:-}" ]; then
+  echo "refused: unknown argument $2; expected --require-release-tag" >&2
+  exit 1
+fi
 manifest=claude-code/.claude-plugin/plugin.json
 version() { node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$1"; }
 version_greater() {
@@ -52,6 +62,30 @@ if (currentVersion !== packagedVersion) {
 console.log(currentVersion);
 JS
 )"
+if [ "$require_release_tag" -eq 1 ]; then
+  release_tag="v$current_version"
+  merged_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+  if [ -z "$merged_commit" ]; then
+    echo "refused: cannot read HEAD, so the merged commit the release tag must match is unknown" >&2
+    exit 1
+  fi
+  tagged_commit="$(git rev-parse -q --verify "refs/tags/$release_tag^{commit}" 2>/dev/null || true)"
+  if [ -z "$tagged_commit" ]; then
+    remote_tags="$(git ls-remote origin "refs/tags/$release_tag" "refs/tags/$release_tag^{}" 2>/dev/null || true)"
+    tagged_commit="$(printf '%s\n' "$remote_tags" | awk '$2 ~ /\^\{\}$/ { print $1; exit }')"
+    if [ -z "$tagged_commit" ]; then
+      tagged_commit="$(printf '%s\n' "$remote_tags" | awk 'NF { print $1; exit }')"
+    fi
+  fi
+  if [ -z "$tagged_commit" ]; then
+    echo "refused: release tag $release_tag is missing; create it at the merged commit $merged_commit before publishing" >&2
+    exit 1
+  fi
+  if [ "$tagged_commit" != "$merged_commit" ]; then
+    echo "refused: release tag $release_tag points at $tagged_commit, not the merged commit $merged_commit" >&2
+    exit 1
+  fi
+fi
 found=0
 git ls-remote --exit-code --heads origin published >/dev/null || found=$?
 if [ "$found" -eq 2 ]; then

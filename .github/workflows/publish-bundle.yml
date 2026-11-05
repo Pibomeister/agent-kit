@@ -33,7 +33,10 @@ jobs:
       - run: bun run ak build
       - run: bun run ak build --check
       - run: tools/cursor/self-host.sh --check
-      - run: tools/publish/version-gate.sh dist
+      # Publication, unlike pull-request CI, requires the release tag for this
+      # version at HEAD, the merged commit; without it this job refuses and the
+      # workflow is re-run by workflow_dispatch once the tag is pushed.
+      - run: tools/publish/version-gate.sh dist --require-release-tag
       - run: tar -czf published-bundle.tar.gz dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

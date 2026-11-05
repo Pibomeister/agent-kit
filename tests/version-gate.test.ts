@@ -155,6 +155,49 @@ describe("bundle version gate", () => {
     expect(run.stderr).toContain("package.json version 0.1.0 differ");
   });
 
+  test("with --require-release-tag, refuses publication when the release tag is missing", () => {
+    const work = gateWork(["0.1.0", "old"], ["0.2.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged");
+    const run = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("release tag v0.2.0 is missing");
+    expect(run.stderr).toContain("merged commit");
+  });
+
+  test("with --require-release-tag, refuses publication when the tag points at another commit", () => {
+    const work = gateWork(["0.1.0", "old"], ["0.2.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "tagged");
+    git(work, "tag", "v0.2.0");
+    writeFileSync(join(work, "later.txt"), "later\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged");
+    const run = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("release tag v0.2.0 points at");
+    expect(run.stderr).toContain("not the merged commit");
+  });
+
+  test("with --require-release-tag, accepts publication when the tag matches the merged commit", () => {
+    const work = gateWork(["0.1.0", "old"], ["0.2.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged");
+    git(work, "tag", "v0.2.0");
+    const run = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(run.status).toBe(0);
+  });
+
+  test("with --require-release-tag, a first publish with a matching tag still passes", () => {
+    const work = gateWork(null, ["0.1.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged");
+    git(work, "tag", "v0.1.0");
+    const run = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("first publish");
+  });
+
   test("refuses a non-string catalog version package.json does not match", () => {
     const run = gate(null, [{ unexpected: "manifest" }, "new"], { unexpected: "package" });
     expect(run.status).toBe(1);
