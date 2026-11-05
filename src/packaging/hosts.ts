@@ -109,10 +109,13 @@ export function rewriteExplicitStarts(
  * bundled maintenance CLI name `.cursor/bin/ak`, which finds the pin without
  * that PATH entry. `build`, `validate` and `attach` stay `ak`: those are the
  * source CLI, not the overlay binary. `doctor` and `update` stay `ak`: they do
- * not manage Cursor. `ak firstmate bind` stays: child-guard.sh matches that
- * token, and bind is supervisor-side.
+ * not manage Cursor. Supervisor-side Firstmate verbs stay `ak`: Firstmate runs
+ * bind, install, remove, preflight and brief from its own ak, and child-guard.sh
+ * treats install and remove as supervisor-side, like bind. Worker-side grant,
+ * status and seat-judge still rewrite.
  */
-const CURSOR_AK_VERBS = "firstmate(?! bind)|delegation|runner|learn|kb|guard|lifecycle|tracker|council";
+const CURSOR_AK_VERBS =
+  "firstmate(?! (?:bind|install|remove|preflight|brief)\\b)|delegation|runner|learn|kb|guard|lifecycle|tracker|council";
 
 /**
  * Claude Code and Codex adapter contracts describe those hosts' CLIs, including

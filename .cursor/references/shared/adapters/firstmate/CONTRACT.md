@@ -13,14 +13,14 @@ its supervisor seats. Firstmate may operate it separately through `.cursor/bin/a
 
 ## Stock Firstmate path
 
-`.cursor/bin/ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex` checks the
+`ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex` checks the
 unmodified home's normal brief and spawn commands, the checkout, host and skill bundle. It does not
 require patches 0001/0002, an upstream commit or no-mistakes `auto_fix` values. Without a runner
 socket it reports `mode: guided`; with a socket it reports `runner-candidate`, leaving the standing
 grant, seat and evidence checks to that run's runner.
 
 Firstmate starts a task-scoped runner outside the worker worktree and shared Git directory, then
-uses `.cursor/bin/ak firstmate brief` to render a section into an ordinary Firstmate brief. The task is spawned
+uses `ak firstmate brief` to render a section into an ordinary Firstmate brief. The task is spawned
 with an existing `--mode no-mistakes`, `direct-PR` or `local-only`, never an `agent-kit` mode. The
 worker reads the runner's start attestation, runs autopilot, and reports escalations through its
 normal status and inbox. Firstmate dispatches the two supervisor seats as separate ordinary
@@ -117,20 +117,20 @@ worker started is not independent of the worker (ruling `missing-supervisor-neve
 
 | Firstmate | What works |
 |---|---|
-| **Unmodified Firstmate** | The stock path above: normal brief, spawn, status, inbox and delivery mode, with runner-validated standing start. `.cursor/bin/ak firstmate preflight` passes compatibility checks without a patch; no runner means guided checkpoints |
+| **Unmodified Firstmate** | The stock path above: normal brief, spawn, status, inbox and delivery mode, with runner-validated standing start. `ak firstmate preflight` passes compatibility checks without a patch; no runner means guided checkpoints |
 | **Upstream `a5d78f8` with patches 0001 then 0002** | Delivery mode `agent-kit` for Claude Code workers with the child guard enforced; other harnesses with the guard declared but not enforced (§5). Everything in §2 and §4. With 0002, a `dry-run` binding's worker publishes nothing, and Firstmate itself runs `.cursor/bin/ak firstmate status <binding> --verify` on every agent-kit `done:` and keeps it only on exit 0 |
-| **Upstream `a5d78f8` with patch 0001 only** | Legacy patched mode is unavailable: `.cursor/bin/ak firstmate preflight --legacy-patched` refuses it and names 0002; the stock path above still works |
+| **Upstream `a5d78f8` with patch 0001 only** | Legacy patched mode is unavailable: `ak firstmate preflight --legacy-patched` refuses it and names 0002; the stock path above still works |
 | **Not wired by these patches** | Evidence published to a knowledgebase (this adapter publishes to none); automatic startup of the separate runner service and seat launchers; any Firstmate commit the patches do not apply to cleanly. A Firstmate supervisor can start the runner and pass its worker token and socket without changing this binding adapter |
 
 The patches are version-bound and form a stack: 0002 rewrites lines 0001 added, so it applies only
 on top of 0001. They are carried here, under the upstream commit they were made against, and never
-applied to a live Firstmate home by any `ak` command. `.cursor/bin/ak firstmate preflight --legacy-patched` checks that the home
+applied to a live Firstmate home by any `ak` command. `ak firstmate preflight --legacy-patched` checks that the home
 contains the upstream commit and that every patch in the stack is already applied, by reverse
 `git apply --check` from the top patch down. It peels each checked patch off in a scratch git index
 built from the home's working tree, so the home's own index and files are never changed.
-`.cursor/bin/ak firstmate install` refuses on a home where the stack is not applied.
+`ak firstmate install` refuses on a home where the stack is not applied.
 
-`.cursor/bin/ak firstmate install` writes into the home's `config/` only: `agent-kit.env`, which holds exactly
+`ak firstmate install` writes into the home's `config/` only: `agent-kit.env`, which holds exactly
 the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 `AK_FIRSTMATE_WORKER_SETTINGS`), which the patched parser refuses if it holds any other key but
 0002's optional `AK_FIRSTMATE_WORKER_BUDGET_USD` (install never writes that one; a maintainer adds it);
@@ -138,7 +138,7 @@ the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 single quotes, for the patch to replace with the task's bare binding path, and whose `Stop` hook runs
 `bun '<ak root>/tools/hooks/semantic-lint.ts' hook` with a 30-second timeout, the advisory semantic
 lint of `docs/semantic-lint.md`, holding no key and setting no switch; and, when an evidence store is given,
-`agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `.cursor/bin/ak firstmate remove` deletes
+`agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `ak firstmate remove` deletes
 exactly those.
 
 ---
@@ -217,7 +217,7 @@ The child guard can tell a child from its parent only because the host says so. 
 PreToolUse input carries `agent_id` and `agent_type` for a call made inside a subagent and omits
 both for the main thread; that was observed on Claude Code 2.1.281, and the guard acts on no other
 signal. A host version that stops sending those fields turns the guard into a no-op, so
-`.cursor/bin/ak firstmate preflight` names the host version it last verified and the guard's tests pin the
+`ak firstmate preflight` names the host version it last verified and the guard's tests pin the
 input shape.
 
 ---

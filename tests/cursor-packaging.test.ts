@@ -104,6 +104,9 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     expect(rewriteAkCommands("`ak firstmate bind` and `ak firstmate grant`", "cursor")).toBe(
       "`ak firstmate bind` and `.cursor/bin/ak firstmate grant`",
     );
+    expect(rewriteAkCommands("`ak firstmate preflight` and `ak firstmate grant`", "cursor")).toBe(
+      "`ak firstmate preflight` and `.cursor/bin/ak firstmate grant`",
+    );
     expect(rewriteAkCommands("`ak update` and `ak doctor` and `ak tracker check`", "cursor")).toBe(
       "`ak update` and `ak doctor` and `.cursor/bin/ak tracker check`",
     );
@@ -251,6 +254,10 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     expect(firstmateContract).not.toContain("`ak firstmate grant");
     expect(firstmateContract).toContain("`ak firstmate bind`");
     expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate bind`");
+    expect(firstmateContract).toContain(
+      "`ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex`",
+    );
+    expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate preflight");
     const claudeContract =
       cursor.files.get(".cursor/references/shared/adapters/claude-code/CONTRACT.md")?.contents ?? "";
     expect(claudeContract).toContain("`ak learn setup wire`");

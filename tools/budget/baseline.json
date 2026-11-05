@@ -1743,8 +1743,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21320,
-      "tokens": 5326
+      "bytes": 21212,
+      "tokens": 5299
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1803,8 +1803,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93211,
-      "tokens": 23275
+      "bytes": 93199,
+      "tokens": 23272
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
