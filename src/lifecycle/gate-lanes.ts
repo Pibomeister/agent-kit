@@ -23,8 +23,9 @@
  * - Stale recovery follows `src/learn/core/ledger.ts`: a lock carries its holder's
  *   pid; a lock whose pid is dead on this host is taken over by renaming it aside,
  *   never by deleting a path another process may have just claimed.
- * - `unpublished` reports the oldest commit on the current branch that no remote
- *   holds yet and alerts when its age exceeds a configurable limit
+ * - `unpublished` reports the oldest commit on the current branch that `origin`, the
+ *   canonical publication remote, does not hold yet (a gate remote such as
+ *   `no-mistakes` never counts as published) and alerts when its age exceeds a configurable limit
  *   (`--max-age-minutes <n>` / `AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES`, default 30).
  *   It only reports: publication means entering the configured pipeline promptly,
  *   never bypassing it with a direct push from here.
@@ -88,6 +89,9 @@ export type AcquireResult =
 
 const DEFAULT_POLL_MS = 250;
 const UNPARSEABLE_GRACE_MS = 30_000;
+
+/** The canonical publication remote; a gate remote's refs never count as published. */
+const PUBLICATION_REMOTE = "origin";
 
 /** The default unpublished-age limit in minutes, when neither flag nor env sets one. */
 export const DEFAULT_UNPUBLISHED_MAX_AGE_MINUTES = 30;
@@ -480,8 +484,9 @@ export interface UnpublishedResult {
 }
 
 /**
- * The oldest commit on this branch that no remote holds, and whether it is overdue.
- * A commit counts as published when a remote-tracking ref contains it; entering the
+ * The oldest commit on this branch that `origin` does not hold, and whether it is overdue.
+ * A commit counts as published only when an `origin` remote-tracking ref contains it, so
+ * a gate remote's refs cannot mask work still queued before origin; entering the
  * configured pipeline is the publication path this check guards, so it never pushes.
  */
 export function checkUnpublished(
@@ -495,7 +500,12 @@ export function checkUnpublished(
   if (head.code !== 0 || head.text === "") throw new Error(`${project} has no readable HEAD: ${head.stderr}`);
   const branchResult = git(project, ["branch", "--show-current"]);
   const branch = branchResult.code === 0 && branchResult.text !== "" ? branchResult.text : head.text;
-  const log = git(project, ["log", "--format=%ct", "HEAD", "--not", "--remotes"]);
+  const origin = git(project, ["remote", "get-url", PUBLICATION_REMOTE]);
+  if (origin.code !== 0 || origin.text === "")
+    throw new Error(
+      `${project} has no usable \`${PUBLICATION_REMOTE}\` remote, the canonical publication remote this check measures against: ${origin.stderr}`,
+    );
+  const log = git(project, ["log", "--format=%ct", "HEAD", "--not", `--remotes=${PUBLICATION_REMOTE}`]);
   if (log.code !== 0) throw new Error(`git log failed in ${project}: ${log.stderr}`);
   const stamps = log.text === "" ? [] : log.text.split("\n").map(Number).filter(Number.isFinite);
   if (stamps.length === 0) return { branch, unpublished: 0, max_age_minutes: maxAgeMinutes, overdue: false };

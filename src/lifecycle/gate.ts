@@ -1987,7 +1987,7 @@ export const LIFECYCLE_USAGE = [
   "  worktree+branch; only callers that wrap their run in it are covered. --lane and --label only describe the holder.",
   "  It queues visibly until the lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is free, runs the",
   "  command, and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes unpublished` alerts",
-  "  when the oldest commit no remote holds is older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES",
+  "  when the oldest commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES",
   "  (default 30); it reports only and never pushes, so publication still enters the configured pipeline promptly.",
   "",
   "  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`",

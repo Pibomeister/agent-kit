@@ -311,13 +311,21 @@ describe("unpublished-commit age check (issue #194)", () => {
       GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
     };
     git(repo, ["commit", "-m", "old unpublished work"], old);
-    const overdue = checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW });
-    expect(overdue).toMatchObject({ branch: "main", unpublished: 1, age_minutes: 2_880, overdue: true });
-    expect(checkUnpublished(repo, 10_000, { now: UNPUBLISHED_NOW }).overdue).toBe(false);
-    // Publish to a remote: the same commit stops counting as unpublished.
+    expect(() => checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toThrow("`origin` remote");
     const remote = join(dir, "remote.git");
     spawnSync("git", ["init", "--bare", remote], { encoding: "utf8" });
     git(repo, ["remote", "add", "origin", remote]);
+    const overdue = checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW });
+    expect(overdue).toMatchObject({ branch: "main", unpublished: 1, age_minutes: 2_880, overdue: true });
+    expect(checkUnpublished(repo, 10_000, { now: UNPUBLISHED_NOW }).overdue).toBe(false);
+    // A gate remote holding the commit does not publish it: only origin does.
+    const gate = join(dir, "gate.git");
+    spawnSync("git", ["init", "--bare", gate], { encoding: "utf8" });
+    git(repo, ["remote", "add", "no-mistakes", gate]);
+    git(repo, ["push", "no-mistakes", "main"]);
+    expect(git(repo, ["rev-parse", "refs/remotes/no-mistakes/main"])).toBe(git(repo, ["rev-parse", "HEAD"]));
+    expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({ unpublished: 1, overdue: true });
+    // Publish to origin: the same commit stops counting as unpublished.
     git(repo, ["push", "origin", "main"]);
     expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({ unpublished: 0, overdue: false });
     // A fresh local commit after the push is unpublished but not yet overdue.
