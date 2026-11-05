@@ -2257,11 +2257,6 @@ export function main(
     });
   }
   if (sub.startsWith("lanes ")) {
-    const lanesDir = (): string => {
-      const dirFlag = str("dir");
-      const base = dirFlag !== undefined ? resolve(cwd, dirFlag) : defaultEvidenceDir(project);
-      return join(base, "gate-lanes");
-    };
     if (sub === "lanes unpublished") {
       const result = checkUnpublished(project, resolveMaxAgeMinutes(str("max-age-minutes")));
       if (flags.has("json")) io.out(JSON.stringify(result, null, 2));
@@ -2278,21 +2273,24 @@ export function main(
       }
       return 0;
     }
-    let identity: LaneIdentity;
+    let dir: string;
+    let identity: LaneIdentity | undefined;
     try {
-      identity = laneIdentity(project, str("lane"));
+      const dirFlag = str("dir");
+      dir = join(dirFlag !== undefined ? resolve(cwd, dirFlag) : defaultEvidenceDir(project), "gate-lanes");
+      if (sub !== "lanes status") identity = laneIdentity(project, str("lane"));
     } catch (error) {
       io.err(`ak lifecycle ${sub}: ${error instanceof Error ? error.message : String(error)}`);
       return 1;
     }
-    if (sub === "lanes status") {
-      const status = laneStatus(lanesDir(), Date.now());
+    if (identity === undefined) {
+      const status = laneStatus(dir, Date.now());
       if (flags.has("json")) io.out(JSON.stringify(status, null, 2));
       else for (const line of formatStatus(status)) io.out(line);
       return 0;
     }
     if (sub === "lanes release") {
-      const released = releaseLane(lanesDir(), identity);
+      const released = releaseLane(dir, identity);
       io[released.ok ? "out" : "err"](released.reason);
       return released.ok ? 0 : 1;
     }
@@ -2321,7 +2319,7 @@ export function main(
       },
     };
     if (label !== undefined) acquireOptions.label = label;
-    const acquired = acquireLane(lanesDir(), identity, acquireOptions);
+    const acquired = acquireLane(dir, identity, acquireOptions);
     if (!acquired.ok) {
       io.err(`ak lifecycle lanes run: refused: ${acquired.reason}; waited ${Math.floor(acquired.waited_ms / 1000)}s`);
       return 1;

@@ -16,6 +16,7 @@ import {
   resolvePool,
   type LaneIdentity,
 } from "../../src/lifecycle/gate-lanes.ts";
+import { main } from "../../src/lifecycle/gate.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 const laneA: LaneIdentity = { lane: "lane-a", branch: "fm/a", worktree: "/tmp/worktree-a" };
@@ -176,6 +177,25 @@ got.release();
     expect(waits[0]).toContain("unreadable holder record");
     expect(got.ok).toBe(false);
     if (!got.ok) expect(got.reason).toContain("unreadable holder record");
+  });
+
+  test("lanes status lists the queue from an explicit --dir outside a git checkout", () => {
+    const outside = processScratch("ak-gate-lanes-nogit-");
+    const dir = join(outside, "evidence");
+    const held = acquireLane(join(dir, "gate-lanes"), laneA, { sleep: noSleep });
+    expect(held.ok).toBe(true);
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = main(
+      ["lanes", "status", "--dir", dir, "--json"],
+      { out: (l) => out.push(l), err: (l) => err.push(l) },
+      outside,
+    );
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    const status = JSON.parse(out.join("\n")) as { holders: { lane: string }[] };
+    expect(status.holders.map((holder) => holder.lane)).toEqual([laneA.lane]);
+    if (held.ok) held.release();
   });
 
   test("pool and unpublished limits resolve flag over env over default", () => {
