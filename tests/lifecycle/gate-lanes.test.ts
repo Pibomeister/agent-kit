@@ -1,0 +1,201 @@
+import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import {
+  acquireLane,
+  checkUnpublished,
+  formatStatus,
+  holdersDir,
+  laneKey,
+  laneStatus,
+  releaseLane,
+  resolveMaxAgeMinutes,
+  resolvePool,
+  type LaneIdentity,
+} from "../../src/lifecycle/gate-lanes.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
+
+const laneA: LaneIdentity = { lane: "lane-a", branch: "fm/a", worktree: "/tmp/worktree-a" };
+const laneB: LaneIdentity = { lane: "lane-b", branch: "fm/b", worktree: "/tmp/worktree-b" };
+const noSleep = () => undefined;
+/** A fake clock whose sleep advances it, so waiting is deterministic. */
+function fakeClock(start = 1_700_000_000_000) {
+  let at = start;
+  return {
+    now: () => at,
+    sleep: (ms: number) => {
+      at += ms;
+    },
+    advance: (ms: number) => {
+      at += ms;
+    },
+  };
+}
+
+describe("gate lanes (issue #194)", () => {
+  test("distinct lanes hold at once; the same lane excludes a second holder and names it", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const clock = fakeClock();
+    const first = acquireLane(dir, laneA, { now: clock.now, sleep: noSleep, pid: process.pid });
+    expect(first.ok).toBe(true);
+    // Counterfactual to the global lock: another lane is not serialized behind lane A.
+    const other = acquireLane(dir, laneB, { now: clock.now, sleep: noSleep, pid: process.pid });
+    expect(other.ok).toBe(true);
+    if (other.ok) other.release();
+    const second = acquireLane(dir, laneA, {
+      now: clock.now,
+      sleep: clock.sleep,
+      pid: 424_242,
+      timeoutMs: 1_000,
+      pollMs: 250,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.reason).toContain(`pid ${process.pid}`);
+      expect(second.holder?.branch).toBe("fm/a");
+      expect(second.waited_ms).toBeGreaterThanOrEqual(1_000);
+    }
+    if (first.ok) first.release();
+    const after = acquireLane(dir, laneA, { now: clock.now, sleep: noSleep, pid: process.pid });
+    expect(after.ok).toBe(true);
+    if (after.ok) after.release();
+  });
+
+  test("a bounded pool caps concurrent lanes and frees on release", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const clock = fakeClock();
+    const first = acquireLane(dir, laneA, { pool: 1, now: clock.now, sleep: noSleep, pid: process.pid });
+    expect(first.ok).toBe(true);
+    const blocked = acquireLane(dir, laneB, {
+      pool: 1,
+      now: clock.now,
+      sleep: clock.sleep,
+      pid: 424_242,
+      timeoutMs: 500,
+      pollMs: 250,
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.reason).toContain("pool is full");
+    if (first.ok) first.release();
+    const admitted = acquireLane(dir, laneB, { pool: 1, now: clock.now, sleep: noSleep, pid: process.pid });
+    expect(admitted.ok).toBe(true);
+    if (admitted.ok) admitted.release();
+  });
+
+  test("status names holder and waiter with held and waiting durations", async () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const helper = join(dir, "hold.ts");
+    writeFileSync(
+      helper,
+      `import { acquireLane } from ${JSON.stringify(join(import.meta.dir, "../../src/lifecycle/gate-lanes.ts"))};
+const [dir, branch, holdMs, timeoutMs] = process.argv.slice(2);
+const got = acquireLane(dir!, { lane: branch!, branch: branch!, worktree: "/tmp/" + branch }, { timeoutMs: Number(timeoutMs), pollMs: 25 });
+if (!got.ok) { console.log("refused: " + got.reason); process.exit(1); }
+console.log("acquired");
+await new Promise((resolve) => setTimeout(resolve, Number(holdMs)));
+got.release();
+`,
+    );
+    const holder = Bun.spawn(["bun", helper, dir, "fm/a", "3000", "0"], { stdout: "pipe", stderr: "pipe" });
+    // Poll the store (the visibility surface itself) until the holder appears.
+    for (let i = 0; i < 100 && laneStatus(dir, Date.now()).holders.length === 0; i += 1)
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(laneStatus(dir, Date.now()).holders).toHaveLength(1);
+    const waiter = Bun.spawn(["bun", helper, dir, "fm/a", "10", "8000"], { stdout: "pipe", stderr: "pipe" });
+    // The waiter registers visibly while it queues behind the holder.
+    let status = laneStatus(dir, Date.now());
+    for (let i = 0; i < 100 && status.waiters.length === 0; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      status = laneStatus(dir, Date.now());
+    }
+    expect(status.holders.map((holderRow) => holderRow.branch)).toEqual(["fm/a"]);
+    expect(status.waiters).toHaveLength(1);
+    expect(status.waiters[0]?.branch).toBe("fm/a");
+    expect(status.waiters[0]?.waiting_ms).toBeGreaterThanOrEqual(0);
+    const lines = formatStatus(status);
+    expect(lines.some((line) => line.startsWith("holder:") && line.includes("held="))).toBe(true);
+    expect(lines.some((line) => line.startsWith("waiter:") && line.includes("waiting="))).toBe(true);
+    expect(await waiter.exited).toBe(0);
+    expect(await holder.exited).toBe(0);
+    // Both gone: the queue drains and no record is left behind.
+    expect(laneStatus(dir, Date.now())).toEqual({ holders: [], waiters: [] });
+  }, 30_000);
+
+  test("a dead holder's lock is reclaimed and a live foreign holder is not released", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const deadPid = 999_999;
+    // The crash the pid check exists for: a holder record naming a pid that is
+    // not alive, left behind and never released.
+    const stale = acquireLane(dir, laneA, { pid: deadPid, sleep: noSleep });
+    expect(stale.ok).toBe(true);
+    expect(existsSync(join(holdersDir(dir), `${laneKey(laneA)}.json`))).toBe(true);
+    const reclaimed = acquireLane(dir, laneA, { pid: process.pid, sleep: noSleep });
+    expect(reclaimed.ok).toBe(true);
+    const refused = releaseLane(dir, laneA, { pid: 424_242 });
+    expect(refused.ok).toBe(false);
+    expect(refused.reason).toContain("live pid");
+    if (reclaimed.ok) reclaimed.release();
+    expect(laneStatus(dir, Date.now()).holders).toEqual([]);
+  });
+
+  test("pool and unpublished limits resolve flag over env over default", () => {
+    expect(resolvePool(undefined, undefined)).toBeUndefined();
+    expect(resolvePool(undefined, "3")).toBe(3);
+    expect(resolvePool("2", "3")).toBe(2);
+    expect(resolvePool("0", undefined)).toBeUndefined();
+    expect(resolveMaxAgeMinutes(undefined, undefined)).toBe(30);
+    expect(resolveMaxAgeMinutes(undefined, "45")).toBe(45);
+    expect(resolveMaxAgeMinutes("10", "45")).toBe(10);
+  });
+});
+
+const UNPUBLISHED_NOW = () => Date.parse("2026-01-03T00:00:00Z");
+
+function git(project: string, args: string[], env: Record<string, string> = {}): string {
+  const result = spawnSync("git", ["-C", project, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", HOME: project, ...env },
+  });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+describe("unpublished-commit age check (issue #194)", () => {
+  test("an old commit no remote holds is overdue; a generous limit and a pushed branch are not", () => {
+    const dir = processScratch("ak-gate-unpublished-");
+    const repo = join(dir, "repo");
+    spawnSync("git", ["init", "-b", "main", repo], { encoding: "utf8" });
+    git(repo, ["config", "user.email", "lane@example.invalid"]);
+    git(repo, ["config", "user.name", "Lane"]);
+    writeFileSync(join(repo, "work.txt"), "committed but never published\n");
+    git(repo, ["add", "work.txt"]);
+    const old = {
+      GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
+      GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
+    };
+    git(repo, ["commit", "-m", "old unpublished work"], old);
+    const overdue = checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW });
+    expect(overdue).toMatchObject({ branch: "main", unpublished: 1, age_minutes: 2_880, overdue: true });
+    expect(checkUnpublished(repo, 10_000, { now: UNPUBLISHED_NOW }).overdue).toBe(false);
+    // Publish to a remote: the same commit stops counting as unpublished.
+    const remote = join(dir, "remote.git");
+    spawnSync("git", ["init", "--bare", remote], { encoding: "utf8" });
+    git(repo, ["remote", "add", "origin", remote]);
+    git(repo, ["push", "origin", "main"]);
+    expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({ unpublished: 0, overdue: false });
+    // A fresh local commit after the push is unpublished but not yet overdue.
+    writeFileSync(join(repo, "work.txt"), "fresh\n");
+    git(repo, ["add", "work.txt"]);
+    git(repo, ["commit", "-m", "fresh work"], {
+      GIT_AUTHOR_DATE: "2026-01-02T23:50:00Z",
+      GIT_COMMITTER_DATE: "2026-01-02T23:50:00Z",
+    });
+    expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({
+      unpublished: 1,
+      age_minutes: 10,
+      overdue: false,
+    });
+  });
+});

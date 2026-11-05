@@ -67,6 +67,17 @@ import {
   resolveRepo,
 } from "./unattended.ts";
 import { isDesignReport } from "./design-report.ts";
+import {
+  acquireLane,
+  checkUnpublished,
+  formatStatus,
+  laneIdentity,
+  type LaneIdentity,
+  laneStatus,
+  releaseLane,
+  resolveMaxAgeMinutes,
+  resolvePool,
+} from "./gate-lanes.ts";
 import { verificationValidator } from "./verification-schema.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
@@ -1967,6 +1978,16 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle publish-scan --repo <owner/name> [--visibility <v>] [--title <text>] [--body-file <file>] [--commits <range>] [--markers <file>] [--project <dir>]",
   "  ak lifecycle unattended check --phase <phase> [--project <dir>]",
   "  ak lifecycle unattended review-status --pr <n> [--project <dir>]",
+  "  ak lifecycle lanes run [--lane <name>] [--label <text>] [--pool <n>] [--timeout-minutes <n>] [--dir <dir>] [--project <dir>] -- <command...>",
+  "  ak lifecycle lanes status [--dir <dir>] [--project <dir>] [--json]",
+  "  ak lifecycle lanes release [--lane <name>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle lanes unpublished [--max-age-minutes <n>] [--project <dir>] [--json]",
+  "",
+  "  Gate lanes (issue #194): one lock per worktree+branch lane, never one global gate lock. `lanes run` queues",
+  "  visibly until its lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is free, runs the command,",
+  "  and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes unpublished` alerts",
+  "  when the oldest commit no remote holds is older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES",
+  "  (default 30); it reports only and never pushes, so publication still enters the configured pipeline promptly.",
   "",
   "  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`",
   "  and the tool runs it; ship-preflight reads the merge gate live, and with --pr <n> records final ship success.",
@@ -2012,6 +2033,10 @@ const FLAGS: Record<string, readonly string[]> = {
   "publish-scan": ["repo", "visibility", "title", "body-file", "commits", "markers", "project"],
   "unattended check": ["phase", "project"],
   "unattended review-status": ["pr", "project"],
+  "lanes run": ["lane", "label", "pool", "timeout-minutes", "dir", "project", "json"],
+  "lanes status": ["dir", "project", "json"],
+  "lanes release": ["lane", "dir", "project"],
+  "lanes unpublished": ["max-age-minutes", "project", "json"],
 };
 
 const UNATTENDED_PHASES: readonly string[] = [...HUMAN_STARTED_PHASES, ...MODEL_STARTED_PHASES];
@@ -2169,7 +2194,9 @@ export function main(
   now: () => Date = () => new Date(),
 ): number {
   const sub =
-    (argv[0] === "bypass" || argv[0] === "unattended") && argv[1] !== undefined ? `${argv[0]} ${argv[1]}` : argv[0];
+    (argv[0] === "bypass" || argv[0] === "unattended" || argv[0] === "lanes") && argv[1] !== undefined
+      ? `${argv[0]} ${argv[1]}`
+      : argv[0];
   if (sub === undefined || !(sub in FLAGS)) {
     if (sub !== undefined) io.err(`ak lifecycle: ${unknownSelector("subcommand", sub, Object.keys(FLAGS))}`);
     for (const line of LIFECYCLE_USAGE) io.err(line);
@@ -2181,7 +2208,7 @@ export function main(
   let command: string[] | undefined;
   for (let i = sub.split(" ").length; i < argv.length; i += 1) {
     const token = argv[i]!;
-    if (token === "--" && sub === "record") {
+    if (token === "--" && (sub === "record" || sub === "lanes run")) {
       command = argv.slice(i + 1);
       break;
     }
@@ -2228,6 +2255,85 @@ export function main(
       project,
       io,
     });
+  }
+  if (sub.startsWith("lanes ")) {
+    const lanesDir = (): string => {
+      const dirFlag = str("dir");
+      const base = dirFlag !== undefined ? resolve(cwd, dirFlag) : defaultEvidenceDir(project);
+      return join(base, "gate-lanes");
+    };
+    if (sub === "lanes unpublished") {
+      const result = checkUnpublished(project, resolveMaxAgeMinutes(str("max-age-minutes")));
+      if (flags.has("json")) io.out(JSON.stringify(result, null, 2));
+      else if (result.unpublished === 0) io.out(`unpublished: none on ${result.branch}`);
+      else
+        io.out(
+          `unpublished: ${result.unpublished} commit(s) on ${result.branch}; oldest ${result.oldest_at ?? ""} is ${result.age_minutes ?? 0}m old (limit ${result.max_age_minutes}m)`,
+        );
+      if (result.overdue) {
+        io.err(
+          `ALERT: oldest unpublished commit on ${result.branch} is ${result.age_minutes ?? 0}m old, over the ${result.max_age_minutes}m limit; enter the configured pipeline promptly (this check never pushes directly)`,
+        );
+        return 1;
+      }
+      return 0;
+    }
+    let identity: LaneIdentity;
+    try {
+      identity = laneIdentity(project, str("lane"));
+    } catch (error) {
+      io.err(`ak lifecycle ${sub}: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+    if (sub === "lanes status") {
+      const status = laneStatus(lanesDir(), Date.now());
+      if (flags.has("json")) io.out(JSON.stringify(status, null, 2));
+      else for (const line of formatStatus(status)) io.out(line);
+      return 0;
+    }
+    if (sub === "lanes release") {
+      const released = releaseLane(lanesDir(), identity);
+      io[released.ok ? "out" : "err"](released.reason);
+      return released.ok ? 0 : 1;
+    }
+    // lanes run
+    if (command === undefined || command.length === 0) {
+      io.err("ak lifecycle lanes run: a command after -- is required");
+      return 2;
+    }
+    const timeoutFlag = str("timeout-minutes");
+    const timeoutMs = timeoutFlag === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Number(timeoutFlag) * 60_000);
+    let announced = false;
+    const label = str("label");
+    const acquireOptions: Parameters<typeof acquireLane>[2] = {
+      pool: resolvePool(str("pool")),
+      timeoutMs,
+      onWait: (holder, waitedMs) => {
+        if (announced) return;
+        announced = true;
+        io.err(
+          `queued: lane ${identity.lane} (${identity.branch}) waiting${holder === undefined ? " for a pool slot" : ` behind pid ${holder.pid} on ${holder.host}`}; waited ${Math.floor(waitedMs / 1000)}s so far (see: ak lifecycle lanes status)`,
+        );
+      },
+    };
+    if (label !== undefined) acquireOptions.label = label;
+    const acquired = acquireLane(lanesDir(), identity, acquireOptions);
+    if (!acquired.ok) {
+      io.err(`ak lifecycle lanes run: refused: ${acquired.reason}; waited ${Math.floor(acquired.waited_ms / 1000)}s`);
+      return 1;
+    }
+    if (acquired.waited_ms >= 1000)
+      io.err(
+        `acquired: lane ${identity.lane} (${identity.branch}) after ${Math.floor(acquired.waited_ms / 1000)}s in queue`,
+      );
+    try {
+      const [program, ...rest] = command;
+      if (program === undefined) return 2;
+      const child = spawnSync(program, rest, { cwd: project, stdio: "inherit" });
+      return child.status ?? 1;
+    } finally {
+      acquired.release();
+    }
   }
   const resolved = sub === "bypass grant" ? { ok: true as const } : resolvePolicy(project);
   if (!resolved.ok) {
