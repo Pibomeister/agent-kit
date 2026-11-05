@@ -583,8 +583,8 @@
     },
     "bundle/claude-code:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20115,
-      "tokens": 5022
+      "bytes": 20305,
+      "tokens": 5069
     },
     "bundle/claude-code:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -1448,8 +1448,8 @@
     },
     "bundle/codex:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20115,
-      "tokens": 5022
+      "bytes": 20305,
+      "tokens": 5069
     },
     "bundle/codex:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -2308,8 +2308,8 @@
     },
     "bundle/cursor:.cursor/skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20115,
-      "tokens": 5022
+      "bytes": 20305,
+      "tokens": 5069
     },
     "bundle/cursor:.cursor/skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -3178,8 +3178,8 @@
     },
     "bundle/droid:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20115,
-      "tokens": 5022
+      "bytes": 20305,
+      "tokens": 5069
     },
     "bundle/droid:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -4043,8 +4043,8 @@
     },
     "bundle/grok:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20115,
-      "tokens": 5022
+      "bytes": 20305,
+      "tokens": 5069
     },
     "bundle/grok:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -4908,8 +4908,8 @@
     },
     "bundle/kimi:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20115,
-      "tokens": 5022
+      "bytes": 20305,
+      "tokens": 5069
     },
     "bundle/kimi:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
