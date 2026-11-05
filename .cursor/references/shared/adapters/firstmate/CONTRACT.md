@@ -8,19 +8,19 @@ and retains the deprecated patched binding interface for existing users (ruling
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
 dispatcher, no watcher and no merge path, and it never writes Firstmate's state files. The runner
 and run ledger live in `src/runner/`; this binding adapter does not start that service or dispatch
-its supervisor seats. Firstmate may operate it separately through `ak runner` as described in
+its supervisor seats. Firstmate may operate it separately through `.cursor/bin/ak runner` as described in
 [`adapters/runner-contract/CONTRACT.md`](../runner-contract/CONTRACT.md) §9.
 
 ## Stock Firstmate path
 
-`ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex` checks the
+`.cursor/bin/ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex` checks the
 unmodified home's normal brief and spawn commands, the checkout, host and skill bundle. It does not
 require patches 0001/0002, an upstream commit or no-mistakes `auto_fix` values. Without a runner
 socket it reports `mode: guided`; with a socket it reports `runner-candidate`, leaving the standing
 grant, seat and evidence checks to that run's runner.
 
 Firstmate starts a task-scoped runner outside the worker worktree and shared Git directory, then
-uses `ak firstmate brief` to render a section into an ordinary Firstmate brief. The task is spawned
+uses `.cursor/bin/ak firstmate brief` to render a section into an ordinary Firstmate brief. The task is spawned
 with an existing `--mode no-mistakes`, `direct-PR` or `local-only`, never an `agent-kit` mode. The
 worker reads the runner's start attestation, runs autopilot, and reports escalations through its
 normal status and inbox. Firstmate dispatches the two supervisor seats as separate ordinary
@@ -39,7 +39,7 @@ The files beside this one:
 | File | For whom | What it is |
 |---|---|---|
 | `SUPERVISOR.md` | Firstmate | A compact index of what agent-kit offers a supervisor, loaded on demand |
-| `WORKER.md` | The worker | The brief section `ak firstmate bind` renders into a Firstmate brief |
+| `WORKER.md` | The worker | The brief section `.cursor/bin/ak firstmate bind` renders into a Firstmate brief |
 | `CHILD-ROLES.md` | The worker's children | The envelope a task-local child runs inside |
 | `hooks/child-guard.sh` | The Claude Code host | The PreToolUse hook that enforces part of that envelope |
 | `upstream/a5d78f8/0001-agent-kit-mode.patch` | A Firstmate maintainer | The opt-in delivery mode this adapter depends on |
@@ -117,20 +117,20 @@ worker started is not independent of the worker (ruling `missing-supervisor-neve
 
 | Firstmate | What works |
 |---|---|
-| **Unmodified Firstmate** | The stock path above: normal brief, spawn, status, inbox and delivery mode, with runner-validated standing start. `ak firstmate preflight` passes compatibility checks without a patch; no runner means guided checkpoints |
-| **Upstream `a5d78f8` with patches 0001 then 0002** | Delivery mode `agent-kit` for Claude Code workers with the child guard enforced; other harnesses with the guard declared but not enforced (§5). Everything in §2 and §4. With 0002, a `dry-run` binding's worker publishes nothing, and Firstmate itself runs `ak firstmate status <binding> --verify` on every agent-kit `done:` and keeps it only on exit 0 |
-| **Upstream `a5d78f8` with patch 0001 only** | Legacy patched mode is unavailable: `ak firstmate preflight --legacy-patched` refuses it and names 0002; the stock path above still works |
+| **Unmodified Firstmate** | The stock path above: normal brief, spawn, status, inbox and delivery mode, with runner-validated standing start. `.cursor/bin/ak firstmate preflight` passes compatibility checks without a patch; no runner means guided checkpoints |
+| **Upstream `a5d78f8` with patches 0001 then 0002** | Delivery mode `agent-kit` for Claude Code workers with the child guard enforced; other harnesses with the guard declared but not enforced (§5). Everything in §2 and §4. With 0002, a `dry-run` binding's worker publishes nothing, and Firstmate itself runs `.cursor/bin/ak firstmate status <binding> --verify` on every agent-kit `done:` and keeps it only on exit 0 |
+| **Upstream `a5d78f8` with patch 0001 only** | Legacy patched mode is unavailable: `.cursor/bin/ak firstmate preflight --legacy-patched` refuses it and names 0002; the stock path above still works |
 | **Not wired by these patches** | Evidence published to a knowledgebase (this adapter publishes to none); automatic startup of the separate runner service and seat launchers; any Firstmate commit the patches do not apply to cleanly. A Firstmate supervisor can start the runner and pass its worker token and socket without changing this binding adapter |
 
 The patches are version-bound and form a stack: 0002 rewrites lines 0001 added, so it applies only
 on top of 0001. They are carried here, under the upstream commit they were made against, and never
-applied to a live Firstmate home by any `ak` command. `ak firstmate preflight --legacy-patched` checks that the home
+applied to a live Firstmate home by any `ak` command. `.cursor/bin/ak firstmate preflight --legacy-patched` checks that the home
 contains the upstream commit and that every patch in the stack is already applied, by reverse
 `git apply --check` from the top patch down. It peels each checked patch off in a scratch git index
 built from the home's working tree, so the home's own index and files are never changed.
-`ak firstmate install` refuses on a home where the stack is not applied.
+`.cursor/bin/ak firstmate install` refuses on a home where the stack is not applied.
 
-`ak firstmate install` writes into the home's `config/` only: `agent-kit.env`, which holds exactly
+`.cursor/bin/ak firstmate install` writes into the home's `config/` only: `agent-kit.env`, which holds exactly
 the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 `AK_FIRSTMATE_WORKER_SETTINGS`), which the patched parser refuses if it holds any other key but
 0002's optional `AK_FIRSTMATE_WORKER_BUDGET_USD` (install never writes that one; a maintainer adds it);
@@ -138,7 +138,7 @@ the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 single quotes, for the patch to replace with the task's bare binding path, and whose `Stop` hook runs
 `bun '<ak root>/tools/hooks/semantic-lint.ts' hook` with a 30-second timeout, the advisory semantic
 lint of `docs/semantic-lint.md`, holding no key and setting no switch; and, when an evidence store is given,
-`agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `ak firstmate remove` deletes
+`agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `.cursor/bin/ak firstmate remove` deletes
 exactly those.
 
 ---
@@ -161,13 +161,13 @@ reads or writes `state/`, never edits the brief, and never touches another task'
 
 The last row wins over every other. A worker that cannot say what one of its children did has not
 finished, and it keeps ownership of the task rather than reporting `done` and leaving the child's
-effects unowned. `ak firstmate status <binding> <outcome>` prints these lines; it writes nothing.
+effects unowned. `.cursor/bin/ak firstmate status <binding> <outcome>` prints these lines; it writes nothing.
 
 `evidence=` refs are the verification receipts and the review the ship rested on, by artifact id.
 Under a `mock` evidence store they point into that labeled store, and the line says `dry-run`.
 
 `complete` is audited before its line is printed, by the same core check a standalone super-ship runs
-(`src/lifecycle/gate.ts`, `ak lifecycle check`). Every gate in the binding's `required_gates`, which
+(`src/lifecycle/gate.ts`, `.cursor/bin/ak lifecycle check`). Every gate in the binding's `required_gates`, which
 `bind` sets to `build-checks, verify, review-full, review-readiness, ship-preflight`, needs a gate
 record in the binding's evidence store, for the lifecycle run the worker opened with this binding
 (`open --ticket <ticket-file> --binding <binding file> --dir <evidence store>`; the latest one when it
@@ -181,13 +181,13 @@ by ancestry alone. The fork-point bound applies only to a standalone run named a
 so a reused branch does not inherit an old run's records. An opened run's id is unique per run and
 the audit names it explicitly, so the audit keeps counting a run's records after the supervisor merges
 it, and `--run` opts a standalone check out of the bound the same way. The bound's known limit on a
-reused branch, and the task-bound run `ak lifecycle open` mints, are described in the header of
+reused branch, and the task-bound run `.cursor/bin/ak lifecycle open` mints, are described in the header of
 `src/lifecycle/gate.ts`. A bound worker opens its run with `--binding`, records and checks against
 that opened run, and the run record keeps the binding's run id and evidence store, which is where the
 worker's own `check` looks for the binding's grant records. Then every
 grant the run needed must have left a grant record naming this binding by path and by the hash the ledger registered,
 and the binding must still hash to it. Any refusal prints `refused: …` lines and a `needs-decision`
-hint, exits 1, and prints no `done` line. `ak firstmate status <binding> --verify` runs the same audit
+hint, exits 1, and prints no `done` line. `.cursor/bin/ak firstmate status <binding> --verify` runs the same audit
 on its own, for a supervisor that wants to check a `done` it was handed; with patch 0002 Firstmate
 runs it on every agent-kit `done:` (§3). A knowledgebase store fails
 closed here too: the audit cannot read it, so it refuses.
@@ -209,7 +209,7 @@ the stock runner boundary is described above and in [`adapters/runner-contract/C
 | The worker cannot widen its binding | The binding lives in `data/<task-id>/` in the Firstmate home, outside the worktree | A harness running outside Firstmate's worktree isolation |
 | The worker runs the pinned bundle | The bundle is content-addressed under `~/.agent-kit/pins/<sha256>/`, and the binding names the hash | Nothing stops a worker reading another copy; the review of its receipts is what catches it |
 | A child does not push, merge, open a PR, run `fm-*` or no-mistakes, or write outside its destination | `hooks/child-guard.sh`, on Claude Code | Every other harness: the rule is prose in the brief and nothing more |
-| A child does not run `ak firstmate bind`, `install` or `remove`, or name the binding ledger | `hooks/child-guard.sh`, on Claude Code, as a token-matching tripwire (§6) | Shell indirection; the main-thread worker; every other harness |
+| A child does not run `.cursor/bin/ak firstmate bind`, `install` or `remove`, or name the binding ledger | `hooks/child-guard.sh`, on Claude Code, as a token-matching tripwire (§6) | Shell indirection; the main-thread worker; every other harness |
 | The pipeline creates no unreviewed commit | Legacy transport uses `--skip review,document,rebase` plus `auto_fix.{test,lint,ci}: 0`, which legacy preflight requires | A repository whose trusted config is changed after preflight |
 | The ship decision is the lifecycle's | super-ship's preconditions: receipts and a verdict bound to the shipped snapshot, and, for the autonomous form, trusted evidence ([`adapters/runner-contract/CONTRACT.md`](../runner-contract/CONTRACT.md) §2) | A worker that pushes by hand; Firstmate's done gate then sees a head with no receipts |
 
@@ -217,7 +217,7 @@ The child guard can tell a child from its parent only because the host says so. 
 PreToolUse input carries `agent_id` and `agent_type` for a call made inside a subagent and omits
 both for the main thread; that was observed on Claude Code 2.1.281, and the guard acts on no other
 signal. A host version that stops sending those fields turns the guard into a no-op, so
-`ak firstmate preflight` names the host version it last verified and the guard's tests pin the
+`.cursor/bin/ak firstmate preflight` names the host version it last verified and the guard's tests pin the
 input shape.
 
 ---
@@ -227,7 +227,7 @@ input shape.
 For review-start authority, see [ADR-0013](../../docs/decisions/0013-model-starts-super-review.md).
 super-ship stays `explicit-or-delegated`: a human starts it,
 or a delegated controller does under a validated grant. Under Firstmate, Firstmate is that controller
-and the binding it wrote is the grant (ADR-0004). `ak firstmate grant --binding <path> --operation
+and the binding it wrote is the grant (ADR-0004). `.cursor/bin/ak firstmate grant --binding <path> --operation
 <op>` validates it and prints a grant record, or refuses with a reason and a `needs-decision` hint.
 With a `mock` evidence store it also keeps that record at `<store>/<run_id>/grants/<operation>.json`,
 where the §4 audit reads it.
@@ -239,12 +239,12 @@ where the §4 audit reads it.
 | `ship.prepare` | `ship-preflight`; the grant authorizes the binding's `delivery.action` and never a merge. The autonomous form still requires trusted evidence and stops without it |
 
 Every grant also requires that the binding validates against its schema; that it is the binding
-`ak firstmate bind` registered, unmodified, in agent-kit's ledger at
+`.cursor/bin/ak firstmate bind` registered, unmodified, in agent-kit's ledger at
 `~/.agent-kit/firstmate/bindings/<run_id>.json` (same real path, same sha256); that it lies outside
 the worktree the grant is asked from and outside the bound project; and that the pinned bundle still
 hashes to the bound hash. A same-user worker can still run bind itself or edit the ledger, which
 the brief forbids; the child guard's denial of both is a tripwire for subagents, not a boundary, and
-does not cover the main thread. `ak firstmate status complete` and `status --verify` detect it by
+does not cover the main thread. `.cursor/bin/ak firstmate status complete` and `status --verify` detect it by
 comparing each kept grant record's `binding_sha256` and `binding` path with the ledger entry (§4); a
 worker that rewrites the ledger and the grant records consistently still passes. Preventing it needs the
 runner's validated grants (ADR-0004). Any other operation, merge and scope changes included, is

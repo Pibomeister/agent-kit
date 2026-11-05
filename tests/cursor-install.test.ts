@@ -61,16 +61,20 @@ printf '%s\\n' "${mark} $*" > "\${HOME}/launcher.out"
   );
 }
 
-function runLauncher(home: string, path: string, args: string[]) {
-  const dir = join(home, "overlay-bin");
+function noBunPath() {
+  const dir = join(processScratch("ak-cursor-nopath-"), "bin");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function runLauncher(home: string | undefined, path: string, args: string[]) {
+  const dir = join(processScratch("ak-cursor-overlay-"), "bin");
   mkdirSync(dir, { recursive: true });
   const launcher = join(dir, "ak");
   writeFileSync(launcher, cursorAkLauncher(), { mode: 0o755 });
   writeFileSync(join(dir, "ak.js"), "placeholder\n");
-  return spawnSync(launcher, args, {
-    encoding: "utf8",
-    env: { HOME: home, PATH: path, TERM: "dumb" },
-  });
+  const env = home === undefined ? { PATH: path, TERM: "dumb" } : { PATH: path, TERM: "dumb", HOME: home };
+  return { result: spawnSync(launcher, args, { encoding: "utf8", env }), script: join(dir, "ak.js") };
 }
 
 describe("tools/cursor/install.sh", () => {
@@ -109,11 +113,9 @@ describe("cursor ak launcher", () => {
     const home = processScratch("ak-cursor-launcher-home-");
     mkdirSync(join(home, ".bun/bin"), { recursive: true });
     writeFakeBun(join(home, ".bun/bin/bun"), CURSOR_BUN_PIN, "HOME");
-    const result = runLauncher(home, "/usr/bin:/bin", ["--version"]);
+    const { result, script } = runLauncher(home, noBunPath(), ["--version"]);
     expect(result.status, result.stderr).toBe(0);
-    expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(
-      `HOME ${join(home, "overlay-bin/ak.js")} --version`,
-    );
+    expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(`HOME ${script} --version`);
   });
 
   test("uses PATH bun when it is the pin", () => {
@@ -122,20 +124,27 @@ describe("cursor ak launcher", () => {
     mkdirSync(join(home, "path-bin"), { recursive: true });
     writeFakeBun(join(home, "path-bin/bun"), CURSOR_BUN_PIN, "PATH");
     writeFakeBun(join(home, ".bun/bin/bun"), "1.2.0", "HOME");
-    const result = runLauncher(home, `${join(home, "path-bin")}:/usr/bin:/bin`, ["firstmate", "grant"]);
+    const { result, script } = runLauncher(home, `${join(home, "path-bin")}:${noBunPath()}`, ["firstmate", "grant"]);
     expect(result.status, result.stderr).toBe(0);
-    expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(
-      `PATH ${join(home, "overlay-bin/ak.js")} firstmate grant`,
-    );
+    expect(readFileSync(join(home, "launcher.out"), "utf8").trim()).toBe(`PATH ${script} firstmate grant`);
   });
 
   test("fails when neither PATH bun nor home bun is the pin", () => {
     const home = processScratch("ak-cursor-launcher-fail-");
     mkdirSync(join(home, ".bun/bin"), { recursive: true });
     writeFakeBun(join(home, ".bun/bin/bun"), "1.2.0", "HOME");
-    const result = runLauncher(home, "/usr/bin:/bin", ["--version"]);
+    const { result } = runLauncher(home, noBunPath(), ["--version"]);
     expect(result.status).toBe(127);
     expect(result.stderr).toContain(`need bun ${CURSOR_BUN_PIN}`);
     expect(result.stderr).toContain(`${home}/.bun/bin/bun`);
+  });
+
+  test("does not fall back to /.bun/bin/bun when HOME is empty", () => {
+    for (const home of [undefined, ""]) {
+      const { result } = runLauncher(home, noBunPath(), ["--version"]);
+      expect(result.status).toBe(127);
+      expect(result.stderr).toContain(`need bun ${CURSOR_BUN_PIN} on PATH`);
+      expect(result.stderr).not.toContain("/.bun/bin/bun");
+    }
   });
 });

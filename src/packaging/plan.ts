@@ -892,7 +892,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     issues.push(...rewritten.issues);
     files.set(next.published, {
       path: next.published,
-      contents: renderExplicitStarts(rewritten.text),
+      contents: rewriteSkillCommands(rewritten.text),
       source: next.source,
     });
     for (const dep of rewritten.dependencies) {

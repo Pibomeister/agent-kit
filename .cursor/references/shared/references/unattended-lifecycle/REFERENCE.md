@@ -50,8 +50,8 @@ node <bundle>/bin/ak-gate.mjs record --gate <gate> -- <command> [args...]
 
 | Phase | Gate | A command that shows it |
 |---|---|---|
-| align | `align` | `ak kb read` of the published concept and ADR |
-| bound | `bound` | `ak kb read` of the published plan record and ticket |
+| align | `align` | `.cursor/bin/ak kb read` of the published concept and ADR |
+| bound | `bound` | `.cursor/bin/ak kb read` of the published plan record and ticket |
 | scout | `scout` | the dossier's read-back, or the bounded search that found nothing more to scout |
 | build | `build-checks` | the project's test command |
 | verify | `verify` | the verification command, with the receipts as `--receipt` |

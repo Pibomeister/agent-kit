@@ -1,6 +1,6 @@
 #!/bin/sh
 pin=1.3.14
-here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+here=$(CDPATH= cd -- "${0%/*}" && pwd)
 script="$here/ak.js"
 home_bun="${HOME}/.bun/bin/bun"
 
@@ -13,10 +13,14 @@ is_pin() {
 path_bun=$(command -v bun 2>/dev/null || true)
 if [ -n "$path_bun" ] && is_pin "$path_bun"; then
   pick=$path_bun
-elif is_pin "$home_bun"; then
+elif [ -n "${HOME}" ] && is_pin "$home_bun"; then
   pick=$home_bun
 else
-  echo "ak: need bun $pin on PATH or at $home_bun" >&2
+  if [ -n "${HOME}" ]; then
+    echo "ak: need bun $pin on PATH or at $home_bun" >&2
+  else
+    echo "ak: need bun $pin on PATH" >&2
+  fi
   exit 127
 fi
 

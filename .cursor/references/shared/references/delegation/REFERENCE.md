@@ -74,7 +74,7 @@ later computed class exceeds `from`. The scorer only raises the seed, so any see
 three cases is a hand-derived class. Then run:
 
 ```text
-ak delegation <ticket> --project <project-record>
+.cursor/bin/ak delegation <ticket> --project <project-record>
 ```
 
 Persist the command's complete JSON output as the ticket's `delegation` block. Cite the ticket and

@@ -114,7 +114,10 @@ const CURSOR_AK_VERBS = "firstmate|delegation|runner|learn|kb|guard|lifecycle|tr
 
 export function rewriteAkCommands(text: string, host: HostId): string {
   if (host !== "cursor") return text;
-  return text.replace(new RegExp(`\`(?:bun run )?ak (${CURSOR_AK_VERBS})(?=[\\s\`])`, "g"), "`.cursor/bin/ak $1");
+  return text.replace(
+    new RegExp(`(^|[^./a-z-])(?:bun run )?ak (${CURSOR_AK_VERBS})(?=[\\s\`])`, "gm"),
+    "$1.cursor/bin/ak $2",
+  );
 }
 
 /**

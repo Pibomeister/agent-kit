@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/firstmate-binding.schema.json",
   "title": "Firstmate task binding",
-  "description": "What `ak firstmate bind` writes into a Firstmate home's data/<task-id>/ before a worker in delivery mode agent-kit is launched: which task and run this is, what it was asked, the source snapshot it starts from, the exact skill bundle it runs, the charter it answers to, the gates it must pass, the children it may start, where its evidence goes and what delivery it may perform. The file lives outside anything the worker can write, so a worker cannot widen its own binding (adapters/firstmate/CONTRACT.md §2). It validates configuration, not a run artifact, which is why it carries no envelope. The bundle is pinned by content hash, so upgrading the kit never changes a running task's instructions (ruling `firstmate-outer-loop-agent-kit-inner`).",
+  "description": "What `.cursor/bin/ak firstmate bind` writes into a Firstmate home's data/<task-id>/ before a worker in delivery mode agent-kit is launched: which task and run this is, what it was asked, the source snapshot it starts from, the exact skill bundle it runs, the charter it answers to, the gates it must pass, the children it may start, where its evidence goes and what delivery it may perform. The file lives outside anything the worker can write, so a worker cannot widen its own binding (adapters/firstmate/CONTRACT.md §2). It validates configuration, not a run artifact, which is why it carries no envelope. The bundle is pinned by content hash, so upgrading the kit never changes a running task's instructions (ruling `firstmate-outer-loop-agent-kit-inner`).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -100,7 +100,7 @@
       ]
     },
     "required_gates": {
-      "description": "The lifecycle gates the worker must pass before super-ship will publish, each proved by a gate record (src/lifecycle/gate.ts) that `ak firstmate status complete` checks. Order is the lifecycle's, not this list's.",
+      "description": "The lifecycle gates the worker must pass before super-ship will publish, each proved by a gate record (src/lifecycle/gate.ts) that `.cursor/bin/ak firstmate status complete` checks. Order is the lifecycle's, not this list's.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,

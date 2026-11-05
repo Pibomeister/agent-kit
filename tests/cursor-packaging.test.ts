@@ -236,6 +236,13 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     expect(cursor.files.get(packagedSkillFile("cursor", "super-review"))?.contents).not.toContain(
       "`ak firstmate grant",
     );
+    const firstmateContract =
+      cursor.files.get(".cursor/references/shared/adapters/firstmate/CONTRACT.md")?.contents ?? "";
+    expect(firstmateContract).toContain("`.cursor/bin/ak firstmate grant");
+    expect(firstmateContract).not.toContain("`ak firstmate grant");
+    const kbContract = cursor.files.get(".cursor/references/shared/adapters/knowledgebase/CONTRACT.md")?.contents ?? "";
+    expect(kbContract).toContain(".cursor/bin/ak kb register");
+    expect(kbContract).not.toMatch(/(^|[^./a-z-])ak kb register/);
     expect(cursor.files.get(agentPath("trail-auditor"))?.contents).toContain(
       "](../templates/trail-audit.example.json)",
     );

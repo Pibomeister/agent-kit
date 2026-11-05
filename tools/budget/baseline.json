@@ -1733,43 +1733,43 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21483,
+      "tokens": 5342
     },
     "bundle/cursor:.cursor/references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22595,
+      "tokens": 5624
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21116,
-      "tokens": 5275
+      "bytes": 21356,
+      "tokens": 5335
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25248,
+      "tokens": 6265
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13652,
+      "tokens": 3406
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35008,
+      "tokens": 8723
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
-      "bytes": 22142,
-      "tokens": 5503
+      "bytes": 22166,
+      "tokens": 5509
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17559,
-      "tokens": 4379
+      "bytes": 17607,
+      "tokens": 4391
     },
     "bundle/cursor:.cursor/references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -1803,8 +1803,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93211,
+      "tokens": 23275
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1828,8 +1828,8 @@
     },
     "bundle/cursor:.cursor/references/shared/protocols/evidence-gate/PROTOCOL.md": {
       "file": "protocols/evidence-gate/PROTOCOL.md",
-      "bytes": 11680,
-      "tokens": 2920
+      "bytes": 11704,
+      "tokens": 2926
     },
     "bundle/cursor:.cursor/references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
@@ -1853,8 +1853,8 @@
     },
     "bundle/cursor:.cursor/references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 22808,
-      "tokens": 5702
+      "bytes": 22820,
+      "tokens": 5705
     },
     "bundle/cursor:.cursor/references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -1878,8 +1878,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19917,
-      "tokens": 4976
+      "bytes": 19929,
+      "tokens": 4979
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1893,8 +1893,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6066,
-      "tokens": 1515
+      "bytes": 6150,
+      "tokens": 1536
     },
     "bundle/cursor:.cursor/references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1908,13 +1908,13 @@
     },
     "bundle/cursor:.cursor/references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9408,
-      "tokens": 2351
+      "bytes": 9444,
+      "tokens": 2360
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 8456,
+      "tokens": 2114
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2123,8 +2123,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
-      "bytes": 9225,
-      "tokens": 2306
+      "bytes": 9249,
+      "tokens": 2312
     },
     "bundle/cursor:.cursor/references/shared/schemas/install.schema.json": {
       "file": "schemas/install.schema.json",
@@ -2133,13 +2133,13 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
-      "bytes": 941,
-      "tokens": 236
+      "bytes": 953,
+      "tokens": 239
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2294,
+      "tokens": 573
     },
     "bundle/cursor:.cursor/references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -2183,8 +2183,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/ship-evidence.schema.json": {
       "file": "schemas/ship-evidence.schema.json",
-      "bytes": 8211,
-      "tokens": 2053
+      "bytes": 8223,
+      "tokens": 2056
     },
     "bundle/cursor:.cursor/references/shared/schemas/skill.schema.json": {
       "file": "schemas/skill.schema.json",
@@ -2198,13 +2198,13 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
-      "bytes": 770,
-      "tokens": 193
+      "bytes": 782,
+      "tokens": 196
     },
     "bundle/cursor:.cursor/references/shared/schemas/tracker-binding.schema.json": {
       "file": "schemas/tracker-binding.schema.json",
-      "bytes": 3570,
-      "tokens": 893
+      "bytes": 3606,
+      "tokens": 902
     },
     "bundle/cursor:.cursor/references/shared/schemas/trail-audit.schema.json": {
       "file": "schemas/trail-audit.schema.json",

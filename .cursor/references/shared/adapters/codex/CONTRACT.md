@@ -97,7 +97,7 @@ What differs on this host is not which capabilities are supplied but which **res
 host can enforce. None of the rows below is a `capability` value.
 
 The review-session guard ([`templates/guard/review-session.policy.json`](../../templates/guard/review-session.policy.json), for
-`ak guard hook pre-tool-use`) denies reads of Claude Code's session store. Codex guard support
+`.cursor/bin/ak guard hook pre-tool-use`) denies reads of Claude Code's session store. Codex guard support
 is deferred to CS-12 (`research/briefs/constitution-support-plan.md`), so on this host the
 transcript-on-disk channel stays uncovered: a review seat can still read the parent's session
 transcript, and no package hook denies it. The guard is feedback, not a security boundary on
@@ -208,7 +208,7 @@ codex plugin add ak@agent-kit
 `codex plugin marketplace add` accepts `--ref` for Git sources. The generated `published` branch
 contains `.agents/plugins/marketplace.json` pointing at `./dist/codex`. An isolated local
 marketplace smoke confirmed add, install and an enabled `ak@agent-kit` in `codex plugin list
---json`. Codex exposes no project-scope option. `ak update` uses `codex plugin marketplace upgrade
+--json`. Codex exposes no project-scope option. `.cursor/bin/ak update` uses `codex plugin marketplace upgrade
 agent-kit` followed by `codex plugin add ak@agent-kit`.
 
 ---
@@ -265,11 +265,11 @@ claude-code run.
 
 ## 6. The learning runtime's hooks
 
-`ak learn setup wire` registers three hooks in `$CODEX_HOME` when it exists, and skips this host
-with a message when it does not: `ak learn hook session-start --source codex` on `SessionStart`,
+`.cursor/bin/ak learn setup wire` registers three hooks in `$CODEX_HOME` when it exists, and skips this host
+with a message when it does not: `.cursor/bin/ak learn hook session-start --source codex` on `SessionStart`,
 whose roster names human-only commands as `$ak:<id>` (ADR-0011),
-`ak learn hook prompt` on `UserPromptSubmit`, which captures user corrections, and
-`ak learn hook stop --source codex` on `Stop`. As on claude-code
+`.cursor/bin/ak learn hook prompt` on `UserPromptSubmit`, which captures user corrections, and
+`.cursor/bin/ak learn hook stop --source codex` on `Stop`. As on claude-code
 ([`adapters/claude-code/CONTRACT.md`](../claude-code/CONTRACT.md) §7), no skill requires a hook, the bundle ships none of them, and the
 runtime's ledgers never live inside a project repository (ruling
 `learning-runtime-is-host-adapter`).
@@ -283,7 +283,7 @@ bundle holds no key and sets no switch.
 
 What the host does with those hooks, verified (receipt) at `codex-cli 0.153.4`:
 
-1. **They are non-managed, and untrusted until someone trusts them.** `ak learn setup wire` writes
+1. **They are non-managed, and untrusted until someone trusts them.** `.cursor/bin/ak learn setup wire` writes
    them to `$CODEX_HOME/hooks.json`, the user layer, and records no trust. Codex registers a
    non-managed hook only once its current hash is trusted, and `codex exec` has no review step, so in
    a headless run a freshly wired hook is skipped without a message until it is trusted in the TUI's
