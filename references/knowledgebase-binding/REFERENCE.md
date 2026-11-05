@@ -12,8 +12,8 @@ each result obliges. The contract this condenses is `adapters/knowledgebase/CONT
 ak kb check
 ```
 
-Run it in the project folder, which may be a task copy. A current `ak` on `PATH` is a prerequisite:
-a missing command, or a usage error from an older `ak`, is `needs-input` naming that prerequisite,
+Run it in the project folder, which may be a task copy. A current agent-kit CLI is a prerequisite:
+a missing command, or a usage error from an older CLI, is `needs-input` naming that prerequisite,
 and is not an unavailable knowledgebase.
 
 | Exit | Meaning | What the run does |

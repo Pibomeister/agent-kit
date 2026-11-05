@@ -38,8 +38,8 @@
     },
     "bundle/claude-code:references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17559,
-      "tokens": 4379
+      "bytes": 17572,
+      "tokens": 4382
     },
     "bundle/claude-code:references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -163,8 +163,8 @@
     },
     "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6066,
-      "tokens": 1515
+      "bytes": 6064,
+      "tokens": 1514
     },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -178,7 +178,7 @@
     },
     "bundle/claude-code:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9408,
+      "bytes": 9407,
       "tokens": 2351
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
@@ -738,8 +738,8 @@
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23581,
-      "tokens": 5888
+      "bytes": 23579,
+      "tokens": 5887
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -903,8 +903,8 @@
     },
     "bundle/codex:references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17559,
-      "tokens": 4379
+      "bytes": 17572,
+      "tokens": 4382
     },
     "bundle/codex:references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -1028,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6066,
-      "tokens": 1515
+      "bytes": 6064,
+      "tokens": 1514
     },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1043,7 +1043,7 @@
     },
     "bundle/codex:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9408,
+      "bytes": 9407,
       "tokens": 2351
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
@@ -1603,7 +1603,7 @@
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23699,
+      "bytes": 23697,
       "tokens": 5917
     },
     "bundle/codex:skills/super-build/SKILL.md": {
@@ -1733,18 +1733,18 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21483,
-      "tokens": 5342
+      "bytes": 21387,
+      "tokens": 5318
     },
     "bundle/cursor:.cursor/references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22595,
-      "tokens": 5624
+      "bytes": 22511,
+      "tokens": 5603
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21356,
-      "tokens": 5335
+      "bytes": 21320,
+      "tokens": 5326
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1768,8 +1768,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17607,
-      "tokens": 4391
+      "bytes": 17620,
+      "tokens": 4394
     },
     "bundle/cursor:.cursor/references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -1893,8 +1893,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6150,
-      "tokens": 1536
+      "bytes": 6148,
+      "tokens": 1535
     },
     "bundle/cursor:.cursor/references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1908,8 +1908,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9444,
-      "tokens": 2360
+      "bytes": 9431,
+      "tokens": 2357
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
@@ -2123,8 +2123,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
-      "bytes": 9249,
-      "tokens": 2312
+      "bytes": 9237,
+      "tokens": 2309
     },
     "bundle/cursor:.cursor/references/shared/schemas/install.schema.json": {
       "file": "schemas/install.schema.json",
@@ -2463,8 +2463,8 @@
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23593,
-      "tokens": 5891
+      "bytes": 23591,
+      "tokens": 5890
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -2633,8 +2633,8 @@
     },
     "bundle/droid:references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17559,
-      "tokens": 4379
+      "bytes": 17572,
+      "tokens": 4382
     },
     "bundle/droid:references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -2758,8 +2758,8 @@
     },
     "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6066,
-      "tokens": 1515
+      "bytes": 6064,
+      "tokens": 1514
     },
     "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2773,7 +2773,7 @@
     },
     "bundle/droid:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9408,
+      "bytes": 9407,
       "tokens": 2351
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
@@ -3333,7 +3333,7 @@
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23687,
+      "bytes": 23685,
       "tokens": 5914
     },
     "bundle/droid:skills/super-build/SKILL.md": {
@@ -3498,8 +3498,8 @@
     },
     "bundle/grok:references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17559,
-      "tokens": 4379
+      "bytes": 17572,
+      "tokens": 4382
     },
     "bundle/grok:references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -3623,8 +3623,8 @@
     },
     "bundle/grok:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6066,
-      "tokens": 1515
+      "bytes": 6064,
+      "tokens": 1514
     },
     "bundle/grok:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -3638,7 +3638,7 @@
     },
     "bundle/grok:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9408,
+      "bytes": 9407,
       "tokens": 2351
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
@@ -4198,8 +4198,8 @@
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23569,
-      "tokens": 5885
+      "bytes": 23567,
+      "tokens": 5884
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -4363,8 +4363,8 @@
     },
     "bundle/kimi:references/shared/adapters/tracker/backends/linear-linearis.md": {
       "file": "adapters/tracker/backends/linear-linearis.md",
-      "bytes": 17559,
-      "tokens": 4379
+      "bytes": 17572,
+      "tokens": 4382
     },
     "bundle/kimi:references/shared/docs/decisions/0013-model-starts-super-review.md": {
       "file": "docs/decisions/0013-model-starts-super-review.md",
@@ -4488,8 +4488,8 @@
     },
     "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6066,
-      "tokens": 1515
+      "bytes": 6064,
+      "tokens": 1514
     },
     "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -4503,7 +4503,7 @@
     },
     "bundle/kimi:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
-      "bytes": 9408,
+      "bytes": 9407,
       "tokens": 2351
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
@@ -5063,7 +5063,7 @@
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23711,
+      "bytes": 23709,
       "tokens": 5920
     },
     "bundle/kimi:skills/super-build/SKILL.md": {

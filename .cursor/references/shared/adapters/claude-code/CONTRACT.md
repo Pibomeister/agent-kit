@@ -249,17 +249,17 @@ contract, not here.
 
 ## 7. The learning runtime's hooks
 
-For `.cursor/bin/ak learn setup <verb>`, an exact `--help` or `-h` token prints that verb's usage to stdout
+For `ak learn setup <verb>`, an exact `--help` or `-h` token prints that verb's usage to stdout
 and exits 0 before reading configuration or running the verb, even with other arguments present.
 Without a help token, unknown flags (including `--help=x`) and unexpected positional arguments
 print a usage error to stderr and exit 2 before reading or changing configuration.
 
-Under the opt-in `learning` profile, `.cursor/bin/ak learn setup wire` registers two hooks in the operator's
-host settings: `.cursor/bin/ak learn hook session-start` on `SessionStart` and `.cursor/bin/ak learn hook stop` on `Stop`.
+Under the opt-in `learning` profile, `ak learn setup wire` registers two hooks in the operator's
+host settings: `ak learn hook session-start` on `SessionStart` and `ak learn hook stop` on `Stop`.
 They inject the working memory and active guardrails at session start and queue ingestion when a
 session ends. User corrections reach the runtime on this host from claude-reflect's per-project
 queue, read-only, where that plugin is installed, rather than from a prompt hook. This bundle ships none of them: no skill in it requires
-a hook, every skill behaves the same with them absent, and `.cursor/bin/ak learn setup uninstall` removes what
+a hook, every skill behaves the same with them absent, and `ak learn setup uninstall` removes what
 `wire` added.
 
 The bundle's one hook is not a learning hook. `hooks/hooks.json` runs
@@ -270,7 +270,7 @@ contract, and no skill requires it. The runtime is a host adapter, not a phase, 
 configuration directory, never inside a project repository (ruling
 `learning-runtime-is-host-adapter`).
 
-The hooks are user-wide, so `.cursor/bin/ak learn setup scope --set ROOT[:ROOT]` limits the runtime to listed
+The hooks are user-wide, so `ak learn setup scope --set ROOT[:ROOT]` limits the runtime to listed
 repositories: outside them every hook exits without acting and the scheduled tick runs no jobs. The
 scope lives in one runtime-owned file that `wire` and `schedule` never widen. `AK_LEARN_REPOS`
 overrides it for one shell but reaches neither the hook commands nor the scheduler unit, so `wire`
@@ -285,13 +285,13 @@ The default judge model follows the operator's current host selection. An operat
 judge model pins the complete command through `AK_LEARN_JUDGE` in their own environment; scheduler
 setup carries that setting into the unit. The default command disables session persistence and runs
 from the learning runtime directory so it neither leaves project transcripts nor discovers project
-instructions from its working directory. `.cursor/bin/ak learn setup doctor` checks scheduled auth without a
+instructions from its working directory. `ak learn setup doctor` checks scheduled auth without a
 judge call. The host CLI documents
 `--disable-slash-commands` as disabling skills and `--setting-sources` as selecting settings inputs,
 but documents no login guarantee for either. The runtime therefore adopts neither: login
 preservation is required before a context-reduction flag can enter the scheduled path.
 
-`.cursor/bin/ak learn doctor` hands the judge whole sessions, so its judge runs subscription-only. Every variable
+`ak learn doctor` hands the judge whole sessions, so its judge runs subscription-only. Every variable
 that could bill or reroute it (`*_API_KEY`, `*_AUTH_TOKEN`, `*_BEARER_TOKEN`, `*_BASE_URL`,
 `AWS_BEARER_TOKEN*`, `CLAUDE_CODE_USE_*`, `HTTP(S)_PROXY`, `ALL_PROXY`, `NODE_EXTRA_CA_CERTS`) is
 dropped from its environment, and its `--settings` layer blanks each such name and `apiKeyHelper` from

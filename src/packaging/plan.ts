@@ -642,7 +642,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     .map((entry) => entry.id);
   const renderExplicitStarts = (text: string) =>
     rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
-  const rewriteSkillCommands = (text: string) => rewriteAkCommands(renderExplicitStarts(text), host);
+  const rewriteSkillCommands = (text: string, source = "") =>
+    rewriteAkCommands(renderExplicitStarts(text), host, source);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
   const mentions = catalogMentions(root, catalog);
@@ -892,7 +893,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     issues.push(...rewritten.issues);
     files.set(next.published, {
       path: next.published,
-      contents: rewriteSkillCommands(rewritten.text),
+      contents: rewriteSkillCommands(rewritten.text, next.source),
       source: next.source,
     });
     for (const dep of rewritten.dependencies) {

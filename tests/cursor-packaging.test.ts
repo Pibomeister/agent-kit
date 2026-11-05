@@ -101,6 +101,15 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
       "`.cursor/bin/ak firstmate grant` and `ak build` and `.cursor/bin/ak learn memory show`",
     );
     expect(rewriteAkCommands("`ak firstmate grant`", "claude-code")).toBe("`ak firstmate grant`");
+    expect(rewriteAkCommands("`ak firstmate bind` and `ak firstmate grant`", "cursor")).toBe(
+      "`ak firstmate bind` and `.cursor/bin/ak firstmate grant`",
+    );
+    expect(rewriteAkCommands("`ak update` and `ak doctor` and `ak tracker check`", "cursor")).toBe(
+      "`ak update` and `ak doctor` and `.cursor/bin/ak tracker check`",
+    );
+    expect(
+      rewriteAkCommands("`ak learn setup wire` registers `ak learn hook stop`", "cursor", "adapters/codex/CONTRACT.md"),
+    ).toBe("`ak learn setup wire` registers `ak learn hook stop`");
   });
 
   test("the Cursor bundle is the catalog in a Cloud-discoverable layout", () => {
@@ -240,6 +249,18 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
       cursor.files.get(".cursor/references/shared/adapters/firstmate/CONTRACT.md")?.contents ?? "";
     expect(firstmateContract).toContain("`.cursor/bin/ak firstmate grant");
     expect(firstmateContract).not.toContain("`ak firstmate grant");
+    expect(firstmateContract).toContain("`ak firstmate bind`");
+    expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate bind`");
+    const claudeContract =
+      cursor.files.get(".cursor/references/shared/adapters/claude-code/CONTRACT.md")?.contents ?? "";
+    expect(claudeContract).toContain("`ak learn setup wire`");
+    expect(claudeContract).toContain("`ak learn hook stop`");
+    expect(claudeContract).not.toContain(".cursor/bin/ak learn");
+    const codexContract = cursor.files.get(".cursor/references/shared/adapters/codex/CONTRACT.md")?.contents ?? "";
+    expect(codexContract).toContain("`ak update`");
+    expect(codexContract).toContain("`ak learn setup wire`");
+    expect(codexContract).not.toContain(".cursor/bin/ak update");
+    expect(codexContract).not.toContain(".cursor/bin/ak learn");
     const kbContract = cursor.files.get(".cursor/references/shared/adapters/knowledgebase/CONTRACT.md")?.contents ?? "";
     expect(kbContract).toContain(".cursor/bin/ak kb register");
     expect(kbContract).not.toMatch(/(^|[^./a-z-])ak kb register/);

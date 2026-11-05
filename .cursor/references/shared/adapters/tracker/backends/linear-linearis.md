@@ -225,7 +225,7 @@ performs these steps in order and stops at the first that fails:
 5. **Write the binding**, `ak.tracker.yaml`, with the team and optional project the human names.
 6. **Gitignore the secret**: add the token file's path to the project's `.gitignore` and commit
    that rule, since an uncommitted rule protects only this checkout. Then confirm with
-   `.cursor/bin/ak tracker check`, or where `ak` is not on hand with the plain-git checks in
+   `.cursor/bin/ak tracker check`, or where the agent-kit CLI is not on hand with the plain-git checks in
    [the tracker-of-record reference](../../../references/tracker-of-record/REFERENCE.md).
    A token file already tracked or found in history stops setup, and the human is told to rotate
    the token: untracking it does not remove it from history.

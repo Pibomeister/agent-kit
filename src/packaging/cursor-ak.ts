@@ -12,7 +12,10 @@ export const CURSOR_BUN_PIN = "1.3.14";
 export function cursorAkLauncher(pin: string = CURSOR_BUN_PIN): string {
   return `#!/bin/sh
 pin=${pin}
-here=$(CDPATH= cd -- "\${0%/*}" && pwd)
+case $0 in
+  */*) here=$(CDPATH= cd -- "\${0%/*}" && pwd) ;;
+  *) here=$(CDPATH= cd -- . && pwd) ;;
+esac
 script="$here/ak.js"
 home_bun="\${HOME}/.bun/bin/bun"
 

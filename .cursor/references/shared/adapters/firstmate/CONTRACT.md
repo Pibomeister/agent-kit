@@ -39,7 +39,7 @@ The files beside this one:
 | File | For whom | What it is |
 |---|---|---|
 | `SUPERVISOR.md` | Firstmate | A compact index of what agent-kit offers a supervisor, loaded on demand |
-| `WORKER.md` | The worker | The brief section `.cursor/bin/ak firstmate bind` renders into a Firstmate brief |
+| `WORKER.md` | The worker | The brief section `ak firstmate bind` renders into a Firstmate brief |
 | `CHILD-ROLES.md` | The worker's children | The envelope a task-local child runs inside |
 | `hooks/child-guard.sh` | The Claude Code host | The PreToolUse hook that enforces part of that envelope |
 | `upstream/a5d78f8/0001-agent-kit-mode.patch` | A Firstmate maintainer | The opt-in delivery mode this adapter depends on |
@@ -209,7 +209,7 @@ the stock runner boundary is described above and in [`adapters/runner-contract/C
 | The worker cannot widen its binding | The binding lives in `data/<task-id>/` in the Firstmate home, outside the worktree | A harness running outside Firstmate's worktree isolation |
 | The worker runs the pinned bundle | The bundle is content-addressed under `~/.agent-kit/pins/<sha256>/`, and the binding names the hash | Nothing stops a worker reading another copy; the review of its receipts is what catches it |
 | A child does not push, merge, open a PR, run `fm-*` or no-mistakes, or write outside its destination | `hooks/child-guard.sh`, on Claude Code | Every other harness: the rule is prose in the brief and nothing more |
-| A child does not run `.cursor/bin/ak firstmate bind`, `install` or `remove`, or name the binding ledger | `hooks/child-guard.sh`, on Claude Code, as a token-matching tripwire (§6) | Shell indirection; the main-thread worker; every other harness |
+| A child does not run `ak firstmate bind`, `install` or `remove`, or name the binding ledger | `hooks/child-guard.sh`, on Claude Code, as a token-matching tripwire (§6) | Shell indirection; the main-thread worker; every other harness |
 | The pipeline creates no unreviewed commit | Legacy transport uses `--skip review,document,rebase` plus `auto_fix.{test,lint,ci}: 0`, which legacy preflight requires | A repository whose trusted config is changed after preflight |
 | The ship decision is the lifecycle's | super-ship's preconditions: receipts and a verdict bound to the shipped snapshot, and, for the autonomous form, trusted evidence ([`adapters/runner-contract/CONTRACT.md`](../runner-contract/CONTRACT.md) §2) | A worker that pushes by hand; Firstmate's done gate then sees a head with no receipts |
 
@@ -239,7 +239,7 @@ where the §4 audit reads it.
 | `ship.prepare` | `ship-preflight`; the grant authorizes the binding's `delivery.action` and never a merge. The autonomous form still requires trusted evidence and stops without it |
 
 Every grant also requires that the binding validates against its schema; that it is the binding
-`.cursor/bin/ak firstmate bind` registered, unmodified, in agent-kit's ledger at
+`ak firstmate bind` registered, unmodified, in agent-kit's ledger at
 `~/.agent-kit/firstmate/bindings/<run_id>.json` (same real path, same sha256); that it lies outside
 the worktree the grant is asked from and outside the bound project; and that the pinned bundle still
 hashes to the bound hash. A same-user worker can still run bind itself or edit the ledger, which

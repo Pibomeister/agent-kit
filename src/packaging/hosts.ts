@@ -108,12 +108,20 @@ export function rewriteExplicitStarts(
  * Cursor Cloud Agent tool shells often have no bun on PATH. Skills that run the
  * bundled maintenance CLI name `.cursor/bin/ak`, which finds the pin without
  * that PATH entry. `build`, `validate` and `attach` stay `ak`: those are the
- * source CLI, not the overlay binary.
+ * source CLI, not the overlay binary. `doctor` and `update` stay `ak`: they do
+ * not manage Cursor. `ak firstmate bind` stays: child-guard.sh matches that
+ * token, and bind is supervisor-side.
  */
-const CURSOR_AK_VERBS = "firstmate|delegation|runner|learn|kb|guard|lifecycle|tracker|council|doctor|update";
+const CURSOR_AK_VERBS = "firstmate(?! bind)|delegation|runner|learn|kb|guard|lifecycle|tracker|council";
 
-export function rewriteAkCommands(text: string, host: HostId): string {
+/**
+ * Claude Code and Codex adapter contracts describe those hosts' CLIs, including
+ * hook command strings registered in their settings. Rewriting them to
+ * `.cursor/bin/ak` is false.
+ */
+export function rewriteAkCommands(text: string, host: HostId, source = ""): string {
   if (host !== "cursor") return text;
+  if (/^adapters\/(claude-code|codex)\//.test(source)) return text;
   return text.replace(
     new RegExp(`(^|[^./a-z-])(?:bun run )?ak (${CURSOR_AK_VERBS})(?=[\\s\`])`, "gm"),
     "$1.cursor/bin/ak $2",
