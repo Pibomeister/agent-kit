@@ -1420,8 +1420,7 @@ function writeDecision(a: CheckArgs, decision: DecisionRecord): string {
  * minimal-ticket route (a bypass span, a fixture). A ticket that is absent, altered, malformed
  * or half-declared cannot be confirmed minimal, so it is judged and the check names why.
  */
-function ticketDeclaresEvidence(dir: string, run: string): boolean {
-  const record = readRunRecord(dir, run);
+function ticketDeclaresEvidence(dir: string, run: string, record: RunRecord | undefined): boolean {
   if (record === undefined) return false;
   const path = artifactPath(dir, run, record.ticket.hash);
   if (path === undefined || !existsSync(path)) return true;
@@ -2749,8 +2748,8 @@ export function main(
     if (
       policy === undefined &&
       gate === "ship-preflight" &&
-      readRunRecord(dir, run)?.binding_run_id === undefined &&
-      ticketDeclaresEvidence(dir, run)
+      opened?.binding_run_id === undefined &&
+      ticketDeclaresEvidence(dir, run, opened)
     ) {
       const pre = checkGates({ dir, run, gates: PRE_SHIP_GATES, project, forkBound });
       if (!pre.ok) {
