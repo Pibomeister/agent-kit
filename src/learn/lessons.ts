@@ -118,7 +118,7 @@ const HISTORY_STATUSES = new Set(["superseded", "retired"]);
  * history: they are neither enforced nor prose-only, so they are omitted.
  */
 export function classifyLessons(lessons: readonly LessonRecord[]): LessonCoverage[] {
-  return lessons.flatMap((lesson) => {
+  return lessons.flatMap((lesson): LessonCoverage[] => {
     if (HISTORY_STATUSES.has(lesson.status)) return [];
     if (lesson.check === "")
       return [

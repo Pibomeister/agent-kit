@@ -85,10 +85,10 @@ describe("lesson enforcement coverage", () => {
     expect(passing.find((f) => f.detail.includes("ls-002"))?.level).toBe("WARN");
     const failing = lessonsFindings(coverage, [{ check: "tracker token", level: "FAIL" }]);
     expect(failing.find((f) => f.detail.includes("ls-001"))?.level).toBe("FAIL");
-    const summary = passing[passing.length - 1];
-    expect(summary.check).toBe("lessons coverage");
-    expect(summary.detail).toContain("1 enforced");
-    expect(summary.detail).toContain("2 prose-only");
+    const summary = passing.at(-1);
+    expect(summary?.check).toBe("lessons coverage");
+    expect(summary?.detail).toContain("1 enforced");
+    expect(summary?.detail).toContain("2 prose-only");
   });
 
   test("an enforced lesson fails when any host's guarded check fails, not just the first label match", () => {
