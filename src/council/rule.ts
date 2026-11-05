@@ -10,6 +10,7 @@
  */
 
 import { sharesLineage, type Lineaged } from "../runner/lineage.ts";
+import { FAIL_CLOSED } from "./seat.ts";
 
 /** The veto seat's answer to one frozen packet, kept apart from the pair's two judgments. */
 export interface AnsweredVeto extends Lineaged {
@@ -55,7 +56,10 @@ export function vetoRefusal(
     !veto.lineage.includes(veto.actor)
   )
     return "The blind veto seat is not independent of the supervisor pair";
-  if (veto.choice !== approve) return `The blind veto seat did not approve; it chose ${veto.choice}`;
+  if (veto.choice !== approve)
+    return veto.actor === FAIL_CLOSED
+      ? "The blind veto seat gave no valid verdict; recorded REJECT fail-closed"
+      : `The blind veto seat did not approve; it chose ${veto.choice}`;
   return null;
 }
 
@@ -72,12 +76,14 @@ export interface CouncilResult {
  * The outcome of one council question. `pair` holds each primary seat's
  * choice, null for a seat that could not answer. `veto` is the veto's choice,
  * null when it could not answer, and undefined when it was not asked, which
- * is right only when the pair did not agree on approval.
+ * is right only when the pair did not agree on approval. `vetoActor` is the
+ * recorded actor when the veto answered, including fail-closed.
  */
 export function councilOutcome(
   approve: string,
   pair: readonly (string | null)[],
   veto: string | null | undefined,
+  vetoActor?: string | null,
 ): CouncilResult {
   const [first, second] = pair;
   if (pair.length !== 2 || first === undefined || second === undefined)
@@ -89,6 +95,14 @@ export function councilOutcome(
   if (veto === undefined) return { outcome: "escalate", choice: null, causes: ["the blind veto seat was not asked"] };
   if (veto === null) return { outcome: "escalate", choice: null, causes: ["the blind veto seat was unavailable"] };
   if (veto !== approve)
-    return { outcome: "escalate", choice: null, causes: [`the blind veto seat did not approve; it chose ${veto}`] };
+    return {
+      outcome: "escalate",
+      choice: null,
+      causes: [
+        vetoActor === FAIL_CLOSED
+          ? "the blind veto seat gave no valid verdict; recorded REJECT fail-closed"
+          : `the blind veto seat did not approve; it chose ${veto}`,
+      ],
+    };
   return { outcome: "approve", choice: approve, causes: [] };
 }

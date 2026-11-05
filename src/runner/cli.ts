@@ -226,6 +226,7 @@ async function dispatchVeto(
       spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
     ),
     options,
+    council.veto.seat,
   );
   if (!result.ok) {
     runner.veto(runId, cardId, {

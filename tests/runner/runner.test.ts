@@ -3540,7 +3540,25 @@ describe("council blind veto", () => {
     f.runner.veto("toy-run", "card-1", answered("no"));
     const result = f.runner.decide("toy-run", "card-1");
     expect(result.escalation?.charter_rule).toBe("runner:council-veto");
-    expect(result.escalation?.need).toContain("did not approve");
+    expect(result.escalation?.need).toBe("The blind veto seat did not approve; it chose no");
+    expect(stage(f)).toEqual(["needs-input", null]);
+  });
+
+  test("a fail-closed veto refuses as a missing verdict, not as a chosen REJECT", () => {
+    const f = councilReady();
+    card(f);
+    f.runner.veto("toy-run", "card-1", {
+      ...answered("no", "fail-closed"),
+      dispatch: "fail-closed",
+      rationale: "ambiguous or missing verdict; seat veto v1: launcher returned an invalid answer",
+    });
+    const result = f.runner.decide("toy-run", "card-1");
+    expect(result.escalation?.charter_rule).toBe("runner:council-veto");
+    expect(result.escalation?.need).toBe("The blind veto seat gave no valid verdict; recorded REJECT fail-closed");
+    expect(f.runner.status("toy-run").cards["card-1"]?.veto).toMatchObject({
+      actor: "fail-closed",
+      rationale: "ambiguous or missing verdict; seat veto v1: launcher returned an invalid answer",
+    });
     expect(stage(f)).toEqual(["needs-input", null]);
   });
 

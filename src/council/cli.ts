@@ -214,13 +214,19 @@ async function run(args: RunArgs, io: Io): Promise<number> {
       seats.push(...pair.map((seat, i) => seatEntry("primary", seat, results[i] ?? { ok: false, attempts: [] })));
       const choices = seats.map((entry) => entry.choice);
       let veto: string | null | undefined;
+      let vetoActor: string | null | undefined;
       if (choices.every((choice) => choice === card.approve)) {
-        const result = closeVeto(await launchSeat(config.veto, payload, card.options, spawn), card.options);
+        const result = closeVeto(
+          await launchSeat(config.veto, payload, card.options, spawn),
+          card.options,
+          config.veto.seat,
+        );
         const entry = seatEntry("veto", config.veto, result);
         seats.push(entry);
         veto = entry.choice;
+        vetoActor = entry.actor;
       }
-      decided = councilOutcome(card.approve, choices, veto);
+      decided = councilOutcome(card.approve, choices, veto, vetoActor);
     } finally {
       for (const [signal, stop] of stops) process.off(signal, stop);
       rmSync(scratch, { recursive: true, force: true });

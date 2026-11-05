@@ -6,7 +6,7 @@ import { BUILT_IN_DENY, checkOutbound, deniedBy, DEFAULT_MAX_BYTES } from "../..
 import { seatEnv } from "../../src/council/cli.ts";
 import type { CouncilSeat } from "../../src/council/config.ts";
 import { councilOutcome, vetoRefusal, type AnsweredVeto } from "../../src/council/rule.ts";
-import { collectDetached, launchSeat } from "../../src/council/seat.ts";
+import { closeVeto, collectDetached, FAIL_CLOSED, launchSeat } from "../../src/council/seat.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 // Built from parts so the sample is not itself a credential-shaped literal in the tree.
@@ -156,6 +156,22 @@ describe("council seats", () => {
     expect(JSON.stringify(result)).toContain("invalid answer");
   });
 
+  test("closeVeto keeps the chain failures on a fail-closed REJECT", async () => {
+    const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], () => Promise.resolve(raw("")));
+    const closed = closeVeto(result, ["WORTHY", "REJECT"], "veto");
+    expect(closed).toMatchObject({
+      ok: true,
+      synthesized: true,
+      answer: { choice: "REJECT" },
+      attempts: [{ actor: "v1" }, { actor: "v2" }],
+    });
+    expect("launcher" in closed).toBe(false);
+    const rationale = closed.ok && !("launcher" in closed) ? closed.answer.rationale : "";
+    expect(rationale).toContain("ambiguous or missing verdict");
+    expect(rationale).toContain("seat veto v1:");
+    expect(rationale).toContain("seat veto v2:");
+  });
+
   test("prose around a JSON object is an invalid attempt and moves to the substitute", async () => {
     const wrapped = `I would have said WORTHY.\n${JSON.stringify({ choice: "REJECT", rationale: "r" })}`;
     const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], (launcher) =>
@@ -281,6 +297,12 @@ describe("council rule", () => {
     expect(vetoRefusal("yes", veto({ lineage: ["v", "impl"] }), pair, ["impl"])).toContain("not independent");
     expect(vetoRefusal("yes", veto({ lineage: ["other"] }), pair, [])).toContain("not independent");
     expect(vetoRefusal("yes", veto({ choice: "no" }), pair, [])).toContain("did not approve");
+    expect(vetoRefusal("WORTHY", veto({ choice: "REJECT" }), pair, [])).toBe(
+      "The blind veto seat did not approve; it chose REJECT",
+    );
+    expect(
+      vetoRefusal("WORTHY", veto({ choice: "REJECT", actor: FAIL_CLOSED, lineage: [FAIL_CLOSED] }), pair, []),
+    ).toBe("The blind veto seat gave no valid verdict; recorded REJECT fail-closed");
   });
 
   test("only three approvals approve", () => {
@@ -291,6 +313,12 @@ describe("council rule", () => {
     expect(councilOutcome("yes", ["yes", "yes"], "no").outcome).toBe("escalate");
     expect(councilOutcome("yes", ["yes", "yes"], null).outcome).toBe("escalate");
     expect(councilOutcome("yes", ["yes", "yes"], undefined).outcome).toBe("escalate");
+    expect(councilOutcome("WORTHY", ["WORTHY", "WORTHY"], "REJECT").causes).toEqual([
+      "the blind veto seat did not approve; it chose REJECT",
+    ]);
+    expect(councilOutcome("WORTHY", ["WORTHY", "WORTHY"], "REJECT", FAIL_CLOSED).causes).toEqual([
+      "the blind veto seat gave no valid verdict; recorded REJECT fail-closed",
+    ]);
   });
 
   test("a split or a missing primary seat escalates, and the veto never breaks a tie", () => {

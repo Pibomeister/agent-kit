@@ -369,6 +369,7 @@ describe("ak council run parses a seat verdict strictly", () => {
     expect(record(s.out)).toMatchObject({
       outcome: "escalate",
       choice: null,
+      causes: ["the blind veto seat did not approve; it chose REJECT"],
       seats: [{ choice: "WORTHY" }, { choice: "WORTHY" }, { role: "veto", actor: "v2", choice: "REJECT" }],
     });
     expect(readFileSync(s.log, "utf8")).toContain("v2");
@@ -389,9 +390,11 @@ describe("ak council run parses a seat verdict strictly", () => {
     expect(result.code).toBe(1);
     expect(record(s.out)).toMatchObject({
       outcome: "escalate",
+      causes: ["the blind veto seat gave no valid verdict; recorded REJECT fail-closed"],
       seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
     });
     expect(JSON.stringify(record(s.out))).toContain("not a JSON object");
+    expect(JSON.stringify(record(s.out))).toContain("seat veto v1:");
   });
 
   test("an exact WORTHY without a rationale is invalid", async () => {
