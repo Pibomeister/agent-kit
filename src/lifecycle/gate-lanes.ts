@@ -314,16 +314,21 @@ export function readWaiters(dir: string): LaneWaiter[] {
 }
 
 /** Who holds, who waits, and for how long, at `nowMs`. */
-export function laneStatus(dir: string, nowMs: number): LaneStatus {
+export function laneStatus(dir: string, nowMs: number, host: string = hostname()): LaneStatus {
+  const live = (record: { pid: number; host: string }) => record.host !== host || alive(record.pid);
   return {
-    holders: readHolders(dir).map((holder) => ({
-      ...holder,
-      held_ms: Math.max(0, nowMs - Date.parse(holder.acquired_at)),
-    })),
-    waiters: readWaiters(dir).map((waiter) => ({
-      ...waiter,
-      waiting_ms: Math.max(0, nowMs - Date.parse(waiter.enqueued_at)),
-    })),
+    holders: readHolders(dir)
+      .filter(live)
+      .map((holder) => ({
+        ...holder,
+        held_ms: Math.max(0, nowMs - Date.parse(holder.acquired_at)),
+      })),
+    waiters: readWaiters(dir)
+      .filter(live)
+      .map((waiter) => ({
+        ...waiter,
+        waiting_ms: Math.max(0, nowMs - Date.parse(waiter.enqueued_at)),
+      })),
   };
 }
 
@@ -384,23 +389,23 @@ export function acquireLane(dir: string, identity: LaneIdentity, options: Acquir
               },
             };
           }
-          if (laneHolder !== undefined || poolFull) {
-            const waited = at - started;
-            if (waited >= timeoutMs) {
-              const failure: Extract<AcquireResult, { ok: false }> = {
-                ok: false,
-                reason:
-                  laneHolder !== undefined
-                    ? `lane ${identity.lane} (${identity.branch}) is held by pid ${laneHolder.pid} on ${laneHolder.host} since ${laneHolder.acquired_at}`
-                    : `gate pool is full (${holders.length}/${options.pool ?? 0} lanes holding)`,
-                waited_ms: waited,
-              };
-              if (laneHolder !== undefined) failure.holder = laneHolder;
-              return failure;
-            }
-            registerWaiter(at);
-            options.onWait?.(laneHolder, waited);
+          const waited = at - started;
+          if (waited >= timeoutMs) {
+            const failure: Extract<AcquireResult, { ok: false }> = {
+              ok: false,
+              reason:
+                laneHolder !== undefined
+                  ? `lane ${identity.lane} (${identity.branch}) is held by pid ${laneHolder.pid} on ${laneHolder.host} since ${laneHolder.acquired_at}`
+                  : poolFull
+                    ? `gate pool is full (${holders.length}/${options.pool ?? 0} lanes holding)`
+                    : `lane ${identity.lane} (${identity.branch}) has an unreadable holder record at ${holderPath}`,
+              waited_ms: waited,
+            };
+            if (laneHolder !== undefined) failure.holder = laneHolder;
+            return failure;
           }
+          registerWaiter(at);
+          options.onWait?.(laneHolder, waited);
         } finally {
           unlock();
         }
@@ -489,9 +494,7 @@ export function checkUnpublished(
     branchResult.code === 0 && branchResult.text !== ""
       ? branchResult.text
       : git(project, ["rev-parse", "--short", "HEAD"]).text;
-  const upstream = git(project, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
-  const range = upstream.code === 0 && upstream.text !== "" ? `${upstream.text}..HEAD` : "HEAD --not --remotes";
-  const log = git(project, ["log", "--format=%ct", ...range.split(" ")]);
+  const log = git(project, ["log", "--format=%ct", "HEAD", "--not", "--remotes"]);
   const stamps = log.code === 0 && log.text !== "" ? log.text.split("\n").map(Number).filter(Number.isFinite) : [];
   if (stamps.length === 0) return { branch, unpublished: 0, max_age_minutes: maxAgeMinutes, overdue: false };
   const oldestSeconds = Math.min(...stamps);

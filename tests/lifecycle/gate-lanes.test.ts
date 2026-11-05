@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -11,6 +11,7 @@ import {
   laneKey,
   laneStatus,
   releaseLane,
+  waitersDir,
   resolveMaxAgeMinutes,
   resolvePool,
   type LaneIdentity,
@@ -140,6 +141,34 @@ got.release();
     expect(laneStatus(dir, Date.now()).holders).toEqual([]);
   });
 
+  test("status hides same-host holders and waiters whose pid is dead", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const deadPid = 999_999;
+    const host = "lane-host";
+    mkdirSync(waitersDir(dir), { recursive: true });
+    const stale = acquireLane(dir, laneA, { pid: deadPid, host, sleep: noSleep });
+    expect(stale.ok).toBe(true);
+    const enqueued = new Date().toISOString();
+    writeFileSync(
+      join(waitersDir(dir), `${laneKey(laneB)}-${deadPid}.json`),
+      JSON.stringify({ ...laneB, pid: deadPid, host, enqueued_at: enqueued }),
+    );
+    expect(laneStatus(dir, Date.now(), host)).toEqual({ holders: [], waiters: [] });
+    const elsewhere = laneStatus(dir, Date.now(), "other-host");
+    expect(elsewhere.holders).toHaveLength(1);
+    expect(elsewhere.waiters).toHaveLength(1);
+  });
+
+  test("an unreadable holder record still honours the wait timeout", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    mkdirSync(holdersDir(dir), { recursive: true });
+    writeFileSync(join(holdersDir(dir), `${laneKey(laneA)}.json`), "{ truncated");
+    const clock = fakeClock();
+    const got = acquireLane(dir, laneA, { now: clock.now, sleep: clock.sleep, pollMs: 100, timeoutMs: 1_000 });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.reason).toContain("unreadable holder record");
+  });
+
   test("pool and unpublished limits resolve flag over env over default", () => {
     expect(resolvePool(undefined, undefined)).toBeUndefined();
     expect(resolvePool(undefined, "3")).toBe(3);
@@ -195,6 +224,37 @@ describe("unpublished-commit age check (issue #194)", () => {
     expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({
       unpublished: 1,
       age_minutes: 10,
+      overdue: false,
+    });
+  });
+
+  test("a lane branch tracking origin/main counts as published once pushed under its own name", () => {
+    const dir = processScratch("ak-gate-unpublished-");
+    const repo = join(dir, "repo");
+    spawnSync("git", ["init", "-b", "main", repo], { encoding: "utf8" });
+    git(repo, ["config", "user.email", "lane@example.invalid"]);
+    git(repo, ["config", "user.name", "Lane"]);
+    writeFileSync(join(repo, "base.txt"), "base\n");
+    git(repo, ["add", "base.txt"]);
+    git(repo, ["commit", "-m", "base"]);
+    const remote = join(dir, "remote.git");
+    spawnSync("git", ["init", "--bare", remote], { encoding: "utf8" });
+    git(repo, ["remote", "add", "origin", remote]);
+    git(repo, ["push", "origin", "main"]);
+    git(repo, ["fetch", "origin"]);
+    git(repo, ["switch", "--track", "-c", "fm/x", "origin/main"]);
+    writeFileSync(join(repo, "work.txt"), "lane work\n");
+    git(repo, ["add", "work.txt"]);
+    git(repo, ["commit", "-m", "lane work"], {
+      GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
+      GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
+    });
+    expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({ unpublished: 1, overdue: true });
+    git(repo, ["push", "origin", "fm/x"]);
+    expect(git(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"])).toBe("origin/main");
+    expect(checkUnpublished(repo, 30, { now: UNPUBLISHED_NOW })).toMatchObject({
+      branch: "fm/x",
+      unpublished: 0,
       overdue: false,
     });
   });

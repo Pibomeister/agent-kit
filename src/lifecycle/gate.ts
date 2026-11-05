@@ -2302,6 +2302,10 @@ export function main(
       return 2;
     }
     const timeoutFlag = str("timeout-minutes");
+    if (timeoutFlag !== undefined && !Number.isFinite(Number(timeoutFlag))) {
+      io.err(`ak lifecycle lanes run: --timeout-minutes must be a number, got ${timeoutFlag}`);
+      return 2;
+    }
     const timeoutMs = timeoutFlag === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Number(timeoutFlag) * 60_000);
     let announced = false;
     const label = str("label");
