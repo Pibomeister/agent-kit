@@ -126,10 +126,15 @@ marked PATH line to the first of `~/.bash_profile`, `~/.bash_login`,
 files exist, it writes `~/.profile`. It does that only when `~/.bun/bin/bun` is
 1.3.14 and a login shell cannot already find that version.
 
-On a Cursor cloud agent (`CURSOR_AGENT=1`) it may also create
-`/usr/local/bin/bun` as a symlink to `~/.bun/bin/bun`. Cloud Agent tool shells
-are not login shells, so they do not read the login PATH line. The symlink is
-the PATH entry those shells already search. If `/usr/local/bin` is not
-writable, `sudo_link_system_bun` uses passwordless `sudo -n`. It never
-replaces a `/usr/local/bin/bun` that is not that symlink. On any other
-machine it stays inside `$HOME` and prints the skip on stderr.
+On a Cursor cloud worker it may also create `/usr/local/bin/bun` as a
+symlink to `~/.bun/bin/bun`. A cloud worker is `CURSOR_AGENT_WORKER_ID` or
+`CURSOR_WORKER_POOL_NAME` non-empty, and `CURSOR_AGENT_CLI_LOCAL_MODE` not
+equal to `true`. `CURSOR_AGENT=1` is also set by local IDE and CLI agents, so
+it is not enough. Cloud Agent tool shells are not login shells, so they do
+not read the login PATH line. The symlink is the PATH entry those shells
+already search. If `/usr/local/bin` is not writable, `sudo_link_system_bun`
+uses passwordless `sudo -n`. It never replaces a `/usr/local/bin/bun` that
+is not that symlink. Off-cloud, it never replaces an existing
+`~/.bun/bin/bun` that is not the pin. On any other machine it stays inside
+`$HOME` and prints the skip on stderr. If those worker markers are absent,
+sudo never runs.
