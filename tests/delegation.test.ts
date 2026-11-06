@@ -203,7 +203,7 @@ test("ak delegation names the block a record lacks", () => {
   });
 });
 
-test("the bare scorer command the packaged super-bound body names scores with a current ak on PATH and is absent without one", () => {
+test("the bare scorer command the packaged super-bound body names scores with a current agent-kit CLI and is absent without one", () => {
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
   const { files } = planBundle({ root: REPO, catalog }, "claude-code", {});
@@ -222,7 +222,7 @@ test("the bare scorer command the packaged super-bound body names scores with a 
     (match) => match[1] ?? "",
   );
   expect(commands).toEqual(Array(2).fill("ak delegation <ticket> --project <project-record>"));
-  expect(body).toContain("A current `ak` on `PATH` is a prerequisite");
+  expect(body).toContain("A current agent-kit CLI is a prerequisite");
   const bun = dirname(process.execPath);
   const ak = (command: string, ticketPath: string, path = `${join(root, "path")}:${bun}`) => {
     const [program = "", ...argv] = command

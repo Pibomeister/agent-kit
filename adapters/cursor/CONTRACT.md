@@ -37,7 +37,8 @@ dist/cursor/
 │   ├── skills/<id>/references/
 │   ├── agents/<role>.md       # custom subagents for catalog roles
 │   ├── rules/ak-super-review.mdc
-│   ├── roles/, references/, schemas/, templates/, licenses/, bin/, catalog.yaml
+│   ├── roles/, references/, schemas/, templates/, licenses/, adapters/, bin/, catalog.yaml
+│   └── bin/ak.js              # bundled CLI; POSIX launcher is bin/ak
 └── AGENTS.md                  # merge into the consuming repo root
 ```
 
@@ -150,7 +151,8 @@ REPO="${REPO:?set REPO to the consuming checkout}"
 
 mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
   "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
-  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses"
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses" \
+  "$REPO/.cursor/adapters"
 
 rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
 rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
@@ -161,6 +163,7 @@ rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
 rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
 rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
 rsync -a "$BUNDLE/.cursor/licenses/"   "$REPO/.cursor/licenses/"
+rsync -a "$BUNDLE/.cursor/adapters/"   "$REPO/.cursor/adapters/"
 cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
 ```
 
@@ -223,8 +226,10 @@ acceptance cases, not this bundle's offline proof.
 
 A Cursor Cloud Agent on a branch or PR starts review by invoking `/super-review`
 (model-started `full` and `readiness` per ADR-0013; `delta` stays inside an open
-run). The skill body, roles and `bin/ak-gate.mjs` travel in the vendored
-`.cursor/` tree.
+run). The skill body, roles, `.cursor/bin/ak` and `.cursor/bin/ak-gate.mjs`
+travel in the vendored `.cursor/` tree. Run `.cursor/bin/ak` from the repo root,
+not `ak` or `bun run ak`. The Firstmate grant is `.cursor/bin/ak firstmate grant`.
+The gate is `node .cursor/bin/ak-gate.mjs`.
 
 Context separation on Cursor is **partial**:
 

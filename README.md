@@ -107,7 +107,8 @@ live acceptance remains separate for each served binding, and `ak update` does n
 Cursor IDE and Cloud Agents use the native bundle at `dist/cursor`, built with
 `bun run ak build --host cursor` (or `--out <dir>` for a dedicated directory).
 Human-started skills use `/<id>`. Vendor `.cursor/skills/` and `.cursor/agents/`
-into the consuming repository so Cloud Agents load them from the clone. See the
+into the consuming repository so Cloud Agents load them from the clone. Cloud
+Agents run `.cursor/bin/ak` from the repo root, not `ak` or `bun run ak`. See the
 [Cursor host README](adapters/cursor/README.md) for the exact rsync commands and
 [contract](adapters/cursor/CONTRACT.md) for discovery paths and super-review seating.
 `ak update` does not manage Cursor.

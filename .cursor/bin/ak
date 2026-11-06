@@ -1,0 +1,30 @@
+#!/bin/sh
+pin=1.3.14
+case $0 in
+  */*) here=$(CDPATH= cd -- "${0%/*}" && pwd) ;;
+  *) here=$(CDPATH= cd -- . && pwd) ;;
+esac
+script="$here/ak.js"
+home_bun="${HOME}/.bun/bin/bun"
+
+is_pin() {
+  [ -x "$1" ] || return 1
+  ver=$("$1" --version 2>/dev/null) || return 1
+  [ "$ver" = "$pin" ]
+}
+
+path_bun=$(command -v bun 2>/dev/null || true)
+if [ -n "$path_bun" ] && is_pin "$path_bun"; then
+  pick=$path_bun
+elif [ -n "${HOME}" ] && is_pin "$home_bun"; then
+  pick=$home_bun
+else
+  if [ -n "${HOME}" ]; then
+    echo "ak: need bun $pin on PATH or at $home_bun" >&2
+  else
+    echo "ak: need bun $pin on PATH" >&2
+  fi
+  exit 127
+fi
+
+exec "$pick" "$script" "$@"

@@ -113,8 +113,8 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
    [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) rather than
    renaming the same things here.
 6. When the caller supplies a draft ticket or scorer input, load the delegation reference and run
-   `ak delegation <ticket> --project <project-record>` now. A current `ak` on `PATH` is a
-   prerequisite: a missing command, or a usage error from an older `ak`, is reported as
+   `ak delegation <ticket> --project <project-record>` now. A current agent-kit CLI is a
+   prerequisite: a missing command, or a usage error from an older CLI, is reported as
    `needs-input` naming that prerequisite, not as a scoring failure. Persist the scorer output,
    readiness and assumptions on the evidence-bearing draft before document review; the draft is not
    an approved implementation ticket.

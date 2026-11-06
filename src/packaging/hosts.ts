@@ -43,6 +43,11 @@ export function packagedBinFile(host: HostId, name: string): string {
   return host === "cursor" ? `.cursor/bin/${name}` : `bin/${name}`;
 }
 
+/** Path of the maintenance CLI script bun runs. Cursor's `ak` is a POSIX launcher over `ak.js`. */
+export function packagedAkScriptFile(host: HostId): string {
+  return host === "cursor" ? packagedBinFile(host, "ak.js") : packagedBinFile(host, "ak");
+}
+
 /**
  * Relocate a bundle-relative path for this host. Cursor nests the content tree
  * under `.cursor/` so a vendored overlay is what Cloud Agents clone-discover.
@@ -97,6 +102,35 @@ export function rewriteExplicitStarts(
   }
   if (native.size === 0) return text;
   return text.replace(explicitStartPattern([...native.keys()]), (found) => native.get(found) ?? found);
+}
+
+/**
+ * Cursor Cloud Agent tool shells often have no bun on PATH. Skills that run the
+ * bundled maintenance CLI name `.cursor/bin/ak`, which finds the pin without
+ * that PATH entry. `build`, `validate` and `attach` stay `ak`: those are the
+ * source CLI, not the overlay binary. `doctor` and `update` stay `ak`: they do
+ * not manage Cursor. Supervisor-side Firstmate verbs stay `ak`: Firstmate runs
+ * bind, install, remove, preflight and brief from its own ak, and child-guard.sh
+ * treats install and remove as supervisor-side, like bind. `firstmate status`
+ * with `--verify` stays `ak`: Firstmate audits a done line with it. `runner`
+ * stays `ak` except `runner call`, which workers issue. Worker-side grant,
+ * status and seat-judge still rewrite.
+ */
+const CURSOR_AK_VERBS =
+  "firstmate(?! (?:bind|install|remove|preflight|brief)\\b)(?! status(?: [^\\n`;|&]+)? --verify\\b)|delegation|runner call|learn|kb|guard|lifecycle|tracker|council";
+
+/**
+ * Claude Code and Codex adapter contracts describe those hosts' CLIs, including
+ * hook command strings registered in their settings. Rewriting them to
+ * `.cursor/bin/ak` is false.
+ */
+export function rewriteAkCommands(text: string, host: HostId, source = ""): string {
+  if (host !== "cursor") return text;
+  if (/^adapters\/(claude-code|codex)\//.test(source)) return text;
+  return text.replace(
+    new RegExp(`(^|[^./a-z-])(?:bun run )?ak (${CURSOR_AK_VERBS})(?=[\\s\`])`, "gm"),
+    "$1.cursor/bin/ak $2",
+  );
 }
 
 /**

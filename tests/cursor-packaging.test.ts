@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
@@ -11,13 +11,15 @@ import {
   packagedBinFile,
   packagedSkillFile,
   relocateForHost,
+  rewriteAkCommands,
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
 import { schemaRefs } from "../src/packaging/mentions.ts";
 import { shippingCitedLicencePaths } from "../src/packaging/licences.ts";
-import { BUILD_RECORD_FILE, planBundle } from "../src/packaging/plan.ts";
+import { BUILD_RECORD_FILE, isExecutable, planBundle } from "../src/packaging/plan.ts";
 import { writeBundles } from "../src/packaging/build.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
+import { walkFiles } from "../src/util/fs.ts";
 import { extractRelativeLinks, resolveFromFile } from "../src/util/links.ts";
 import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
@@ -92,6 +94,74 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
         "compound",
       ]),
     ).toBe("/compound /ak:compound-refresh /ak:super-scout ordinary prose");
+  });
+
+  test("Cursor skills run .cursor/bin/ak for the bundled CLI, not bun run ak", () => {
+    expect(rewriteAkCommands("`ak firstmate grant` and `ak build` and `bun run ak learn memory show`", "cursor")).toBe(
+      "`.cursor/bin/ak firstmate grant` and `ak build` and `.cursor/bin/ak learn memory show`",
+    );
+    expect(rewriteAkCommands("`ak firstmate grant`", "claude-code")).toBe("`ak firstmate grant`");
+    expect(rewriteAkCommands("`ak firstmate bind` and `ak firstmate grant`", "cursor")).toBe(
+      "`ak firstmate bind` and `.cursor/bin/ak firstmate grant`",
+    );
+    expect(rewriteAkCommands("`ak firstmate preflight` and `ak firstmate grant`", "cursor")).toBe(
+      "`ak firstmate preflight` and `.cursor/bin/ak firstmate grant`",
+    );
+    expect(rewriteAkCommands("`ak update` and `ak doctor` and `ak tracker check`", "cursor")).toBe(
+      "`ak update` and `ak doctor` and `.cursor/bin/ak tracker check`",
+    );
+    expect(
+      rewriteAkCommands("`ak learn setup wire` registers `ak learn hook stop`", "cursor", "adapters/codex/CONTRACT.md"),
+    ).toBe("`ak learn setup wire` registers `ak learn hook stop`");
+    expect(rewriteAkCommands("`ak runner serve` and `ak runner call status`", "cursor")).toBe(
+      "`ak runner serve` and `.cursor/bin/ak runner call status`",
+    );
+    expect(rewriteAkCommands("through `ak runner` as described", "cursor")).toBe("through `ak runner` as described");
+    expect(
+      rewriteAkCommands("`ak firstmate status <binding> --verify` and `ak firstmate status complete`", "cursor"),
+    ).toBe("`ak firstmate status <binding> --verify` and `.cursor/bin/ak firstmate status complete`");
+    expect(rewriteAkCommands("ak firstmate status complete && ak firstmate status b --verify", "cursor")).toBe(
+      ".cursor/bin/ak firstmate status complete && ak firstmate status b --verify",
+    );
+  });
+
+  test("Cursor overlay keeps supervisor-side commands on bare ak", () => {
+    const cursor = planBundle(ctx, "cursor", { profile: "all" });
+    const firstmateContract =
+      cursor.files.get(".cursor/references/shared/adapters/firstmate/CONTRACT.md")?.contents ?? "";
+    expect(firstmateContract).toContain("through `ak runner`");
+    expect(firstmateContract).not.toContain("through `.cursor/bin/ak runner`");
+    expect(firstmateContract).toContain("`ak firstmate status <binding> --verify`");
+    expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate status <binding> --verify`");
+    expect(firstmateContract).toContain("`.cursor/bin/ak firstmate status complete`");
+    expect(firstmateContract).toContain("the supervisor's `ak firstmate status --verify`");
+    expect(firstmateContract).not.toContain("the supervisor's `.cursor/bin/ak firstmate status --verify`");
+    const runnerContract =
+      cursor.files.get(".cursor/references/shared/adapters/runner-contract/CONTRACT.md")?.contents ?? "";
+    expect(runnerContract).toContain("`ak runner serve");
+    expect(runnerContract).not.toContain("`.cursor/bin/ak runner serve");
+    expect(runnerContract).toContain("`.cursor/bin/ak runner call");
+  });
+
+  test("Cursor .cursor/schemas copies use the same ak forms as their shared twins", () => {
+    const cursor = planBundle(ctx, "cursor", { profile: "all" });
+    const akForm = /(?:\.cursor\/bin\/)?ak [a-z][a-z-]*(?: [^\s`]+)?/g;
+    const bareWorkerAk =
+      /(^|[^./a-z-])(?:bun run )?ak (?:firstmate grant|firstmate status complete|kb |tracker |delegation |runner call|learn |guard |lifecycle |council )/m;
+    const schemaFiles = [...cursor.files.keys()]
+      .filter((path) => path.startsWith(".cursor/schemas/") && path.endsWith(".schema.json"))
+      .toSorted();
+    expect(schemaFiles.length).toBeGreaterThan(0);
+    for (const path of schemaFiles) {
+      const contents = cursor.files.get(path)?.contents ?? "";
+      const twin = cursor.files.get(path.replace(".cursor/schemas/", ".cursor/references/shared/schemas/"))?.contents;
+      if (twin !== undefined) {
+        expect(`${path}:${[...contents.matchAll(akForm)].map((row) => row[0]).join("|")}`).toBe(
+          `${path}:${[...twin.matchAll(akForm)].map((row) => row[0]).join("|")}`,
+        );
+      }
+      expect(`${path}:${bareWorkerAk.test(contents)}`).toBe(`${path}:false`);
+    }
   });
 
   test("the Cursor bundle is the catalog in a Cloud-discoverable layout", () => {
@@ -218,6 +288,42 @@ describe("Cursor generated bundle (offline, not session behavior)", () => {
     ).toBe("super-review");
     expect(cursor.files.has(".cursor/bin/ak-gate.mjs")).toBe(true);
     expect(cursor.files.has(packagedBinFile("cursor", "ak"))).toBe(true);
+    expect(cursor.files.has(".cursor/bin/ak.js")).toBe(true);
+    expect(cursor.files.get(packagedBinFile("cursor", "ak"))?.contents.startsWith("#!/bin/sh\n")).toBe(true);
+    expect(cursor.files.get(".cursor/bin/ak.js")?.contents.startsWith("#!")).toBe(false);
+    expect(cursor.files.get(packagedSkillFile("cursor", "super-review"))?.contents).toContain(
+      "`.cursor/bin/ak firstmate grant",
+    );
+    expect(cursor.files.get(packagedSkillFile("cursor", "super-review"))?.contents).not.toContain(
+      "`ak firstmate grant",
+    );
+    const firstmateContract =
+      cursor.files.get(".cursor/references/shared/adapters/firstmate/CONTRACT.md")?.contents ?? "";
+    expect(firstmateContract).toContain("`.cursor/bin/ak firstmate grant");
+    expect(firstmateContract).not.toContain("`ak firstmate grant");
+    expect(firstmateContract).toContain("`ak firstmate bind`");
+    expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate bind`");
+    expect(firstmateContract).toContain(
+      "`ak firstmate preflight --fm-home <home> --project <worktree> --host claude-code|codex`",
+    );
+    expect(firstmateContract).not.toContain("`.cursor/bin/ak firstmate preflight");
+    expect(firstmateContract).toContain("`firstmate status <binding> --verify` from its own `ak`");
+    expect(firstmateContract).not.toContain(
+      "Firstmate itself runs `.cursor/bin/ak firstmate status <binding> --verify`",
+    );
+    const claudeContract =
+      cursor.files.get(".cursor/references/shared/adapters/claude-code/CONTRACT.md")?.contents ?? "";
+    expect(claudeContract).toContain("`ak learn setup wire`");
+    expect(claudeContract).toContain("`ak learn hook stop`");
+    expect(claudeContract).not.toContain(".cursor/bin/ak learn");
+    const codexContract = cursor.files.get(".cursor/references/shared/adapters/codex/CONTRACT.md")?.contents ?? "";
+    expect(codexContract).toContain("`ak update`");
+    expect(codexContract).toContain("`ak learn setup wire`");
+    expect(codexContract).not.toContain(".cursor/bin/ak update");
+    expect(codexContract).not.toContain(".cursor/bin/ak learn");
+    const kbContract = cursor.files.get(".cursor/references/shared/adapters/knowledgebase/CONTRACT.md")?.contents ?? "";
+    expect(kbContract).toContain(".cursor/bin/ak kb register");
+    expect(kbContract).not.toMatch(/(^|[^./a-z-])ak kb register/);
     expect(cursor.files.get(agentPath("trail-auditor"))?.contents).toContain(
       "](../templates/trail-audit.example.json)",
     );
@@ -384,5 +490,40 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
     expect(gate).toContain("// --- LICENSE ---");
     expect(gate).toContain("// --- NOTICE ---");
     expect(gate).toContain("// --- provenance/licenses/thedotmack_claude-mem.NOTICE ---");
+  }, 120_000);
+
+  test("the committed .cursor overlay matches a fresh default Cursor plan except environment.json", () => {
+    const cursor = planBundle(ctx, "cursor", {});
+    expect(cursor.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const planned = [...cursor.files.keys()].filter((path) => path.startsWith(".cursor/")).toSorted();
+    const extras = walkFiles(root, ".cursor").filter((path) => path !== ".cursor/environment.json");
+    const vendor = "tools/cursor/self-host.sh --vendor";
+    const drifted = (detail: string) => {
+      throw new Error(`Cursor overlay drifted. Re-vendor with: ${vendor}. ${detail}`);
+    };
+    if (JSON.stringify(extras) !== JSON.stringify(planned)) {
+      drifted("overlay files do not match the Cursor plan");
+    }
+    expect(JSON.parse(readFileSync(join(root, ".cursor/environment.json"), "utf8"))).toEqual({
+      name: "agent-kit",
+      install: "bash tools/cursor/install.sh",
+    });
+    expect(existsSync(join(root, ".cursor/skills/super-review/SKILL.md"))).toBe(true);
+    const missing: string[] = [];
+    const stale: string[] = [];
+    const notExecutable: string[] = [];
+    for (const file of cursor.files.values()) {
+      if (!file.path.startsWith(".cursor/")) continue;
+      const disk = join(root, file.path);
+      if (!existsSync(disk)) {
+        missing.push(file.path);
+        continue;
+      }
+      if (readFileSync(disk, "utf8") !== file.contents) stale.push(file.path);
+      if (isExecutable(file) && (statSync(disk).mode & 0o111) === 0) notExecutable.push(file.path);
+    }
+    if (missing.length > 0 || stale.length > 0 || notExecutable.length > 0) {
+      drifted(JSON.stringify({ missing, stale, notExecutable }));
+    }
   }, 120_000);
 });
