@@ -193,8 +193,7 @@ got.release();
     );
     expect(err).toEqual([]);
     expect(code).toBe(0);
-    const status = JSON.parse(out.join("\n")) as { holders: { lane: string }[] };
-    expect(status.holders.map((holder) => holder.lane)).toEqual([laneA.lane]);
+    expect(JSON.parse(out.join("\n"))).toMatchObject({ holders: [{ lane: laneA.lane }] });
     if (held.ok) held.release();
   });
 
@@ -242,7 +241,7 @@ function capture() {
   return { out, err, io: { out: (line: string) => out.push(line), err: (line: string) => err.push(line) } };
 }
 
-function scratchRepo(prefix: string): { dir: string; repo: string } {
+function scratchRepo(prefix: string) {
   const dir = processScratch(prefix);
   const repo = join(dir, "repo");
   spawnSync("git", ["init", "-b", "fm/run", repo], { encoding: "utf8" });
