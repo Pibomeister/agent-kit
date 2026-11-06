@@ -184,7 +184,10 @@ describe("ak council run", () => {
     expect(record(out)).toMatchObject({ outcome: "escalate", choice: null });
     expect(record(out)).toMatchObject({
       causes: ["a primary seat was unavailable"],
-      seats: [{ seat: "primary-a", choice: null }, { seat: "primary-b", choice: null }],
+      seats: [
+        { seat: "primary-a", choice: null },
+        { seat: "primary-b", choice: null },
+      ],
     });
   });
 
