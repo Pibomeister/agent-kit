@@ -57,39 +57,14 @@ const spawnWith =
 describe("council seat verdict consumption", () => {
   const seat = { seat: "adversarial", chain: [{ actor: "a", lineage: ["a"], command: ["unused"] }] };
 
-  test("a transcript mentioning WORTHY early and ending in a REJECT field answers REJECT", async () => {
+  test("a non-JSON transcript ending in a valid VERDICT field is not a council answer", async () => {
     const result = await launchSeat(
       seat,
       "payload",
       [...ADVERSARIAL_VERDICTS],
       spawnWith("This looks WORTHY at first glance.\nThe constructed failure still stands.\nVERDICT: REJECT\n"),
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.answer.choice).toBe("REJECT");
-      expect(result.answer.rationale).toContain("looks WORTHY at first glance");
-    }
-  });
-
-  test("a transcript with no final verdict field is no answer, never an inferred approval", async () => {
-    const result = await launchSeat(
-      seat,
-      "payload",
-      [...ADVERSARIAL_VERDICTS],
-      spawnWith("Definitely WORTHY, merge it."),
-    );
     expect(result.ok).toBe(false);
-    expect(result.attempts[0]?.error).toContain("no structured final verdict field");
-  });
-
-  test("a transcript with two verdict fields is ambiguous and no answer", async () => {
-    const result = await launchSeat(
-      seat,
-      "payload",
-      [...ADVERSARIAL_VERDICTS],
-      spawnWith("VERDICT: WORTHY\nVERDICT: REJECT"),
-    );
-    expect(result.ok).toBe(false);
-    expect(result.attempts[0]?.error).toContain("exactly one");
+    expect(result.attempts).toHaveLength(1);
   });
 });

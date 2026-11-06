@@ -16,9 +16,8 @@ VERDICT: <value>
 ```
 
 The value is an exact, case-sensitive member of the consumer's enum.
-The adversarial enum is `WORTHY` or `REJECT`. Council seats use their
-card's declared options as the enum. Prose anywhere else in the
-transcript, including the word WORTHY, carries no verdict.
+The adversarial enum is `WORTHY` or `REJECT`. Prose anywhere else in
+the transcript, including the word WORTHY, carries no verdict.
 
 ## Fail-closed rule
 
@@ -37,14 +36,13 @@ Permission is never inferred from surrounding prose.
 
 `parseFinalVerdict`, `parseAdversarialVerdict` and
 `failClosedAdversarialVerdict` in [src/verdict.ts](../src/verdict.ts)
-are the shared parser. Council seat launch in
-[src/council/seat.ts](../src/council/seat.ts) consumes it: a launcher
-that returns a JSON council answer keeps that path, and a launcher
-that returns a transcript stands only on its final verdict field,
-with the preceding prose kept as its rationale. A transcript with no
-valid final field is not an answer, so the substitute chain moves on
-and an exhausted chain leaves the seat unavailable, which escalates
-rather than approves.
+are the shared parser for review and adversarial transcripts. Council
+seats do not read transcripts: a seat answers only with a JSON council
+answer whose `choice` field must be one of the card's exact options.
+Non-JSON launcher stdout, including a transcript that ends in a
+`VERDICT:` line, is not an answer, so the substitute chain moves on and
+an exhausted chain leaves the seat unavailable, which escalates rather
+than approves.
 
 ## Downstream adoption (Casco handoff)
 

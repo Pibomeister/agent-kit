@@ -159,7 +159,7 @@ describe("ak council run", () => {
     ]);
   });
 
-  test("transcript seats mentioning WORTHY early and ending VERDICT: REJECT decline, never approve", async () => {
+  test("a non-JSON transcript ending VERDICT: <option> is not a council answer, so the seats escalate", async () => {
     const dir = processScratch("ak-council-verdict-");
     const config = join(dir, "council.json");
     writeFileSync(
@@ -180,8 +180,12 @@ describe("ak council run", () => {
     );
     const out = join(dir, "record.json");
     const result = await run(["run", "--card", card, "--council-config", config, "--out", out]);
-    expect(result.code).toBe(0);
-    expect(record(out)).toMatchObject({ outcome: "decline", choice: "REJECT" });
+    expect(result.code).toBe(1);
+    expect(record(out)).toMatchObject({ outcome: "escalate", choice: null });
+    expect(record(out)).toMatchObject({
+      causes: ["a primary seat was unavailable"],
+      seats: [{ seat: "primary-a", choice: null }, { seat: "primary-b", choice: null }],
+    });
   });
 
   test("a non-approving veto escalates", async () => {
