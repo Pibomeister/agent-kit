@@ -8,3 +8,5 @@ node_modules/
 .omx-state-locks/
 dist/
 /ak.install.yaml
+# tests/guard/claude-code.test.ts scratch; survives a test killed before its finally block
+/.guard-bundle-*/
