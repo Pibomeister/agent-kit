@@ -23,6 +23,7 @@ import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
 import { runRunner } from "../runner/cli.ts";
+import { runCouncil } from "../council/cli.ts";
 import { readKeyFile } from "../semantic-lint/key.ts";
 import pin from "../../provenance/semantic-lint.json" with { type: "json" };
 import { hookMain } from "../../tools/hooks/semantic-lint.ts";
@@ -679,6 +680,10 @@ if (import.meta.main) {
   } else if (action === "runner") {
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     process.exitCode = await runRunner(flags, io);
+  } else if (action === "council") {
+    // The standalone council (ADR-0015) travels here too: an install with no checkout runs it.
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    process.exitCode = await runCouncil(flags, io);
   } else if (action === "semantic-lint" && flags[0] === "hook" && (await hookMain(flags.slice(1))) === 0) {
     // The plugin's Stop hook: hookMain printed the host output.
   } else if (
@@ -696,7 +701,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak semantic-lint hook [--host codex]",
+      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]",
     );
     process.exitCode = 2;
   }
