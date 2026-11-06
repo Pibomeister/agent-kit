@@ -72,6 +72,13 @@ const HEAD = (name: string) => `---\nname: ${name}\ndescription: Use when asked.
 /** This repository, for the tests that measure against its real schemas. */
 const REPO = join(import.meta.dir, "..");
 
+/**
+ * Each case resolves a profile against the real schemas, several times over. Under a loaded host
+ * (load average about 100 on 16 CPUs) two cases measured 7.5s and 11.0s against bun's 5s default.
+ * 30s matches the parallel lane's bound, so a hang still fails.
+ */
+const PROFILE_RESOLVE_TIMEOUT_MS = 30_000;
+
 describe("project autonomy default", () => {
   const source = readFileSync(join(REPO, "tests/fixtures/delegation/valid.project.json"), "utf8").trimEnd();
   const catalog = loadCatalog(REPO).catalog;
@@ -82,31 +89,43 @@ describe("project autonomy default", () => {
     const root = makeTree({ "project.json": record });
     return resolveProfile(REPO, catalog, explicit, join(root, "project.json"));
   }
-  test("a project opts in while false and absent preserve core and explicit profile wins", () => {
-    expect(select(true).profile).toBe("autonomy");
-    expect(select(false).profile).toBe("core");
-    expect(select().profile).toBe("core");
-    expect(select(true, "core").profile).toBe("core");
-  });
-  test("an invalid project setting refuses the default", () => {
-    expect(select("yes").issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
-  });
-  test("validate reports an invalid project record instead of passing it", () => {
-    const ctx = ctxFor({
-      "schemas/common.schema.json": readFileSync(join(REPO, "schemas/common.schema.json"), "utf8"),
-      "schemas/project.schema.json": readFileSync(join(REPO, "schemas/project.schema.json"), "utf8"),
-      "schemas/verification-recipe.schema.json": readFileSync(
-        join(REPO, "schemas/verification-recipe.schema.json"),
-        "utf8",
-      ),
-      "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}`,
-    });
-    const issues = checkBundleLinks(ctx, { project: "project.json" });
-    expect(issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
-    expect(issues.find((issue) => issue.rule === "packaging.project-invalid")?.message).toContain(
-      '"instancePath":"/autonomy/default"',
-    );
-  });
+  test(
+    "a project opts in while false and absent preserve core and explicit profile wins",
+    () => {
+      expect(select(true).profile).toBe("autonomy");
+      expect(select(false).profile).toBe("core");
+      expect(select().profile).toBe("core");
+      expect(select(true, "core").profile).toBe("core");
+    },
+    PROFILE_RESOLVE_TIMEOUT_MS,
+  );
+  test(
+    "an invalid project setting refuses the default",
+    () => {
+      expect(select("yes").issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+    },
+    PROFILE_RESOLVE_TIMEOUT_MS,
+  );
+  test(
+    "validate reports an invalid project record instead of passing it",
+    () => {
+      const ctx = ctxFor({
+        "schemas/common.schema.json": readFileSync(join(REPO, "schemas/common.schema.json"), "utf8"),
+        "schemas/project.schema.json": readFileSync(join(REPO, "schemas/project.schema.json"), "utf8"),
+        "schemas/verification-recipe.schema.json": readFileSync(
+          join(REPO, "schemas/verification-recipe.schema.json"),
+          "utf8",
+        ),
+        "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}`,
+      });
+      const issues = checkBundleLinks(ctx, { project: "project.json" });
+      expect(issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+      expect(issues.find((issue) => issue.rule === "packaging.project-invalid")?.message).toContain(
+        '"instancePath":"/autonomy/default"',
+      );
+    },
+    PROFILE_RESOLVE_TIMEOUT_MS,
+  );
   test("an autonomy install includes the invocation policy its runner reads", () => {
     if (catalog === null) throw new Error("real catalog must load");
     const plan = planBundle({ root: REPO, catalog }, "codex", { profile: "autonomy" });

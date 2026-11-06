@@ -2037,7 +2037,9 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
     expect(node(deltaDir, "record", "--gate", "review-readiness").exitCode).toBe(0);
     expect(node(deltaDir, "check").exitCode).toBe(0);
     expect(readdirSync(join(defaultEvidenceDir(deltaDir), deltaRun, "review-full"))).toHaveLength(1);
-  }, 120_000);
+    // Dozens of node gate spawns in one synchronous body: 40.8s in one serial-lane run, 138.6s in another
+    // at load average 55-60 on 16 CPUs, past the earlier 120s allowance.
+  }, 300_000);
 });
 
 /**
