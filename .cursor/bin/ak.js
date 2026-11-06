@@ -36509,11 +36509,11 @@ var init_cli5 = __esm(() => {
 // src/maintenance/cli.ts
 init_common_schema();
 var import_ajv16 = __toESM(require_ajv(), 1);
-var import__202012 = __toESM(require_2020(), 1);
+var import__202013 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync6 } from "child_process";
-import { existsSync as existsSync40, readFileSync as readFileSync39, realpathSync as realpathSync17 } from "fs";
+import { existsSync as existsSync40, readFileSync as readFileSync40, realpathSync as realpathSync17 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename21, isAbsolute as isAbsolute18, join as join50, relative as relative15 } from "path";
+import { basename as basename22, isAbsolute as isAbsolute18, join as join51, relative as relative15 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -40020,6 +40020,24 @@ function vetoRefusal(approve, veto, pair, excluded) {
     return `The blind veto seat did not approve; it chose ${veto.choice}`;
   return null;
 }
+function councilOutcome(approve, pair, veto) {
+  const [first, second] = pair;
+  if (pair.length !== 2 || first === undefined || second === undefined)
+    return { outcome: "escalate", choice: null, causes: ["the council needs exactly two primary seats"] };
+  if (first === null || second === null)
+    return { outcome: "escalate", choice: null, causes: ["a primary seat was unavailable"] };
+  if (first !== second)
+    return { outcome: "escalate", choice: null, causes: ["the primary seats disagreed"] };
+  if (first !== approve)
+    return { outcome: "decline", choice: first, causes: [] };
+  if (veto === undefined)
+    return { outcome: "escalate", choice: null, causes: ["the blind veto seat was not asked"] };
+  if (veto === null)
+    return { outcome: "escalate", choice: null, causes: ["the blind veto seat was unavailable"] };
+  if (veto !== approve)
+    return { outcome: "escalate", choice: null, causes: [`the blind veto seat did not approve; it chose ${veto}`] };
+  return { outcome: "approve", choice: approve, causes: [] };
+}
 
 // src/runner/wire.ts
 var import__202010 = __toESM(require_2020(), 1);
@@ -42629,15 +42647,218 @@ async function runRunner(argv, io) {
   }
 }
 
+// src/council/cli.ts
+var import__202012 = __toESM(require_2020(), 1);
+import { createHash as createHash12 } from "crypto";
+import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync35, rmSync as rmSync14, writeFileSync as writeFileSync16 } from "fs";
+import { tmpdir as tmpdir3 } from "os";
+import { basename as basename21, join as join44 } from "path";
+var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
+var isCouncilCard = new import__202012.default({ strict: false }).compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "question", "options", "approve"],
+  properties: {
+    id: { type: "string", pattern: "^[a-z0-9][a-z0-9-]*$" },
+    question: { type: "string", minLength: 1 },
+    options: { type: "array", minItems: 2, uniqueItems: true, items: { type: "string", minLength: 1 } },
+    approve: { type: "string", minLength: 1 }
+  }
+});
+function sha256(text3) {
+  return `sha256:${createHash12("sha256").update(text3).digest("hex")}`;
+}
+function seatEntry(role, seat2, result2) {
+  if (!result2.ok)
+    return {
+      role,
+      seat: seat2.seat,
+      actor: null,
+      model_requested: seat2.chain[0]?.requested ?? UNSPECIFIED,
+      model_served: UNVERIFIED,
+      choice: null,
+      rationale: null,
+      attempts: result2.attempts
+    };
+  return {
+    role,
+    seat: seat2.seat,
+    actor: result2.launcher.actor,
+    model_requested: result2.launcher.requested ?? UNSPECIFIED,
+    model_served: result2.answer.model_served ?? UNVERIFIED,
+    choice: result2.answer.choice,
+    rationale: result2.answer.rationale,
+    attempts: result2.attempts
+  };
+}
+var BASE_ENV = new Set(["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR", "TZ"]);
+function seatEnv(names = []) {
+  const allowed = new Set([...BASE_ENV, ...names]);
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("AK_RUNNER_") && (allowed.has(key) || key.startsWith("LC_"))));
+}
+function spawner(cwd, live) {
+  return async (launcher2, stdin) => {
+    const child = Bun.spawn(launcher2.command, {
+      cwd,
+      env: seatEnv(launcher2.env),
+      stdin: Buffer.from(stdin),
+      stdout: "pipe",
+      stderr: "pipe",
+      detached: true
+    });
+    return collectDetached(child, live, DEFAULT_TIMEOUT_MS, "launcher");
+  };
+}
+function parseArgs2(argv) {
+  let card;
+  let config;
+  let out;
+  const context = [];
+  for (let i = 0;i < argv.length; i += 2) {
+    const name = argv[i];
+    const value = argv[i + 1];
+    if (value === undefined || value.startsWith("--"))
+      return { ok: false, error: `${name ?? "flag"} needs a value` };
+    if (name === "--card")
+      card = value;
+    else if (name === "--council-config")
+      config = value;
+    else if (name === "--context")
+      context.push(value);
+    else if (name === "--out")
+      out = value;
+    else
+      return { ok: false, error: `unknown flag ${name ?? ""}` };
+  }
+  if (card === undefined || config === undefined)
+    return { ok: false, error: "--card and --council-config are required" };
+  return { ok: true, args: { card, config, context, out } };
+}
+async function run2(args, io) {
+  const config = readCouncilConfig(args.config);
+  const pair = config.pair;
+  if (pair === undefined)
+    throw new Error("a standalone council needs a pair in its council configuration");
+  const problems = rosterProblems([...pair, config.veto]);
+  if (problems.length > 0)
+    throw new Error(`invalid council configuration: ${problems.join("; ")}`);
+  const cardValue = JSON.parse(readFileSync35(args.card, "utf8"));
+  if (!isCouncilCard(cardValue))
+    throw new Error(`invalid card: ${JSON.stringify(isCouncilCard.errors)}`);
+  const card = cardValue;
+  if (!card.options.includes(card.approve))
+    throw new Error("the card's approving option is not one of its options");
+  const context = args.context.map((path) => ({ path, name: basename21(path), text: readFileSync35(path, "utf8") }));
+  const items2 = [
+    { label: "card", text: JSON.stringify(card) },
+    ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}
+${entry.text}` }))
+  ];
+  const payload = JSON.stringify({
+    council: "blind",
+    card,
+    context: context.map((entry) => ({ name: entry.name, sha256: sha256(entry.text), text: entry.text }))
+  });
+  const refusals = checkOutbound(items2, payload);
+  const seats = [];
+  let decided = null;
+  if (refusals.length === 0) {
+    const scratch = mkdtempSync3(join44(tmpdir3(), "ak-council-"));
+    const live = new Set;
+    const stopOn = (code) => () => {
+      for (const pid of live)
+        killGroup(pid);
+      rmSync14(scratch, { recursive: true, force: true });
+      process.exit(code);
+    };
+    const stops = [
+      ["SIGHUP", stopOn(129)],
+      ["SIGINT", stopOn(130)],
+      ["SIGTERM", stopOn(143)]
+    ];
+    for (const [signal, stop] of stops)
+      process.once(signal, stop);
+    try {
+      const spawn2 = spawner(scratch, live);
+      const results = await Promise.all(pair.map((seat2) => launchSeat(seat2, payload, card.options, spawn2)));
+      seats.push(...pair.map((seat2, i) => seatEntry("primary", seat2, results[i] ?? { ok: false, attempts: [] })));
+      const choices = seats.map((entry) => entry.choice);
+      let veto;
+      if (choices.every((choice) => choice === card.approve)) {
+        const result2 = await launchSeat(config.veto, payload, card.options, spawn2);
+        const entry = seatEntry("veto", config.veto, result2);
+        seats.push(entry);
+        veto = entry.choice;
+      }
+      decided = councilOutcome(card.approve, choices, veto);
+    } finally {
+      for (const [signal, stop] of stops)
+        process.off(signal, stop);
+      rmSync14(scratch, { recursive: true, force: true });
+    }
+  }
+  const disclosed = decided === null ? { card: { id: card.id } } : {
+    card,
+    payload: {
+      sha256: sha256(payload),
+      bytes: Buffer.byteLength(payload, "utf8"),
+      context: context.map((entry) => ({
+        name: entry.name,
+        sha256: sha256(entry.text),
+        bytes: Buffer.byteLength(entry.text, "utf8")
+      }))
+    }
+  };
+  const record = {
+    schema: "council-record",
+    schema_version: 1,
+    at: new Date().toISOString(),
+    ...disclosed,
+    seats,
+    outcome: decided?.outcome ?? "refused",
+    choice: decided?.choice ?? null,
+    causes: decided?.causes ?? describeRefusals(refusals),
+    grants: [],
+    note: "This record grants no authority. It approves no checkpoint, ticket, merge or deploy."
+  };
+  const text3 = `${JSON.stringify(record, null, 2)}
+`;
+  if (args.out === undefined)
+    io.out(text3.trimEnd());
+  else {
+    writeFileSync16(args.out, text3, { mode: 384 });
+    io.out(`council ${record.outcome}: ${args.out}`);
+  }
+  return record.outcome === "approve" || record.outcome === "decline" ? 0 : 1;
+}
+async function runCouncil(argv, io) {
+  if (argv[0] !== "run") {
+    io.err(USAGE4);
+    return 2;
+  }
+  const parsed = parseArgs2(argv.slice(1));
+  if (!parsed.ok) {
+    io.err(`ak council: ${parsed.error}`);
+    io.err(USAGE4);
+    return 2;
+  }
+  try {
+    return await run2(parsed.args, io);
+  } catch (cause) {
+    io.err(`ak council: ${cause instanceof Error ? cause.message : String(cause)}`);
+    return 2;
+  }
+}
+
 // src/semantic-lint/key.ts
-import { lstatSync as lstatSync6, readFileSync as readFileSync35 } from "fs";
+import { lstatSync as lstatSync6, readFileSync as readFileSync36 } from "fs";
 function readKeyFile(path) {
   const stat = lstatSync6(path, { throwIfNoEntry: false });
   if (stat === undefined)
     return null;
   if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 511) !== 384 || process.getuid !== undefined && stat.uid !== process.getuid())
     throw new Error("auth");
-  const lines = readFileSync35(path, "utf8").split(`
+  const lines = readFileSync36(path, "utf8").split(`
 `);
   for (const line of lines) {
     const match = /^(?:TYPESAFE_API_KEY|TYPESAFEAI_API_KEY)\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#'"`$]+))\s*$/.exec(line.trim());
@@ -42666,13 +42887,13 @@ var semantic_lint_default = {
 var import_ajv15 = __toESM(require_ajv(), 1);
 import { randomBytes as randomBytes5 } from "crypto";
 import { homedir as homedir5 } from "os";
-import { join as join47, resolve as resolve19 } from "path";
+import { join as join48, resolve as resolve19 } from "path";
 
 // src/semantic-lint/client.ts
 var import_ajv13 = __toESM(require_ajv(), 1);
 import { randomUUID as randomUUID2 } from "crypto";
-import { mkdirSync as mkdirSync25, writeFileSync as writeFileSync16 } from "fs";
-import { join as join44 } from "path";
+import { mkdirSync as mkdirSync25, writeFileSync as writeFileSync17 } from "fs";
+import { join as join45 } from "path";
 import { setTimeout as delay } from "timers/promises";
 // provenance/semantic-lint-response.schema.json
 var semantic_lint_response_schema_default = {
@@ -42743,7 +42964,7 @@ async function askBatch(input, options) {
   for (let attempt = 1;attempt <= 2; attempt += 1) {
     if (options.signal?.aborted)
       return { status: "error", reason: "cancelled", findings: [] };
-    const path = join44(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
+    const path = join45(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
     const receipt = {
       request,
       requested_model: semantic_lint_default.model,
@@ -42758,7 +42979,7 @@ async function askBatch(input, options) {
     };
     const save2 = () => {
       mkdirSync25(options.receipts, { recursive: true, mode: 448 });
-      writeFileSync16(path, `${JSON.stringify(receipt)}
+      writeFileSync17(path, `${JSON.stringify(receipt)}
 `, { mode: 384 });
     };
     try {
@@ -42841,9 +43062,9 @@ async function askBatch(input, options) {
 // src/semantic-lint/claim.ts
 init_trace();
 var import_ajv14 = __toESM(require_ajv(), 1);
-import { createHash as createHash12, randomBytes as randomBytes4 } from "crypto";
-import { mkdirSync as mkdirSync26, readdirSync as readdirSync12, readFileSync as readFileSync36, renameSync as renameSync6, statSync as statSync20, writeFileSync as writeFileSync17 } from "fs";
-import { join as join45 } from "path";
+import { createHash as createHash13, randomBytes as randomBytes4 } from "crypto";
+import { mkdirSync as mkdirSync26, readdirSync as readdirSync12, readFileSync as readFileSync37, renameSync as renameSync6, statSync as statSync20, writeFileSync as writeFileSync18 } from "fs";
+import { join as join46 } from "path";
 var CLAIM_VERSION = 1;
 var STALE_MS = 120000;
 var ajv8 = new import_ajv14.default({ strict: false });
@@ -42859,7 +43080,7 @@ var isRecord = ajv8.compile({
 });
 var GENERATION = /^[1-9][0-9]*$/;
 function claimKey(body) {
-  return createHash12("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
+  return createHash13("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
 }
 function line(record) {
   return `${JSON.stringify(record)}
@@ -42869,7 +43090,7 @@ function taken(cause) {
   return cause instanceof Error && "code" in cause && cause.code === "EEXIST";
 }
 function current(path) {
-  const text3 = readFileSync36(path, "utf8");
+  const text3 = readFileSync37(path, "utf8");
   try {
     const raw = JSON.parse(text3);
     if (isRecord(raw))
@@ -42878,7 +43099,7 @@ function current(path) {
   return { state: "in-progress", trace: "", started_at: statSync20(path).mtimeMs, ended_at: null };
 }
 function acquireClaim(receipts, key, trace2, now = Date.now) {
-  const dir = join45(receipts, "claims", key);
+  const dir = join46(receipts, "claims", key);
   try {
     mkdirSync26(dir, { recursive: true, mode: 448 });
   } catch {
@@ -42889,7 +43110,7 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     try {
       const highest2 = Math.max(0, ...readdirSync12(dir).filter((name) => GENERATION.test(name)).map(Number));
       if (highest2 > 0) {
-        const record = current(join45(dir, String(highest2)));
+        const record = current(join46(dir, String(highest2)));
         if (record.state === "complete")
           return { kind: "duplicate", trace: parseTraceparent(record.trace) === null ? null : record.trace };
         if (record.state === "in-progress" && now() - record.started_at < STALE_MS)
@@ -42899,9 +43120,9 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     } catch {
       return { kind: "error" };
     }
-    const path = join45(dir, String(next));
+    const path = join46(dir, String(next));
     try {
-      writeFileSync17(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
+      writeFileSync18(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
         flag: "wx",
         mode: 384
       });
@@ -42917,7 +43138,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
   try {
     const { started_at } = current(claim3.path);
     const temp = `${claim3.path}.${randomBytes4(8).toString("hex")}.tmp`;
-    writeFileSync17(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
+    writeFileSync18(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
     renameSync6(temp, claim3.path);
     return true;
   } catch {
@@ -42927,8 +43148,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync37, realpathSync as realpathSync16 } from "fs";
-import { isAbsolute as isAbsolute17, join as join46, relative as relative14, resolve as resolve18 } from "path";
+import { lstatSync as lstatSync7, readFileSync as readFileSync38, realpathSync as realpathSync16 } from "fs";
+import { isAbsolute as isAbsolute17, join as join47, relative as relative14, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -42972,7 +43193,7 @@ function collectInput(cwd) {
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
         else {
-          const content = readFileSync37(join46(root, path), "utf8");
+          const content = readFileSync38(join47(root, path), "utf8");
           if (binary(content))
             reason2 = "binary";
           else if (SECRET_CONTENT.test(content))
@@ -43080,8 +43301,8 @@ async function hookMain(argv) {
   const result2 = await runHook({
     root: process.cwd(),
     enabled,
-    keyFile: join47(homedir5(), semantic_lint_default.key_file),
-    receipts: join47(process.env.XDG_STATE_HOME ?? join47(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
+    keyFile: join48(homedir5(), semantic_lint_default.key_file),
+    receipts: join48(process.env.XDG_STATE_HOME ?? join48(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal
   });
@@ -43110,13 +43331,13 @@ var isCommand = ajv9.compile({ type: "string" });
 if (false) {}
 
 // src/maintenance/host-probe-version.ts
-import { readdirSync as readdirSync13, readFileSync as readFileSync38 } from "fs";
-import { join as join49 } from "path";
+import { readdirSync as readdirSync13, readFileSync as readFileSync39 } from "fs";
+import { join as join50 } from "path";
 
 // src/review-isolation-probe/host-cli.ts
 import { spawnSync as spawnSync5 } from "child_process";
 import { accessSync as accessSync2, constants as constants2 } from "fs";
-import { join as join48 } from "path";
+import { join as join49 } from "path";
 var VERSION_TIMEOUT_MS = 5000;
 var HOST_VERSION_NOT_ON_PATH = "not on PATH";
 var HOST_VERSION_FIXTURE = "fixture (host CLI not invoked)";
@@ -43146,7 +43367,7 @@ function which(names, pathEnv) {
     for (const dir of path.split(":")) {
       if (dir === "")
         continue;
-      const candidate = join48(dir, name);
+      const candidate = join49(dir, name);
       if (isExecutable(candidate))
         return candidate;
     }
@@ -43267,9 +43488,9 @@ function readLatestProbedHostVersion(factsRoot, host) {
     return null;
   }
   for (const date of dates.toSorted().toReversed()) {
-    const path = join49(factsRoot, date, `review-isolation-${host}.md`);
+    const path = join50(factsRoot, date, `review-isolation-${host}.md`);
     try {
-      const version2 = parseProbedHostVersion(readFileSync38(path, "utf8"));
+      const version2 = parseProbedHostVersion(readFileSync39(path, "utf8"));
       if (version2 !== null)
         return { date, version: version2, path };
     } catch {
@@ -43386,7 +43607,7 @@ var validSettings = ajv10.compile({
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__202012.default({ strict: false });
+var bindingAjv = new import__202013.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -43404,8 +43625,8 @@ function finding(level, check2, detail, remedy) {
 }
 function command(binary2, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary2 === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
-  const run2 = spawnSync6(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
-  return { ok: run2.status === 0, output: (run2.stdout || run2.stderr || run2.error?.message || "").trim() };
+  const run3 = spawnSync6(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
+  return { ok: run3.status === 0, output: (run3.stdout || run3.stderr || run3.error?.message || "").trim() };
 }
 function parseJson3(source, validate) {
   try {
@@ -43416,8 +43637,8 @@ function parseJson3(source, validate) {
   }
 }
 function jsonCommand(binary2, args, cwd = process.cwd()) {
-  const run2 = command(binary2, args, cwd);
-  return run2.ok ? run2.output : null;
+  const run3 = command(binary2, args, cwd);
+  return run3.ok ? run3.output : null;
 }
 function projectRoot() {
   const top = command("git", ["rev-parse", "--show-toplevel"]);
@@ -43454,9 +43675,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join50(process.env.CODEX_HOME ?? join50(homedir6(), ".codex"), "config.toml");
+  const file = join51(process.env.CODEX_HOME ?? join51(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync39(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync40(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -43495,10 +43716,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join50(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join51(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson3(readFileSync39(file, "utf8"), validSettings);
+    settings = parseJson3(readFileSync40(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -43509,7 +43730,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync40(join50(root, BINDING_FILE)) ? root : null;
+  return existsSync40(join51(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -43521,7 +43742,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join50(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join51(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -43564,11 +43785,11 @@ function checkLinearis(root, backend) {
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync17(topResult.output) : realpathSync17(root);
   for (const base2 of new Set([root, top])) {
-    const binary2 = join50(base2, "node_modules", ".bin", "linearis");
+    const binary2 = join51(base2, "node_modules", ".bin", "linearis");
     if (!existsSync40(binary2))
       continue;
     const target = realpathSync17(binary2);
-    if ([root, top].every((folder) => relative15(join50(realpathSync17(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative15(join51(realpathSync17(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -43581,7 +43802,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute18(root)) {
-      const value = parseJson3(readFileSync39(join50(root, suffix), "utf8"), validManifest);
+      const value = parseJson3(readFileSync40(join51(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -43633,13 +43854,13 @@ async function doctor2(json = false) {
     hasCodex || codexConfigured ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure) : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
-    ...probedHostVersionFindings(join50(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
+    ...probedHostVersionFindings(join51(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
-    checkSemanticLint(join50(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
+    checkSemanticLint(join51(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
   ];
   if (!hasClaude && !hasCodex) {
     items2.push(finding("FAIL", "installation", "ak is absent from both hosts", "Install ak from the published marketplace in Claude Code or Codex."));
@@ -43653,11 +43874,11 @@ function checkMaintenanceCommand(current2, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename21(path) !== "ak")
+  if (!path || basename22(path) !== "ak")
     return null;
   try {
-    const current2 = readFileSync39(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync39(join50(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current2 = readFileSync40(path, "utf8");
+    const published = isAbsolute18(ROOT) ? readFileSync40(join51(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
@@ -43732,6 +43953,9 @@ if (import.meta.main) {
   } else if (action === "runner") {
     const io = { out: (line2) => console.log(line2), err: (line2) => console.error(line2) };
     process.exitCode = await runRunner(flags, io);
+  } else if (action === "council") {
+    const io = { out: (line2) => console.log(line2), err: (line2) => console.error(line2) };
+    process.exitCode = await runCouncil(flags, io);
   } else if (action === "semantic-lint" && flags[0] === "hook" && await hookMain(flags.slice(1)) === 0) {} else if (action === "doctor" && flags.every((flag3) => flag3 === "--json") && flags.length <= 1 || action === "update" && flags.length === 0)
     process.exitCode = action === "doctor" ? await doctor2(flags[0] === "--json") : await update();
   else if (action === "delegation" && flags.length === 3 && flags[1] === "--project") {
@@ -43742,7 +43966,7 @@ if (import.meta.main) {
       process.exitCode = 1;
     }
   } else {
-    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak semantic-lint hook [--host codex]");
+    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak semantic-lint hook [--host codex]");
     process.exitCode = 2;
   }
 }

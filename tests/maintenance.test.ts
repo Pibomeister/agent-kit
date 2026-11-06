@@ -60,6 +60,16 @@ const repoUpdate = spawnSync(process.execPath, [join(import.meta.dir, "../src/cl
   env: maintenanceEnv,
   encoding: "utf8",
 });
+const councilRun = spawnSync(process.execPath, [maintenanceCli, "council", "run"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
+const councilAlone = spawnSync(process.execPath, [maintenanceCli, "council"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
 
 function runLinkedWorktreeFixture() {
   const root = realpathSync(project());
@@ -317,6 +327,13 @@ describe("ak doctor checks", () => {
   test("the repo CLI forwards maintenance flags instead of running a real update", () => {
     expect(repoUpdate.status).toBe(2);
     expect(repoUpdate.stderr).toContain("Usage: ak doctor [--json] | ak update");
+  });
+
+  test("the packaged CLI dispatches ak council run instead of the generic usage", () => {
+    expect(councilRun.status).toBe(2);
+    expect(councilRun.stderr).toContain("usage: ak council run --card <card.json> --council-config");
+    expect(councilAlone.status).toBe(2);
+    expect(councilAlone.stderr).toContain("usage: ak council run --card <card.json> --council-config");
   });
 
   test("doctor ignores foreign GIT_DIR and GIT_WORK_TREE", () => {
