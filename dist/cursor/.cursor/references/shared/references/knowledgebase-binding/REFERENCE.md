@@ -9,11 +9,11 @@ each result obliges. The contract this condenses is [`adapters/knowledgebase/CON
 ## Check first
 
 ```sh
-ak kb check
+.cursor/bin/ak kb check
 ```
 
-Run it in the project folder, which may be a task copy. A current `ak` on `PATH` is a prerequisite:
-a missing command, or a usage error from an older `ak`, is `needs-input` naming that prerequisite,
+Run it in the project folder, which may be a task copy. A current agent-kit CLI is a prerequisite:
+a missing command, or a usage error from an older CLI, is `needs-input` naming that prerequisite,
 and is not an unavailable knowledgebase.
 
 | Exit | Meaning | What the run does |
@@ -28,7 +28,7 @@ adapter or a missing file:
 - **`kb.unbound`** — the project commits no `ak.kb.yaml`. The setup step is committing one at the
   project root.
 - **`kb.unregistered`** — the project is bound, and this machine has not been told where that
-  knowledgebase is checked out. The setup step is `ak kb register <knowledgebase-id> <path>`.
+  knowledgebase is checked out. The setup step is `.cursor/bin/ak kb register <knowledgebase-id> <path>`.
 
 Both are the operator's to do. An agent does not create a knowledgebase, write `ak.kb.yaml` or
 register a path unless a human asks for exactly that. **`ak.install.yaml` is not a cause.** That
@@ -56,7 +56,7 @@ directory holding `ak.kb.yaml`, searching no higher than `git rev-parse --show-t
 ## Reading: `readContext`
 
 ```sh
-ak kb read --kind concept,system,adr --scope <scope>
+.cursor/bin/ak kb read --kind concept,system,adr --scope <scope>
 ```
 
 `--kind` takes any of the nine kinds: `adr`, `concept`, `foundation`, `gotcha`, `pattern`, `prd`,
@@ -78,14 +78,14 @@ JSON: the pages at that scope and every scope above it, most specific first, eac
 A curated page, one of the nine kinds:
 
 ```sh
-ak kb publish document --kind adr --scope <scope> --id <kebab-id> --title "<one line>" \
+.cursor/bin/ak kb publish document --kind adr --scope <scope> --id <kebab-id> --title "<one line>" \
   --file <page.md> [--run <run-id>]
 ```
 
 A run artifact, one of the envelope schemas:
 
 ```sh
-ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]…
+.cursor/bin/ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]…
 ```
 
 For `trail` and `trail-audit`, use the work-trail protocol's publication boundary and resume rule.
@@ -112,6 +112,6 @@ Write the page or artifact to a scratch file outside the repository and pass its
 ## The other five operations
 
 `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests` and
-`proposeLesson` are not carried by any binding yet: `ak kb record-decision` and its siblings refuse
+`proposeLesson` are not carried by any binding yet: `.cursor/bin/ak kb record-decision` and its siblings refuse
 and write nothing. Report the refusal by the operation's name. A decision card is the one case with
-a path: it is a `decision` run artifact and publishes through `ak kb publish artifact`.
+a path: it is a `decision` run artifact and publishes through `.cursor/bin/ak kb publish artifact`.

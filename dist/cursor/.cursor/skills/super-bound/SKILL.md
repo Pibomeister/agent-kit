@@ -107,8 +107,8 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
    [the domain-modeling reference pack](../../references/shared/references/domain-modeling/REFERENCE.md) rather than
    renaming the same things here.
 6. When the caller supplies a draft ticket or scorer input, load the delegation reference and run
-   `ak delegation <ticket> --project <project-record>` now. A current `ak` on `PATH` is a
-   prerequisite: a missing command, or a usage error from an older `ak`, is reported as
+   `.cursor/bin/ak delegation <ticket> --project <project-record>` now. A current agent-kit CLI is a
+   prerequisite: a missing command, or a usage error from an older CLI, is reported as
    `needs-input` naming that prerequisite, not as a scoring failure. Persist the scorer output,
    readiness and assumptions on the evidence-bearing draft before document review; the draft is not
    an approved implementation ticket.
@@ -130,7 +130,7 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
 9. Load [the delegation reference pack](../../references/shared/references/delegation/REFERENCE.md) and follow its
    ordered stack, readiness, assumptions, authorship-boundary and advisor procedures for every
    zero-context slice.
-10. Run `ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
+10. Run `.cursor/bin/ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
    factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
    `assumptions` before returning, including on `needs-input`. Never derive the class in this body.
 11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,

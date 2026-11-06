@@ -388,7 +388,7 @@ Where a knowledgebase is checked out is recorded once per machine, outside every
 operator's registry: `~/.agent-kit/kb/registry.json`, or the file `AK_KB_REGISTRY` names.
 
 ```sh
-ak kb register <knowledgebase-id> <path>
+.cursor/bin/ak kb register <knowledgebase-id> <path>
 ```
 
 It is the operator's step and starts no phase. It refuses a path that is not the top of a git work
@@ -401,12 +401,12 @@ machine has not been told where the knowledgebase is.
 
 | Operation | Command | Carried |
 |---|---|---|
-| `readContext` | `ak kb read --kind <kind>[,<kind>…] --scope <scope>` | yes |
-| `publishArtifact`, `kb-document` placement | `ak kb publish document --kind <kind> --scope <scope> --id <id> --title <title> --file <page>` | yes |
-| `publishArtifact`, `run-artifact` placement | `ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]…` | yes |
-| `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests`, `proposeLesson` | `ak kb record-decision` and its four siblings | no: each refuses and writes nothing |
+| `readContext` | `.cursor/bin/ak kb read --kind <kind>[,<kind>…] --scope <scope>` | yes |
+| `publishArtifact`, `kb-document` placement | `.cursor/bin/ak kb publish document --kind <kind> --scope <scope> --id <id> --title <title> --file <page>` | yes |
+| `publishArtifact`, `run-artifact` placement | `.cursor/bin/ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]…` | yes |
+| `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests`, `proposeLesson` | `.cursor/bin/ak kb record-decision` and its four siblings | no: each refuses and writes nothing |
 
-`ak kb check [<project-dir>]` reports the binding, the registration and which of these can run.
+`.cursor/bin/ak kb check [<project-dir>]` reports the binding, the registration and which of these can run.
 The [local-git binding](backends/local-git.md#5-publishartifact) owns the additional publication
 options and requirements for trail records.
 `read`, `publish` and the five refusing commands print one JSON result; `check` and `register` print

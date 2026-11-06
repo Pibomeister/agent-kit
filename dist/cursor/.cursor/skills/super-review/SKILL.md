@@ -70,7 +70,7 @@ There is one protocol. Where the host cannot validate a grant, a controller stop
 inventing a second pipeline (ruling `entrypoint-phase-operation-split`). An agent start does not
 need that grant.
 
-Under a Firstmate binding, cite `ak firstmate grant --binding <path> --operation review.full` (or
+Under a Firstmate binding, cite `.cursor/bin/ak firstmate grant --binding <path> --operation review.full` (or
 `review.readiness`) when it exits 0. A refusal means the binding does not cover the delegated
 operation. It does not stop the model start.
 

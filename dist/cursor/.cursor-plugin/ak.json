@@ -162,6 +162,7 @@
     ".cursor/agents/verifier.md",
     ".cursor/bin/ak",
     ".cursor/bin/ak-gate.mjs",
+    ".cursor/bin/ak.js",
     ".cursor/catalog.yaml",
     ".cursor/licenses/LICENSE",
     ".cursor/licenses/LICENSES/ajv-formats.LICENSE",

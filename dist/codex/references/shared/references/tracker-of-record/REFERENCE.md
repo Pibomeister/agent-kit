@@ -135,7 +135,7 @@ replayed: linearis offers no idempotency key. Live round-trips against Linear ar
 
 ## Checking the secret with plain git
 
-Where `ak tracker check` is not on hand, from the project folder, with `$f` the token file:
+Where `ak tracker check` cannot be run, from the project folder, with `$f` the token file:
 
 ```sh
 printf './%s\0' "$f" | git check-ignore -q -z --stdin --no-index     # exit 0: ignored
