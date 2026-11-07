@@ -17,7 +17,16 @@ import { appendJsonl, nowIso, readJsonl, readText, todayLocal, writeGated } from
 import { parseFailureRecords, readLessons, renderLesson, triageFailures, type FailureRecord } from "../lessons.ts";
 import { generations } from "../core/trace.ts";
 import { UNDONE_RUNS_FILE } from "./episodes.ts";
-import { appendRun, ensureMemoryLedger, memoryDir, readState, rewriteIndex, saveState } from "./ledger.ts";
+import {
+  appendRun,
+  ensureMemoryLedger,
+  loadLessons,
+  memoryDir,
+  readState,
+  rewriteIndex,
+  saveState,
+  writeLesson,
+} from "./ledger.ts";
 import { logRegistryWarnings, readRegistry, registerRoot, unknownRepo } from "./registry.ts";
 import { sessionRoot } from "./session-context.ts";
 import { type Job, JOBS, tick } from "./tick.ts";
@@ -208,6 +217,17 @@ function triage(args: LearnArgs, ctx: LearnContext): number {
     const today = todayLocal();
     for (const record of result.created)
       writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today));
+    const pages = loadLessons(ledger);
+    for (const record of result.created)
+      for (const old of record.supersedes) {
+        const page = pages.get(old);
+        if (page !== undefined)
+          writeLesson(
+            page.path,
+            { ...page.meta, status: "superseded", valid_until: today, superseded_by: record.id },
+            page.body,
+          );
+      }
     if (result.created.length > 0) rewriteIndex(ledger);
     appendJsonl(
       issueLog,

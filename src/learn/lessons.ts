@@ -5,7 +5,8 @@
  * pages (`<memory ledger>/lessons/ls-NNN.md`) plus their `lessons.md` index:
  * append-only in that a lesson is added as the next `ls-NNN` page, a
  * restatement is reported as a duplicate of the page it restates and never
- * rewrites it, and a lesson is retired by supersession, never by deletion. A page may carry three fields the consolidation judge does not
+ * rewrites its statement or fields, and a lesson is retired by supersession (`status: superseded`),
+ * never by deletion. A page may carry three fields the consolidation judge does not
  * invent: `failure` (what went wrong), `check` (the runnable check that now
  * guards it) and `issue` (the tracker link). Session start already loads the
  * confirmed pages (`memory/session-context.ts`); this module is what
@@ -74,7 +75,7 @@ export interface LessonRecord {
   failure: string;
   check: string;
   issue: string;
-  /** Lesson ids this page replaces; a lesson a live page lists here is history. */
+  /** Lesson ids this page replaces; each is marked `superseded` when the page is written. */
   supersedes: string[];
 }
 
@@ -115,11 +116,9 @@ export interface LessonCoverage {
 
 const HISTORY_STATUSES = new Set(["superseded", "retired"]);
 
-/** Live lessons: not superseded or retired by status, and not listed in a live page's `supersedes`. */
+/** Live lessons: neither superseded nor retired. */
 function liveLessons(lessons: readonly LessonRecord[]): LessonRecord[] {
-  const current = lessons.filter((lesson) => !HISTORY_STATUSES.has(lesson.status));
-  const replaced = new Set(current.flatMap((lesson) => lesson.supersedes));
-  return current.filter((lesson) => !replaced.has(lesson.id));
+  return lessons.filter((lesson) => !HISTORY_STATUSES.has(lesson.status));
 }
 
 /**
@@ -270,8 +269,9 @@ export function nextLessonId(lessons: readonly LessonRecord[]): string {
  * in the same batch, is a duplicate of that lesson — reported with its
  * check and issue, never rewritten; the failure text is detail, not
  * identity. A duplicate that names a check its prose-only lesson lacks is
- * appended as the next page, superseding that lesson by reference, so the
- * check lands without touching the existing page. A lesson already
+ * appended as the next page with that lesson's status, and lists it in
+ * `supersedes`; the caller marks it superseded the way consolidation does,
+ * so every ledger reader agrees which page is live. A lesson already
  * carrying an issue link, or already named in `recordedCandidates` (the ids
  * an earlier triage queued), is not queued again. New lessons start as
  * `hypothesis`: consolidation confirms them from evidence later, and
@@ -309,8 +309,8 @@ export function triageFailures(
     const record: LessonRecord = {
       id: nextLessonId(live),
       statement: known?.statement ?? failure.lesson,
-      status: "hypothesis",
-      scope: known?.scope ?? failure.scope ?? "repo",
+      status: known?.status ?? "hypothesis",
+      scope: known !== undefined && known.scope !== "" ? known.scope : (failure.scope ?? "repo"),
       failure: failure.failure,
       check,
       issue: issue !== "" ? issue : (known?.issue ?? ""),
