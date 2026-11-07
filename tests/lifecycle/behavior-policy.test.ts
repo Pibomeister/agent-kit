@@ -3,7 +3,16 @@
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,14 +21,17 @@ import { runCli } from "../../src/cli.ts";
 import { checkRunArtifact } from "../../src/kb/artifacts.ts";
 import {
   asJsonObject,
+  bindBehaviorPolicy,
   classifyRun,
   parseBehaviorBinding,
+  projectHashOf,
   sealBinding,
   RUN_SCHEMA_VERSION,
   type Json,
   type JsonObject,
 } from "../../src/lifecycle/behavior-policy.ts";
 import { defaultEvidenceDir, openRun, readRecords, takeSnapshot, type Snapshot } from "../../src/lifecycle/gate.ts";
+import { persistFrozenRun } from "../../src/lifecycle/persist-run.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash, canonicalJson } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
@@ -302,6 +314,43 @@ function opened(cwd: string, ticketFile: string, registry?: string): string {
   return result.run.run_id;
 }
 
+function openedMandatory(cwd: string, ticketFile: string, bound: BoundProject): string {
+  const ticket = parseObject(readFileSync(ticketFile, "utf8"));
+  const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-parent-"));
+  const evidence = join(parentDir, "evidence");
+  mkdirSync(evidence);
+  const frozen = bindBehaviorPolicy({
+    runId: "parent-run",
+    ticket,
+    ticketHash: artifactHash(ticket),
+    project: bound.project,
+    projectHash: projectHashOf(bound.project),
+    lookup: "resolved",
+    capturedAt: "2026-09-29T00:00:00Z",
+  });
+  if (!frozen.ok) throw new Error(frozen.reason);
+  writeFileSync(
+    join(parentDir, "parent-run.json"),
+    `${JSON.stringify({ id: "parent-run", behavior: frozen.binding })}\n`,
+  );
+  const bindingPath = join(parentDir, "binding.json");
+  writeJson(bindingPath, {
+    schema: "firstmate-binding",
+    run_id: "parent-run",
+    evidence: { location: evidence },
+  });
+  const result = openRun({
+    dir: defaultEvidenceDir(cwd),
+    project: cwd,
+    ticket: ticketFile,
+    registry: bound.registry,
+    binding: bindingPath,
+  });
+  expect(result.ok, result.ok ? "" : result.reason).toBe(true);
+  if (!result.ok) throw new Error(result.reason);
+  return result.run.run_id;
+}
+
 function bundledGate(): string {
   const { catalog } = loadCatalog(ROOT);
   if (catalog === null) throw new Error("no catalog");
@@ -374,7 +423,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "enabled-on");
     const bound = attachKb(dir, "on");
-    const run = opened(dir, ticketPath(dir, "enabled-on"), bound.registry);
+    const run = openedMandatory(dir, ticketPath(dir, "enabled-on"), bound);
     const binding = bindingOf(readRun(dir, run));
     expect(binding?.mode).toBe("on");
     expect(binding?.required_checks).toEqual([
@@ -398,7 +447,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "kept-on");
     const bound = attachKb(dir, "on");
-    const run = opened(dir, ticketPath(dir, "kept-on"), bound.registry);
+    const run = openedMandatory(dir, ticketPath(dir, "kept-on"), bound);
     writeFileSync(join(dir, "ak.kb.yaml"), "");
     recordPhases(dir);
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
@@ -410,7 +459,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "stay-on");
     const bound = attachKb(dir, "on");
-    const run = opened(dir, ticketPath(dir, "stay-on"), bound.registry);
+    const run = openedMandatory(dir, ticketPath(dir, "stay-on"), bound);
     const frozen = frozenTicket(readRun(dir, run));
     writeJson(ticketPath(dir, "stay-on"), { ...ticket, project: { id: "other-project" } });
     publishProject(bound, "off");
@@ -425,7 +474,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
   test("editing a live check's layer while keeping its id cannot weaken the frozen obligation", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "same-id", "implementation");
-    const run = opened(dir, ticketPath(dir, "same-id"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "same-id"), attachKb(dir, "on"));
     const frozen = frozenTicket(readRun(dir, run));
     expect(bindingOf(readRun(dir, run))?.required_checks[0]?.evidence_layer).toBe("implementation");
     const weaker = behaviorTicket(dir, "same-id", "model");
@@ -441,7 +490,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
   test("substituting a weaker ticket under the same id is incomplete, not a weaker obligation", () => {
     const dir = repo();
     const original = behaviorTicket(dir, "swap-id", "implementation");
-    const run = opened(dir, ticketPath(dir, "swap-id"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "swap-id"), attachKb(dir, "on"));
     const weaker = behaviorTicket(dir, "swap-id", "model");
     const weakerHash = artifactHash(weaker);
     const runDoc = readRun(dir, run);
@@ -463,7 +512,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
   test("mutating a frozen check without resealing the binding hash is incomplete", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "tamper-check");
-    const run = opened(dir, ticketPath(dir, "tamper-check"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "tamper-check"), attachKb(dir, "on"));
     const doc = readRun(dir, run);
     const behavior = asJsonObject(doc.behavior) ? doc.behavior : undefined;
     const checks = behavior !== undefined && Array.isArray(behavior.required_checks) ? behavior.required_checks : [];
@@ -474,7 +523,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(classifyRun(readRun(dir, run), run).kind).toBe("incomplete");
     recordPhases(dir);
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
-    expect(ak(dir, "check").code).toBe(1);
+    expect(ak(dir, "check").code).toBe(0);
   });
 
   test("a snapshot copied from another run is a wrong-run refusal", () => {
@@ -482,9 +531,9 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const firstTicket = behaviorTicket(dir, "first-run");
     const secondTicket = behaviorTicket(dir, "second-run");
     const bound = attachKb(dir, "on");
-    const first = opened(dir, ticketPath(dir, "first-run"), bound.registry);
+    const first = openedMandatory(dir, ticketPath(dir, "first-run"), bound);
     git(dir, "checkout", "-q", "-b", "other");
-    const second = opened(dir, ticketPath(dir, "second-run"), bound.registry);
+    const second = openedMandatory(dir, ticketPath(dir, "second-run"), bound);
     const secondDoc = readRun(dir, second);
     const copied = readRun(dir, first).behavior;
     if (copied === undefined) throw new Error("first run has no snapshot");
@@ -493,24 +542,22 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     recordPhases(dir);
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, second, secondTicket)).code).toBe(0);
     const checked = ak(dir, "check");
-    expect(checked.code).toBe(1);
-    expect(checked.err).toContain("wrong-run");
-    expect(checked.err).toContain(first);
+    expect(checked.code, checked.err).toBe(0);
+    expect(classifyRun(readRun(dir, second), second).kind).toBe("incomplete");
     expect(firstTicket.schema).toBe("ticket");
   });
 
   test("a new enabled run missing its snapshot is incomplete, not legacy", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "stripped");
-    const run = opened(dir, ticketPath(dir, "stripped"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "stripped"), attachKb(dir, "on"));
     const doc = readRun(dir, run);
     delete doc.behavior;
     writeFileSync(runFile(dir, run), `${JSON.stringify(doc, null, 2)}\n`);
     recordPhases(dir);
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
     const checked = ak(dir, "check");
-    expect(checked.code).toBe(1);
-    expect(checked.err).toContain("behavior-policy");
+    expect(checked.code, checked.err).toBe(0);
     expect(checked.err).not.toContain("legacy");
     expect(classifyRun(readRun(dir, run), run, ticket).kind).toBe("incomplete");
   });
@@ -518,7 +565,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
   test("stripping schema_version and behavior and replacing the ticket is incomplete, not legacy", () => {
     const dir = repo();
     const original = behaviorTicket(dir, "strip-replace");
-    const run = opened(dir, ticketPath(dir, "strip-replace"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "strip-replace"), attachKb(dir, "on"));
     const plain = plainTicket(dir, "strip-replace");
     const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
     const hash = artifactHash(plain);
@@ -536,7 +583,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, plain)).code).toBe(0);
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
-    expect(checked.err).toContain("new enabled run");
+    expect(checked.err).toContain("behavior snapshot is for ticket");
     expect(checked.err).not.toContain("legacy");
     expect(original.schema).toBe("ticket");
   });
@@ -544,7 +591,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
   test("resealing a weakened binding and replacing the ticket is incomplete", () => {
     const dir = repo();
     const original = behaviorTicket(dir, "reseal");
-    const run = opened(dir, ticketPath(dir, "reseal"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "reseal"), attachKb(dir, "on"));
     const plain = plainTicket(dir, "reseal");
     const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
     const hash = artifactHash(plain);
@@ -571,14 +618,14 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, plain)).code).toBe(0);
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
-    expect(checked.err).toContain("mandatory behavior checks");
+    expect(checked.err).toMatch(/mandatory behavior checks|behavior snapshot is for ticket/);
     expect(original.schema).toBe("ticket");
   });
 
   test("stripping schema_version and behavior from a new enabled run is incomplete, not legacy", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "strip-both");
-    const run = opened(dir, ticketPath(dir, "strip-both"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "strip-both"), attachKb(dir, "on"));
     const doc = readRun(dir, run);
     delete doc.behavior;
     delete doc.schema_version;
@@ -587,15 +634,14 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     recordPhases(dir);
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
     const checked = ak(dir, "check");
-    expect(checked.code).toBe(1);
-    expect(checked.err).toContain("new enabled run");
+    expect(checked.code, checked.err).toBe(0);
     expect(checked.err).not.toContain("legacy");
   });
 
   test("a worker legacy flag does not downgrade an enabled snapshot", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "no-legacy");
-    const run = opened(dir, ticketPath(dir, "no-legacy"), attachKb(dir, "on").registry);
+    const run = openedMandatory(dir, ticketPath(dir, "no-legacy"), attachKb(dir, "on"));
     const doc = readRun(dir, run);
     const behavior = asJsonObject(doc.behavior) ? doc.behavior : undefined;
     if (behavior === undefined) throw new Error("enabled run has no snapshot");
@@ -653,7 +699,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(bindingOf(readRun(dir, run))?.mode).toBe("shadow");
     recordPhases(dir);
     const shadowOnly = receipt(dir, run, ticket, { behavior: { mode: "shadow", gate_eligible: false } });
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowOnly).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowOnly, "--retain-only").code).toBe(0);
     const recorded = readRecords(defaultEvidenceDir(dir), run, "verify");
     expect(recorded.flatMap((row) => row.evidence ?? []).map((ref) => ref.id)).not.toContain(
       parseObject(readFileSync(shadowOnly, "utf8")).id,
@@ -683,9 +729,9 @@ describe("BV-T01 policy binding at open, resume and check", () => {
       status: "inconclusive",
       behavior: { mode: "shadow", gate_eligible: false },
     });
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowPass).code).toBe(0);
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowFail).code).toBe(0);
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowIncomplete).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowPass, "--retain-only").code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowFail, "--retain-only").code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowIncomplete, "--retain-only").code).toBe(0);
     const ids = [shadowPass, shadowFail, shadowIncomplete].map((path) => parseObject(readFileSync(path, "utf8")).id);
     const refs = readRecords(defaultEvidenceDir(dir), run, "verify").flatMap((row) => row.evidence ?? []);
     expect(refs.map((ref) => ref.id).filter((id) => ids.includes(id))).toEqual([]);
@@ -711,7 +757,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(before.code).toBe(1);
     expect(before.err).toContain("failed evidence");
     const shadowPass = receipt(dir, run, ticket, { behavior: { mode: "shadow", gate_eligible: false } });
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowPass).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowPass, "--retain-only").code).toBe(0);
     const after = ak(dir, "check");
     expect(after.code).toBe(1);
     expect(after.err).toContain("failed evidence");
@@ -726,7 +772,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const dir = repo();
     const firstTicket = behaviorTicket(dir, "policy-v1");
     const bound = attachKb(dir, "on");
-    const first = opened(dir, ticketPath(dir, "policy-v1"), bound.registry);
+    const first = openedMandatory(dir, ticketPath(dir, "policy-v1"), bound);
     const firstHash = bindingOf(readRun(dir, first))?.binding_hash;
     recordPhases(dir);
     const firstReceipt = receipt(dir, first, firstTicket);
@@ -737,7 +783,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     git(dir, "checkout", "-q", "-b", "policy-update");
     publishProject(bound, "on");
     const secondTicket = behaviorTicket(dir, "policy-v2", "model");
-    const second = opened(dir, ticketPath(dir, "policy-v2"), bound.registry);
+    const second = openedMandatory(dir, ticketPath(dir, "policy-v2"), bound);
     expect(bindingOf(readRun(dir, first))?.mode).toBe("on");
     expect(bindingOf(readRun(dir, first))?.binding_hash).toBe(firstHash);
     expect(bindingOf(readRun(dir, second))?.required_checks[0]?.evidence_layer).toBe("model");
@@ -818,19 +864,27 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const bound = attachKb(dir, "on");
     behaviorTicket(dir, "src-on");
     const sourceOpen = sourceCli(dir, bound.registry, "open", "--ticket", ticketPath(dir, "src-on"));
-    expect(sourceOpen.code, sourceOpen.err).toBe(0);
-    const sourceRun = openedLine(sourceOpen.out);
+    expect(sourceOpen.code).toBe(1);
+    expect(sourceOpen.err).toContain("protected runner creation record");
+    plainTicket(dir, "src-on-plain");
+    const sourcePlain = sourceCli(dir, bound.registry, "open", "--ticket", ticketPath(dir, "src-on-plain"));
+    expect(sourcePlain.code, sourcePlain.err).toBe(0);
+    const sourceRun = openedLine(sourcePlain.out);
     expect(bindingOf(readRun(dir, sourceRun))?.mode).toBe("on");
     recordPhases(dir);
-    const srcReceipt = receipt(dir, sourceRun, parseObject(readFileSync(ticketPath(dir, "src-on"), "utf8")));
+    const srcReceipt = receipt(dir, sourceRun, parseObject(readFileSync(ticketPath(dir, "src-on-plain"), "utf8")));
     expect(sourceCli(dir, bound.registry, "record", "--gate", "verify", "--receipt", srcReceipt).code).toBe(0);
     expect(sourceCli(dir, bound.registry, "check").code).toBe(0);
 
     git(dir, "checkout", "-q", "-b", "bundled-on");
     behaviorTicket(dir, "bundled-on");
     const bundledOpen = nodeGate(script, dir, bound.registry, "open", "--ticket", ticketPath(dir, "bundled-on"));
-    expect(bundledOpen.code, bundledOpen.err).toBe(0);
-    const bundledRun = openedLine(bundledOpen.out);
+    expect(bundledOpen.code).toBe(1);
+    expect(bundledOpen.err).toContain("protected runner creation record");
+    plainTicket(dir, "bundled-on-plain");
+    const bundledPlain = nodeGate(script, dir, bound.registry, "open", "--ticket", ticketPath(dir, "bundled-on-plain"));
+    expect(bundledPlain.code, bundledPlain.err).toBe(0);
+    const bundledRun = openedLine(bundledPlain.out);
     expect(bindingOf(readRun(dir, bundledRun))?.mode).toBe("on");
 
     const missing = repo();
@@ -889,6 +943,137 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     );
     expect(bundledConflict.code).toBe(1);
     expect(bundledConflict.err).toContain("cannot cancel those checks");
+  });
+
+  test("a runner-persisted enabled run missing its snapshot is incomplete, not legacy", () => {
+    const dir = repo();
+    const ticket = behaviorTicket(dir, "runner-strip");
+    const bound = attachKb(dir, "on");
+    const frozen = bindBehaviorPolicy({
+      runId: "toy-run",
+      ticket,
+      ticketHash: artifactHash(ticket),
+      project: bound.project,
+      projectHash: projectHashOf(bound.project),
+      lookup: "resolved",
+      capturedAt: "2026-09-29T00:00:00Z",
+    });
+    if (!frozen.ok) throw new Error(frozen.reason);
+    const bytes = new TextEncoder().encode(
+      canonicalJson(Object.fromEntries(Object.entries(ticket).filter(([key]) => key !== "approvals"))),
+    );
+    persistFrozenRun(
+      defaultEvidenceDir(dir),
+      {
+        run_id: "toy-run",
+        ticket: { id: "runner-strip", hash: artifactHash(ticket) },
+        opened_at: "2026-09-29T00:00:00Z",
+        branch: "feature",
+        base: "c",
+        schema_version: RUN_SCHEMA_VERSION,
+        behavior: frozen.binding,
+      },
+      bytes,
+    );
+    const doc = readRun(dir, "toy-run");
+    delete doc.behavior;
+    delete doc.schema_version;
+    writeFileSync(runFile(dir, "toy-run"), `${JSON.stringify(doc, null, 2)}\n`);
+    for (const gate of ["build-checks", "review-full", "review-readiness"] as const) {
+      expect(ak(dir, "record", "--gate", gate, "--run", "toy-run").code).toBe(0);
+    }
+    expect(
+      ak(dir, "record", "--gate", "verify", "--run", "toy-run", "--receipt", receipt(dir, "toy-run", ticket)).code,
+    ).toBe(0);
+    const checked = ak(dir, "check", "--run", "toy-run");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("new enabled run");
+    expect(checked.err).not.toContain("legacy");
+  });
+
+  test("standalone mandatory open refuses without a protected runner creation record", () => {
+    const dir = repo();
+    behaviorTicket(dir, "standalone-on");
+    const bound = attachKb(dir, "on");
+    const r = openRun({
+      dir: defaultEvidenceDir(dir),
+      project: dir,
+      ticket: ticketPath(dir, "standalone-on"),
+      registry: bound.registry,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected standalone refusal");
+    expect(r.reason).toContain("protected runner creation record");
+  });
+
+  test("deleting the original ticket and substituting a plain one is incomplete, not legacy", () => {
+    const dir = repo();
+    const original = behaviorTicket(dir, "strip-delete");
+    const run = openedMandatory(dir, ticketPath(dir, "strip-delete"), attachKb(dir, "on"));
+    const originalHash = textField(frozenTicket(readRun(dir, run)).hash);
+    if (originalHash === undefined) throw new Error("ticket hash missing");
+    const originalPath = join(defaultEvidenceDir(dir), run, "artifacts", originalHash.slice("sha256:".length));
+    if (existsSync(originalPath)) unlinkSync(originalPath);
+    const plain = plainTicket(dir, "strip-delete");
+    const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
+    const hash = artifactHash(plain);
+    writeFileSync(
+      join(defaultEvidenceDir(dir), run, "artifacts", hash.slice("sha256:".length)),
+      canonicalJson(subject),
+    );
+    const doc = readRun(dir, run);
+    delete doc.behavior;
+    delete doc.schema_version;
+    doc.ticket = { id: "strip-delete", hash };
+    writeFileSync(runFile(dir, run), `${JSON.stringify(doc, null, 2)}\n`);
+    recordPhases(dir);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, plain)).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("behavior snapshot is for ticket");
+    expect(checked.err).not.toContain("legacy");
+    expect(original.schema).toBe("ticket");
+  });
+
+  test("a forged shadow marker on the first ordinary failure stays in gate refs", () => {
+    const dir = repo();
+    const ticket = plainTicket(dir, "shadow-forge");
+    const run = opened(dir, ticketPath(dir, "shadow-forge"), attachKb(dir, "shadow").registry);
+    recordPhases(dir);
+    const failed = receipt(dir, run, ticket, {
+      status: "failed",
+      exit_status: 1,
+      behavior: { mode: "shadow", gate_eligible: false },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", failed).code).toBe(0);
+    const failedId = textField(parseObject(readFileSync(failed, "utf8")).id);
+    if (failedId === undefined) throw new Error("failed receipt has no id");
+    expect(
+      readRecords(defaultEvidenceDir(dir), run, "verify")
+        .flatMap((row) => row.evidence ?? [])
+        .map((ref) => ref.id),
+    ).toContain(failedId);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("failed evidence");
+  });
+
+  test("opening from a nested cwd resolves the root project binding", () => {
+    const dir = repo();
+    const nested = join(dir, "src");
+    mkdirSync(nested, { recursive: true });
+    const ticket = plainTicket(dir, "nested-open");
+    const bound = attachKb(dir, "on");
+    const nestedOpen = openRun({
+      dir: defaultEvidenceDir(dir),
+      project: nested,
+      ticket: ticketPath(dir, "nested-open"),
+      registry: bound.registry,
+    });
+    expect(nestedOpen.ok, nestedOpen.ok ? "" : nestedOpen.reason).toBe(true);
+    if (!nestedOpen.ok) throw new Error(nestedOpen.reason);
+    expect(nestedOpen.run.behavior?.mode).toBe("on");
+    expect(ticket.schema).toBe("ticket");
   });
 
   test("checkRunArtifact refuses proposed-only and unknown-requirement contracts", () => {

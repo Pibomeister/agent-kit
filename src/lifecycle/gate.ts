@@ -79,7 +79,7 @@ import {
   resolvePool,
 } from "./gate-lanes.ts";
 import { verificationValidator } from "./verification-schema.ts";
-import { loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { findKbProjectRoot, loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
 import { readPublishedProject } from "../kb/local-git.ts";
 import {
   asJsonObject,
@@ -87,10 +87,9 @@ import {
   classifyRun,
   parseBehaviorBinding,
   projectHashOf,
-  ticketCarriesBehaviorChecks,
+  rebindSnapshot,
   ticketProjectId,
   RUN_SCHEMA_VERSION,
-  shadowReceipt,
   type BehaviorBinding,
   type BehaviorClass,
   type FrozenBehaviorCheck,
@@ -494,9 +493,8 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
   return value as unknown as RunRecord;
 }
 
-function protectedRunnerBinding(dir: string, runId: string): BehaviorBinding | undefined {
-  for (const root of [dirname(dir), dir]) {
-    const path = join(root, `${runId}.json`);
+function loadProtectedParentRun(runId: string, evidenceLocation: string): BehaviorBinding | undefined {
+  for (const path of [join(dirname(evidenceLocation), `${runId}.json`), join(evidenceLocation, `${runId}.json`)]) {
     if (!existsSync(path)) continue;
     const raw = readObject(path);
     if (raw === undefined || raw.id !== runId) continue;
@@ -504,28 +502,6 @@ function protectedRunnerBinding(dir: string, runId: string): BehaviorBinding | u
     if (binding !== undefined) return binding;
   }
   return undefined;
-}
-
-function storedTickets(dir: string, run: string, ticketId: string): JsonObject[] {
-  const folder = join(dir, safeRunId(run), "artifacts");
-  if (!existsSync(folder)) return [];
-  const found: JsonObject[] = [];
-  for (const name of readdirSync(folder)) {
-    if (!/^[0-9a-f]{64}$/.test(name)) continue;
-    const path = join(folder, name);
-    const bytes = readFileSync(path);
-    const hash = `sha256:${name}`;
-    if (sha256(bytes) !== hash) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      continue;
-    }
-    if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId) continue;
-    found.push(parsed);
-  }
-  return found;
 }
 
 function parseTicketBytes(bytes: Uint8Array, hash: string): JsonObject | undefined {
@@ -540,25 +516,48 @@ function parseTicketBytes(bytes: Uint8Array, hash: string): JsonObject | undefin
 }
 
 function creationTicketForRun(dir: string, run: RunRecord): JsonObject | undefined {
-  const stored = storedTickets(dir, run.run_id, run.ticket.id);
-  const withBehavior = stored.filter(ticketCarriesBehaviorChecks);
-  if (withBehavior[0] !== undefined) return withBehavior[0];
   const namedPath = artifactPath(dir, run.run_id, run.ticket.hash);
   if (namedPath !== undefined && existsSync(namedPath))
     return parseTicketBytes(readFileSync(namedPath), run.ticket.hash);
-  return stored[0];
+  return undefined;
 }
 
-function classifyOpenedRun(dir: string, run: RunRecord, ticket?: JsonObject): BehaviorClass {
-  const authority = protectedRunnerBinding(dir, run.run_id);
+function classifyOpenedRun(run: RunRecord, ticket?: JsonObject): BehaviorClass {
   const record = asJsonObject(run) ? run : undefined;
   if (record === undefined) return { kind: "incomplete", reason: `run ${run.run_id} is not a JSON object` };
-  return classifyRun(record, run.run_id, ticket, authority);
+  if (run.binding_run_id !== undefined && run.binding_evidence_location !== undefined) {
+    const parent = loadProtectedParentRun(run.binding_run_id, run.binding_evidence_location);
+    if (parent !== undefined) {
+      const rebound: unknown = JSON.parse(JSON.stringify(rebindSnapshot(parent, run.run_id)));
+      if (!asJsonObject(rebound))
+        return { kind: "incomplete", reason: `run ${run.run_id} has no complete behavior policy snapshot` };
+      const named = asJsonObject(record.ticket) ? record.ticket : undefined;
+      return classifyRun(
+        {
+          run_id: run.run_id,
+          ticket: named === undefined ? { id: run.ticket.id, hash: run.ticket.hash } : named,
+          opened_at: run.opened_at,
+          branch: run.branch,
+          base: run.base,
+          schema_version: RUN_SCHEMA_VERSION,
+          behavior: rebound,
+        },
+        run.run_id,
+        ticket,
+      );
+    }
+  }
+  const classified = classifyRun(record, run.run_id, ticket);
+  if (classified.kind === "legacy")
+    return {
+      kind: "incomplete",
+      reason: `run ${run.run_id} is a new enabled run with no behavior policy snapshot`,
+    };
+  return classified;
 }
 
-function policyShadowRetain(dir: string, run: RunRecord, receipt: JsonObject): boolean {
-  if (!shadowReceipt(receipt)) return false;
-  const classified = classifyOpenedRun(dir, run);
+function policyShadowRetain(run: RunRecord): boolean {
+  const classified = classifyOpenedRun(run);
   return classified.kind === "bound" && classified.binding.mode === "shadow";
 }
 
@@ -598,7 +597,8 @@ function resolveAuthoritativeProject(
   | { lookup: "unbound" }
   | { lookup: "unavailable"; reason: string }
   | { lookup: "resolved"; project: JsonObject; hash: string } {
-  const loaded = loadKbBinding(worktree);
+  const projectRoot = findKbProjectRoot(worktree);
+  const loaded = loadKbBinding(projectRoot);
   if (loaded.binding === null) {
     const unbound = loaded.issues.length === 0 || loaded.issues.every((issue) => issue.rule === "kb.unbound");
     if (unbound) return { lookup: "unbound" };
@@ -608,7 +608,7 @@ function resolveAuthoritativeProject(
       reason: first === undefined ? "the knowledgebase binding is unusable" : first.message,
     };
   }
-  const resolved = resolveKnowledgebase(worktree, registry);
+  const resolved = resolveKnowledgebase(projectRoot, registry);
   if (resolved.resolved === null || resolved.state !== "available") {
     return {
       lookup: "unavailable",
@@ -733,18 +733,28 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     projectDoc = authoritative.project;
     projectHash = authoritative.hash;
   }
-  const boundPolicy = bindBehaviorPolicy({
-    runId,
-    ticket,
-    ticketHash,
-    project: projectDoc,
-    projectHash,
-    lookup,
-    callerProjectHash: callerHash,
-    capturedAt: openedAt,
-  });
-  if (!boundPolicy.ok) return { ok: false, reason: boundPolicy.reason };
-  run.behavior = boundPolicy.binding;
+  const parent =
+    bound === undefined ? undefined : loadProtectedParentRun(bound.binding_run_id, bound.binding_evidence_location);
+  if (parent !== undefined) run.behavior = rebindSnapshot(parent, runId);
+  else {
+    const boundPolicy = bindBehaviorPolicy({
+      runId,
+      ticket,
+      ticketHash,
+      project: projectDoc,
+      projectHash,
+      lookup,
+      callerProjectHash: callerHash,
+      capturedAt: openedAt,
+    });
+    if (!boundPolicy.ok) return { ok: false, reason: boundPolicy.reason };
+    if (boundPolicy.binding.mode === "on" && boundPolicy.binding.required_checks.length > 0)
+      return {
+        ok: false,
+        reason: "enabled mandatory behavior checks need the protected runner creation record",
+      };
+    run.behavior = boundPolicy.binding;
+  }
   atomicJson(runRecordPath(a.dir, runId), run);
   storeArtifact(a.dir, runId, canonical);
   if (projectDoc !== undefined) storeArtifact(a.dir, runId, new TextEncoder().encode(canonicalJson(projectDoc)));
@@ -796,6 +806,8 @@ export interface RecordArgs {
   command?: readonly string[];
   builtin?: { name: string; argv: string[]; output: string };
   now?: () => Date;
+  /** Shadow-policy collection only. Ordinary receipts keep existing admission. */
+  retainOnly?: boolean;
 }
 
 /** Runs an evidence command in the project and returns its entry, or why the tree it ran in moved. */
@@ -923,8 +935,7 @@ export function recordGate(
       storeArtifact(a.dir, a.run, artifactBytes);
     }
     const storedHash = storeArtifact(a.dir, a.run, bytes);
-    const retainOnly =
-      openedRun !== undefined && asJsonObject(receipt) && policyShadowRetain(a.dir, openedRun, receipt);
+    const retainOnly = a.retainOnly === true && openedRun !== undefined && policyShadowRetain(openedRun);
     if (retainOnly) {
       skipped.push(`receipt ${receipt.id} is a shadow behavior artifact; retained and not gate evidence`);
       continue;
@@ -1245,7 +1256,7 @@ function evaluateEvidence(
   if (ticket === undefined)
     return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is absent from the run store`);
   const missingView: BehaviorClass = { kind: "incomplete", reason: `run ${a.run} is not a JSON object` };
-  const classified = asJsonObject(run) ? classifyOpenedRun(a.dir, run, ticket) : missingView;
+  const classified = asJsonObject(run) ? classifyOpenedRun(run, ticket) : missingView;
   if (classified.kind === "incomplete") {
     const code = classified.reason.includes("behavior snapshot is for run") ? "wrong-run" : "behavior-policy";
     return evidenceUnavailable(code, classified.reason);
@@ -1368,6 +1379,9 @@ function evaluateEvidence(
     const shape = verificationShapeReasons(receipt);
     if (shape.length > 0) {
       reasons.push({ code: "malformed", detail: `receipt ${ref.id}: ${shape.join("; ")}`, evidence: ref.id });
+      if (receipt.status === "failed" && boundTo(receipt, head)) {
+        for (const criterion of strings(receipt.supports) ?? []) failed.add(criterion);
+      }
       continue;
     }
     const before = reasons.length;
@@ -1496,10 +1510,6 @@ function evaluateEvidence(
       });
     }
     const valid = reasons.length === before;
-    if (asJsonObject(receipt) && policyShadowRetain(a.dir, run, receipt)) {
-      notes.push(`note: receipt ${ref.id} is a shadow behavior artifact; it is retained and is not gate evidence`);
-      continue;
-    }
     if (valid) validReceipts.push({ ref, receipt, required, check });
   }
   const superseded = new Set(
@@ -2191,7 +2201,7 @@ export const LIFECYCLE_USAGE = [
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--binding <file>] [--project-record <file>] [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--retain-only] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
@@ -2237,6 +2247,7 @@ const FLAGS: Record<string, readonly string[]> = {
   record: [
     "gate",
     "receipt",
+    "retain-only",
     "verdict",
     "class",
     "author-kind",
@@ -2441,7 +2452,7 @@ export function main(
       io.err(`ak lifecycle ${sub}: unexpected ${token}`);
       return 2;
     }
-    if (name === "json" || name === "evidence") {
+    if (name === "json" || name === "evidence" || name === "retain-only") {
       flags.set(name, true);
       continue;
     }
@@ -2939,6 +2950,7 @@ export function main(
       implementer,
       verdict,
       bypass,
+      retainOnly: flags.get("retain-only") === true,
     };
     if (policy !== undefined) {
       recordArgs.policy = policy;

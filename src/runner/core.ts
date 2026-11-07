@@ -10,7 +10,7 @@ import { unknownSelector } from "../util/suggest.ts";
 import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { persistFrozenRun } from "../lifecycle/persist-run.ts";
-import { loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { findKbProjectRoot, loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
 import { readPublishedProject } from "../kb/local-git.ts";
 import {
   asJson,
@@ -19,6 +19,7 @@ import {
   parseBehaviorBinding,
   projectHashOf,
   RUN_SCHEMA_VERSION,
+  ticketCarriesBehaviorChecks,
   type Json,
   type JsonObject,
 } from "../lifecycle/behavior-policy.ts";
@@ -693,7 +694,8 @@ export class Runner {
 
   private persistBehaviorEvidence(run: Run): void {
     if (run.behavior === undefined) return;
-    const work = this.workTicket(run.charter);
+    const work = this.tryWorkTicket(run.charter);
+    if (work === undefined) return;
     const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
     if (ticketId === undefined) throw new Error("approved ticket is unnamed");
     const ticketBytes = new TextEncoder().encode(
@@ -712,6 +714,13 @@ export class Runner {
       },
       ticketBytes,
     );
+  }
+
+  private tryWorkTicket(charter: Charter) {
+    if (!asJsonObject(charter)) throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket") return undefined;
+    return this.workTicket(charter);
   }
 
   private workTicket(charter: Charter) {
@@ -740,16 +749,17 @@ export class Runner {
     return { ticket: parsed, hash };
   }
 
-  private bindBehavior(id: string, charter: Charter, _charterHash: string, createdAt: string) {
-    const work = this.workTicket(charter);
-    const loaded = loadKbBinding(this.workerRoot);
+  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string) {
+    const work = this.tryWorkTicket(charter);
+    const projectRoot = findKbProjectRoot(this.workerRoot);
+    const loaded = loadKbBinding(projectRoot);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined) throw new Error(bindingError.message);
     let lookup: "unbound" | "resolved" | "unavailable" = "unbound";
     let project: JsonObject | undefined;
     let projectHash: string | undefined;
     if (loaded.binding !== null) {
-      const resolved = resolveKnowledgebase(this.workerRoot, registryPath());
+      const resolved = resolveKnowledgebase(projectRoot, registryPath());
       if (resolved.resolved === null || resolved.state !== "available") lookup = "unavailable";
       else {
         const published = readPublishedProject(resolved.resolved, charter.project.id);
@@ -763,8 +773,8 @@ export class Runner {
     }
     const bound = bindBehaviorPolicy({
       runId: id,
-      ticket: work.ticket,
-      ticketHash: work.hash,
+      ticket: work?.ticket ?? {},
+      ticketHash: work?.hash ?? charterHash,
       project,
       projectHash,
       lookup,
@@ -1429,6 +1439,19 @@ export class Runner {
       digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash
     )
       throw new Error("current runner-collected verification receipt required");
+    const work = this.tryWorkTicket(run.charter);
+    const raw: unknown = run.behavior;
+    const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+    if (run.behavior !== undefined && binding === undefined)
+      throw new Error("frozen behavior obligations are unavailable");
+    if (work !== undefined && ticketCarriesBehaviorChecks(work.ticket)) {
+      if (binding === undefined || binding.mode !== "on" || binding.required_checks.length === 0)
+        throw new Error("frozen behavior obligations are unavailable");
+      for (const check of binding.required_checks) {
+        if (check.property_ids.length === 0)
+          throw new Error(`required behavior check ${check.id} is missing its frozen definition`);
+      }
+    }
     const baseRef = run.charter.repos[0]?.base_branch;
     const base =
       baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);

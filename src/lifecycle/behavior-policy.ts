@@ -201,6 +201,19 @@ export function sealBinding(unsigned: Omit<BehaviorBinding, "binding_hash">): Be
   return { ...unsigned, binding_hash: bindingHash(unsigned) };
 }
 
+/** Copy frozen obligations onto a child run id without re-resolving live policy. */
+export function rebindSnapshot(binding: BehaviorBinding, runId: string): BehaviorBinding {
+  return sealBinding({
+    run_id: runId,
+    ticket_hash: binding.ticket_hash,
+    mode: binding.mode,
+    policy_id: binding.policy_id,
+    policy_hash: binding.policy_hash,
+    required_checks: binding.required_checks,
+    captured_at: binding.captured_at,
+  });
+}
+
 export function bindBehaviorPolicy(args: {
   runId: string;
   ticket: JsonObject;
@@ -427,11 +440,6 @@ export function classifyRun(
     }
   }
   return { kind: "bound", binding };
-}
-
-export function shadowReceipt(receipt: JsonObject): boolean {
-  const behavior = isObject(receipt.behavior) ? receipt.behavior : undefined;
-  return behavior?.mode === "shadow" || behavior?.gate_eligible === false;
 }
 
 export function projectHashOf(project: JsonObject): string {

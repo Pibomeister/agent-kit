@@ -18129,6 +18129,10 @@ function parseBehaviorBinding(value) {
     return;
   return { ...unsigned, binding_hash: value.binding_hash };
 }
+function ticketCarriesBehaviorChecks(ticket) {
+  const frozen = behaviorChecks(ticket, ticketSurfaces(ticket));
+  return !("reason" in frozen) && frozen.length > 0;
+}
 function projectHashOf(project) {
   return artifactHash(project);
 }
@@ -18177,9 +18181,15 @@ function sourceIsAccepted(kind, artifact) {
   if (kind === "requirements")
     return artifact.schema === "behavior-contract" && status === "active";
   if (kind === "user-instruction") {
-    if (status === undefined)
-      return true;
-    return status !== "draft" && status !== "proposed" && status !== "open" && status !== "unresolved";
+    if (artifact.schema === "ticket")
+      return status === "approved";
+    if (artifact.schema === "decision") {
+      if (status !== "ruled")
+        return false;
+      const ruling = artifact.doc.ruling;
+      return asJsonObject(ruling) && ruling.outcome === "decided";
+    }
+    return false;
   }
   return false;
 }
@@ -41876,7 +41886,9 @@ class Runner {
   persistBehaviorEvidence(run2) {
     if (run2.behavior === undefined)
       return;
-    const work = this.workTicket(run2.charter);
+    const work = this.tryWorkTicket(run2.charter);
+    if (work === undefined)
+      return;
     const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
     if (ticketId === undefined)
       throw new Error("approved ticket is unnamed");
@@ -41890,6 +41902,14 @@ class Runner {
       schema_version: RUN_SCHEMA_VERSION,
       behavior: run2.behavior
     }, ticketBytes);
+  }
+  tryWorkTicket(charter) {
+    if (!asJsonObject(charter))
+      throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket")
+      return;
+    return this.workTicket(charter);
   }
   workTicket(charter) {
     if (!asJsonObject(charter))
@@ -41921,9 +41941,10 @@ class Runner {
       throw new Error("approved ticket does not match the charter work source");
     return { ticket: parsed, hash };
   }
-  bindBehavior(id, charter, _charterHash, createdAt) {
-    const work = this.workTicket(charter);
-    const loaded = loadKbBinding(this.workerRoot);
+  bindBehavior(id, charter, charterHash, createdAt) {
+    const work = this.tryWorkTicket(charter);
+    const projectRoot = findKbProjectRoot(this.workerRoot);
+    const loaded = loadKbBinding(projectRoot);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined)
       throw new Error(bindingError.message);
@@ -41931,7 +41952,7 @@ class Runner {
     let project;
     let projectHash;
     if (loaded.binding !== null) {
-      const resolved = resolveKnowledgebase(this.workerRoot, registryPath());
+      const resolved = resolveKnowledgebase(projectRoot, registryPath());
       if (resolved.resolved === null || resolved.state !== "available")
         lookup = "unavailable";
       else {
@@ -41947,8 +41968,8 @@ class Runner {
     }
     const bound2 = bindBehaviorPolicy({
       runId: id,
-      ticket: work.ticket,
-      ticketHash: work.hash,
+      ticket: work?.ticket ?? {},
+      ticketHash: work?.hash ?? charterHash,
       project,
       projectHash,
       lookup,
@@ -42454,6 +42475,19 @@ class Runner {
     const evidence = run2.evidence[evidenceId];
     if (!["building", "repairing"].includes(run2.run_state) || run2.next_permitted_action !== "verify.record" || evidence?.kind !== "verify" || evidence.revision !== run2.revision || evidence.diff_hash !== run2.diff_hash || !this.current(run2) || digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash)
       throw new Error("current runner-collected verification receipt required");
+    const work = this.tryWorkTicket(run2.charter);
+    const raw = run2.behavior;
+    const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+    if (run2.behavior !== undefined && binding === undefined)
+      throw new Error("frozen behavior obligations are unavailable");
+    if (work !== undefined && ticketCarriesBehaviorChecks(work.ticket)) {
+      if (binding === undefined || binding.mode !== "on" || binding.required_checks.length === 0)
+        throw new Error("frozen behavior obligations are unavailable");
+      for (const check2 of binding.required_checks) {
+        if (check2.property_ids.length === 0)
+          throw new Error(`required behavior check ${check2.id} is missing its frozen definition`);
+      }
+    }
     const baseRef = run2.charter.repos[0]?.base_branch;
     const base2 = baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
     if (base2?.code === 0)
