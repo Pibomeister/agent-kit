@@ -49,8 +49,8 @@ from the last probed version. A missing host, missing note, or project without t
 no extra finding and does not spawn `--version`. Use `ak doctor --json` for
 machine-readable findings. `ak doctor` also reads the project's canonical
 learnings file — the memory ledger's lesson pages, or `--lessons <dir>` for
-another ledger — and reports, per lesson, whether it is enforced or
-prose-only: a lesson is enforced only when its `check` field names a check
+another ledger — and reports, per live lesson, whether it is enforced or
+prose-only (superseded and conflicting lessons are history and are skipped): a lesson is enforced only when its `check` field names a check
 `ak doctor` itself runs (tracker token, tracker binding, plugin enabled and
 the rest of the registry in `src/learn/lessons.ts`), and an enforced lesson
 whose check currently FAILs fails that lesson's finding too. Prose-only
@@ -59,7 +59,8 @@ preflight surface for lessons: captains and workers already get the
 confirmed lessons at session start through the learning runtime's
 session-start block, and running `ak doctor` before dispatch shows which of
 them bite. After a run, `ak learn memory triage --file <failures.json>`
-dedupes stated failures against those lesson pages and within the file,
+dedupes stated failures against the live lesson pages and within the file
+(restating a history lesson makes a new one),
 appends new lessons as the next pages (as `hypothesis`; consolidation
 confirms them from evidence), keeps a duplicate's check and issue link in
 its run record and printed line without touching the lesson page, and
