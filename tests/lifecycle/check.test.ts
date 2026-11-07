@@ -848,6 +848,52 @@ describe("ak lifecycle check, standalone", () => {
     expect(run).toMatch(/^feature-[0-9a-f]{12}$/);
   });
 
+  test("ship-preflight is refused without a receipt for the exact head, and records nothing", () => {
+    const dir = repo();
+    const run = open(dir, "ship-missing-evidence");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const shipped = ak(dir, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("refused: evidence missing");
+    expect(shipped.err).toContain("AC-1 has no passed evidence at this head");
+    expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
+    record(dir, "verify");
+    expect(ak(dir, "record", "--gate", "ship-preflight").code).toBe(0);
+  });
+
+  test("ship-preflight is refused when the only receipt is bound to another head", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "ship-stale-evidence");
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const stale = receipt(dir, run, ticketPath, {
+      source_revision: { repo: "demo", revision: "f".repeat(40), diff_hash: `sha256:${"0".repeat(64)}` },
+    });
+    plant(dir, run, stale);
+    const shipped = ak(dir, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("refused: evidence wrong-revision");
+    expect(shipped.err).toContain(basename(stale, ".json"));
+    expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight is refused when the ticket declares criteria but no named verification", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "ship-half-declared", {
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const shipped = ak(dir, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("has no acceptance criteria or named verification");
+    expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
+  });
+
   test("a wrong-task receipt is refused by name", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "wrong-task");
