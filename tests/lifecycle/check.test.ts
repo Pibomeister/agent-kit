@@ -193,12 +193,18 @@ function open(cwd: string, id: string): string {
   expect(match).not.toBeNull();
   const run = match![1]!;
   const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
-  expect(metadata).toEqual({
+  expect(metadata).toMatchObject({
     run_id: run,
     ticket: { id, hash: artifactHash(JSON.parse(readFileSync(ticketPath, "utf8"))) },
     opened_at: expect.any(String),
     branch: "feature",
     base,
+    schema_version: 2,
+    behavior: {
+      run_id: run,
+      mode: "off",
+      required_checks: [],
+    },
   });
   return run;
 }

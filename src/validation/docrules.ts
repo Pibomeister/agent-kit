@@ -1575,8 +1575,63 @@ function coldReadRules(rc: RuleContext): void {
   }
 }
 
+function behaviorContractRules(rc: RuleContext): void {
+  const RULE_ACCEPTED = "behavior-contract.accepted-intent-requires-accepted-source";
+  const RULE_PROPOSED = "behavior-contract.proposed-intent-cannot-discharge-accepted";
+  const ACCEPTED_KINDS = new Set(["ticket", "requirements", "decision", "recorded-decision", "user-instruction"]);
+  const requirements = new Map<string, string>();
+  for (const value of arr(rc.doc["requirements"])) {
+    const requirement = obj(value);
+    if (requirement === null) continue;
+    const id = str(requirement["id"]);
+    const intent = str(requirement["intent"]);
+    if (id === null || intent === null) continue;
+    requirements.set(id, intent);
+    if (intent !== "accepted") continue;
+    let sourceCount = 0;
+    let hasAcceptedSource = false;
+    for (const sourceValue of arr(requirement["sources"])) {
+      const source = obj(sourceValue);
+      if (source === null) continue;
+      sourceCount += 1;
+      const kind = str(source["kind"]);
+      if (kind !== null && ACCEPTED_KINDS.has(kind)) hasAcceptedSource = true;
+    }
+    if (sourceCount === 0) {
+      fail(rc, RULE_ACCEPTED, `requirement ${id} is accepted without an intent source`);
+      continue;
+    }
+    if (!hasAcceptedSource) {
+      fail(rc, RULE_ACCEPTED, `requirement ${id} is accepted without a source of accepted intent`);
+    }
+  }
+  for (const value of arr(rc.doc["properties"])) {
+    const property = obj(value);
+    if (property === null) continue;
+    const id = str(property["id"]) ?? "unnamed";
+    const cited = arr(property["requirement_ids"]).flatMap((entry) => {
+      const requirementId = str(entry);
+      return requirementId === null ? [] : [requirementId];
+    });
+    if (cited.length === 0) continue;
+    const intents = cited.map((requirementId) => requirements.get(requirementId));
+    if (intents.some((intent) => intent === undefined)) {
+      fail(rc, RULE_PROPOSED, `property ${id} cites a requirement that is not on this contract`);
+      continue;
+    }
+    if (intents.every((intent) => intent !== "accepted")) {
+      fail(
+        rc,
+        RULE_PROPOSED,
+        `property ${id} is discharged only by proposed or unresolved intent; proposed intent cannot discharge an accepted requirement`,
+      );
+    }
+  }
+}
+
 const RULES: Record<string, (rc: RuleContext) => void> = {
   charter: charterRules,
+  "behavior-contract": behaviorContractRules,
   "cold-read": coldReadRules,
   decision: decisionRules,
   dossier: dossierRules,

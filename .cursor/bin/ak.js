@@ -8431,6 +8431,7 @@ var init_common_schema = __esm(() => {
           "finding",
           "review",
           "cold-read",
+          "behavior-contract",
           "verification",
           "verification-recipe",
           "charter",
@@ -16989,7 +16990,7 @@ var init_project_schema = __esm(() => {
         }
       },
       review: {
-        description: "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. review.behavior is bound onto an enabled task run at open; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
         type: "object",
         additionalProperties: false,
         properties: {
@@ -17000,6 +17001,11 @@ var init_project_schema = __esm(() => {
           },
           cold_read: {
             description: "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            enum: ["off", "shadow", "on"],
+            default: "off"
+          },
+          behavior: {
+            description: "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the snapshot bound at run open. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
             enum: ["off", "shadow", "on"],
             default: "off"
           }
@@ -17114,6 +17120,35 @@ var init_ticket_schema = __esm(() => {
               type: "array",
               minItems: 1,
               items: { type: "string", pattern: "^AC-[0-9]+$" }
+            },
+            behavior: {
+              description: "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. The run snapshots the complete definition at open, so later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
+              type: "object",
+              additionalProperties: false,
+              required: ["evidence_layer", "property_ids"],
+              properties: {
+                evidence_layer: { enum: ["model", "implementation"] },
+                property_ids: {
+                  type: "array",
+                  minItems: 1,
+                  uniqueItems: true,
+                  items: { $ref: "common.schema.json#/$defs/kebab_id" }
+                },
+                property_types: {
+                  type: "object",
+                  additionalProperties: { enum: ["safety", "liveness"] }
+                },
+                contract: {
+                  allOf: [
+                    { $ref: "common.schema.json#/$defs/artifact_ref" },
+                    {
+                      required: ["schema"],
+                      properties: { schema: { const: "behavior-contract" } }
+                    }
+                  ]
+                },
+                input_manifest: { $ref: "common.schema.json#/$defs/artifact_ref" }
+              }
             }
           },
           dependentRequired: {
@@ -17251,6 +17286,23 @@ var init_ticket_schema = __esm(() => {
             resolved_as: { enum: ["criterion", "non-goal", "open"] }
           }
         }
+      },
+      behavior_contracts: {
+        description: "Selected behavior-contract artifacts this ticket applies. Optional. The run snapshots complete required-check definitions at open; these references alone are not the obligation.",
+        type: "array",
+        items: {
+          allOf: [
+            { $ref: "common.schema.json#/$defs/artifact_ref" },
+            {
+              required: ["schema"],
+              properties: { schema: { const: "behavior-contract" } }
+            }
+          ]
+        }
+      },
+      behavior_applicability: {
+        description: "Whether this ticket selected stateful behavior work. Optional. eligible records that the behavior workflow applies; ordinary records that it does not. Omitted is not a policy mode and cannot turn an enabled run off.",
+        enum: ["eligible", "ordinary"]
       },
       cold_read_ref: {
         description: "Hash-bound pointer to the independent cold-read artifact for this implementation ticket. Required when the project record's review.cold_read is on and the ticket type is implementation. Off, shadow, a missing review object, and a decision ticket do not require it. A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Not yet backed by live probe evidence (phase 1b, GS-004g).",
@@ -17780,6 +17832,243 @@ function artifactHash(artifact) {
   return `sha256:${sha256Hex(canonicalJson(subject))}`;
 }
 var init_hash = () => {};
+
+// schemas/behavior-contract.schema.json
+var behavior_contract_schema_default;
+var init_behavior_contract_schema = __esm(() => {
+  behavior_contract_schema_default = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://agent-kit.local/schemas/behavior-contract.schema.json",
+    title: "Behavior contract",
+    description: "Intent-backed behavior for one selected subsystem. Requirements carry a stable property id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
+    type: "object",
+    required: ["identity", "requirements", "structure", "properties", "assumptions", "correspondence", "limits"],
+    properties: {
+      schema: { const: "behavior-contract" },
+      status: {
+        description: "draft while the contract is being written; active once it is the selected contract for a run; superseded when a later contract replaces it.",
+        enum: ["draft", "active", "superseded"]
+      },
+      identity: {
+        type: "object",
+        additionalProperties: false,
+        required: ["subsystem", "surfaces", "exclusions"],
+        properties: {
+          subsystem: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          surfaces: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "common.schema.json#/$defs/surface" }
+          },
+          exclusions: { $ref: "common.schema.json#/$defs/string_list" },
+          source_refs: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/evidence_ref" }
+          }
+        }
+      },
+      requirements: {
+        description: "Required behavior grounded in accepted intent, plus proposed or unresolved items that must not be labelled accepted. An accepted item needs at least one accepted source.",
+        type: "array",
+        items: { $ref: "#/$defs/requirement" },
+        "x-validator-rule": "behavior-contract.accepted-intent-requires-accepted-source"
+      },
+      observed_behavior: {
+        description: "Implementation-derived notes. They explain what the code does. They cannot establish that the behavior is wanted and cannot discharge an accepted requirement.",
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "statement"],
+          properties: {
+            id: { $ref: "common.schema.json#/$defs/kebab_id" },
+            statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+            code_refs: {
+              type: "array",
+              items: { $ref: "common.schema.json#/$defs/code_location" }
+            }
+          }
+        }
+      },
+      structure: {
+        description: "Flat states, events, guards, effects and transitions sufficient to understand the selected properties. Not a hierarchical or parallel chart.",
+        type: "object",
+        additionalProperties: false,
+        required: ["states", "events", "transitions"],
+        properties: {
+          states: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/$defs/named_element" }
+          },
+          events: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/$defs/named_element" }
+          },
+          transitions: {
+            type: "array",
+            items: { $ref: "#/$defs/transition" }
+          }
+        }
+      },
+      properties: {
+        type: "array",
+        minItems: 1,
+        items: { $ref: "#/$defs/property" },
+        "x-validator-rule": "behavior-contract.proposed-intent-cannot-discharge-accepted"
+      },
+      assumptions: {
+        type: "array",
+        items: { $ref: "#/$defs/assumption" }
+      },
+      correspondence: {
+        description: "Versioned mappings to implementation entry points and declared model or test assets. A copied transition function is model evidence, not production behavior.",
+        type: "object",
+        additionalProperties: false,
+        required: ["mappings"],
+        properties: {
+          mappings: {
+            type: "array",
+            items: { $ref: "#/$defs/mapping" }
+          },
+          atomicity_notes: { $ref: "common.schema.json#/$defs/string_list" }
+        }
+      },
+      limits: {
+        type: "object",
+        additionalProperties: false,
+        required: ["omits", "checks_establish"],
+        properties: {
+          omits: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          checks_establish: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    $defs: {
+      named_element: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "label"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          label: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      transition: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "from", "event", "to"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          from: { $ref: "common.schema.json#/$defs/kebab_id" },
+          event: { $ref: "common.schema.json#/$defs/kebab_id" },
+          to: { $ref: "common.schema.json#/$defs/kebab_id" },
+          guard: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          effect: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      intent_source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "ref"],
+        properties: {
+          kind: {
+            enum: ["ticket", "requirements", "decision", "recorded-decision", "user-instruction"]
+          },
+          ref: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          hash: { $ref: "common.schema.json#/$defs/hash" },
+          note: { type: "string" }
+        }
+      },
+      requirement: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "statement", "intent"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          intent: { enum: ["accepted", "proposed", "unresolved"] },
+          acceptance_criteria: {
+            type: "array",
+            items: { type: "string", pattern: "^AC-[0-9]+$" }
+          },
+          sources: {
+            type: "array",
+            items: { $ref: "#/$defs/intent_source" }
+          }
+        },
+        if: { properties: { intent: { const: "accepted" } } },
+        then: {
+          required: ["sources"],
+          properties: {
+            sources: { minItems: 1 }
+          }
+        }
+      },
+      property: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "statement", "kind", "requirement_ids"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          kind: { enum: ["safety", "liveness"] },
+          requirement_ids: {
+            type: "array",
+            minItems: 1,
+            uniqueItems: true,
+            items: { $ref: "common.schema.json#/$defs/kebab_id" }
+          },
+          acceptance_criteria: {
+            type: "array",
+            items: { type: "string", pattern: "^AC-[0-9]+$" }
+          }
+        }
+      },
+      assumption: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "statement", "basis", "affects"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          basis: { enum: ["enforced", "observed", "assumed"] },
+          affects: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "common.schema.json#/$defs/kebab_id" }
+          },
+          evidence: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/evidence_ref" }
+          }
+        }
+      },
+      mapping: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "layer", "entry"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          layer: { enum: ["model", "implementation"] },
+          entry: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          property_ids: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/kebab_id" }
+          },
+          assets: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/artifact_ref" }
+          },
+          atomicity: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    unevaluatedProperties: false,
+    allOf: [{ $ref: "common.schema.json#/$defs/envelope" }]
+  };
+});
 
 // schemas/charter.schema.json
 var charter_schema_default;
@@ -22334,6 +22623,7 @@ function checkRunArtifact(text) {
 }
 var import__20205, import_ajv_formats3, ARTIFACT_SCHEMAS, ARTIFACT_SCHEMA_IDS, compiled = null, validHeader;
 var init_artifacts = __esm(() => {
+  init_behavior_contract_schema();
   init_charter_schema();
   init_cold_read_schema();
   init_common_schema();
@@ -22359,6 +22649,7 @@ var init_artifacts = __esm(() => {
   import__20205 = __toESM(require_2020(), 1);
   import_ajv_formats3 = __toESM(require_dist(), 1);
   ARTIFACT_SCHEMAS = {
+    "behavior-contract": behavior_contract_schema_default,
     charter: charter_schema_default,
     "cold-read": cold_read_schema_default,
     decision: decision_schema_default,

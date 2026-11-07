@@ -79,6 +79,18 @@ import {
   resolvePool,
 } from "./gate-lanes.ts";
 import { verificationValidator } from "./verification-schema.ts";
+import {
+  asJsonObject,
+  bindBehaviorPolicy,
+  classifyRun,
+  projectHashOf,
+  RUN_SCHEMA_VERSION,
+  shadowReceipt,
+  type BehaviorBinding,
+  type BehaviorClass,
+  type FrozenBehaviorCheck,
+  type JsonObject,
+} from "./behavior-policy.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
 
@@ -352,6 +364,10 @@ export interface RunRecord {
   closed_at?: string;
   /** The unattended policy the run was opened under; a run without one is a legacy run. */
   policy?: Policy;
+  /** Absent on pre-feature runs. Present on every run this open writes. */
+  schema_version?: typeof RUN_SCHEMA_VERSION;
+  /** Frozen behavior policy. Absent only on pre-feature runs. */
+  behavior?: BehaviorBinding;
 }
 
 const isGate = (g: string): g is Gate => (GATES as readonly string[]).includes(g);
@@ -475,6 +491,8 @@ export interface OpenArgs {
   project: string;
   ticket: string;
   binding?: string;
+  /** Authoritative project artifact for this feature's bound policy path. */
+  projectRecord?: string;
   /** Stamped on the run; pre-ticket phase records at the opening revision are imported into it. */
   policy?: Policy;
 }
@@ -562,11 +580,38 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     opened_at: openedAt,
     branch: branch.text,
     base: head.text,
+    schema_version: RUN_SCHEMA_VERSION,
     ...bound,
   };
   if (a.policy !== undefined) run.policy = a.policy;
+  let projectDoc: JsonObject | undefined;
+  let projectHash: string | undefined;
+  if (a.projectRecord !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(a.projectRecord, "utf8"));
+      if (!asJsonObject(parsed)) return { ok: false, reason: `project record ${a.projectRecord} is not an object` };
+      projectDoc = parsed;
+      projectHash = projectHashOf(parsed);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      return { ok: false, reason: `cannot read project record ${a.projectRecord}: ${detail}` };
+    }
+  }
+  if (!asJsonObject(ticket)) return { ok: false, reason: `ticket ${a.ticket} is not an object` };
+  const boundPolicy = bindBehaviorPolicy({
+    runId,
+    ticket,
+    ticketHash,
+    project: projectDoc,
+    projectHash,
+    projectRecordRequested: a.projectRecord !== undefined,
+    capturedAt: openedAt,
+  });
+  if (!boundPolicy.ok) return { ok: false, reason: boundPolicy.reason };
+  run.behavior = boundPolicy.binding;
   atomicJson(runRecordPath(a.dir, runId), run);
   storeArtifact(a.dir, runId, canonical);
+  if (projectDoc !== undefined) storeArtifact(a.dir, runId, new TextEncoder().encode(canonicalJson(projectDoc)));
   atomicJson(branchPointerPath(a.dir, branch.text), { run_id: runId });
   if (a.policy !== undefined) importPhaseRecords(a.dir, run, new Date().toISOString());
   return { ok: true, run };
@@ -1001,6 +1046,45 @@ function recordPath(dir: string, run: string, record: GateRecord): string {
   return join(dir, safeRunId(run), record.gate, name);
 }
 
+function overlayFrozenChecks(
+  live: Map<string, NonNullable<ReturnType<typeof object>>>,
+  frozen: readonly FrozenBehaviorCheck[],
+): void {
+  for (const check of frozen) {
+    const current = live.get(check.id) ?? {};
+    live.set(check.id, {
+      ...current,
+      id: check.id,
+      check: check.check,
+      kind: check.kind ?? current.kind,
+      supports: check.supports,
+      evidence_required: check.evidence_required ?? current.evidence_required,
+      recipe: check.recipe ?? current.recipe,
+      behavior: {
+        evidence_layer: check.evidence_layer,
+        property_ids: check.property_ids,
+        property_types: check.property_types,
+        contract: check.contract,
+        input_manifest: check.input_manifest,
+      },
+    });
+  }
+}
+
+interface UnavailableEvidence {
+  outcome: "unavailable";
+  reasons: DecisionReason[];
+  refs: ArtifactRef[];
+}
+
+function evidenceUnavailable(code: string, detail: string): UnavailableEvidence {
+  return {
+    outcome: "unavailable",
+    reasons: [{ code, detail }],
+    refs: [],
+  };
+}
+
 function evaluateEvidence(
   a: CheckArgs,
   head: Snapshot,
@@ -1013,6 +1097,12 @@ function evaluateEvidence(
       reasons: [{ code: "unavailable", detail: `run ${a.run} has no task-bound run record` }],
       refs: [],
     };
+  const missingView: BehaviorClass = { kind: "incomplete", reason: `run ${a.run} is not a JSON object` };
+  const classified = asJsonObject(run) ? classifyRun(run, a.run) : missingView;
+  if (classified.kind === "incomplete") {
+    const code = classified.reason.includes("behavior snapshot is for run") ? "wrong-run" : "behavior-policy";
+    return evidenceUnavailable(code, classified.reason);
+  }
   const ticketPath = artifactPath(a.dir, a.run, run.ticket.hash);
   if (ticketPath === undefined || !existsSync(ticketPath)) {
     return {
@@ -1053,6 +1143,11 @@ function evaluateEvidence(
   for (const value of Array.isArray(ticket.verification) ? ticket.verification : []) {
     const check = object(value);
     if (check !== undefined && nonempty(check.id) && KEBAB.test(check.id)) checks.set(check.id, check);
+  }
+  if (classified.kind === "bound" && classified.binding.mode === "on") {
+    overlayFrozenChecks(checks, classified.binding.required_checks);
+    for (const check of classified.binding.required_checks)
+      for (const [criterion, surface] of Object.entries(check.surfaces)) surfaces.set(criterion, surface);
   }
   if (criteria.length === 0 || checks.size === 0) {
     return {
@@ -1139,6 +1234,10 @@ function evaluateEvidence(
         detail: `receipt ${ref.id} is a design-review artifact, not a verifier receipt`,
         evidence: ref.id,
       });
+      continue;
+    }
+    if (asJsonObject(receipt) && shadowReceipt(receipt)) {
+      notes.push(`note: receipt ${ref.id} is a shadow behavior artifact; it is retained and is not gate evidence`);
       continue;
     }
     if (receipt.schema_version !== 1) {
@@ -1970,7 +2069,7 @@ export const LIFECYCLE_USAGE = [
   "From an installed bundle run each command as `node <bundle>/bin/ak-gate.mjs <subcommand> …`; `ak lifecycle`",
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
-  "  ak lifecycle open --ticket <file> [--binding <file>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle open --ticket <file> [--binding <file>] [--project-record <file>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
@@ -2013,7 +2112,7 @@ export const LIFECYCLE_USAGE = [
 ];
 
 const FLAGS: Record<string, readonly string[]> = {
-  open: ["ticket", "binding", "dir", "project"],
+  open: ["ticket", "binding", "project-record", "dir", "project"],
   record: [
     "gate",
     "receipt",
@@ -2462,6 +2561,8 @@ export function main(
     const binding = str("binding");
     const openArgs: OpenArgs = { dir, project, ticket: resolve(cwd, ticket) };
     if (binding !== undefined) openArgs.binding = resolve(cwd, binding);
+    const projectRecord = str("project-record");
+    if (projectRecord !== undefined) openArgs.projectRecord = resolve(cwd, projectRecord);
     if (policy !== undefined) openArgs.policy = policy;
     const opened = openRun(openArgs);
     if (!opened.ok) {

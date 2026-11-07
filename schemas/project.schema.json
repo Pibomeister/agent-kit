@@ -407,7 +407,7 @@
       }
     },
     "review": {
-      "description": "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+      "description": "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. review.behavior is bound onto an enabled task run at open; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -418,6 +418,11 @@
         },
         "cold_read": {
           "description": "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "enum": ["off", "shadow", "on"],
+          "default": "off"
+        },
+        "behavior": {
+          "description": "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the snapshot bound at run open. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
           "enum": ["off", "shadow", "on"],
           "default": "off"
         }

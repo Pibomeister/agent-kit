@@ -50,9 +50,14 @@ describe("project.review settings", () => {
     expect(validateProject(projectExample)).toBe(true);
   });
 
-  test.each(["off", "shadow", "on"] as const)("review.comprehension and review.cold_read accept %s", (mode) => {
-    expect(validateProject({ ...projectExample, review: { comprehension: mode, cold_read: mode } })).toBe(true);
-  });
+  test.each(["off", "shadow", "on"] as const)(
+    "review.comprehension, review.cold_read and review.behavior accept %s",
+    (mode) => {
+      expect(
+        validateProject({ ...projectExample, review: { comprehension: mode, cold_read: mode, behavior: mode } }),
+      ).toBe(true);
+    },
+  );
 
   test("an empty review object validates (both keys default off)", () => {
     expect(validateProject({ ...projectExample, review: {} })).toBe(true);
@@ -61,6 +66,7 @@ describe("project.review settings", () => {
   test("a value outside off|shadow|on is rejected", () => {
     expect(validateProject({ ...projectExample, review: { comprehension: "maybe" } })).toBe(false);
     expect(validateProject({ ...projectExample, review: { cold_read: "blocking" } })).toBe(false);
+    expect(validateProject({ ...projectExample, review: { behavior: "required" } })).toBe(false);
   });
 
   test("an unknown key on review is rejected", () => {
