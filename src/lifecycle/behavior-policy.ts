@@ -101,11 +101,13 @@ function asCheckKind(value: Json | undefined): "command" | "probe" | "manual" | 
   return undefined;
 }
 
-function ticketProjectId(ticket: JsonObject): string | undefined {
+export function ticketProjectId(ticket: JsonObject): string | undefined {
   const field = ticket.project;
   if (nonempty(field)) return field.trim();
   return isObject(field) && nonempty(field.id) ? field.id : undefined;
 }
+
+export type ProjectLookup = "unbound" | "resolved" | "unavailable";
 
 function reviewMode(project: JsonObject | undefined): BehaviorMode | "invalid" {
   if (project === undefined) return "off";
@@ -205,14 +207,30 @@ export function bindBehaviorPolicy(args: {
   ticketHash: string;
   project?: JsonObject;
   projectHash?: string;
-  projectRecordRequested: boolean;
+  lookup: ProjectLookup;
+  callerProjectHash?: string;
   capturedAt: string;
 }): BindResult {
   const checks = behaviorChecks(args.ticket, ticketSurfaces(args.ticket));
   if ("reason" in checks) return { ok: false, reason: checks.reason };
   const ticketWantsBehavior = checks.length > 0;
-  if (args.projectRecordRequested && args.project === undefined)
-    return { ok: false, reason: "the project record named for this open could not be read" };
+  if (args.lookup === "unavailable")
+    return {
+      ok: false,
+      reason: "the authoritative project record is unavailable; missing project cannot turn this run off",
+    };
+  if (args.lookup === "unbound" && args.callerProjectHash !== undefined)
+    return {
+      ok: false,
+      reason: "caller-supplied project record is not the authoritative KB or runner binding",
+    };
+  if (args.lookup === "resolved" && args.project === undefined)
+    return {
+      ok: false,
+      reason: "the authoritative project record is missing; missing project cannot turn this run off",
+    };
+  if (args.lookup === "resolved" && args.callerProjectHash !== undefined && args.callerProjectHash !== args.projectHash)
+    return { ok: false, reason: "caller-supplied project record does not match the authoritative binding" };
   if (args.project !== undefined) {
     if (args.project.schema !== "project") return { ok: false, reason: "the project record is not schema project" };
     const identity = isObject(args.project.identity) ? args.project.identity : undefined;
@@ -232,7 +250,7 @@ export function bindBehaviorPolicy(args: {
   }
   const mode = reviewMode(args.project);
   if (mode === "invalid") return { ok: false, reason: "review.behavior is not off, shadow or on" };
-  if (args.project === undefined && ticketWantsBehavior)
+  if (args.lookup === "unbound" && ticketWantsBehavior)
     return {
       ok: false,
       reason: "enabled behavior checks need an authoritative project record; missing project cannot turn this run off",
@@ -341,10 +359,19 @@ export function parseBehaviorBinding(value: Json | undefined): BehaviorBinding |
   return { ...unsigned, binding_hash: value.binding_hash };
 }
 
-export function classifyRun(record: JsonObject, runId: string): BehaviorClass {
+export function classifyRun(record: JsonObject, runId: string, ticket?: JsonObject): BehaviorClass {
+  const frozen = ticket === undefined ? undefined : behaviorChecks(ticket, ticketSurfaces(ticket));
+  const ticketWants = frozen !== undefined && !("reason" in frozen) && frozen.length > 0;
   const version = record.schema_version;
   const hasBehavior = record.behavior !== undefined;
-  if (version === undefined && !hasBehavior) return { kind: "legacy" };
+  if (version === undefined && !hasBehavior) {
+    if (ticketWants)
+      return {
+        kind: "incomplete",
+        reason: `run ${runId} is a new enabled run with no behavior policy snapshot`,
+      };
+    return { kind: "legacy" };
+  }
   if (version !== RUN_SCHEMA_VERSION)
     return { kind: "incomplete", reason: `run ${runId} is not a version-${RUN_SCHEMA_VERSION} behavior-bound run` };
   const binding = parseBehaviorBinding(record.behavior);
@@ -352,9 +379,23 @@ export function classifyRun(record: JsonObject, runId: string): BehaviorClass {
     return { kind: "incomplete", reason: `run ${runId} has no complete behavior policy snapshot` };
   if (binding.run_id !== runId)
     return { kind: "incomplete", reason: `behavior snapshot is for run ${binding.run_id}, not ${runId}` };
-  const ticket = isObject(record.ticket) ? record.ticket : undefined;
-  if (ticket !== undefined && nonempty(ticket.hash) && binding.ticket_hash !== ticket.hash)
-    return { kind: "incomplete", reason: `behavior snapshot is for ticket ${binding.ticket_hash}, not ${ticket.hash}` };
+  const namedTicket = isObject(record.ticket) ? record.ticket : undefined;
+  if (namedTicket !== undefined && nonempty(namedTicket.hash) && binding.ticket_hash !== namedTicket.hash)
+    return {
+      kind: "incomplete",
+      reason: `behavior snapshot is for ticket ${binding.ticket_hash}, not ${namedTicket.hash}`,
+    };
+  if (frozen !== undefined && "reason" in frozen) return { kind: "incomplete", reason: frozen.reason };
+  if (ticketWants && binding.mode !== "on")
+    return {
+      kind: "incomplete",
+      reason: `run ${runId} ticket names mandatory behavior checks; snapshot mode ${binding.mode} cannot cancel them`,
+    };
+  if (ticketWants && canonicalJson(binding.required_checks) !== canonicalJson(frozen))
+    return {
+      kind: "incomplete",
+      reason: `run ${runId} frozen check definitions do not match the opened ticket`,
+    };
   if (binding.mode === "on") {
     for (const check of binding.required_checks) {
       if (check.property_ids.length === 0)

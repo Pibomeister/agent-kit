@@ -83,7 +83,7 @@ describe("behavior-contract schema", () => {
   });
 
   test("a property supported only by proposed intent is refused", () => {
-    const messages = issuesOf({
+    const proposedOnly = {
       ...contract,
       properties: [
         {
@@ -93,9 +93,32 @@ describe("behavior-contract schema", () => {
           requirement_ids: ["retry-twice"],
         },
       ],
-    });
+    };
+    const messages = issuesOf(proposedOnly);
     expect(messages.some((line) => line.includes("behavior-contract.proposed-intent-cannot-discharge-accepted"))).toBe(
       true,
+    );
+    expect(validate(proposedOnly)).toBe(true);
+    expect(checkRunArtifact(JSON.stringify(proposedOnly)).problem).toContain(
+      "behavior-contract.proposed-intent-cannot-discharge-accepted",
+    );
+  });
+
+  test("a property citing a requirement that is not on the contract is refused at admission", () => {
+    const missing = {
+      ...contract,
+      properties: [
+        {
+          id: "ghost-property",
+          statement: "Cites a requirement this contract does not carry.",
+          kind: "safety",
+          requirement_ids: ["not-a-requirement"],
+        },
+      ],
+    };
+    expect(validate(missing)).toBe(true);
+    expect(checkRunArtifact(JSON.stringify(missing)).problem).toContain(
+      "behavior-contract.proposed-intent-cannot-discharge-accepted",
     );
   });
 
