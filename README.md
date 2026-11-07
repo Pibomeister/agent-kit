@@ -55,7 +55,7 @@ versions; it is safe to rerun. If the curl-installed
 ticket, so that skill needs a current `ak` on `PATH`
 ([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
 ([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
-is created by `.github/workflows/publish-bundle.yml` after a green push to `main`. Publication
+is created by `.github/workflows/publish-bundle.yml` after a green run for a merged commit. Publication
 requires the release tag `v<version>` at the merged commit on `main`, so the run for the push to
 `main` refuses a changed bundle. Pushing that tag runs the workflow at the tagged commit, which it
 builds and publishes once it confirms the commit is on `main`. To retry, dispatch the workflow with
