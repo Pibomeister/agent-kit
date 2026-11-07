@@ -240,8 +240,6 @@ const GRANTED_TEMPLATE = (() => {
     repo: join(realpathSync(s.project), ".git"),
     worktree: realpathSync(s.worktree),
     home: realpathSync(s.home),
-    grantPath: realpathSync(s.grantPath),
-    brief: s.brief,
   };
 })();
 
@@ -276,7 +274,7 @@ function granted() {
       2,
     )}\n`,
   );
-  return { ...s, brief: GRANTED_TEMPLATE.brief.replaceAll(GRANTED_TEMPLATE.grantPath, realGrantPath) };
+  return s;
 }
 
 describe("bypass granted: phases start without a typed command", () => {

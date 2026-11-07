@@ -1,8 +1,9 @@
 /**
  * Drive the real runner and validators with the same events the reference model sees.
  *
- * Real runner paths: charge, ledger (resume), new Runner+status (restart),
- * copy-run-to-new-id (rename / move-line), cancel, effect (publish), judge, decide.
+ * Real runner paths: charge, ledger (resume), status through a second Runner
+ * instance over the same state directory (restart), copy-run-to-new-id
+ * (rename / move-line), cancel, effect (publish), judge, decide.
  *
  * Real validator paths: review/finding/ticket documents through checkDocument,
  * checkArtifacts, and the review schema validator.
