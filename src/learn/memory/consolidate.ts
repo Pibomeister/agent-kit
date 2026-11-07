@@ -31,6 +31,7 @@ import { type Candidate, type Comparable, contentKey, similarLine, similarTo } f
 import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
+import { LIVE_LESSON_STATUSES } from "../lessons.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
 import { ClaudeMemSource, type MemoryObservationSource, type ObservationRow } from "../sources/claude-mem.ts";
 import { isCapturedObservation, WorkerSessionSource } from "../sources/worker-sessions.ts";
@@ -228,9 +229,6 @@ export function renderLesson(meta: PageMeta, evidence: readonly string[]): strin
   return renderPage(meta, lessonBody(str(meta.statement), evidence));
 }
 
-/** Statuses a repeat is counted on. A superseded or conflicting lesson is history; restating it makes a new lesson. */
-const LIVE: ReadonlySet<string> = new Set(["hypothesis", "confirmed", "stale"]);
-
 /** Lessons a new one is compared with: every one not superseded, conflicts included. */
 function comparable(lessons: ReadonlyMap<string, LessonPage>): Comparable[] {
   return lessons
@@ -367,7 +365,9 @@ export function applyConsolidation(
     const scope = typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo";
     const key = contentKey(statement, scope);
     const repeat = [...existing.values()].find(
-      (page) => LIVE.has(str(page.meta.status)) && contentKey(str(page.meta.statement), str(page.meta.scope)) === key,
+      (page) =>
+        LIVE_LESSON_STATUSES.has(str(page.meta.status)) &&
+        contentKey(str(page.meta.statement), str(page.meta.scope)) === key,
     );
     if (repeat !== undefined) {
       if (countRepeat(repeat, evidence, cleanTags(lesson.tags), sessionOf, today))

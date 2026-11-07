@@ -110,15 +110,15 @@ export interface LessonCoverage {
   runnable?: RunnableLessonCheck;
 }
 
-const HISTORY_STATUSES = new Set(["superseded", "retired"]);
+/** Live lesson statuses. A superseded or conflicting lesson is history; restating it makes a new lesson. */
+export const LIVE_LESSON_STATUSES: ReadonlySet<string> = new Set(["hypothesis", "confirmed", "stale"]);
 
-/** Live lessons: neither superseded nor retired. */
 function liveLessons(lessons: readonly LessonRecord[]): LessonRecord[] {
-  return lessons.filter((lesson) => !HISTORY_STATUSES.has(lesson.status));
+  return lessons.filter((lesson) => LIVE_LESSON_STATUSES.has(lesson.status));
 }
 
 /**
- * Coverage for every live lesson. Superseded and retired lessons are
+ * Coverage for every live lesson. Superseded and conflicting lessons are
  * history: they are neither enforced nor prose-only, so they are omitted.
  */
 export function classifyLessons(lessons: readonly LessonRecord[]): LessonCoverage[] {

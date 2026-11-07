@@ -294,6 +294,25 @@ describe("after-run failure triage", () => {
     expect(classifyLessons(readLessons(ledger.dir)).find((row) => row.lesson.id === "ls-002")?.enforced).toBe(false);
   });
 
+  test("a conflicting lesson is history: doctor omits it and a restatement makes a new lesson", () => {
+    const dir = scratch("ak-lessons-conflict-");
+    lessonPage(dir, "ls-001", {
+      statement: "Keep the tracker token fresh",
+      status: "conflict",
+      check: "tracker-token",
+    });
+    const existing = readLessons(dir);
+    expect(classifyLessons(existing)).toEqual([]);
+    const findings = lessonsFindings(classifyLessons(existing), [{ check: "tracker token", level: "FAIL" }]);
+    expect(findings.some((f) => f.level === "FAIL")).toBe(false);
+    expect(findings.some((f) => f.detail.includes("ls-001"))).toBe(false);
+    const result = triageFailures(existing, [
+      { failure: "token expired mid-run", lesson: "Keep the tracker token fresh", check: "tracker-token" },
+    ]);
+    expect(result.duplicates).toEqual([]);
+    expect(result.created).toMatchObject([{ id: "ls-002", statement: "Keep the tracker token fresh" }]);
+  });
+
   test("memory triage refuses a missing or malformed failures file", () => {
     const repo = gitRepo(scratch("ak-triage-repo-"));
     const ctx = testContext({ cwd: repo });

@@ -26757,7 +26757,7 @@ function readLessons(dir) {
   });
 }
 function liveLessons(lessons) {
-  return lessons.filter((lesson) => !HISTORY_STATUSES.has(lesson.status));
+  return lessons.filter((lesson) => LIVE_LESSON_STATUSES.has(lesson.status));
 }
 function classifyLessons(lessons) {
   return liveLessons(lessons).flatMap((lesson) => {
@@ -26919,7 +26919,7 @@ function parseFailureRecords(source) {
   }
   return failureRecordList(parsed) ? parsed : null;
 }
-var import_ajv3, RUNNABLE_LESSON_CHECKS, CHECK_BY_ID, HISTORY_STATUSES, failureRecordList;
+var import_ajv3, RUNNABLE_LESSON_CHECKS, CHECK_BY_ID, LIVE_LESSON_STATUSES, failureRecordList;
 var init_lessons = __esm(() => {
   init_pages();
   init_store();
@@ -26951,7 +26951,7 @@ var init_lessons = __esm(() => {
     }
   ];
   CHECK_BY_ID = new Map(RUNNABLE_LESSON_CHECKS.map((check2) => [check2.id, check2]));
-  HISTORY_STATUSES = new Set(["superseded", "retired"]);
+  LIVE_LESSON_STATUSES = new Set(["hypothesis", "confirmed", "stale"]);
   failureRecordList = new import_ajv3.default().compile({
     type: "array",
     items: {
@@ -29794,7 +29794,7 @@ function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
     }
     const scope = typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo";
     const key = contentKey(statement, scope);
-    const repeat = [...existing.values()].find((page) => LIVE.has(str(page.meta.status)) && contentKey(str(page.meta.statement), str(page.meta.scope)) === key);
+    const repeat = [...existing.values()].find((page) => LIVE_LESSON_STATUSES.has(str(page.meta.status)) && contentKey(str(page.meta.statement), str(page.meta.scope)) === key);
     if (repeat !== undefined) {
       if (countRepeat(repeat, evidence, cleanTags(lesson.tags), sessionOf, today))
         summary.confirmed.push(lessonId(repeat));
@@ -30086,20 +30086,20 @@ var INPUT_CHARS2 = 80000, OBS_PER_EPISODE = 15, SCOPES, OUTPUT_CONTRACT = `Reply
 - tags may include: decision, security, blocker, preference, contrastive.
 - supersedes: only ids (ls-NNN) listed under existing lessons.
 - review_events kind: finding | correction. Leave the list empty when there are none.
-- Status, ids, session counts and dates are set by the runtime; any you send are ignored.`, LIVE, PENDING_REVIEW_FILE = "raw/pending-review-events.jsonl";
+- Status, ids, session counts and dates are set by the runtime; any you send are ignored.`, PENDING_REVIEW_FILE = "raw/pending-review-events.jsonl";
 var init_consolidate = __esm(() => {
   init_pages();
   init_similar();
   init_roles();
   init_store();
   init_trace();
+  init_lessons();
   init_events();
   init_claude_mem();
   init_worker_sessions();
   init_episodes();
   init_ledger2();
   SCOPES = new Set(["repo", "subtree", "technology", "global"]);
-  LIVE = new Set(["hypothesis", "confirmed", "stale"]);
 });
 
 // src/learn/memory/deep.ts
