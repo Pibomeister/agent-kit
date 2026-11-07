@@ -26740,8 +26740,7 @@ function text2(value) {
   return value === null || value === undefined ? "" : String(value);
 }
 function readLessons(dir) {
-  const nested = join20(dir, "lessons");
-  const pagesDir = existsSync15(nested) ? nested : dir;
+  const pagesDir = join20(dir, "lessons");
   if (!existsSync15(pagesDir))
     return [];
   return readdirSync4(pagesDir).filter((name) => /^ls-\d{1,6}\.md$/.test(name)).toSorted().map((name) => {
@@ -26757,10 +26756,11 @@ function readLessons(dir) {
     };
   });
 }
+function liveLessons(lessons) {
+  return lessons.filter((lesson) => !HISTORY_STATUSES.has(lesson.status));
+}
 function classifyLessons(lessons) {
-  return lessons.flatMap((lesson) => {
-    if (HISTORY_STATUSES.has(lesson.status))
-      return [];
+  return liveLessons(lessons).flatMap((lesson) => {
     if (lesson.check === "")
       return [
         {
@@ -26851,11 +26851,8 @@ function triageFailures(existing, failures, recordedCandidates = new Set) {
   const duplicates = [];
   const issueCandidates = [];
   const byKey = new Map;
-  for (const lesson of existing) {
-    if (HISTORY_STATUSES.has(lesson.status))
-      continue;
+  for (const lesson of liveLessons(existing))
     byKey.set(lessonKey(lesson.statement), lesson);
-  }
   const live = [...existing];
   const candidateIds = new Set(recordedCandidates);
   const candidate = (failure, lesson) => {
@@ -31305,15 +31302,24 @@ function triage(args, ctx) {
     appendRun(ledger, {
       job: "triage",
       created: result.created.map((record) => record.id),
-      duplicates: result.duplicates.map((dup) => dup.lessonId),
+      duplicates: result.duplicates.map((dup) => ({
+        lessonId: dup.lessonId,
+        check: dup.failure.check ?? "",
+        issue: dup.failure.issue ?? ""
+      })),
       issue_candidates: result.issueCandidates.map((candidate) => candidate.lessonId)
     });
     if (result.created.length > 0)
       ledger.commit(`triage: +${result.created.length} lessons`);
     for (const record of result.created)
       ctx.io.out(`created ${record.id}: ${record.statement}`);
-    for (const dup of result.duplicates)
-      ctx.io.out(`duplicate of ${dup.lessonId}: ${dup.failure.lesson}`);
+    for (const dup of result.duplicates) {
+      const named = [
+        (dup.failure.check ?? "") === "" ? "" : `check ${dup.failure.check}`,
+        (dup.failure.issue ?? "") === "" ? "" : `issue ${dup.failure.issue}`
+      ].filter((part) => part !== "");
+      ctx.io.out(`duplicate of ${dup.lessonId}: ${dup.failure.lesson}` + (named.length > 0 ? ` (${named.join(", ")} not attached)` : ""));
+    }
     ctx.io.out(`triage: ${result.created.length} created, ${result.duplicates.length} duplicate(s), ` + `${result.issueCandidates.length} issue candidate(s) recorded in raw/triage-issues.jsonl; no issue was filed`);
     return 0;
   });
@@ -44277,10 +44283,6 @@ function doctorFlags(flags) {
       if (lessons === undefined || lessons.startsWith("--"))
         return null;
       i += 1;
-    } else if (flag3.startsWith("--lessons=")) {
-      lessons = flag3.slice("--lessons=".length);
-      if (lessons === "")
-        return null;
     } else
       return null;
   }

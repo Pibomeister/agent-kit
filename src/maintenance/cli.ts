@@ -714,9 +714,6 @@ function doctorFlags(flags: readonly string[]): { json: boolean; lessons?: strin
       lessons = flags[i + 1];
       if (lessons === undefined || lessons.startsWith("--")) return null;
       i += 1;
-    } else if (flag.startsWith("--lessons=")) {
-      lessons = flag.slice("--lessons=".length);
-      if (lessons === "") return null;
     } else return null;
   }
   return { json, lessons };
