@@ -17,16 +17,7 @@ import { appendJsonl, nowIso, readJsonl, readText, todayLocal, writeGated } from
 import { parseFailureRecords, readLessons, renderLesson, triageFailures, type FailureRecord } from "../lessons.ts";
 import { generations } from "../core/trace.ts";
 import { UNDONE_RUNS_FILE } from "./episodes.ts";
-import {
-  appendRun,
-  ensureMemoryLedger,
-  loadLessons,
-  memoryDir,
-  readState,
-  rewriteIndex,
-  saveState,
-  writeLesson,
-} from "./ledger.ts";
+import { appendRun, ensureMemoryLedger, memoryDir, readState, rewriteIndex, saveState } from "./ledger.ts";
 import { logRegistryWarnings, readRegistry, registerRoot, unknownRepo } from "./registry.ts";
 import { sessionRoot } from "./session-context.ts";
 import { type Job, JOBS, tick } from "./tick.ts";
@@ -215,22 +206,8 @@ function triage(args: LearnArgs, ctx: LearnContext): number {
     const recorded = new Set(readJsonl<{ lessonId?: string }>(issueLog).flatMap((row) => row.lessonId ?? []));
     const result = triageFailures(readLessons(ledger.dir), failures, recorded);
     const today = todayLocal();
-    const before = loadLessons(ledger);
-    for (const record of result.created) {
-      const predecessor = record.supersedes.map((id) => before.get(id)).find((page) => page !== undefined);
-      writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today, predecessor));
-    }
-    const pages = loadLessons(ledger);
     for (const record of result.created)
-      for (const old of record.supersedes) {
-        const page = pages.get(old);
-        if (page !== undefined)
-          writeLesson(
-            page.path,
-            { ...page.meta, status: "superseded", valid_until: today, superseded_by: record.id },
-            page.body,
-          );
-      }
+      writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today));
     if (result.created.length > 0) rewriteIndex(ledger);
     appendJsonl(
       issueLog,
@@ -248,17 +225,17 @@ function triage(args: LearnArgs, ctx: LearnContext): number {
       issue_candidates: result.issueCandidates.map((candidate) => candidate.lessonId),
     });
     if (result.created.length > 0) ledger.commit(`triage: +${result.created.length} lessons`);
-    for (const record of result.created)
-      ctx.io.out(
-        `created ${record.id}: ${record.statement}` +
-          (record.supersedes.length > 0 ? ` (supersedes ${record.supersedes.join(", ")})` : ""),
-      );
-    for (const dup of result.duplicates)
+    for (const record of result.created) ctx.io.out(`created ${record.id}: ${record.statement}`);
+    for (const dup of result.duplicates) {
+      const named = [
+        (dup.failure.check ?? "") === "" ? "" : `check ${dup.failure.check}`,
+        (dup.failure.issue ?? "") === "" ? "" : `issue ${dup.failure.issue}`,
+      ].filter((part) => part !== "");
       ctx.io.out(
         `duplicate of ${dup.lessonId}: ${dup.failure.lesson}` +
-          ((dup.failure.check ?? "") === "" ? "" : `; check ${dup.failure.check}`) +
-          ((dup.failure.issue ?? "") === "" ? "" : `; issue ${dup.failure.issue}`),
+          (named.length > 0 ? ` (${named.join(", ")} not attached)` : ""),
       );
+    }
     ctx.io.out(
       `triage: ${result.created.length} created, ${result.duplicates.length} duplicate(s), ` +
         `${result.issueCandidates.length} issue candidate(s) recorded in raw/triage-issues.jsonl; no issue was filed`,

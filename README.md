@@ -62,9 +62,8 @@ them bite. After a run, `ak learn memory triage --file <failures.json>`
 dedupes stated failures against those lesson pages and within the file,
 appends new lessons as the next pages (as `hypothesis`; consolidation
 confirms them from evidence), keeps a duplicate's check and issue link in
-its run record, appends a duplicate that names a check its prose-only lesson
-lacks as the next page and marks that lesson superseded, as consolidation
-does, and records failures with no issue link as
+its run record and printed line without touching the lesson page, and
+records failures with no issue link as
 issue candidates in the ledger's `raw/triage-issues.jsonl`. It makes no
 judge call and files no issue. `ak update` refreshes each installed host and reports old and new
 versions; it is safe to rerun. If the curl-installed

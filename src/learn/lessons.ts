@@ -5,8 +5,7 @@
  * pages (`<memory ledger>/lessons/ls-NNN.md`) plus their `lessons.md` index:
  * append-only in that a lesson is added as the next `ls-NNN` page, a
  * restatement is reported as a duplicate of the page it restates and never
- * rewrites its statement or fields, and a lesson is retired by supersession (`status: superseded`),
- * never by deletion. A page may carry three fields the consolidation judge does not
+ * rewrites it, and a lesson is retired by supersession, never by deletion. A page may carry three fields the consolidation judge does not
  * invent: `failure` (what went wrong), `check` (the runnable check that now
  * guards it) and `issue` (the tracker link). Session start already loads the
  * confirmed pages (`memory/session-context.ts`); this module is what
@@ -75,8 +74,6 @@ export interface LessonRecord {
   failure: string;
   check: string;
   issue: string;
-  /** Lesson ids this page replaces; each is marked `superseded` when the page is written. */
-  supersedes: string[];
 }
 
 function text(value: string | number | string[] | null | undefined): string {
@@ -100,7 +97,6 @@ export function readLessons(dir: string): LessonRecord[] {
         failure: text(meta.failure),
         check: text(meta.check),
         issue: text(meta.issue),
-        supersedes: Array.isArray(meta.supersedes) ? meta.supersedes : [],
       };
     });
 }
@@ -266,17 +262,13 @@ export function nextLessonId(lessons: readonly LessonRecord[]): string {
 /**
  * Deduped triage of run failures into lesson records. A failure whose
  * normalized lesson statement matches a live lesson, or an earlier failure
- * in the same batch, is a duplicate of that lesson — reported with its
- * check and issue, never rewritten; the failure text is detail, not
- * identity. A duplicate that names a check its prose-only lesson lacks is
- * appended as the next page with that lesson's status, and lists it in
- * `supersedes`; the caller marks it superseded the way consolidation does,
- * so every ledger reader agrees which page is live. A lesson already
- * carrying an issue link, or already named in `recordedCandidates` (the ids
- * an earlier triage queued) directly or through the pages it supersedes, is
- * not queued again. New lessons start as
- * `hypothesis`: consolidation confirms them from evidence later, and
- * session start loads only confirmed lessons.
+ * in the same batch, is a duplicate of that lesson: reported with the check
+ * and issue the failure names, and the lesson page is never rewritten; the
+ * failure text is detail, not identity. A lesson already carrying an issue
+ * link, or already named in `recordedCandidates` (the ids an earlier triage
+ * queued), is not queued again. New lessons start as `hypothesis`:
+ * consolidation confirms them from evidence later, and session start loads
+ * only confirmed lessons.
  */
 export function triageFailures(
   existing: readonly LessonRecord[],
@@ -290,35 +282,27 @@ export function triageFailures(
   for (const lesson of liveLessons(existing)) byKey.set(lessonKey(lesson.statement), lesson);
   const live: LessonRecord[] = [...existing];
   const candidateIds = new Set(recordedCandidates);
-  const queued = (lesson: LessonRecord) =>
-    candidateIds.has(lesson.id) || lesson.supersedes.some((id) => candidateIds.has(id));
-  for (const lesson of existing) if (queued(lesson)) candidateIds.add(lesson.id);
   const candidate = (failure: FailureRecord, lesson: LessonRecord) => {
-    if ((failure.issue ?? "") !== "" || lesson.issue !== "" || queued(lesson)) return;
+    if ((failure.issue ?? "") !== "" || lesson.issue !== "" || candidateIds.has(lesson.id)) return;
     candidateIds.add(lesson.id);
     issueCandidates.push({ failure: failure.failure, lesson: failure.lesson, lessonId: lesson.id });
   };
   for (const failure of failures) {
     const key = lessonKey(failure.lesson);
     const known = byKey.get(key);
-    const check = failure.check ?? "";
-    const issue = failure.issue ?? "";
     if (known !== undefined) {
       duplicates.push({ failure, lessonId: known.id });
-      if (check === "" || check === known.check || CHECK_BY_ID.has(known.check)) {
-        candidate(failure, known);
-        continue;
-      }
+      candidate(failure, known);
+      continue;
     }
     const record: LessonRecord = {
       id: nextLessonId(live),
-      statement: known?.statement ?? failure.lesson,
-      status: known?.status ?? "hypothesis",
-      scope: known !== undefined && known.scope !== "" ? known.scope : (failure.scope ?? "repo"),
+      statement: failure.lesson,
+      status: "hypothesis",
+      scope: failure.scope ?? "repo",
       failure: failure.failure,
-      check,
-      issue: issue !== "" ? issue : (known?.issue ?? ""),
-      supersedes: known === undefined ? [] : [known.id],
+      check: failure.check ?? "",
+      issue: failure.issue ?? "",
     };
     created.push(record);
     live.push(record);
@@ -328,35 +312,25 @@ export function triageFailures(
   return { created, duplicates, issueCandidates };
 }
 
-/**
- * A new lesson page in the canonical format, ready for `writeLesson`. A
- * successor carries its predecessor's page — confidence, evidence,
- * sessions, count, tags, first_seen and body — so only its id, check,
- * failure, issue and supersedes differ from the page it replaces.
- */
-export function renderLesson(
-  record: LessonRecord,
-  today: string,
-  predecessor?: { meta: PageMeta; body: string },
-): string {
+/** A new lesson page in the canonical format, ready for `writeLesson`. */
+export function renderLesson(record: LessonRecord, today: string): string {
   const meta: PageMeta = {
-    confidence: 0.5,
-    evidence: [],
-    tags: [],
-    count: 1,
-    first_seen: today,
-    ...predecessor?.meta,
     id: record.id,
     statement: record.statement,
     status: record.status,
     scope: record.scope,
-    supersedes: record.supersedes,
+    confidence: 0.5,
+    evidence: [],
+    supersedes: [],
+    tags: [],
+    count: 1,
+    first_seen: today,
     last_seen: today,
   };
   if (record.failure !== "") meta.failure = record.failure;
   if (record.check !== "") meta.check = record.check;
   if (record.issue !== "") meta.issue = record.issue;
-  return renderPage(meta, predecessor?.body ?? `${record.statement}\n\nFailure: ${record.failure}\n`);
+  return renderPage(meta, `${record.statement}\n\nFailure: ${record.failure}\n`);
 }
 
 const failureRecordList: ValidateFunction<FailureRecord[]> = new Ajv().compile({

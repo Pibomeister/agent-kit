@@ -17,8 +17,6 @@ import { loadConfig } from "../../src/learn/core/config.ts";
 import { loopDir } from "../../src/learn/core/paths.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
 import { memoryArea } from "../../src/learn/memory/cli.ts";
-import { applyPairs } from "../../src/learn/memory/deep.ts";
-import { applyConsolidation } from "../../src/learn/memory/consolidate.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import { gitRepo, scratch, testContext, type TestContext } from "./helpers.ts";
 import type { LearnArgs } from "../../src/learn/core/context.ts";
@@ -259,26 +257,13 @@ describe("after-run failure triage", () => {
     expect(issueLog).toContain("Watchdog retried with no backoff");
   });
 
-  test("a duplicate naming a check keeps its check and issue, and supersedes the prose-only lesson for every reader", () => {
+  test("a duplicate naming a check keeps its check and issue on the triage record and leaves the page unchanged", () => {
     const repo = gitRepo(scratch("ak-triage-repo-"));
     const ctx = testContext({ cwd: repo });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, repo));
-    lessonPage(ledger.dir, "ls-001", {
-      statement: "Run the dry run before dispatch",
-      status: "confirmed",
-      check: "tracker-token",
-    });
-    lessonPage(ledger.dir, "ls-002", {
-      statement: "Park challenges need a named challenger",
-      status: "confirmed",
-      confidence: "0.90",
-      evidence: "[obs:1, obs:7]",
-      sessions: "2",
-      count: "4",
-      tags: "[dispatch]",
-      first_seen: "2026-09-01",
-    });
-    expect(classifyLessons(readLessons(ledger.dir)).find((row) => row.lesson.id === "ls-002")?.enforced).toBe(false);
+    lessonPage(ledger.dir, "ls-002", { statement: "Park challenges need a named challenger", status: "confirmed" });
+    const pagePath = join(ledger.dir, "lessons", "ls-002.md");
+    const pageBefore = readFileSync(pagePath, "utf8");
     const file = join(scratch("ak-triage-"), "failures.json");
     writeFileSync(
       file,
@@ -291,85 +276,22 @@ describe("after-run failure triage", () => {
         },
       ]),
     );
-    const run = () => runTriage(parseLearnArgs(["--file", file, "--repo", repo]), ctx);
-    expect(run()).toBe(0);
-    expect(ctx.out.join("\n")).toContain(
-      "duplicate of ls-002: Park challenges need a named challenger; check tracker-token; issue #210",
+    expect(runTriage(parseLearnArgs(["--file", file, "--repo", repo]), ctx)).toBe(0);
+    const out = ctx.out.join("\n");
+    expect(out).toContain(
+      "duplicate of ls-002: Park challenges need a named challenger (check tracker-token, issue #210 not attached)",
     );
+    expect(out).toContain("0 created, 1 duplicate(s)");
     const runs = readFileSync(ledger.path("runs.jsonl"), "utf8").trim().split("\n");
     const last: unknown = JSON.parse(runs.at(-1) ?? "{}");
     expect(last).toMatchObject({
       job: "triage",
+      created: [],
       duplicates: [{ lessonId: "ls-002", check: "tracker-token", issue: "#210" }],
     });
-    const pages = loadLessons(ledger);
-    expect(pages.get("ls-002")?.meta).toMatchObject({ status: "superseded", superseded_by: "ls-003" });
-    expect(pages.get("ls-003")?.meta).toMatchObject({
-      statement: "Park challenges need a named challenger",
-      status: "confirmed",
-      check: "tracker-token",
-      issue: "#210",
-      supersedes: ["ls-002"],
-      confidence: "0.90",
-      evidence: ["obs:1", "obs:7"],
-      sessions: 2,
-      count: 4,
-      tags: ["dispatch"],
-      first_seen: "2026-09-01",
-    });
-    const coverageNow = () =>
-      lessonsFindings(classifyLessons(readLessons(ledger.dir)), [{ check: "tracker token", level: "PASS" }]);
-    const enforcedAfterTriage = coverageNow();
-    expect(enforcedAfterTriage.some((f) => f.detail.includes("ls-002"))).toBe(false);
-    expect(enforcedAfterTriage.find((f) => f.detail.includes("ls-003"))).toMatchObject({ level: "PASS" });
-    expect(enforcedAfterTriage.find((f) => f.detail.includes("ls-003"))?.detail).toContain("issue #210");
-
-    expect(applyPairs(ledger, { merge: [["ls-002", "ls-003"]] }, "2026-11-07").merged).toEqual([]);
-    const repeat = applyConsolidation(
-      ledger,
-      { lessons: [{ statement: "Park challenges need a named challenger", scope: "repo", evidence: ["obs:1"] }] },
-      new Set(["obs:1"]),
-      new Map(),
-      { today: "2026-11-07" },
-    );
-    expect(repeat.repeated).toEqual(["ls-003"]);
-    const afterTicks = coverageNow();
-    expect(afterTicks.some((f) => f.detail.includes("ls-002"))).toBe(false);
-    expect(afterTicks.find((f) => f.detail.includes("ls-003"))).toMatchObject({ level: "PASS" });
-    expect(afterTicks.at(-1)?.detail).toContain("2 enforced, 0 prose-only");
-
-    const before = ctx.out.length;
-    expect(run()).toBe(0);
-    expect(ctx.out.slice(before).join("\n")).toContain("0 created, 1 duplicate(s)");
-    expect([...loadLessons(ledger).keys()]).toEqual(["ls-001", "ls-002", "ls-003"]);
-  });
-
-  test("a successor page is not queued as a second issue candidate for the lesson it supersedes", () => {
-    const repo = gitRepo(scratch("ak-triage-repo-"));
-    const ctx = testContext({ cwd: repo });
-    const dir = scratch("ak-triage-");
-    const failure = { failure: "a parked task had no challenger", lesson: "Park challenges need a named challenger" };
-    const triage = (name: string, records: FailureRecord[]) => {
-      const file = join(dir, name);
-      writeFileSync(file, JSON.stringify(records));
-      return runTriage(parseLearnArgs(["--file", file, "--repo", repo]), ctx);
-    };
-    expect(triage("first.json", [failure])).toBe(0);
-    expect(triage("second.json", [{ ...failure, check: "tracker-token" }])).toBe(0);
-    expect(triage("third.json", [{ ...failure, check: "plugin-enabled" }])).toBe(0);
-    const ledger = new Ledger(memoryDir(ctx.config, repo));
-    expect([...loadLessons(ledger).keys()]).toEqual(["ls-001", "ls-002"]);
-    const rows = readFileSync(ledger.path("raw", "triage-issues.jsonl"), "utf8").trim().split("\n");
-    expect(rows.map((row): unknown => JSON.parse(row))).toEqual([expect.objectContaining({ lessonId: "ls-001" })]);
-    const successor = readLessons(ledger.dir).find((lesson) => lesson.id === "ls-002");
-    if (successor === undefined) throw new Error("ls-002 was not written");
-    const chained = triageFailures(
-      [{ ...successor, check: "" }],
-      [{ ...failure, check: "tracker-token" }],
-      new Set(["ls-001"]),
-    );
-    expect(chained.created).toHaveLength(1);
-    expect(chained.issueCandidates).toHaveLength(0);
+    expect(readFileSync(pagePath, "utf8")).toBe(pageBefore);
+    expect([...loadLessons(ledger).keys()]).toEqual(["ls-002"]);
+    expect(classifyLessons(readLessons(ledger.dir)).find((row) => row.lesson.id === "ls-002")?.enforced).toBe(false);
   });
 
   test("memory triage refuses a missing or malformed failures file", () => {
