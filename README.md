@@ -56,9 +56,12 @@ ticket, so that skill needs a current `ak` on `PATH`
 ([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
 ([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green push to `main`. Publication
-requires the release tag `v<version>` at the merged commit on `main`: without it the workflow
-refuses and is re-run once the tag is pushed. On the first merge, tag the merged commit, wait for
-that workflow to complete, then use the commands above. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
+requires the release tag `v<version>` at the merged commit on `main`, so the run for the push to
+`main` refuses a changed bundle. Pushing that tag runs the workflow at the tagged commit, which it
+builds and publishes once it confirms the commit is on `main`. To retry, dispatch the workflow with
+the tag as its ref; a dispatch at the tip of `main` refuses once `main` has moved past the tagged
+commit. On the first merge, tag the merged commit, wait for that workflow to complete, then use the
+commands above. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 

@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { processScratch } from "./helpers/process-tmp.ts";
 
 const script = join(import.meta.dir, "../tools/publish/version-gate.sh");
@@ -188,6 +189,23 @@ describe("bundle version gate", () => {
     expect(run.status).toBe(0);
   });
 
+  test("with --require-release-tag, the tagged commit checked out after main moved on publishes", () => {
+    const work = gateWork(["0.1.0", "old"], ["0.2.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged release");
+    git(work, "tag", "-a", "v0.2.0", "-m", "release");
+    writeFileSync(join(work, "later.txt"), "later\n");
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "later merge");
+    const atTip = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(atTip.status).toBe(1);
+    expect(atTip.stderr).toContain("not the merged commit");
+    git(work, "checkout", "-q", "v0.2.0");
+    const atTag = spawnSync("sh", [script, "dist", "--require-release-tag"], { cwd: work, encoding: "utf8" });
+    expect(atTag.stderr).toBe("");
+    expect(atTag.status).toBe(0);
+  });
+
   test("with --require-release-tag, an unchanged bundle passes while the tag sits at an older commit", () => {
     const work = gateWork(["0.1.0", "same"], ["0.1.0", "same"]);
     git(work, "add", "-A");
@@ -225,5 +243,49 @@ describe("bundle version gate", () => {
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("catalog.yaml version { unexpected: 'manifest' }");
     expect(run.stderr).toContain("package.json version { unexpected: 'package' } differ");
+  });
+});
+
+describe("publish-bundle workflow release recovery", () => {
+  type Step = { uses?: string; with?: Record<string, unknown>; run?: string; if?: string };
+  type Job = { if?: string; steps: Step[] };
+  const workflow = parseYaml(
+    readFileSync(join(import.meta.dir, "../.github/workflows/publish-bundle.yml"), "utf8"),
+  ) as { on: { push: { branches: string[]; tags: string[] } }; jobs: Record<string, Job> };
+
+  test("a v* tag push starts the workflow alongside the push to main", () => {
+    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(workflow.on.push.tags).toEqual(["v*"]);
+  });
+
+  test("both jobs run at main or a v* tag and check out the triggering ref, not the tip of main", () => {
+    for (const name of ["build", "publish"]) {
+      const job = workflow.jobs[name];
+      if (job === undefined) throw new Error(`missing job ${name}`);
+      expect(job.if).toBe("github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')");
+      const checkout = job.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+      expect(checkout?.with?.ref).toBeUndefined();
+    }
+  });
+
+  test("a tag run refuses a commit that is not on main, before the gate, and passes one that is", () => {
+    const steps = workflow.jobs.build?.steps ?? [];
+    const gate = steps.findIndex((step) => step.run === "tools/publish/version-gate.sh dist --require-release-tag");
+    const ancestry = steps.findIndex((step) => step.if === "startsWith(github.ref, 'refs/tags/v')");
+    expect(ancestry).toBeGreaterThanOrEqual(0);
+    expect(gate).toBeGreaterThan(ancestry);
+    const check = steps[ancestry]?.run ?? "";
+    const work = gateWork(null, ["0.1.0", "new"]);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", "merged");
+    git(work, "update-ref", "refs/remotes/origin/main", "HEAD");
+    git(work, "tag", "v0.1.0");
+    const env = { ...process.env, GITHUB_REF: "refs/tags/v0.1.0", GITHUB_SHA: "tagged" };
+    expect(spawnSync("bash", ["-e", "-c", check], { cwd: work, env, encoding: "utf8" }).status).toBe(0);
+    git(work, "checkout", "-q", "--orphan", "side");
+    git(work, "commit", "-qm", "unmerged");
+    const refused = spawnSync("bash", ["-e", "-c", check], { cwd: work, env, encoding: "utf8" });
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("refs/tags/v0.1.0 points at tagged, which is not on main");
   });
 });
