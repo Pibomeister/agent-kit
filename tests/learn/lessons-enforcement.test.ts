@@ -28,6 +28,27 @@ function lessonPage(dir: string, id: string, meta: Record<string, string>): void
   writeFileSync(join(dir, "lessons", `${id}.md`), `---\n${lines.join("\n")}\n---\nbody\n`);
 }
 
+function git(cwd: string, ...args: string[]) {
+  return spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+}
+
+const validDoctorJson = new Ajv().compile<{
+  findings: { level: string; check: string; detail: string }[];
+}>({
+  type: "object",
+  required: ["findings"],
+  properties: {
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["level", "check", "detail"],
+        properties: { level: { type: "string" }, check: { type: "string" }, detail: { type: "string" } },
+      },
+    },
+  },
+});
+
 function fixtureLedger(): string {
   const dir = scratch("ak-lessons-");
   lessonPage(dir, "ls-001", {
@@ -116,8 +137,6 @@ describe("lesson enforcement coverage", () => {
 describe("ak doctor lessons coverage", () => {
   test("doctor in a linked worktree reads the main repository's ledger, the one triage writes", () => {
     const main = scratch("ak-doctor-main-");
-    const git = (cwd: string, ...args: string[]) =>
-      spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
     git(main, "init", "-q");
     git(main, "commit", "-q", "--allow-empty", "-m", "seed");
     const worktree = join(scratch("ak-doctor-wt-"), "wt");
@@ -142,7 +161,8 @@ describe("ak doctor lessons coverage", () => {
       [join(import.meta.dir, "../../src/maintenance/cli.ts"), "doctor", "--json"],
       { cwd: worktree, env, encoding: "utf8" },
     );
-    const parsed = JSON.parse(run.stdout) as { findings: { check: string; detail: string }[] };
+    const parsed: unknown = JSON.parse(run.stdout);
+    if (!validDoctorJson(parsed)) throw new Error("doctor --json did not match its schema");
     const coverage = parsed.findings.filter((f) => f.check === "lessons coverage");
     expect(coverage.some((f) => f.detail.includes("ls-001"))).toBe(true);
   });
@@ -166,24 +186,8 @@ describe("ak doctor lessons coverage", () => {
         encoding: "utf8",
       },
     );
-    const valid = new Ajv().compile<{
-      findings: { level: string; check: string; detail: string }[];
-    }>({
-      type: "object",
-      required: ["findings"],
-      properties: {
-        findings: {
-          type: "array",
-          items: {
-            type: "object",
-            required: ["level", "check", "detail"],
-            properties: { level: { type: "string" }, check: { type: "string" }, detail: { type: "string" } },
-          },
-        },
-      },
-    });
     const parsed: unknown = JSON.parse(run.stdout);
-    if (!valid(parsed)) throw new Error("doctor --json did not match its schema");
+    if (!validDoctorJson(parsed)) throw new Error("doctor --json did not match its schema");
     const coverage = parsed.findings.filter((f) => f.check === "lessons coverage");
     expect(coverage.some((f) => f.level === "PASS" && f.detail.includes("ls-001"))).toBe(true);
     expect(coverage.some((f) => f.level === "WARN" && f.detail.includes("ls-002"))).toBe(true);
