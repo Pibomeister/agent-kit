@@ -773,4 +773,5 @@ test("source and packaged entrypoints enforce the guard from an isolated install
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
-}, 120_000);
+  // Packages and installs every host bundle, so its wall clock sits near 120 s even on a quiet host.
+}, 300_000);
