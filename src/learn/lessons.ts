@@ -324,25 +324,35 @@ export function triageFailures(
   return { created, duplicates, issueCandidates };
 }
 
-/** A new lesson page in the canonical format, ready for `writeLesson`. */
-export function renderLesson(record: LessonRecord, today: string): string {
+/**
+ * A new lesson page in the canonical format, ready for `writeLesson`. A
+ * successor carries its predecessor's page — confidence, evidence,
+ * sessions, count, tags, first_seen and body — so only its id, check,
+ * failure, issue and supersedes differ from the page it replaces.
+ */
+export function renderLesson(
+  record: LessonRecord,
+  today: string,
+  predecessor?: { meta: PageMeta; body: string },
+): string {
   const meta: PageMeta = {
+    confidence: 0.5,
+    evidence: [],
+    tags: [],
+    count: 1,
+    first_seen: today,
+    ...predecessor?.meta,
     id: record.id,
     statement: record.statement,
     status: record.status,
     scope: record.scope,
-    confidence: 0.5,
-    evidence: [],
     supersedes: record.supersedes,
-    tags: [],
-    count: 1,
-    first_seen: today,
     last_seen: today,
   };
   if (record.failure !== "") meta.failure = record.failure;
   if (record.check !== "") meta.check = record.check;
   if (record.issue !== "") meta.issue = record.issue;
-  return renderPage(meta, `${record.statement}\n\nFailure: ${record.failure}\n`);
+  return renderPage(meta, predecessor?.body ?? `${record.statement}\n\nFailure: ${record.failure}\n`);
 }
 
 const failureRecordList: ValidateFunction<FailureRecord[]> = new Ajv().compile({

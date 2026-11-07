@@ -268,7 +268,16 @@ describe("after-run failure triage", () => {
       status: "confirmed",
       check: "tracker-token",
     });
-    lessonPage(ledger.dir, "ls-002", { statement: "Park challenges need a named challenger", status: "confirmed" });
+    lessonPage(ledger.dir, "ls-002", {
+      statement: "Park challenges need a named challenger",
+      status: "confirmed",
+      confidence: "0.90",
+      evidence: "[obs:1, obs:7]",
+      sessions: "2",
+      count: "4",
+      tags: "[dispatch]",
+      first_seen: "2026-09-01",
+    });
     expect(classifyLessons(readLessons(ledger.dir)).find((row) => row.lesson.id === "ls-002")?.enforced).toBe(false);
     const file = join(scratch("ak-triage-"), "failures.json");
     writeFileSync(
@@ -301,6 +310,12 @@ describe("after-run failure triage", () => {
       check: "tracker-token",
       issue: "#210",
       supersedes: ["ls-002"],
+      confidence: "0.90",
+      evidence: ["obs:1", "obs:7"],
+      sessions: 2,
+      count: 4,
+      tags: ["dispatch"],
+      first_seen: "2026-09-01",
     });
     const coverageNow = () =>
       lessonsFindings(classifyLessons(readLessons(ledger.dir)), [{ check: "tracker token", level: "PASS" }]);

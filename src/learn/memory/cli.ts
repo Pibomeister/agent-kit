@@ -215,8 +215,11 @@ function triage(args: LearnArgs, ctx: LearnContext): number {
     const recorded = new Set(readJsonl<{ lessonId?: string }>(issueLog).flatMap((row) => row.lessonId ?? []));
     const result = triageFailures(readLessons(ledger.dir), failures, recorded);
     const today = todayLocal();
-    for (const record of result.created)
-      writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today));
+    const before = loadLessons(ledger);
+    for (const record of result.created) {
+      const predecessor = record.supersedes.map((id) => before.get(id)).find((page) => page !== undefined);
+      writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today, predecessor));
+    }
     const pages = loadLessons(ledger);
     for (const record of result.created)
       for (const old of record.supersedes) {
