@@ -18,6 +18,9 @@ export interface ProfileMembership {
   skills: string[];
   issues: Issue[];
 }
+/** The project schema and the schemas it references, which is all `resolveProfile` validates against. */
+const PROJECT_SCHEMA_IDS = ["common", "verification-recipe", "project"] as const;
+
 interface AutonomyProjectRecord {
   autonomy?: { default: boolean };
 }
@@ -69,7 +72,9 @@ export function resolveProfile(
       const content = readTextIfPresent(path);
       if (content === null) throw new Error("project record is missing");
       const value: unknown = parseYaml(content);
-      const validate = compileSchemas(root).ajv.getSchema<AutonomyProjectRecord>(
+      // Only the project schema and its references: every host's plan resolves its profile,
+      // and compiling the whole tree for each one dominated `ak validate --project`.
+      const validate = compileSchemas(root, PROJECT_SCHEMA_IDS).ajv.getSchema<AutonomyProjectRecord>(
         "https://agent-kit.local/schemas/project.schema.json",
       );
       if (validate === undefined) throw new Error("project schema is unavailable");
