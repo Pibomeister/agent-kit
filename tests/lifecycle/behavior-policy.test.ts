@@ -14,6 +14,7 @@ import {
   asJsonObject,
   classifyRun,
   parseBehaviorBinding,
+  sealBinding,
   RUN_SCHEMA_VERSION,
   type Json,
   type JsonObject,
@@ -514,6 +515,66 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(classifyRun(readRun(dir, run), run, ticket).kind).toBe("incomplete");
   });
 
+  test("stripping schema_version and behavior and replacing the ticket is incomplete, not legacy", () => {
+    const dir = repo();
+    const original = behaviorTicket(dir, "strip-replace");
+    const run = opened(dir, ticketPath(dir, "strip-replace"), attachKb(dir, "on").registry);
+    const plain = plainTicket(dir, "strip-replace");
+    const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
+    const hash = artifactHash(plain);
+    writeFileSync(
+      join(defaultEvidenceDir(dir), run, "artifacts", hash.slice("sha256:".length)),
+      canonicalJson(subject),
+    );
+    const doc = readRun(dir, run);
+    delete doc.behavior;
+    delete doc.schema_version;
+    doc.ticket = { id: "strip-replace", hash };
+    writeFileSync(runFile(dir, run), `${JSON.stringify(doc, null, 2)}\n`);
+    expect(classifyRun(readRun(dir, run), run, original).kind).toBe("incomplete");
+    recordPhases(dir);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, plain)).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("new enabled run");
+    expect(checked.err).not.toContain("legacy");
+    expect(original.schema).toBe("ticket");
+  });
+
+  test("resealing a weakened binding and replacing the ticket is incomplete", () => {
+    const dir = repo();
+    const original = behaviorTicket(dir, "reseal");
+    const run = opened(dir, ticketPath(dir, "reseal"), attachKb(dir, "on").registry);
+    const plain = plainTicket(dir, "reseal");
+    const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
+    const hash = artifactHash(plain);
+    writeFileSync(
+      join(defaultEvidenceDir(dir), run, "artifacts", hash.slice("sha256:".length)),
+      canonicalJson(subject),
+    );
+    const weakened = sealBinding({
+      run_id: run,
+      ticket_hash: hash,
+      mode: "off",
+      policy_id: null,
+      policy_hash: null,
+      required_checks: [],
+      captured_at: "2026-09-29T00:00:00Z",
+    });
+    const sealed: unknown = JSON.parse(JSON.stringify(weakened));
+    if (!asJsonObject(sealed)) throw new Error("resealed binding is not an object");
+    const doc = readRun(dir, run);
+    doc.behavior = sealed;
+    doc.ticket = { id: "reseal", hash };
+    writeFileSync(runFile(dir, run), `${JSON.stringify(doc, null, 2)}\n`);
+    recordPhases(dir);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, plain)).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("mandatory behavior checks");
+    expect(original.schema).toBe("ticket");
+  });
+
   test("stripping schema_version and behavior from a new enabled run is incomplete, not legacy", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "strip-both");
@@ -603,6 +664,33 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
     const allowed = ak(dir, "check");
     expect(allowed.code).toBe(0);
+  });
+
+  test("shadow pass, fail and incomplete stay retained and do not change an allowed gate", () => {
+    const dir = repo();
+    const ticket = plainTicket(dir, "shadow-keep");
+    const run = opened(dir, ticketPath(dir, "shadow-keep"), attachKb(dir, "shadow").registry);
+    recordPhases(dir);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
+    expect(ak(dir, "check").code).toBe(0);
+    const shadowPass = receipt(dir, run, ticket, { behavior: { mode: "shadow", gate_eligible: false } });
+    const shadowFail = receipt(dir, run, ticket, {
+      status: "failed",
+      exit_status: 1,
+      behavior: { mode: "shadow", gate_eligible: false },
+    });
+    const shadowIncomplete = receipt(dir, run, ticket, {
+      status: "inconclusive",
+      behavior: { mode: "shadow", gate_eligible: false },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowPass).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowFail).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", shadowIncomplete).code).toBe(0);
+    const ids = [shadowPass, shadowFail, shadowIncomplete].map((path) => parseObject(readFileSync(path, "utf8")).id);
+    const refs = readRecords(defaultEvidenceDir(dir), run, "verify").flatMap((row) => row.evidence ?? []);
+    expect(refs.map((ref) => ref.id).filter((id) => ids.includes(id))).toEqual([]);
+    const allowed = ak(dir, "check");
+    expect(allowed.code, allowed.err).toBe(0);
   });
 
   test("a shadow marker cannot hide a failed receipt from gate accounting", () => {
@@ -805,7 +893,11 @@ describe("BV-T01 policy binding at open, resume and check", () => {
 
   test("checkRunArtifact refuses proposed-only and unknown-requirement contracts", () => {
     const example = parseObject(readFileSync(join(ROOT, "templates/behavior-contract.example.json"), "utf8"));
-    expect(checkRunArtifact(JSON.stringify(example)).problem).toBe("");
+    const ticket = parseObject(readFileSync(join(ROOT, "templates/ticket.example.json"), "utf8"));
+    const lookup = (id: string) =>
+      id === "example-ticket-1" ? { schema: "ticket" as const, id, doc: ticket } : undefined;
+    expect(checkRunArtifact(JSON.stringify(example)).problem).toContain("not resolved at admission");
+    expect(checkRunArtifact(JSON.stringify(example), lookup).problem).toBe("");
     const proposed = {
       ...example,
       properties: [
@@ -817,7 +909,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
         },
       ],
     };
-    expect(checkRunArtifact(JSON.stringify(proposed)).problem).toContain(
+    expect(checkRunArtifact(JSON.stringify(proposed), lookup).problem).toContain(
       "behavior-contract.proposed-intent-cannot-discharge-accepted",
     );
     const missing = {
@@ -831,6 +923,6 @@ describe("BV-T01 policy binding at open, resume and check", () => {
         },
       ],
     };
-    expect(checkRunArtifact(JSON.stringify(missing)).problem).toContain("not on this contract");
+    expect(checkRunArtifact(JSON.stringify(missing), lookup).problem).toContain("not on this contract");
   });
 });

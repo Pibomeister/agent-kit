@@ -359,7 +359,31 @@ export function parseBehaviorBinding(value: Json | undefined): BehaviorBinding |
   return { ...unsigned, binding_hash: value.binding_hash };
 }
 
-export function classifyRun(record: JsonObject, runId: string, ticket?: JsonObject): BehaviorClass {
+export function ticketCarriesBehaviorChecks(ticket: JsonObject): boolean {
+  const frozen = behaviorChecks(ticket, ticketSurfaces(ticket));
+  return !("reason" in frozen) && frozen.length > 0;
+}
+
+export function classifyRun(
+  record: JsonObject,
+  runId: string,
+  ticket?: JsonObject,
+  authority?: BehaviorBinding,
+): BehaviorClass {
+  if (authority !== undefined) {
+    const raw: unknown = JSON.parse(JSON.stringify(authority));
+    if (!asJsonObject(raw))
+      return { kind: "incomplete", reason: `run ${runId} has no complete behavior policy snapshot` };
+    return classifyRun(
+      {
+        schema_version: RUN_SCHEMA_VERSION,
+        behavior: raw,
+        ticket: { id: authority.run_id, hash: authority.ticket_hash },
+      },
+      runId,
+      ticket,
+    );
+  }
   const frozen = ticket === undefined ? undefined : behaviorChecks(ticket, ticketSurfaces(ticket));
   const ticketWants = frozen !== undefined && !("reason" in frozen) && frozen.length > 0;
   const version = record.schema_version;

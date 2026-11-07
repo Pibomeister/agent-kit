@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -6,7 +6,12 @@ import { describe, expect, test } from "bun:test";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { checkDocument, indexDocuments } from "../src/validation/docrules.ts";
 import { checkRunArtifact } from "../src/kb/artifacts.ts";
+import type { ResolvedKb } from "../src/kb/binding.ts";
+import { git } from "../src/kb/git.ts";
+import { publishRunArtifact } from "../src/kb/local-git.ts";
+import { artifactHash } from "../src/util/hash.ts";
 import { parseJson, type JsonValue } from "./helpers/json.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const set = compileSchemas(ROOT);
@@ -27,12 +32,15 @@ function asObject(value: JsonValue): { [key: string]: JsonValue } {
 const contract = asObject(example("behavior-contract.example.json"));
 const ticket = asObject(example("ticket.example.json"));
 
-function issuesOf(doc: JsonValue): string[] {
+function issuesOf(doc: JsonValue, extra: JsonValue[] = [ticket]): string[] {
   const record = asObject(doc);
   return checkDocument(
     "templates/behavior-contract.example.json",
     record,
-    indexDocuments([{ file: "doc.json", doc: record }]),
+    indexDocuments([
+      { file: "doc.json", doc: record },
+      ...extra.map((item, i) => ({ file: `extra-${i}.json`, doc: asObject(item) })),
+    ]),
   ).map((issue) => `${issue.rule}: ${issue.message}`);
 }
 
@@ -56,7 +64,45 @@ function withRequirement(index: number, patch: { [key: string]: JsonValue }): Js
 describe("behavior-contract schema", () => {
   test("the shipped example is valid and publishable", () => {
     expect(validate(contract)).toBe(true);
-    expect(checkRunArtifact(JSON.stringify(contract)).problem).toBe("");
+    expect(checkRunArtifact(JSON.stringify(contract)).problem).toContain("not resolved at admission");
+    expect(
+      checkRunArtifact(JSON.stringify(contract), (id) =>
+        id === "example-ticket-1" ? { schema: "ticket", id, doc: asObject(ticket) } : undefined,
+      ).problem,
+    ).toBe("");
+    expect(issuesOf(contract)).toEqual([]);
+  });
+
+  test("an accepted source that names no document is refused", () => {
+    const ghost = withRequirement(0, { sources: [{ kind: "decision", ref: "nonexistent" }] });
+    expect(issuesOf(ghost).some((line) => line.includes("accepted source nonexistent is unknown"))).toBe(true);
+    expect(checkRunArtifact(JSON.stringify(ghost)).problem).toContain("not resolved at admission");
+  });
+
+  test("a proposed or unruled decision cannot back accepted intent", () => {
+    const openDecision = {
+      schema: "decision",
+      id: "open-decision",
+      status: "open",
+      ruling: { outcome: "blocked" },
+    };
+    const citing = withRequirement(0, {
+      sources: [{ kind: "decision", ref: "open-decision", hash: artifactHash(openDecision) }],
+    });
+    expect(issuesOf(citing, [openDecision]).some((line) => line.includes("is not an accepted source"))).toBe(true);
+  });
+
+  test("a hash-mismatched accepted source is refused", () => {
+    const citing = withRequirement(0, {
+      sources: [
+        {
+          kind: "ticket",
+          ref: "example-ticket-1",
+          hash: `sha256:${"b".repeat(64)}`,
+        },
+      ],
+    });
+    expect(issuesOf(citing).some((line) => line.includes("does not match"))).toBe(true);
   });
 
   test("an accepted requirement without sources is rejected", () => {
@@ -99,9 +145,11 @@ describe("behavior-contract schema", () => {
       true,
     );
     expect(validate(proposedOnly)).toBe(true);
-    expect(checkRunArtifact(JSON.stringify(proposedOnly)).problem).toContain(
-      "behavior-contract.proposed-intent-cannot-discharge-accepted",
-    );
+    expect(
+      checkRunArtifact(JSON.stringify(proposedOnly), (id) =>
+        id === "example-ticket-1" ? { schema: "ticket", id, doc: asObject(ticket) } : undefined,
+      ).problem,
+    ).toContain("behavior-contract.proposed-intent-cannot-discharge-accepted");
   });
 
   test("a property citing a requirement that is not on the contract is refused at admission", () => {
@@ -117,9 +165,37 @@ describe("behavior-contract schema", () => {
       ],
     };
     expect(validate(missing)).toBe(true);
-    expect(checkRunArtifact(JSON.stringify(missing)).problem).toContain(
-      "behavior-contract.proposed-intent-cannot-discharge-accepted",
-    );
+    expect(
+      checkRunArtifact(JSON.stringify(missing), (id) =>
+        id === "example-ticket-1" ? { schema: "ticket", id, doc: asObject(ticket) } : undefined,
+      ).problem,
+    ).toContain("behavior-contract.proposed-intent-cannot-discharge-accepted");
+  });
+
+  test("KB admission refuses an unresolved accepted source and accepts a genuine one", () => {
+    const root = processScratch("ak-bv-intent-kb-");
+    expect(git(root, ["init", "-q", "-b", "main"]).status).toBe(0);
+    expect(git(root, ["config", "user.name", "fixture"]).status).toBe(0);
+    expect(git(root, ["config", "user.email", "fixture@example.invalid"]).status).toBe(0);
+    expect(git(root, ["config", "commit.gpgsign", "false"]).status).toBe(0);
+    mkdirSync(join(root, "projects", "example-project", "runs"), { recursive: true });
+    const kb: ResolvedKb = {
+      root,
+      knowledgebase: "fixture-kb",
+      binding: { backend: "local-git", project: "example-project", locator: { knowledgebase: "fixture-kb" } },
+    };
+    const ghost = withRequirement(0, { sources: [{ kind: "decision", ref: "nonexistent" }] });
+    const refused = publishRunArtifact(kb, JSON.stringify(ghost), "example-run-1", []);
+    expect(refused).toMatchObject({ status: "refused", code: "kb.artifact-invalid" });
+    expect(JSON.stringify(refused)).toContain("accepted source nonexistent is unknown");
+    expect(publishRunArtifact(kb, JSON.stringify(ticket), "example-run-1", [])).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
+    expect(publishRunArtifact(kb, JSON.stringify(contract), "example-run-1", [])).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
   });
 
   test("the shipped example keeps observed notes out of accepted requirements", () => {

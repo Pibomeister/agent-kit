@@ -1,11 +1,12 @@
 /**
- * Semantic admission for a behavior-contract: accepted intent needs an accepted
- * source, and proposed or unresolved intent cannot discharge a required property.
- * JSON Schema cannot express these cross-field rules. Document validation and
- * knowledgebase publish share this function.
+ * Semantic admission for a behavior-contract: accepted intent needs a resolved
+ * accepted source, and proposed or unresolved intent cannot discharge a required
+ * property. JSON Schema cannot express these cross-field rules. Knowledgebase
+ * publish and indexed document validation share this function.
  */
 
 import { asJsonObject, type Json, type JsonObject } from "../lifecycle/behavior-policy.ts";
+import { artifactHash } from "../util/hash.ts";
 
 export const ACCEPTED_INTENT_SOURCE_KINDS = new Set([
   "ticket",
@@ -17,6 +18,14 @@ export const ACCEPTED_INTENT_SOURCE_KINDS = new Set([
 
 export const RULE_ACCEPTED_INTENT = "behavior-contract.accepted-intent-requires-accepted-source";
 export const RULE_PROPOSED_INTENT = "behavior-contract.proposed-intent-cannot-discharge-accepted";
+
+export interface IntentSourceArtifact {
+  schema: string;
+  id: string;
+  doc: JsonObject;
+}
+
+export type IntentLookup = (id: string) => IntentSourceArtifact | undefined;
 
 function rows(value: Json | undefined): Json[] {
   return Array.isArray(value) ? value : [];
@@ -30,8 +39,67 @@ function textField(value: Json | undefined): string | undefined {
   return isText(value) && value !== "" ? value : undefined;
 }
 
+function sourceKindSchema(kind: string): string | undefined {
+  if (kind === "ticket") return "ticket";
+  if (kind === "decision" || kind === "recorded-decision") return "decision";
+  if (kind === "requirements") return "behavior-contract";
+  if (kind === "user-instruction") return undefined;
+  return undefined;
+}
+
+function statusOf(doc: JsonObject): string | undefined {
+  return textField(doc.status);
+}
+
+function sourceIsAccepted(kind: string, artifact: IntentSourceArtifact): boolean {
+  const status = statusOf(artifact.doc);
+  if (kind === "ticket") return artifact.schema === "ticket" && status === "approved";
+  if (kind === "decision" || kind === "recorded-decision") {
+    if (artifact.schema !== "decision" || status !== "ruled") return false;
+    const ruling = artifact.doc.ruling;
+    return asJsonObject(ruling) && ruling.outcome === "decided";
+  }
+  if (kind === "requirements") return artifact.schema === "behavior-contract" && status === "active";
+  if (kind === "user-instruction") {
+    if (status === undefined) return true;
+    return status !== "draft" && status !== "proposed" && status !== "open" && status !== "unresolved";
+  }
+  return false;
+}
+
+function acceptedSourceProblem(
+  requirementId: string,
+  source: JsonObject,
+  lookup: IntentLookup | undefined,
+): string | undefined {
+  const kind = textField(source.kind);
+  const ref = textField(source.ref);
+  if (kind === undefined || !ACCEPTED_INTENT_SOURCE_KINDS.has(kind) || ref === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} is accepted without a source of accepted intent`;
+  }
+  if (lookup === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not resolved at admission`;
+  }
+  const artifact = lookup(ref);
+  if (artifact === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  const expectedSchema = sourceKindSchema(kind);
+  if (expectedSchema !== undefined && artifact.schema !== expectedSchema) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  const expectedHash = textField(source.hash);
+  if (expectedHash !== undefined && artifactHash(artifact.doc) !== expectedHash) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} does not match ${expectedHash}`;
+  }
+  if (!sourceIsAccepted(kind, artifact)) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  return undefined;
+}
+
 /** Why `doc` cannot be admitted as a behavior-contract; empty when it can. */
-export function behaviorContractIntentProblems(doc: JsonObject): string[] {
+export function behaviorContractIntentProblems(doc: JsonObject, lookup?: IntentLookup): string[] {
   const problems: string[] = [];
   const requirements = new Map<string, string>();
   for (const value of rows(doc.requirements)) {
@@ -41,21 +109,17 @@ export function behaviorContractIntentProblems(doc: JsonObject): string[] {
     if (id === undefined || intent === undefined) continue;
     requirements.set(id, intent);
     if (intent !== "accepted") continue;
-    let sourceCount = 0;
-    let hasAcceptedSource = false;
-    for (const sourceValue of rows(value.sources)) {
-      if (!asJsonObject(sourceValue)) continue;
-      const source = sourceValue;
-      sourceCount += 1;
-      const kind = textField(source.kind);
-      if (kind !== undefined && ACCEPTED_INTENT_SOURCE_KINDS.has(kind)) hasAcceptedSource = true;
-    }
-    if (sourceCount === 0) {
+    const sources = rows(value.sources).filter(asJsonObject);
+    if (sources.length === 0) {
       problems.push(`${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without an intent source`);
       continue;
     }
-    if (!hasAcceptedSource)
-      problems.push(`${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without a source of accepted intent`);
+    const sourceProblems = sources.map((source) => acceptedSourceProblem(id, source, lookup));
+    if (sourceProblems.every((problem) => problem !== undefined))
+      problems.push(
+        sourceProblems[0] ??
+          `${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without a source of accepted intent`,
+      );
   }
   for (const value of rows(doc.properties)) {
     if (!asJsonObject(value)) continue;
