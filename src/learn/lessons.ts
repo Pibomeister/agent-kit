@@ -347,13 +347,7 @@ const failureRecordList: ValidateFunction<FailureRecord[]> = new Ajv().compile({
     },
   },
 });
-const failureRecordFile: ValidateFunction<{ failures: FailureRecord[] }> = new Ajv().compile({
-  type: "object",
-  required: ["failures"],
-  properties: { failures: failureRecordList.schema },
-});
-
-/** A failures file's records: a JSON array of failure records, or an object holding them under `failures`. Null for anything else. */
+/** A failures file's records: a JSON array of failure records. Null for anything else. */
 export function parseFailureRecords(source: string): FailureRecord[] | null {
   let parsed: unknown;
   try {
@@ -361,7 +355,5 @@ export function parseFailureRecords(source: string): FailureRecord[] | null {
   } catch {
     return null;
   }
-  if (failureRecordList(parsed)) return parsed;
-  if (failureRecordFile(parsed)) return parsed.failures;
-  return null;
+  return failureRecordList(parsed) ? parsed : null;
 }

@@ -26917,13 +26917,9 @@ function parseFailureRecords(source) {
   } catch {
     return null;
   }
-  if (failureRecordList(parsed))
-    return parsed;
-  if (failureRecordFile(parsed))
-    return parsed.failures;
-  return null;
+  return failureRecordList(parsed) ? parsed : null;
 }
-var import_ajv3, RUNNABLE_LESSON_CHECKS, CHECK_BY_ID, HISTORY_STATUSES, failureRecordList, failureRecordFile;
+var import_ajv3, RUNNABLE_LESSON_CHECKS, CHECK_BY_ID, HISTORY_STATUSES, failureRecordList;
 var init_lessons = __esm(() => {
   init_pages();
   init_store();
@@ -26969,11 +26965,6 @@ var init_lessons = __esm(() => {
         scope: { type: "string" }
       }
     }
-  });
-  failureRecordFile = new import_ajv3.default().compile({
-    type: "object",
-    required: ["failures"],
-    properties: { failures: failureRecordList.schema }
   });
 });
 
