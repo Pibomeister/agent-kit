@@ -29,9 +29,10 @@ import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts"
 import { parseJson } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
-// Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
-// cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
-setDefaultTimeout(30_000);
+// Most tests drive git, the live runner service and separate seat processes. Under heavy host load
+// any ordinary case can pass 30s, and which one does varies run to run, so the default bound is a
+// hang detector rather than a speed check. The multi-command live-service tests declare larger bounds.
+setDefaultTimeout(120_000);
 
 const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;
@@ -2258,7 +2259,9 @@ describe("runner guards", () => {
         cwd: root,
         env: { ...process.env },
         encoding: "utf8",
-        timeout: 6_000,
+        // A wedged FIFO read never returns; a loaded host can still take several seconds to start
+        // the child and load the runner, so this bound only has to separate a hang from a slow start.
+        timeout: 30_000,
         killSignal: "SIGKILL",
       });
       expect(child.error).toBeUndefined();
@@ -2279,7 +2282,7 @@ describe("runner guards", () => {
     expect(f.runner.cancel("toy-run", "captain", "Stop despite a broken checkout.").run_state).toBe("cancelled");
     unlinkSync(head);
     writeFileSync(head, previous);
-  }, 30_000);
+  }, 120_000);
 
   test("runner snapshot follows submodules and embedded repositories", () => {
     const f = fixture();
