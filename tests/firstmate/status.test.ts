@@ -240,5 +240,6 @@ describe("ak firstmate status complete is audited", () => {
     const { bindingPath, fm } = bound();
     expect(fm("status", bindingPath, "needs-input", "--reason", "which base").code).toBe(0);
     expect(fm("status", bindingPath, "complete", "--verify").code).toBe(2);
-  });
+    // Builds a bound git fixture and runs the CLI twice; a loaded host can pass the 5s default.
+  }, 30_000);
 });

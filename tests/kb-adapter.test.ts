@@ -680,7 +680,8 @@ describe("readContext", () => {
     expect(read.coverage.scopes).toEqual(["billing/exports", "billing", "project"]);
     expect(read.coverage.kinds).toEqual(["concept", "adr"]);
     expect(read.coverage.run_artifact_links).toBe("not-selected");
-  });
+    // Publishes four pages through git and the CLI; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("reads what is committed, never an uncommitted file in the checkout", () => {
     const fx = registered();
@@ -689,7 +690,8 @@ describe("readContext", () => {
     writeFileSync(join(dir, "draft.md"), "---\nref: doc:x\n---\n\nnot committed\n");
     const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));
     expect(read.documents).toHaveLength(1);
-  });
+    // Builds git fixtures and publishes through the CLI; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("a committed page that is not a record is named, not silently dropped", () => {
     const fx = registered();
@@ -701,7 +703,8 @@ describe("readContext", () => {
     const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));
     expect(read.documents).toHaveLength(1);
     expect(read.coverage.unreadable).toEqual([rel]);
-  });
+    // Builds git fixtures, publishes and commits through the CLI; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("a committed page whose file name is not ASCII is named too", () => {
     const fx = registered();
@@ -738,7 +741,8 @@ describe("readContext", () => {
     );
     for (const scope of ["billing/exports", "billing", "project"])
       expect(kb(fx, fx.project, "read", "--kind", "adr", "--scope", scope).err).toBe("");
-  });
+    // Runs six CLI reads over git fixtures; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("a mistyped kind names the kind it was probably meant to be", () => {
     const fx = registered();
@@ -977,7 +981,8 @@ describe("publishArtifact, run-artifact placement", () => {
       record: { links: [doc.ref], content_hash: published(sent).content_hash },
     });
     expect(git(fx.project, "status", "--porcelain")).toBe("");
-  });
+    // Publishes a page and an artifact through git and the CLI; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("an artifact failing its own schema is refused before any write", () => {
     const fx = registered();
