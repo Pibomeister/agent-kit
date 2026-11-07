@@ -273,7 +273,8 @@ export function nextLessonId(lessons: readonly LessonRecord[]): string {
  * `supersedes`; the caller marks it superseded the way consolidation does,
  * so every ledger reader agrees which page is live. A lesson already
  * carrying an issue link, or already named in `recordedCandidates` (the ids
- * an earlier triage queued), is not queued again. New lessons start as
+ * an earlier triage queued) directly or through the pages it supersedes, is
+ * not queued again. New lessons start as
  * `hypothesis`: consolidation confirms them from evidence later, and
  * session start loads only confirmed lessons.
  */
@@ -289,8 +290,11 @@ export function triageFailures(
   for (const lesson of liveLessons(existing)) byKey.set(lessonKey(lesson.statement), lesson);
   const live: LessonRecord[] = [...existing];
   const candidateIds = new Set(recordedCandidates);
+  const queued = (lesson: LessonRecord) =>
+    candidateIds.has(lesson.id) || lesson.supersedes.some((id) => candidateIds.has(id));
+  for (const lesson of existing) if (queued(lesson)) candidateIds.add(lesson.id);
   const candidate = (failure: FailureRecord, lesson: LessonRecord) => {
-    if ((failure.issue ?? "") !== "" || lesson.issue !== "" || candidateIds.has(lesson.id)) return;
+    if ((failure.issue ?? "") !== "" || lesson.issue !== "" || queued(lesson)) return;
     candidateIds.add(lesson.id);
     issueCandidates.push({ failure: failure.failure, lesson: failure.lesson, lessonId: lesson.id });
   };

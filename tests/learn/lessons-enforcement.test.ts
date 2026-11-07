@@ -344,6 +344,34 @@ describe("after-run failure triage", () => {
     expect([...loadLessons(ledger).keys()]).toEqual(["ls-001", "ls-002", "ls-003"]);
   });
 
+  test("a successor page is not queued as a second issue candidate for the lesson it supersedes", () => {
+    const repo = gitRepo(scratch("ak-triage-repo-"));
+    const ctx = testContext({ cwd: repo });
+    const dir = scratch("ak-triage-");
+    const failure = { failure: "a parked task had no challenger", lesson: "Park challenges need a named challenger" };
+    const triage = (name: string, records: FailureRecord[]) => {
+      const file = join(dir, name);
+      writeFileSync(file, JSON.stringify(records));
+      return runTriage(parseLearnArgs(["--file", file, "--repo", repo]), ctx);
+    };
+    expect(triage("first.json", [failure])).toBe(0);
+    expect(triage("second.json", [{ ...failure, check: "tracker-token" }])).toBe(0);
+    expect(triage("third.json", [{ ...failure, check: "plugin-enabled" }])).toBe(0);
+    const ledger = new Ledger(memoryDir(ctx.config, repo));
+    expect([...loadLessons(ledger).keys()]).toEqual(["ls-001", "ls-002"]);
+    const rows = readFileSync(ledger.path("raw", "triage-issues.jsonl"), "utf8").trim().split("\n");
+    expect(rows.map((row): unknown => JSON.parse(row))).toEqual([expect.objectContaining({ lessonId: "ls-001" })]);
+    const successor = readLessons(ledger.dir).find((lesson) => lesson.id === "ls-002");
+    if (successor === undefined) throw new Error("ls-002 was not written");
+    const chained = triageFailures(
+      [{ ...successor, check: "" }],
+      [{ ...failure, check: "tracker-token" }],
+      new Set(["ls-001"]),
+    );
+    expect(chained.created).toHaveLength(1);
+    expect(chained.issueCandidates).toHaveLength(0);
+  });
+
   test("memory triage refuses a missing or malformed failures file", () => {
     const repo = gitRepo(scratch("ak-triage-repo-"));
     const ctx = testContext({ cwd: repo });
