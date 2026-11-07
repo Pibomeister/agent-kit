@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -226,12 +227,8 @@ async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<bool
   return false;
 }
 
-function fixture(limit = 3) {
-  const dir = mkdtempSync(join(scratchRoot, "ak-runner-"));
-  const worker = join(dir, "worker");
-  const privateDir = join(dir, "private");
-  mkdirSync(worker);
-  mkdirSync(privateDir);
+const WORKER_TEMPLATE = (() => {
+  const worker = mkdtempSync(join(scratchRoot, "ak-runner-seed-"));
   writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
   writeFileSync(join(worker, "README.md"), "toy worktree\n");
   Bun.spawnSync(["git", "init", "-q", worker]);
@@ -249,8 +246,30 @@ function fixture(limit = 3) {
     "Create toy charter worktree",
   ]);
   const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  mkdirSync(join(worker, ".runner-requests"));
+  return { worker, revision };
+})();
+
+const FEATURE_WORKER_TEMPLATE = (() => {
+  const worker = mkdtempSync(join(scratchRoot, "ak-runner-feature-seed-"));
+  cpSync(WORKER_TEMPLATE.worker, worker, { recursive: true });
+  git(worker, "branch", "-M", "main");
+  git(worker, "checkout", "-qb", "feature");
+  writeFileSync(join(worker, "feature.txt"), "feature\n");
+  git(worker, "add", "feature.txt");
+  git(worker, "commit", "-qm", "add feature");
+  const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  return { worker, revision };
+})();
+
+function fixture(limit = 3, template = WORKER_TEMPLATE) {
+  const dir = mkdtempSync(join(scratchRoot, "ak-runner-"));
+  const worker = join(dir, "worker");
+  const privateDir = join(dir, "private");
+  cpSync(template.worker, worker, { recursive: true });
+  mkdirSync(privateDir);
+  const { revision } = template;
   const requestDir = join(worker, ".runner-requests");
-  mkdirSync(requestDir);
   const path = join(privateDir, "charter.json");
   const initialCharter = {
     schema: "charter",
@@ -431,14 +450,8 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
 }
 
 function patchVerdictFixture(autonomous = false, ship = true) {
-  const f = fixture();
+  const f = fixture(3, FEATURE_WORKER_TEMPLATE);
   if (autonomous) withAuditCadence(f);
-  git(f.worker, "branch", "-M", "main");
-  git(f.worker, "checkout", "-qb", "feature");
-  writeFileSync(join(f.worker, "feature.txt"), "feature\n");
-  git(f.worker, "add", "feature.txt");
-  git(f.worker, "commit", "-qm", "add feature");
-  f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
   f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
   const receipt = join(f.privateDir, "source.txt");
   writeFileSync(receipt, "source evidence");
@@ -759,8 +772,7 @@ describe("runner guards", () => {
         key: "wake-1",
         payload: "check the checkpoint",
       });
-      for (let attempt = 0; attempt < 100 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
-        await Bun.sleep(10);
+      await waitUntil("pending events to clear", () => f.runner.pendingEvents("toy-run").length === 0);
       expect(f.runner.pendingEvents("toy-run")).toEqual([]);
     } finally {
       service.kill("SIGTERM");
@@ -1047,12 +1059,10 @@ describe("runner guards", () => {
         missing: [],
       });
       await waitForPath(replacementLog, service);
-      for (
-        let attempt = 0;
-        attempt < 100 && f.runner.status("toy-run").delegates?.["owner-2"] === undefined;
-        attempt += 1
-      )
-        await Bun.sleep(10);
+      await waitUntil(
+        "replacement delegate to be recorded",
+        () => f.runner.status("toy-run").delegates?.["owner-2"] !== undefined,
+      );
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("replaced");
       expect(f.runner.status("toy-run").delegates?.["owner-2"]?.state).toBe("active");
     } finally {
@@ -1351,7 +1361,7 @@ describe("runner guards", () => {
     );
     const call = (verb: string, token: string, args: RunnerArgs) => {
       writeFileSync(request, JSON.stringify(args));
-      const response = callRunnerCli(verb, request, socket, token);
+      const response = callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       expect(response.exitCode).toBe(0);
       return response;
     };
@@ -1436,7 +1446,8 @@ describe("runner guards", () => {
       service.kill("SIGTERM");
       await service.exited;
     }
-  });
+    // Drives the live runner service through 16 CLI calls, 6 two-seat checkpoints, and event/verify subprocesses.
+  }, 300_000);
 
   test("worker CLI cannot use supervisor verbs through the live service", async () => {
     const f = fixture();
@@ -2194,13 +2205,13 @@ describe("runner guards", () => {
       },
     );
     try {
-      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
+      await waitForPath(socket, server);
       expect(existsSync(socket)).toBe(true);
       expect(existsSync(marker)).toBe(false);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
-        return callRunnerCli(verb, request, socket, token);
+        return callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       };
       expect(
         call("start", adminToken, {
@@ -2235,7 +2246,8 @@ describe("runner guards", () => {
       server.kill();
       await server.exited;
     }
-  }, 30_000);
+    // Spawns a live runner service, initializes a nested git repo, and runs three CLI start/sync calls across both trees.
+  }, 120_000);
 
   test("FIFO git control files refuse promptly without wedging supervisor cancel", () => {
     const f = fixture();

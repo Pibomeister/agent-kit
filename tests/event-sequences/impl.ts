@@ -31,7 +31,7 @@
  * - Synthesize does not rewrite lane execution state in the product. The honest
  *   document still carries `unavailable` and must block approval.
  */
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
@@ -97,6 +97,7 @@ const REHOMED_RUN_FILES = [
 
 export interface World {
   runner: Runner;
+  restartRunner: () => Runner;
   privateDir: string;
   workerRoot: string;
   kitRoot: string;
@@ -302,12 +303,10 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout.toString().trim();
 }
 
-export function createWorld(): World {
-  const dir = processScratch("ak-event-seq-");
-  const worker = join(dir, "worker");
-  const privateDir = join(dir, "private");
-  mkdirSync(worker);
-  mkdirSync(privateDir);
+const ROOT_SCHEMAS = compileSchemas(ROOT);
+
+const WORKER_TEMPLATE = (() => {
+  const worker = processScratch("ak-event-seq-worker-");
   writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
   writeFileSync(join(worker, "README.md"), "toy worktree\n");
   git(worker, ["init", "-q"]);
@@ -323,8 +322,19 @@ export function createWorld(): World {
   ]);
   const revision = git(worker, ["rev-parse", "HEAD"]);
   mkdirSync(join(worker, ".runner-requests"));
+  return { worker, revision };
+})();
+
+export function createWorld(): World {
+  const dir = processScratch("ak-event-seq-");
+  const worker = join(dir, "worker");
+  const privateDir = join(dir, "private");
+  cpSync(WORKER_TEMPLATE.worker, worker, { recursive: true });
+  mkdirSync(privateDir);
+  const { revision } = WORKER_TEMPLATE;
   const charter = writeCharter(privateDir, 3);
   const runner = new Runner(privateDir, worker, ROOT);
+  let restartedRunner: Runner | null = null;
   runner.start("toy-run", charter.path, IMPLEMENTER, revision, standingGrant(charter.hash, "toy-run"));
   const log = join(privateDir, "log.txt");
   writeFileSync(log, "independently collected verification");
@@ -352,6 +362,10 @@ export function createWorld(): World {
   if (loaded.catalog === null) throw new Error("event-sequence artifact tree has no catalog");
   const world: World = {
     runner,
+    restartRunner() {
+      restartedRunner ??= new Runner(privateDir, worker, ROOT);
+      return restartedRunner;
+    },
     privateDir,
     workerRoot: worker,
     kitRoot: ROOT,
@@ -359,7 +373,7 @@ export function createWorld(): World {
     isolationClaim: null,
     renameSeq: 0,
     ctx: { root: artifactRoot, catalog: loaded.catalog },
-    schemas: compileSchemas(ROOT),
+    schemas: ROOT_SCHEMAS,
     lastSeatError: null,
     lastPublishError: null,
     lastChargeStatus: null,
@@ -384,6 +398,7 @@ export function createWorld(): World {
       unlinkIfPresent(join(templates, "finding-b.json"));
       unlinkIfPresent(join(templates, "finding.json"));
       unlinkIfPresent(join(templates, "review-probe.json"));
+      this.runner = runner;
       this.runId = "toy-run";
       this.isolationClaim = null;
       this.renameSeq = 0;
@@ -437,7 +452,7 @@ export function applyImpl(world: World, event: Event): void {
       world.runner.ledger(world.runId);
       return;
     case "restart": {
-      world.runner = new Runner(world.privateDir, world.workerRoot, world.kitRoot);
+      world.runner = world.restartRunner();
       const run = world.runner.status(world.runId);
       if (world.zeroBudgetAfterRestart) {
         const consumption = run.budget_consumption;

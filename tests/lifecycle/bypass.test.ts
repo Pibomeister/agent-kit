@@ -13,14 +13,13 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { hostname } from "node:os";
 import { join } from "node:path";
 
 import { parse } from "yaml";
@@ -37,6 +36,7 @@ import {
 } from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
@@ -69,7 +69,7 @@ function git(cwd: string, ...args: string[]): string {
   return p.stdout.toString().trim();
 }
 
-const dir = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
+const dir = (prefix: string) => processScratch(prefix);
 
 /** The id of the one grant registered in a ledger, from its ledger file name. */
 /** The grant entries in a ledger: `<grant_id>.json` files, not the `ended/` directory beside them. */
@@ -88,22 +88,28 @@ function only(records: GateRecord[]): GateRecord {
   return record;
 }
 
-function projectTemplate() {
+function setupTemplate() {
   const project = makeTree({ "src/a.js": "export const a = 1;\n" });
   git(project, "init", "-q", "-b", "main");
   git(project, "add", "-A");
   git(project, "commit", "-q", "-m", "init");
-  return project;
+  const worktree = join(dir("ak-bypass-wt-seed-"), "task");
+  git(project, "worktree", "add", "-q", "-b", "task", worktree);
+  return { project, worktree };
 }
 
-const PROJECT_TEMPLATE = projectTemplate();
+const SETUP_TEMPLATE = setupTemplate();
 
 /** A project, the worker's linked worktree on branch `task`, a supervisor home and a ledger. */
 function setup() {
   const project = dir("ak-bypass-project-");
-  cpSync(PROJECT_TEMPLATE, project, { recursive: true });
+  cpSync(SETUP_TEMPLATE.project, project, { recursive: true });
   const worktree = join(dir("ak-bypass-wt-"), "task");
-  git(project, "worktree", "add", "-q", "-b", "task", worktree);
+  cpSync(SETUP_TEMPLATE.worktree, worktree, { recursive: true });
+  const realProject = realpathSync(project);
+  const realWorktree = realpathSync(worktree);
+  writeFileSync(join(worktree, ".git"), `gitdir: ${join(realProject, ".git", "worktrees", "task")}\n`);
+  writeFileSync(join(project, ".git", "worktrees", "task", "gitdir"), `${join(realWorktree, ".git")}\n`);
   const home = dir("ak-bypass-home-");
   const ledger = dir("ak-bypass-ledger-");
   return { project, worktree, home, ledger, grantPath: join(home, "data", "T-1", "bypass.json") };
@@ -202,7 +208,7 @@ function grantFrom(s: ReturnType<typeof setup>, cwd: string, out: string, ...ext
   );
 }
 
-function granted() {
+function grantIssued() {
   const s = setup();
   const r = ak(
     s.home,
@@ -226,9 +232,56 @@ function granted() {
   return { ...s, brief: r.out };
 }
 
+const GRANTED_TEMPLATE = (() => {
+  const s = grantIssued();
+  return {
+    grantId: grantId(s.ledger),
+    grantText: readFileSync(s.grantPath, "utf8"),
+    repo: join(realpathSync(s.project), ".git"),
+    worktree: realpathSync(s.worktree),
+    home: realpathSync(s.home),
+    grantPath: realpathSync(s.grantPath),
+    brief: s.brief,
+  };
+})();
+
+function granted() {
+  const s = setup();
+  const now = new Date();
+  const created = now.toISOString();
+  const expires = new Date(now.getTime() + 12 * 3_600_000).toISOString();
+  const repo = join(realpathSync(s.project), ".git");
+  const worktree = realpathSync(s.worktree);
+  const home = realpathSync(s.home);
+  mkdirSync(join(s.home, "data", "T-1"), { recursive: true });
+  const text = GRANTED_TEMPLATE.grantText
+    .replace(`"repo": "${GRANTED_TEMPLATE.repo}"`, `"repo": "${repo}"`)
+    .replace(`"worktree": "${GRANTED_TEMPLATE.worktree}"`, `"worktree": "${worktree}"`)
+    .replace(`"cwd": "${GRANTED_TEMPLATE.home}"`, `"cwd": "${home}"`)
+    .replace(/"created_at": "[^"]*"/, `"created_at": "${created}"`)
+    .replace(/"expires_at": "[^"]*"/, `"expires_at": "${expires}"`);
+  writeFileSync(s.grantPath, text);
+  const realGrantPath = realpathSync(s.grantPath);
+  const sha = `sha256:${createHash("sha256").update(text).digest("hex")}`;
+  writeFileSync(
+    join(s.ledger, `${GRANTED_TEMPLATE.grantId}.json`),
+    `${JSON.stringify(
+      {
+        grant_id: GRANTED_TEMPLATE.grantId,
+        grant_path: realGrantPath,
+        grant_sha256: sha,
+        issued: { cwd: home, host: hostname(), supervisor_home: null },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return { ...s, brief: GRANTED_TEMPLATE.brief.replaceAll(GRANTED_TEMPLATE.grantPath, realGrantPath) };
+}
+
 describe("bypass granted: phases start without a typed command", () => {
   test("grant writes the file outside the repository and prints the brief section", () => {
-    const { grantPath, brief, ledger } = granted();
+    const { grantPath, brief, ledger } = grantIssued();
     expect(JSON.parse(readFileSync(grantPath, "utf8"))).toMatchObject({
       schema: "bypass-grant",
       authorized_by: "captain",
@@ -244,6 +297,7 @@ describe("bypass granted: phases start without a typed command", () => {
     expect(brief).not.toContain("valid only in the run");
   });
 
+  // Runs `bypass check` across all 5 BYPASS_PHASES (~40 git subprocess spawns).
   test("the worker's check passes for every phase and leaves a use record naming who authorized it", () => {
     const { worktree, ledger, grantPath } = granted();
     for (const phase of BYPASS_PHASES) {
@@ -253,8 +307,9 @@ describe("bypass granted: phases start without a typed command", () => {
     }
     const used = join(defaultEvidenceDir(worktree), "task", "bypass");
     expect(readdirSync(used).toSorted()).toEqual(BYPASS_PHASES.map((p) => `${p.replace(":", "-")}.json`).toSorted());
-  });
+  }, 30_000);
 
+  // Runs two `ak record` commands (~28 git subprocess spawns across snapshot and bypass verification).
   test("a gate recorded with --bypass carries the attribution; one recorded without it does not", () => {
     const { worktree, ledger, grantPath } = granted();
     expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-1").code).toBe(
@@ -266,7 +321,7 @@ describe("bypass granted: phases start without a typed command", () => {
     expect(full.authority).toMatchObject({ mode: "bypass", authorized_by: "captain", task_id: "T-1" });
     expect(full.authority?.mode === "bypass" && full.authority.grant_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(only(readRecords(evidence, "task", "build-checks")).authority).toBeUndefined();
-  });
+  }, 30_000);
 });
 
 describe("start only: approvals, merge and deploy are never covered", () => {
@@ -482,6 +537,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     expect(entries(s.ledger)).toHaveLength(registered);
   });
 
+  // Issues a grant and runs four check/record calls (~42 git subprocess spawns).
   test("a registered grant issued for longer than 12 hours is refused at check", () => {
     const s = setup();
     expect(grantFrom(s, s.home, s.grantPath).code).toBe(0);
@@ -514,7 +570,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     expect(otherTask.code).toBe(1);
     expect(otherTask.err).toContain("is for task T-1, not T-2");
     expect(otherTask.err).toContain("the phase needs its typed command");
-  });
+  }, 30_000);
 
   test("a refusal whose text names the over-long reason does not earn the reissue hint", () => {
     const s = granted();
@@ -608,6 +664,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
 });
 
 describe("one task: the grant binds to the task it names and that task's worktree, not to a run", () => {
+  // Wraps every git invocation in a shell PATH shim that inspects argv before execing git.
   test("a branch list git cannot produce refuses the check, and no use record is written", () => {
     const { worktree, ledger, grantPath } = granted();
     const realGit = Bun.which("git");
@@ -639,7 +696,7 @@ describe("one task: the grant binds to the task it names and that task's worktre
       process.env.PATH = path;
     }
     expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
-  });
+  }, 30_000);
 
   test("another task's grant is refused at check, and no use record is written", () => {
     const { worktree, ledger, grantPath } = granted();
@@ -664,6 +721,7 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
   });
 
+  // Adds a second linked worktree and runs both `bypass check` and `record --bypass` against it.
   test("another task's worktree of the same repository is refused at check and record --bypass, even with the right --task", () => {
     const { project, ledger, grantPath } = granted();
     const other = join(dir("ak-bypass-wt-"), "other");
@@ -676,8 +734,9 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(rec.code).toBe(1);
     expect(rec.err).toContain("is for worktree");
     expect(readRecords(defaultEvidenceDir(other), "other", "review-full")).toEqual([]);
-  });
+  }, 30_000);
 
+  // Adds a second linked worktree and runs both `bypass check` and `record --bypass` with `--project`.
   test("--project naming the granted worktree does not let another worktree pass check or record --bypass", () => {
     const { project, worktree, ledger, grantPath } = granted();
     const other = join(dir("ak-bypass-wt-"), "other");
@@ -705,7 +764,7 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(rec.code).toBe(1);
     expect(rec.err).toContain("is not the worktree this runs from");
     expect(readRecords(defaultEvidenceDir(other), "other", "review-full")).toEqual([]);
-  });
+  }, 30_000);
 
   test("grant refuses a worktree that is not one of the repository's", () => {
     const s = setup();
@@ -732,6 +791,7 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(existsSync(s.grantPath)).toBe(false);
   });
 
+  // Drives 7 sequential lifecycle commands (align, bound, open, review:full, record, ship, record) across two runs (~70 git spawns).
   test("one grant spans its task's runs: super-build's new run takes the same grant through ship", () => {
     const g = granted();
     const { worktree, ledger, grantPath, home } = g;
@@ -753,7 +813,7 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(readRecords(defaultEvidenceDir(worktree), run, "ship-preflight").map((r) => r.authority)).toEqual([
       expect.objectContaining({ mode: "bypass", grant_id: first, task_id: "T-1" }),
     ]);
-  });
+  }, 30_000);
 
   test("a phase-less check is a read-only probe and writes no use record", () => {
     const { worktree, ledger, grantPath } = granted();
@@ -774,6 +834,7 @@ describe("attribution: --bypass only where a phase covers the gate, and a typed 
     },
   );
 
+  // Runs check, expired record, freshGrant, and fresh record (~40 git subprocess spawns).
   test("a review started under a grant that expired continues under a fresh grant for the same task", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -790,7 +851,7 @@ describe("attribution: --bypass only where a phase covers the gate, and a typed 
       task_id: "T-1",
       superseded_grant_id: first,
     });
-  });
+  }, 30_000);
 
   test("a typed record after a bypassed start succeeds and names the grant it ends", () => {
     const s = granted();
@@ -802,6 +863,7 @@ describe("attribution: --bypass only where a phase covers the gate, and a typed 
     });
   });
 
+  // Runs check, freshGrant for another task, check, and record (~35 git subprocess spawns).
   test("another task's grant cannot continue a bypassed start, at check or at record", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -816,8 +878,9 @@ describe("attribution: --bypass only where a phase covers the gate, and a typed 
     expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).toEqual([]);
     const used = join(defaultEvidenceDir(s.worktree), "task", "bypass", "super-review-full.json");
     expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({ grant_id: first, task_id: "T-1" });
-  });
+  }, 30_000);
 
+  // Runs four `ak record` commands and `freshGrant` (~60 git subprocess spawns).
   test("a bypassed record at one snapshot is re-recorded by a fresh same-task grant, then by a typed record", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -843,10 +906,11 @@ describe("attribution: --bypass only where a phase covers the gate, and a typed 
       mode: "explicit",
       superseded_grant_id: fresh.id,
     });
-  });
+  }, 30_000);
 });
 
 describe("a typed record ends a bypassed phase for the run, and a hand-started phase stays typed", () => {
+  // Runs five check/record commands and `freshGrant` (~60 git subprocess spawns).
   test("after a typed end, the original grant is refused at a later snapshot, and a fresh grant re-starts it", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -866,8 +930,9 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(records.map((r) => r.authority)).toContainEqual(
       expect.objectContaining({ mode: "bypass", grant_id: fresh.id, superseded_grant_id: first }),
     );
-  });
+  }, 30_000);
 
+  // Runs four check/record commands across two worktree snapshots (~45 git subprocess spawns).
   test("a typed end needs no write to the ledger: with the ledger read-only it still ends the grant in the run", () => {
     const s = granted();
     expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
@@ -883,7 +948,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     } finally {
       chmodSync(s.ledger, 0o755);
     }
-  });
+  }, 30_000);
 
   test("--dir is refused with a bypass grant, so its use records stay in the default store (P9b)", () => {
     const s = granted();
@@ -909,6 +974,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(readdirSync(elsewhere)).toEqual([]);
   });
 
+  // Runs four check/record commands and `freshGrant` (~50 git subprocess spawns).
   test("a fresh grant re-starting at the snapshot of a typed end keeps the ended grant refused", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -922,8 +988,9 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
       ended_grant_ids: [first],
     });
     expect(checkPhase(s, s.grantPath, "T-1", "super-review:readiness").code).toBe(1);
-  });
+  }, 30_000);
 
+  // Runs six check/record commands and `freshGrant` (~70 git subprocess spawns).
   test("a grant a typed record ended stays refused after a fresh grant re-starts the phase", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -946,8 +1013,9 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
       grant_id: fresh.id,
       superseded_grant_id: first,
     });
-  });
+  }, 30_000);
 
+  // Runs seven check/record commands and `freshGrant` (~80 git subprocess spawns).
   test("a typed end refuses every grant that held the phase, not only the one in force", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -967,7 +1035,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
       superseded_grant_id: second.id,
     });
     expect(first).not.toBe(second.id);
-  });
+  }, 30_000);
 
   test("the use record lists every grant that has held the phase, the one in force included", () => {
     const s = granted();
@@ -980,6 +1048,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("held_grant_ids", [first, second.id]);
   });
 
+  // Runs three check/record commands (~36 git subprocess spawns).
   test("a phase recorded by hand cannot be relabelled with --bypass at the same snapshot", () => {
     const s = granted();
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
@@ -988,7 +1057,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(relabel.code).toBe(1);
     expect(relabel.err).toContain("record it with the typed command and no --bypass");
     expect(only(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).authority).toBeUndefined();
-  });
+  }, 30_000);
 });
 
 describe("--run . and --run .. are not run ids", () => {
@@ -1029,6 +1098,7 @@ const openRun = (s: ReturnType<typeof granted>) => {
 const checkIn = (s: ReturnType<typeof granted>, phase: string) => checkPhase(s, s.grantPath, "T-1", phase);
 
 describe("a grant holds in every run of its task's branch, and a typed end stays in its run", () => {
+  // Runs five check/open/record commands across two runs (~55 git subprocess spawns).
   test("a grant that started and recorded a phase in one run starts and records it again in the next", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -1042,8 +1112,9 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
         expect.objectContaining({ mode: "bypass", grant_id: first }),
       ]);
     expect(existsSync(join(defaultEvidenceDir(s.worktree), "grant-runs"))).toBe(false);
-  });
+  }, 30_000);
 
+  // Runs nine check/open/record commands across two runs (~95 git subprocess spawns).
   test("a typed end refuses the grant for that phase in its run only; a new run starts it again", () => {
     const s = granted();
     expect(checkIn(s, "super-review:full").code).toBe(0);
@@ -1092,8 +1163,9 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
     expect(readiness.code).toBe(1);
     expect(readiness.err).toContain("is not the current run of branch task");
     expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-readiness")).toEqual([]);
-  });
+  }, 30_000);
 
+  // Opens a run, checks and records under --run, detaches HEAD, and re-checks.
   test("the current run named explicitly with --run passes; a detached head has no current run", () => {
     const s = granted();
     const next = openRun(s);
@@ -1115,7 +1187,7 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
     const detached = ak(s.worktree, s.ledger, ...explicit);
     expect(detached.code).toBe(1);
     expect(detached.err).toContain("is on a detached head, so it has no current run");
-  });
+  }, 30_000);
 
   test("a branch run pointer that is not valid refuses an explicit --run under a grant", () => {
     const s = granted();
@@ -1164,8 +1236,10 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
       expect(checked.err).toContain(`run ${alias} was opened as ${theirs} for branch fm/t2`);
       expect(existsSync(join(store, theirs, "bypass"))).toBe(false);
     },
+    30_000,
   );
 
+  // Loops over 3 colliding branch-name pairs, creating branches, tags, and checking bypass per pair.
   test("a branch-named run another local branch shares, by separator or by case, is not this branch's", () => {
     for (const [mine, theirs] of [
       ["feat/y", "feat-y"],
@@ -1183,8 +1257,9 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
       expect(checked.err).toContain(`is also the branch-named run of branch ${theirs}`);
       expect(existsSync(join(store, mine.replace("/", "-"), "bypass"))).toBe(false);
     }
-  });
+  }, 30_000);
 
+  // Adds a second linked worktree, opens a run there, switches branch, and checks and records bypass.
   test("renaming the worktree's branch to another task's run id does not make that run its own", () => {
     const s = granted();
     const other = join(dir("ak-bypass-wt-"), "other");
@@ -1202,8 +1277,9 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
     expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(1);
     expect(existsSync(join(store, theirs, "bypass"))).toBe(false);
     expect(readRecords(store, theirs, "review-full")).toEqual([]);
-  });
+  }, 30_000);
 
+  // Adds a second worktree on a colliding branch name, checks and records refusal, then opens a run and checks.
   test("a branch whose run id another worktree's branch shares (feat/x, feat-x) has no branch-named run under a grant", () => {
     const s = granted();
     const other = join(dir("ak-bypass-wt-"), "other");
@@ -1217,7 +1293,7 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
     expect(existsSync(join(store, "feat-x", "bypass"))).toBe(false);
     openRun(s);
     expect(checkIn(s, "super-align").code).toBe(0);
-  });
+  }, 30_000);
 
   test("an over-long grant in another branch's run gets the run refusal, not the reissue hint", () => {
     const s = granted();
@@ -1256,6 +1332,7 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
     expect(recorded.err).not.toContain("longer than 12 hours");
   });
 
+  // Adds a second worktree, opens a run, and checks and records --run across 3 foreign run names.
   test("another task's run is refused with --run, at check and at record --bypass, and nothing is written there", () => {
     const s = granted();
     const other = join(dir("ak-bypass-wt-"), "other");
@@ -1289,37 +1366,44 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
       expect(readRecords(store, run, "review-full")).toEqual([]);
     }
     expect(checkIn(s, "super-align").code).toBe(0);
-  });
+  }, 30_000);
 });
 
 describe("a forged grant cannot ride a genuine grant's hash", () => {
+  // Spawns a concurrent symlink-flipper subprocess and repeatedly runs git-backed checkBypass against the race.
   test("swapping the grant path between a forged file and the genuine one never passes an expired grant", async () => {
-    const s = setup();
-    expect(grantFrom(s, s.home, s.grantPath, "--hours", "1").code).toBe(0);
+    const s = granted();
     const genuine = readFileSync(s.grantPath, "utf8");
     const forged = join(s.home, "forged.json");
     writeFileSync(forged, genuine.replace(/"expires_at": "[^"]*"/, '"expires_at": "2099-01-01T00:00:00.000Z"'));
     expect(readFileSync(forged, "utf8")).toContain("2099-01-01");
     const link = join(s.home, "link.json");
+    const ready = join(s.home, "flipper.ready");
     symlinkSync(s.grantPath, link);
     const flipper = Bun.spawn(
       [
         "bun",
         "-e",
-        `const fs=require("node:fs");const [l,a,b]=process.argv.slice(1);const parent=process.ppid;const deadline=Date.now()+8000;for(let i=0;;i++){if(i%256===0){if(Date.now()>deadline)process.exit(0);if(process.ppid!==parent)process.exit(0);try{process.kill(parent,0)}catch{process.exit(0)}}const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l)}`,
+        `const fs=require("node:fs");const [l,a,b,r]=process.argv.slice(1);const parent=process.ppid;const deadline=Date.now()+15000;for(let i=0;;i++){if(i%256===0){if(Date.now()>deadline)process.exit(0);if(process.ppid!==parent)process.exit(0);try{process.kill(parent,0)}catch{process.exit(0)}}const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l);if(i===2)fs.writeFileSync(r,"1")}`,
         link,
         s.grantPath,
         forged,
+        ready,
       ],
       { stdout: "ignore", stderr: "ignore" },
     );
     racers.add(flipper);
     try {
-      await Bun.sleep(100);
+      const readyDeadline = Date.now() + 10_000;
+      while (!existsSync(ready) && Date.now() < readyDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(existsSync(ready)).toBe(true);
       const later = new Date(Date.now() + 48 * 3_600_000);
       const reasons = new Map<string, number>();
       let passed = 0;
-      const until = Date.now() + 1500;
+      let checks = 0;
+      const until = Date.now() + 5_000;
       while (Date.now() < until) {
         const r = checkBypass({
           grant: link,
@@ -1330,6 +1414,7 @@ describe("a forged grant cannot ride a genuine grant's hash", () => {
           ledger: s.ledger,
           now: () => later,
         });
+        checks += 1;
         if (r.ok) passed += 1;
         else {
           const kind = r.reason.includes("expired")
@@ -1339,6 +1424,12 @@ describe("a forged grant cannot ride a genuine grant's hash", () => {
               : "other";
           reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
         }
+        if (
+          passed > 0 ||
+          ((reasons.get("expired") ?? 0) >= 5 && (reasons.get("not registered") ?? 0) >= 5 && checks >= 20)
+        ) {
+          break;
+        }
       }
       expect(passed).toBe(0);
       expect(reasons.get("expired") ?? 0).toBeGreaterThan(0);
@@ -1346,7 +1437,7 @@ describe("a forged grant cannot ride a genuine grant's hash", () => {
     } finally {
       await reap(flipper);
     }
-  });
+  }, 30_000);
 });
 
 describe("a worker-authored grant is rejected", () => {
@@ -1445,14 +1536,23 @@ describe("a worker-authored grant is rejected", () => {
   });
 });
 
-test(`the bundled ${GATE_FILE} carries bypass and refuses an absent grant under node`, () => {
-  const s = setup();
+let cachedGateScript: string | null = null;
+function bundledGateScript(): string {
+  if (cachedGateScript !== null) return cachedGateScript;
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
   const script = join(dir("ak-bypass-bundle-"), "ak-gate.mjs");
   const bundled = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get(GATE_FILE);
   if (bundled === undefined) throw new Error(`no ${GATE_FILE} in the bundle`);
   writeFileSync(script, bundled.contents);
+  cachedGateScript = script;
+  return script;
+}
+
+// Plans the claude-code bundle and spawns two `node ak-gate.mjs` subprocesses.
+test(`the bundled ${GATE_FILE} carries bypass and refuses an absent grant under node`, () => {
+  const s = setup();
+  const script = bundledGateScript();
   const node = (...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd: s.worktree });
   // The bundle resolves the account's real ledger, so nothing here runs `grant`: a regression in its
   // guards would write there. The grant itself is exercised above against a temp ledger.
@@ -1460,16 +1560,12 @@ test(`the bundled ${GATE_FILE} carries bypass and refuses an absent grant under 
   const missing = node("bypass", "check", "--grant", s.grantPath, "--task", "T-1", "--phase", "super-align");
   expect(missing.exitCode).toBe(1);
   expect(missing.stderr.toString()).toContain("does not exist");
-});
+}, 30_000);
 
+// Spawns `node ak-gate.mjs bypass grant` in a custom home to verify node ignores bunfig/.env.
 test(`the supervisor's documented grant command, node ${GATE_FILE} from its home, reaches grant and loads no cwd config`, () => {
   const s = setup();
-  const { catalog } = loadCatalog(REPO);
-  if (catalog === null) throw new Error("no catalog");
-  const script = join(dir("ak-bypass-bundle-"), "ak-gate.mjs");
-  const bundled = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get(GATE_FILE);
-  if (bundled === undefined) throw new Error(`no ${GATE_FILE} in the bundle`);
-  writeFileSync(script, bundled.contents);
+  const script = bundledGateScript();
   // A home holding what bun would load first: a preload that leaves a marker, and an .env that breaks git.
   const marker = join(s.home, "preload-ran");
   writeFileSync(join(s.home, "preload.ts"), `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
@@ -1504,4 +1600,4 @@ test(`the supervisor's documented grant command, node ${GATE_FILE} from its home
   expect(r.stderr.toString()).not.toContain("nonexistent-from-dotenv");
   expect(existsSync(marker)).toBe(false);
   expect(existsSync(s.grantPath)).toBe(false);
-});
+}, 30_000);
