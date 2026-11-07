@@ -79,17 +79,21 @@ import {
   resolvePool,
 } from "./gate-lanes.ts";
 import { verificationValidator } from "./verification-schema.ts";
+import { loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { readPublishedProject } from "../kb/local-git.ts";
 import {
   asJsonObject,
   bindBehaviorPolicy,
   classifyRun,
   projectHashOf,
+  ticketProjectId,
   RUN_SCHEMA_VERSION,
   shadowReceipt,
   type BehaviorBinding,
   type BehaviorClass,
   type FrozenBehaviorCheck,
   type JsonObject,
+  type ProjectLookup,
 } from "./behavior-policy.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
@@ -491,10 +495,63 @@ export interface OpenArgs {
   project: string;
   ticket: string;
   binding?: string;
-  /** Authoritative project artifact for this feature's bound policy path. */
+  /**
+   * Optional corroboration of the KB/runner project record. It is not authority:
+   * a substitute file with a matching identity is refused.
+   */
   projectRecord?: string;
+  /** Operator registry path; defaults to `AK_KB_REGISTRY` / the account registry. */
+  registry?: string;
   /** Stamped on the run; pre-ticket phase records at the opening revision are imported into it. */
   policy?: Policy;
+}
+
+function callerProject(path: string): { ok: true; doc: JsonObject; hash: string } | { ok: false; reason: string } {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!asJsonObject(parsed)) return { ok: false, reason: `project record ${path} is not an object` };
+    return { ok: true, doc: parsed, hash: projectHashOf(parsed) };
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return { ok: false, reason: `cannot read project record ${path}: ${detail}` };
+  }
+}
+
+function resolveAuthoritativeProject(
+  worktree: string,
+  ticket: JsonObject,
+  registry: string,
+  bindingProjectId?: string,
+):
+  | { lookup: "unbound" }
+  | { lookup: "unavailable"; reason: string }
+  | { lookup: "resolved"; project: JsonObject; hash: string } {
+  const loaded = loadKbBinding(worktree);
+  if (loaded.binding === null) {
+    const unbound = loaded.issues.length === 0 || loaded.issues.every((issue) => issue.rule === "kb.unbound");
+    if (unbound) return { lookup: "unbound" };
+    const first = loaded.issues[0];
+    return {
+      lookup: "unavailable",
+      reason: first === undefined ? "the knowledgebase binding is unusable" : first.message,
+    };
+  }
+  const resolved = resolveKnowledgebase(worktree, registry);
+  if (resolved.resolved === null || resolved.state !== "available") {
+    return {
+      lookup: "unavailable",
+      reason: "the authoritative project record is unavailable; missing project cannot turn this run off",
+    };
+  }
+  const wanted = ticketProjectId(ticket) ?? bindingProjectId ?? resolved.resolved.binding.project;
+  const published = readPublishedProject(resolved.resolved, wanted);
+  if (published === undefined || !asJsonObject(published)) {
+    return {
+      lookup: "unavailable",
+      reason: "the authoritative project record is missing; missing project cannot turn this run off",
+    };
+  }
+  return { lookup: "resolved", project: published, hash: projectHashOf(published) };
 }
 
 /**
@@ -550,12 +607,15 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const id = (ticket as { id?: unknown } | null)?.id;
   if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
   let bound: { binding_run_id: string; binding_evidence_location: string } | undefined;
+  let bindingProjectId: string | undefined;
   if (a.binding !== undefined) {
     const binding = readObject(a.binding);
     const location = object(binding?.evidence)?.location;
     if (binding?.schema !== "firstmate-binding" || !nonempty(binding.run_id) || !nonempty(location))
       return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
     bound = { binding_run_id: binding.run_id, binding_evidence_location: location };
+    const namedProject = object(binding.project)?.id;
+    if (nonempty(namedProject)) bindingProjectId = namedProject;
   }
 
   const openedAt = new Date().toISOString();
@@ -584,27 +644,31 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     ...bound,
   };
   if (a.policy !== undefined) run.policy = a.policy;
+  if (!asJsonObject(ticket)) return { ok: false, reason: `ticket ${a.ticket} is not an object` };
+  let callerHash: string | undefined;
+  if (a.projectRecord !== undefined) {
+    const caller = callerProject(a.projectRecord);
+    if (!caller.ok) return { ok: false, reason: caller.reason };
+    callerHash = caller.hash;
+  }
+  const authoritative = resolveAuthoritativeProject(a.project, ticket, a.registry ?? registryPath(), bindingProjectId);
+  let lookup: ProjectLookup = "unbound";
   let projectDoc: JsonObject | undefined;
   let projectHash: string | undefined;
-  if (a.projectRecord !== undefined) {
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(a.projectRecord, "utf8"));
-      if (!asJsonObject(parsed)) return { ok: false, reason: `project record ${a.projectRecord} is not an object` };
-      projectDoc = parsed;
-      projectHash = projectHashOf(parsed);
-    } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
-      return { ok: false, reason: `cannot read project record ${a.projectRecord}: ${detail}` };
-    }
+  if (authoritative.lookup === "unavailable") return { ok: false, reason: authoritative.reason };
+  if (authoritative.lookup === "resolved") {
+    lookup = "resolved";
+    projectDoc = authoritative.project;
+    projectHash = authoritative.hash;
   }
-  if (!asJsonObject(ticket)) return { ok: false, reason: `ticket ${a.ticket} is not an object` };
   const boundPolicy = bindBehaviorPolicy({
     runId,
     ticket,
     ticketHash,
     project: projectDoc,
     projectHash,
-    projectRecordRequested: a.projectRecord !== undefined,
+    lookup,
+    callerProjectHash: callerHash,
     capturedAt: openedAt,
   });
   if (!boundPolicy.ok) return { ok: false, reason: boundPolicy.reason };
@@ -785,7 +849,13 @@ export function recordGate(
       }
       storeArtifact(a.dir, a.run, artifactBytes);
     }
-    refs.push({ id: receipt.id, schema: "verification", hash: storeArtifact(a.dir, a.run, bytes) });
+    const storedHash = storeArtifact(a.dir, a.run, bytes);
+    const retainOnly = asJsonObject(receipt) && shadowReceipt(receipt) && receipt.status !== "failed";
+    if (retainOnly) {
+      skipped.push(`receipt ${receipt.id} is a shadow behavior artifact; retained and not gate evidence`);
+      continue;
+    }
+    refs.push({ id: receipt.id, schema: "verification", hash: storedHash });
   }
 
   const strengthenedVerify = a.gate === "verify" && (refs.length > 0 || readRunRecord(a.dir, a.run) !== undefined);
@@ -1097,37 +1167,25 @@ function evaluateEvidence(
       reasons: [{ code: "unavailable", detail: `run ${a.run} has no task-bound run record` }],
       refs: [],
     };
+  const ticketPath = artifactPath(a.dir, a.run, run.ticket.hash);
+  if (ticketPath === undefined || !existsSync(ticketPath))
+    return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is absent from the run store`);
+  const ticketBytes = readFileSync(ticketPath);
+  if (sha256(ticketBytes) !== run.ticket.hash)
+    return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} does not match ${run.ticket.hash}`);
+  let parsedTicket: unknown;
+  try {
+    parsedTicket = JSON.parse(new TextDecoder().decode(ticketBytes));
+  } catch {
+    return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is malformed`);
+  }
+  if (!asJsonObject(parsedTicket)) return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is malformed`);
+  const ticket = parsedTicket;
   const missingView: BehaviorClass = { kind: "incomplete", reason: `run ${a.run} is not a JSON object` };
-  const classified = asJsonObject(run) ? classifyRun(run, a.run) : missingView;
+  const classified = asJsonObject(run) ? classifyRun(run, a.run, ticket) : missingView;
   if (classified.kind === "incomplete") {
     const code = classified.reason.includes("behavior snapshot is for run") ? "wrong-run" : "behavior-policy";
     return evidenceUnavailable(code, classified.reason);
-  }
-  const ticketPath = artifactPath(a.dir, a.run, run.ticket.hash);
-  if (ticketPath === undefined || !existsSync(ticketPath)) {
-    return {
-      outcome: "unavailable",
-      reasons: [{ code: "unavailable", detail: `ticket ${run.ticket.id} is absent from the run store` }],
-      refs: [],
-    };
-  }
-  const ticketBytes = readFileSync(ticketPath);
-  if (sha256(ticketBytes) !== run.ticket.hash) {
-    return {
-      outcome: "unavailable",
-      reasons: [{ code: "unavailable", detail: `ticket ${run.ticket.id} does not match ${run.ticket.hash}` }],
-      refs: [],
-    };
-  }
-  let ticket: Record<string, unknown>;
-  try {
-    ticket = JSON.parse(new TextDecoder().decode(ticketBytes)) as Record<string, unknown>;
-  } catch {
-    return {
-      outcome: "unavailable",
-      reasons: [{ code: "unavailable", detail: `ticket ${run.ticket.id} is malformed` }],
-      refs: [],
-    };
   }
   const criterionRecords = (Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : []).flatMap(
     (value) => {
@@ -1234,10 +1292,6 @@ function evaluateEvidence(
         detail: `receipt ${ref.id} is a design-review artifact, not a verifier receipt`,
         evidence: ref.id,
       });
-      continue;
-    }
-    if (asJsonObject(receipt) && shadowReceipt(receipt)) {
-      notes.push(`note: receipt ${ref.id} is a shadow behavior artifact; it is retained and is not gate evidence`);
       continue;
     }
     if (receipt.schema_version !== 1) {
@@ -1379,6 +1433,10 @@ function evaluateEvidence(
       });
     }
     const valid = reasons.length === before;
+    if (asJsonObject(receipt) && shadowReceipt(receipt) && receipt.status !== "failed") {
+      notes.push(`note: receipt ${ref.id} is a shadow behavior artifact; it is retained and is not gate evidence`);
+      continue;
+    }
     if (valid) validReceipts.push({ ref, receipt, required, check });
   }
   const superseded = new Set(

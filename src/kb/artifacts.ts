@@ -2,6 +2,9 @@ import Ajv2020 from "ajv/dist/2020.js";
 import type { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
+import { asJsonObject } from "../lifecycle/behavior-policy.ts";
+import { behaviorContractIntentProblems } from "../validation/behavior-contract-intent.ts";
+
 import behaviorContractSchema from "../../schemas/behavior-contract.schema.json" with { type: "json" };
 import charterSchema from "../../schemas/charter.schema.json" with { type: "json" };
 import coldReadSchema from "../../schemas/cold-read.schema.json" with { type: "json" };
@@ -138,6 +141,11 @@ export function checkRunArtifact(text: string): ArtifactCheck {
   }
   if (!validate(value)) {
     return { artifact: null, problem: `does not match schemas/${value.schema}.schema.json: ${describe(validate)}` };
+  }
+  if (value.schema === "behavior-contract") {
+    if (!asJsonObject(value)) return { artifact: null, problem: "behavior-contract is not an object" };
+    const problems = behaviorContractIntentProblems(value);
+    if (problems.length > 0) return { artifact: null, problem: problems.join("; ") };
   }
   return { artifact: value, problem: "" };
 }

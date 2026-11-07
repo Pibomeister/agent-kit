@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import { asJsonObject, type Json, type JsonObject } from "../lifecycle/behavior-policy.ts";
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
@@ -797,4 +798,31 @@ export function publishRunArtifact(
     return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
   }
   return commitRecord(kb, store, identity);
+}
+
+function isText(value: Json | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function projectIdentityId(artifact: JsonObject): string | undefined {
+  if (!asJsonObject(artifact.identity)) return undefined;
+  const id = artifact.identity.id;
+  return isText(id) && id !== "" ? id : undefined;
+}
+
+/**
+ * The latest committed project record whose identity.id is `projectId`.
+ * Reads the artifacts file from HEAD, the same store publishRunArtifact writes.
+ */
+export function readPublishedProject(kb: ResolvedKb, projectId: string): JsonObject | undefined {
+  const content = committed(kb.root, artifactsPath(kb.binding.project));
+  if (content.status !== "found") return undefined;
+  let found: JsonObject | undefined;
+  for (const line of content.text.split("\n")) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.schema !== "project") continue;
+    if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId) continue;
+    found = stored.artifact;
+  }
+  return found;
 }

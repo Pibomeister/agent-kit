@@ -644,7 +644,11 @@ describe("runner guards", () => {
     if (approval === undefined) throw new Error("toy charter approval missing");
     approval.artifact_hash = f.charter.immutability.hash;
     writeFileSync(f.path, JSON.stringify(f.charter));
-    expect(f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f)).run_state).toBe("created");
+    const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    expect(started.run_state).toBe("created");
+    expect(started.behavior?.run_id).toBe("toy-run");
+    expect(started.behavior?.mode).toBe("off");
+    expect(f.runner.status("toy-run").behavior?.binding_hash).toBe(started.behavior?.binding_hash);
   });
 
   test("a charter cannot request unattended decisions without event-delivery authority", () => {

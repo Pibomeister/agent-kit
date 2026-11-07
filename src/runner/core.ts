@@ -9,6 +9,16 @@ import { artifactHash, sha256Hex } from "../util/hash.ts";
 import { unknownSelector } from "../util/suggest.ts";
 import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
+import { loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { readPublishedProject } from "../kb/local-git.ts";
+import {
+  asJson,
+  asJsonObject,
+  bindBehaviorPolicy,
+  parseBehaviorBinding,
+  projectHashOf,
+  type JsonObject,
+} from "../lifecycle/behavior-policy.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
 import { sharesLineage } from "./lineage.ts";
@@ -288,6 +298,7 @@ export class Runner {
           required: ["by", "rationale", "at"],
           properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } },
         },
+        behavior: { type: "object" },
       },
     });
     const policySchema = schemas.ajv.compile<InvocationPolicy>({
@@ -364,6 +375,11 @@ export class Runner {
     const runValue: unknown = JSON.parse(readFileSync(this.path(id), "utf8"));
     if (!this.runSchema(runValue)) throw new Error(`runner state is invalid: ${JSON.stringify(this.runSchema.errors)}`);
     const run = runValue;
+    if (run.behavior !== undefined) {
+      const raw: unknown = run.behavior;
+      if (!asJson(raw) || parseBehaviorBinding(raw) === undefined)
+        throw new Error("behavior policy snapshot is incomplete");
+    }
     if (run.run_state === "cancelled") return run;
     const charterValue: unknown = JSON.parse(readFileSync(run.charter_path, "utf8"));
     if (!this.validateCharter(charterValue)) throw new Error("charter no longer validates");
@@ -637,6 +653,7 @@ export class Runner {
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
     }
+    const createdAt = new Date().toISOString();
     const run: Run = {
       id,
       charter_path: source,
@@ -647,7 +664,7 @@ export class Runner {
       excluded_actors: [...new Set([implementer, ...excludedActors])],
       revision,
       diff_hash: observed?.diff_hash ?? `sha256:${sha256Hex("")}`,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
       run_state: "created",
       next_permitted_action: "align.run",
       cards: {},
@@ -659,9 +676,42 @@ export class Runner {
       delegates: {},
       procedure: this.governingProcedure(),
       open_escalation: null,
+      behavior: this.bindBehavior(id, charter, hash, createdAt),
     };
     this.save(run);
     return run;
+  }
+
+  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string) {
+    const ticket: JsonObject = { schema: "ticket", id, acceptance_criteria: [], verification: [] };
+    const loaded = loadKbBinding(this.workerRoot);
+    let lookup: "unbound" | "resolved" | "unavailable" = "unbound";
+    let project: JsonObject | undefined;
+    let projectHash: string | undefined;
+    if (loaded.binding !== null) {
+      const resolved = resolveKnowledgebase(this.workerRoot, registryPath());
+      if (resolved.resolved === null || resolved.state !== "available") lookup = "unavailable";
+      else {
+        const published = readPublishedProject(resolved.resolved, charter.project.id);
+        if (published === undefined || !asJsonObject(published)) lookup = "unavailable";
+        else {
+          lookup = "resolved";
+          project = published;
+          projectHash = projectHashOf(published);
+        }
+      }
+    }
+    const bound = bindBehaviorPolicy({
+      runId: id,
+      ticket,
+      ticketHash: charterHash,
+      project,
+      projectHash,
+      lookup,
+      capturedAt: createdAt,
+    });
+    if (!bound.ok) throw new Error(bound.reason);
+    return bound.binding;
   }
 
   status(id: string): Run {
