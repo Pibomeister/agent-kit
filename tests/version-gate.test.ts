@@ -2,8 +2,51 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { spawnSync } from "node:child_process";
 import { appendFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import Ajv from "ajv";
 import { parse as parseYaml } from "yaml";
 import { processScratch } from "./helpers/process-tmp.ts";
+
+type WorkflowStep = { uses?: string; with?: { ref?: string }; run?: string; if?: string };
+type WorkflowJob = { if: string; steps: WorkflowStep[] };
+type PublishWorkflow = {
+  on: { push: { branches: string[]; tags: string[] } };
+  jobs: { build: WorkflowJob; publish: WorkflowJob };
+};
+const workflowStep = {
+  type: "object",
+  properties: {
+    uses: { type: "string" },
+    with: { type: "object", properties: { ref: { type: "string" } } },
+    run: { type: "string" },
+    if: { type: "string" },
+  },
+};
+const workflowJob = {
+  type: "object",
+  required: ["if", "steps"],
+  properties: { if: { type: "string" }, steps: { type: "array", items: workflowStep } },
+};
+const isWorkflow = new Ajv({ strict: false }).compile<PublishWorkflow>({
+  type: "object",
+  required: ["on", "jobs"],
+  properties: {
+    on: {
+      type: "object",
+      required: ["push"],
+      properties: {
+        push: {
+          type: "object",
+          required: ["branches", "tags"],
+          properties: {
+            branches: { type: "array", items: { type: "string" } },
+            tags: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+    },
+    jobs: { type: "object", required: ["build", "publish"], properties: { build: workflowJob, publish: workflowJob } },
+  },
+});
 
 const script = join(import.meta.dir, "../tools/publish/version-gate.sh");
 const roots: string[] = [];
@@ -247,11 +290,11 @@ describe("bundle version gate", () => {
 });
 
 describe("publish-bundle workflow release recovery", () => {
-  type Step = { uses?: string; with?: Record<string, unknown>; run?: string; if?: string };
-  type Job = { if?: string; steps: Step[] };
-  const workflow = parseYaml(
+  const document: unknown = parseYaml(
     readFileSync(join(import.meta.dir, "../.github/workflows/publish-bundle.yml"), "utf8"),
-  ) as { on: { push: { branches: string[]; tags: string[] } }; jobs: Record<string, Job> };
+  );
+  if (!isWorkflow(document)) throw new Error("publish-bundle.yml does not match the workflow shape");
+  const workflow = document;
 
   test("a v* tag push starts the workflow alongside the push to main", () => {
     expect(workflow.on.push.branches).toEqual(["main"]);
@@ -259,7 +302,7 @@ describe("publish-bundle workflow release recovery", () => {
   });
 
   test("both jobs run at main or a v* tag and check out the triggering ref, not the tip of main", () => {
-    for (const name of ["build", "publish"]) {
+    for (const name of ["build", "publish"] as const) {
       const job = workflow.jobs[name];
       if (job === undefined) throw new Error(`missing job ${name}`);
       expect(job.if).toBe("github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')");
@@ -270,10 +313,10 @@ describe("publish-bundle workflow release recovery", () => {
 
   test("a tag run refuses a commit that is not on main, before the gate, and passes one that is", () => {
     const steps = workflow.jobs.build?.steps ?? [];
-    const gate = steps.findIndex((step) => step.run === "tools/publish/version-gate.sh dist --require-release-tag");
+    const gateStep = steps.findIndex((step) => step.run === "tools/publish/version-gate.sh dist --require-release-tag");
     const ancestry = steps.findIndex((step) => step.if === "startsWith(github.ref, 'refs/tags/v')");
     expect(ancestry).toBeGreaterThanOrEqual(0);
-    expect(gate).toBeGreaterThan(ancestry);
+    expect(gateStep).toBeGreaterThan(ancestry);
     const check = steps[ancestry]?.run ?? "";
     const work = gateWork(null, ["0.1.0", "new"]);
     git(work, "add", "-A");
