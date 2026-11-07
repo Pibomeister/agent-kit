@@ -217,12 +217,25 @@ function triage(args: LearnArgs, ctx: LearnContext): number {
     appendRun(ledger, {
       job: "triage",
       created: result.created.map((record) => record.id),
-      duplicates: result.duplicates.map((dup) => dup.lessonId),
+      duplicates: result.duplicates.map((dup) => ({
+        lessonId: dup.lessonId,
+        check: dup.failure.check ?? "",
+        issue: dup.failure.issue ?? "",
+      })),
       issue_candidates: result.issueCandidates.map((candidate) => candidate.lessonId),
     });
     if (result.created.length > 0) ledger.commit(`triage: +${result.created.length} lessons`);
-    for (const record of result.created) ctx.io.out(`created ${record.id}: ${record.statement}`);
-    for (const dup of result.duplicates) ctx.io.out(`duplicate of ${dup.lessonId}: ${dup.failure.lesson}`);
+    for (const record of result.created)
+      ctx.io.out(
+        `created ${record.id}: ${record.statement}` +
+          (record.supersedes.length > 0 ? ` (supersedes ${record.supersedes.join(", ")})` : ""),
+      );
+    for (const dup of result.duplicates)
+      ctx.io.out(
+        `duplicate of ${dup.lessonId}: ${dup.failure.lesson}` +
+          ((dup.failure.check ?? "") === "" ? "" : `; check ${dup.failure.check}`) +
+          ((dup.failure.issue ?? "") === "" ? "" : `; issue ${dup.failure.issue}`),
+      );
     ctx.io.out(
       `triage: ${result.created.length} created, ${result.duplicates.length} duplicate(s), ` +
         `${result.issueCandidates.length} issue candidate(s) recorded in raw/triage-issues.jsonl; no issue was filed`,

@@ -61,7 +61,10 @@ session-start block, and running `ak doctor` before dispatch shows which of
 them bite. After a run, `ak learn memory triage --file <failures.json>`
 dedupes stated failures against those lesson pages and within the file,
 appends new lessons as the next pages (as `hypothesis`; consolidation
-confirms them from evidence), and records failures with no issue link as
+confirms them from evidence), keeps a duplicate's check and issue link in
+its run record, appends a duplicate that names a check its prose-only lesson
+lacks as the next page superseding that lesson (the existing page is never
+rewritten), and records failures with no issue link as
 issue candidates in the ledger's `raw/triage-issues.jsonl`. It makes no
 judge call and files no issue. `ak update` refreshes each installed host and reports old and new
 versions; it is safe to rerun. If the curl-installed

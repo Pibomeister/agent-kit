@@ -74,16 +74,17 @@ export interface LessonRecord {
   failure: string;
   check: string;
   issue: string;
+  /** Lesson ids this page replaces; a lesson a live page lists here is history. */
+  supersedes: string[];
 }
 
 function text(value: string | number | string[] | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-/** Lesson pages under `dir/lessons`, or directly in `dir` when it holds the pages itself. In file-name order. */
+/** Lesson pages under `dir/lessons`, in file-name order. */
 export function readLessons(dir: string): LessonRecord[] {
-  const nested = join(dir, "lessons");
-  const pagesDir = existsSync(nested) ? nested : dir;
+  const pagesDir = join(dir, "lessons");
   if (!existsSync(pagesDir)) return [];
   return readdirSync(pagesDir)
     .filter((name) => /^ls-\d{1,6}\.md$/.test(name))
@@ -98,6 +99,7 @@ export function readLessons(dir: string): LessonRecord[] {
         failure: text(meta.failure),
         check: text(meta.check),
         issue: text(meta.issue),
+        supersedes: Array.isArray(meta.supersedes) ? meta.supersedes : [],
       };
     });
 }
@@ -113,13 +115,19 @@ export interface LessonCoverage {
 
 const HISTORY_STATUSES = new Set(["superseded", "retired"]);
 
+/** Live lessons: not superseded or retired by status, and not listed in a live page's `supersedes`. */
+function liveLessons(lessons: readonly LessonRecord[]): LessonRecord[] {
+  const current = lessons.filter((lesson) => !HISTORY_STATUSES.has(lesson.status));
+  const replaced = new Set(current.flatMap((lesson) => lesson.supersedes));
+  return current.filter((lesson) => !replaced.has(lesson.id));
+}
+
 /**
  * Coverage for every live lesson. Superseded and retired lessons are
  * history: they are neither enforced nor prose-only, so they are omitted.
  */
 export function classifyLessons(lessons: readonly LessonRecord[]): LessonCoverage[] {
-  return lessons.flatMap((lesson): LessonCoverage[] => {
-    if (HISTORY_STATUSES.has(lesson.status)) return [];
+  return liveLessons(lessons).flatMap((lesson): LessonCoverage[] => {
     if (lesson.check === "")
       return [
         {
@@ -259,8 +267,11 @@ export function nextLessonId(lessons: readonly LessonRecord[]): string {
 /**
  * Deduped triage of run failures into lesson records. A failure whose
  * normalized lesson statement matches a live lesson, or an earlier failure
- * in the same batch, is a duplicate of that lesson — reported, not
- * rewritten; the failure text is detail, not identity. A lesson already
+ * in the same batch, is a duplicate of that lesson — reported with its
+ * check and issue, never rewritten; the failure text is detail, not
+ * identity. A duplicate that names a check its prose-only lesson lacks is
+ * appended as the next page, superseding that lesson by reference, so the
+ * check lands without touching the existing page. A lesson already
  * carrying an issue link, or already named in `recordedCandidates` (the ids
  * an earlier triage queued), is not queued again. New lessons start as
  * `hypothesis`: consolidation confirms them from evidence later, and
@@ -275,10 +286,7 @@ export function triageFailures(
   const duplicates: TriageResult["duplicates"] = [];
   const issueCandidates: TriageResult["issueCandidates"] = [];
   const byKey = new Map<string, LessonRecord>();
-  for (const lesson of existing) {
-    if (HISTORY_STATUSES.has(lesson.status)) continue;
-    byKey.set(lessonKey(lesson.statement), lesson);
-  }
+  for (const lesson of liveLessons(existing)) byKey.set(lessonKey(lesson.statement), lesson);
   const live: LessonRecord[] = [...existing];
   const candidateIds = new Set(recordedCandidates);
   const candidate = (failure: FailureRecord, lesson: LessonRecord) => {
@@ -289,19 +297,24 @@ export function triageFailures(
   for (const failure of failures) {
     const key = lessonKey(failure.lesson);
     const known = byKey.get(key);
+    const check = failure.check ?? "";
+    const issue = failure.issue ?? "";
     if (known !== undefined) {
       duplicates.push({ failure, lessonId: known.id });
-      candidate(failure, known);
-      continue;
+      if (check === "" || check === known.check || CHECK_BY_ID.has(known.check)) {
+        candidate(failure, known);
+        continue;
+      }
     }
     const record: LessonRecord = {
       id: nextLessonId(live),
-      statement: failure.lesson,
+      statement: known?.statement ?? failure.lesson,
       status: "hypothesis",
-      scope: failure.scope ?? "repo",
+      scope: known?.scope ?? failure.scope ?? "repo",
       failure: failure.failure,
-      check: failure.check ?? "",
-      issue: failure.issue ?? "",
+      check,
+      issue: issue !== "" ? issue : (known?.issue ?? ""),
+      supersedes: known === undefined ? [] : [known.id],
     };
     created.push(record);
     live.push(record);
@@ -320,7 +333,7 @@ export function renderLesson(record: LessonRecord, today: string): string {
     scope: record.scope,
     confidence: 0.5,
     evidence: [],
-    supersedes: [],
+    supersedes: record.supersedes,
     tags: [],
     count: 1,
     first_seen: today,

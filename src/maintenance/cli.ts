@@ -522,7 +522,7 @@ function print(items: Finding[], json = false): number {
 /**
  * Lessons coverage for `ak doctor`: the canonical learnings file is the
  * current project's memory ledger, unless `--lessons <dir>` names another
- * ledger (or a folder holding the lesson pages directly). Reading it is
+ * ledger, whose pages sit under its `lessons/`. Reading it is
  * what loads the lessons at a preflight; session start loads the confirmed
  * ones into the worker's context. A ledger that cannot be resolved is a
  * warning naming that, never silence.
