@@ -63,7 +63,7 @@ const USAGE = [
   "  ak firstmate <subcommand> …                stock Firstmate tools; patched binding commands deprecated",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
   "  ak kb check|read|publish|register …        reach the project's central knowledgebase (`ak kb help`)",
-  "  ak doctor                                  inspect the installed hosts and current project",
+  "  ak doctor [--lessons <dir>]                inspect the installed hosts, current project and lesson enforcement coverage",
   "  ak update                                  refresh installed ak plugins to the published version",
   "  ak learn <area> <verb> ...                 the opt-in learning runtime (`ak learn` for help)",
   "  ak guard hook <event> ...                  the opt-in guard runtime's host hook (`ak guard` for help)",

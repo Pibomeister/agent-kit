@@ -47,7 +47,26 @@ nonzero on FAIL. Where the project has review-isolation probe notes under `resea
 it warns, without a model call or network access, when an installed host's `--version` differs
 from the last probed version. A missing host, missing note, or project without those notes emits
 no extra finding and does not spawn `--version`. Use `ak doctor --json` for
-machine-readable findings. `ak update` refreshes each installed host and reports old and new
+machine-readable findings. `ak doctor` also reads the project's canonical
+learnings file — the memory ledger's lesson pages, or `--lessons <dir>` for
+another ledger — and reports, per live lesson, whether it is enforced or
+prose-only (superseded and conflicting lessons are history and are skipped): a lesson is enforced only when its `check` field names a check
+`ak doctor` itself runs (tracker token, tracker binding, plugin enabled and
+the rest of the registry in `src/learn/lessons.ts`), and an enforced lesson
+whose check currently FAILs fails that lesson's finding too. Prose-only
+lessons warn; they never fail the run on their own. That report is the AFK
+preflight surface for lessons: captains and workers already get the
+confirmed lessons at session start through the learning runtime's
+session-start block, and running `ak doctor` before dispatch shows which of
+them bite. After a run, `ak learn memory triage --file <failures.json>`
+dedupes stated failures against the live lesson pages and within the file
+(restating a history lesson makes a new one),
+appends new lessons as the next pages (as `hypothesis`; consolidation
+confirms them from evidence), keeps a duplicate's check and issue link in
+its run record and printed line without touching the lesson page, and
+records failures with no issue link as
+issue candidates in the ledger's `raw/triage-issues.jsonl`. It makes no
+judge call and files no issue. `ak update` refreshes each installed host and reports old and new
 versions; it is safe to rerun. If the curl-installed
 `bin/ak` differs from the published command, update warns and gives the download remedy. Add
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
