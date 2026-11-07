@@ -105,7 +105,8 @@ describe("the tree typechecks, and the typechecker is doing work", () => {
     const run = tsc(["--noEmit"]);
     expect(`${run.stdout}${run.stderr}`.trim()).toBe("");
     expect(run.status).toBe(0);
-  });
+    // Runs tsc over the whole tree in a subprocess; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("every file in src/ and tests/ is in the checked set", () => {
     // The population check. A clean typecheck over zero files is byte-identical
@@ -128,7 +129,8 @@ describe("the tree typechecks, and the typechecker is doing work", () => {
     expect(owned.filter((file) => file.startsWith("tests/fixtures"))).toEqual([]);
     expect(owned.some((file) => file.startsWith("src/"))).toBe(true);
     expect(owned.some((file) => file.startsWith("tests/"))).toBe(true);
-  });
+    // Runs tsc --listFiles over the whole tree in a subprocess; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("the population check survives being reached through a symlink", () => {
     // The regression control for the paragraph above, and it is a control

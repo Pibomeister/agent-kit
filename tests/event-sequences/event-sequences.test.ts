@@ -197,31 +197,36 @@ describe("review/runner event sequences", () => {
     expect(Object.keys(broken.runner.status(broken.runId).effects).length).toBeGreaterThan(0);
   });
 
-  test(`generated sequences hold plan §7 properties (${NUM_RUNS} runs)`, () => {
-    const started = Date.now();
-    const details = fcCheck(
-      property(sequenceArb, (events) => suiteFailures(events, world).length === 0),
-      {
-        numRuns: runs,
-        seed,
-        path: pathEnv === undefined || pathEnv === "" ? undefined : pathEnv,
-        endOnFailure: true,
-      },
-    );
-    const elapsedMs = Date.now() - started;
-    console.log(
-      `event-sequence seed=${details.seed} numRuns=${details.numRuns} elapsedMs=${elapsedMs} budgetMs=${EVENT_SEQ_BUDGET_MS} failed=${details.failed}`,
-    );
-    if (details.failed) {
-      const events = details.counterexample?.[0];
-      const listed =
-        events === undefined
-          ? ""
-          : `\n${formatEvents(events)}\n${JSON.stringify(events)}\n${failuresOf(events, world).join("\n")}`;
-      throw new Error(`${defaultReportMessage(details) ?? "property failed"}${listed}`);
-    }
-    expect(details.numRuns).toBe(runs);
-  });
+  // Explicit per-test timeout keeps the 300s property budget when run.sh passes --timeout=30000.
+  test(
+    `generated sequences hold plan §7 properties (${NUM_RUNS} runs)`,
+    () => {
+      const started = Date.now();
+      const details = fcCheck(
+        property(sequenceArb, (events) => suiteFailures(events, world).length === 0),
+        {
+          numRuns: runs,
+          seed,
+          path: pathEnv === undefined || pathEnv === "" ? undefined : pathEnv,
+          endOnFailure: true,
+        },
+      );
+      const elapsedMs = Date.now() - started;
+      console.log(
+        `event-sequence seed=${details.seed} numRuns=${details.numRuns} elapsedMs=${elapsedMs} budgetMs=${EVENT_SEQ_BUDGET_MS} failed=${details.failed}`,
+      );
+      if (details.failed) {
+        const events = details.counterexample?.[0];
+        const listed =
+          events === undefined
+            ? ""
+            : `\n${formatEvents(events)}\n${JSON.stringify(events)}\n${failuresOf(events, world).join("\n")}`;
+        throw new Error(`${defaultReportMessage(details) ?? "property failed"}${listed}`);
+      }
+      expect(details.numRuns).toBe(runs);
+    },
+    EVENT_SEQ_BUDGET_MS,
+  );
 
   test("replay rejects a non-finite seed", () => {
     const result = Bun.spawnSync(["bun", "tests/event-sequences/replay.ts", "--seed", "nope"], { cwd: joinRoot() });
