@@ -61,8 +61,13 @@ function sourceIsAccepted(kind: string, artifact: IntentSourceArtifact): boolean
   }
   if (kind === "requirements") return artifact.schema === "behavior-contract" && status === "active";
   if (kind === "user-instruction") {
-    if (status === undefined) return true;
-    return status !== "draft" && status !== "proposed" && status !== "open" && status !== "unresolved";
+    if (artifact.schema === "ticket") return status === "approved";
+    if (artifact.schema === "decision") {
+      if (status !== "ruled") return false;
+      const ruling = artifact.doc.ruling;
+      return asJsonObject(ruling) && ruling.outcome === "decided";
+    }
+    return false;
   }
   return false;
 }

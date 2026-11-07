@@ -121,6 +121,31 @@ describe("behavior-contract schema", () => {
     expect(validate(withRequirement(0, { intent: "verified" }))).toBe(false);
   });
 
+  test("user-instruction cannot launder a verification receipt into accepted intent", () => {
+    const verification = asObject(example("verification.example.json"));
+    const citing = withRequirement(0, {
+      sources: [{ kind: "user-instruction", ref: "example-verification-1", hash: artifactHash(verification) }],
+    });
+    expect(issuesOf(citing, [verification]).some((line) => line.includes("is not an accepted source"))).toBe(true);
+    expect(
+      checkRunArtifact(JSON.stringify(citing), (id) =>
+        id === "example-verification-1" ? { schema: "verification", id, doc: verification } : undefined,
+      ).problem,
+    ).toContain("is not an accepted source");
+  });
+
+  test("user-instruction accepted intent resolves an approved ticket", () => {
+    const citing = withRequirement(0, {
+      sources: [{ kind: "user-instruction", ref: "example-ticket-1", hash: artifactHash(ticket) }],
+    });
+    expect(issuesOf(citing)).toEqual([]);
+    expect(
+      checkRunArtifact(JSON.stringify(citing), (id) =>
+        id === "example-ticket-1" ? { schema: "ticket", id, doc: asObject(ticket) } : undefined,
+      ).problem,
+    ).toBe("");
+  });
+
   test("accepted intent needs a source of accepted kind", () => {
     const mutated = withRequirement(0, { sources: [{ kind: "observation", ref: "src/loader.ts" }] });
     expect(
