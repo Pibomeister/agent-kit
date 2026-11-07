@@ -1,0 +1,129 @@
+{
+  "schema": "behavior-contract",
+  "schema_version": 1,
+  "id": "example-behavior-contract-1",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "implementer",
+    "skill": "super-build"
+  },
+  "inputs": [
+    {
+      "id": "example-ticket-1",
+      "schema": "ticket",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "0000000000000000000000000000000000000000"
+  },
+  "created_at": "2026-09-19T09:00:00Z",
+  "status": "active",
+  "identity": {
+    "subsystem": "artifact loader",
+    "surfaces": ["none"],
+    "exclusions": ["Presentation-only copy in the README."]
+  },
+  "requirements": [
+    {
+      "id": "load-every-configured-directory",
+      "statement": "The loader returns a document from every configured directory, not only the first.",
+      "intent": "accepted",
+      "acceptance_criteria": ["AC-1"],
+      "sources": [
+        {
+          "kind": "ticket",
+          "ref": "example-ticket-1",
+          "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "id": "retry-twice",
+      "statement": "The loader retries a missing directory twice.",
+      "intent": "proposed",
+      "sources": [
+        {
+          "kind": "ticket",
+          "ref": "example-ticket-1"
+        }
+      ]
+    }
+  ],
+  "observed_behavior": [
+    {
+      "id": "skips-missing-directory",
+      "statement": "The current loader skips a missing directory without retrying."
+    }
+  ],
+  "structure": {
+    "states": [
+      { "id": "idle", "label": "Idle" },
+      { "id": "reading", "label": "Reading a configured directory" },
+      { "id": "done", "label": "All configured directories considered" }
+    ],
+    "events": [
+      { "id": "start", "label": "Start load" },
+      { "id": "directory-present", "label": "Directory exists" },
+      { "id": "directory-missing", "label": "Directory is absent" }
+    ],
+    "transitions": [
+      {
+        "id": "begin",
+        "from": "idle",
+        "event": "start",
+        "to": "reading"
+      },
+      {
+        "id": "advance-present",
+        "from": "reading",
+        "event": "directory-present",
+        "to": "reading",
+        "effect": "Include the documents in that directory."
+      },
+      {
+        "id": "skip-missing",
+        "from": "reading",
+        "event": "directory-missing",
+        "to": "reading",
+        "effect": "Skip the directory without failing the run."
+      }
+    ]
+  },
+  "properties": [
+    {
+      "id": "every-configured-directory-is-read",
+      "statement": "A document in a non-first configured directory is returned.",
+      "kind": "safety",
+      "requirement_ids": ["load-every-configured-directory"],
+      "acceptance_criteria": ["AC-1"]
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "configured-directories-are-the-input",
+      "statement": "The set of directories is the configured list, not a discovered filesystem walk.",
+      "basis": "assumed",
+      "affects": ["every-configured-directory-is-read"]
+    }
+  ],
+  "correspondence": {
+    "mappings": [
+      {
+        "id": "loader-entry",
+        "layer": "implementation",
+        "entry": "src/loader/artifacts.ts",
+        "property_ids": ["every-configured-directory-is-read"]
+      }
+    ]
+  },
+  "limits": {
+    "omits": "This contract does not model concurrent mutation of the configured directory list during a load.",
+    "checks_establish": "Named implementation checks can show that a document outside the first directory is returned. They cannot show that every possible filesystem layout is handled."
+  }
+}

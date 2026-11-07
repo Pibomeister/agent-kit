@@ -2,6 +2,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import type { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
+import behaviorContractSchema from "../../schemas/behavior-contract.schema.json" with { type: "json" };
 import charterSchema from "../../schemas/charter.schema.json" with { type: "json" };
 import coldReadSchema from "../../schemas/cold-read.schema.json" with { type: "json" };
 import commonSchema from "../../schemas/common.schema.json" with { type: "json" };
@@ -41,6 +42,7 @@ export interface RunArtifact {
  * beside it; a test holds this list equal to that enum.
  */
 const ARTIFACT_SCHEMAS = {
+  "behavior-contract": behaviorContractSchema,
   charter: charterSchema,
   "cold-read": coldReadSchema,
   decision: decisionSchema,
@@ -69,7 +71,7 @@ type AjvInstance = InstanceType<typeof Ajv2020>;
 
 let compiled: AjvInstance | null = null;
 
-/** Built on first use: twenty schemas are not worth compiling for a `check`. */
+/** Built on first use: the artifact schemas are not worth compiling for a `check`. */
 function instance(): AjvInstance {
   if (compiled !== null) return compiled;
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });

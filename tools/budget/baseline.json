@@ -368,8 +368,8 @@
     },
     "bundle/claude-code:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24350,
-      "tokens": 6087
+      "bytes": 24379,
+      "tokens": 6095
     },
     "bundle/claude-code:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -1243,8 +1243,8 @@
     },
     "bundle/codex:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24350,
-      "tokens": 6087
+      "bytes": 24379,
+      "tokens": 6095
     },
     "bundle/codex:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -2118,8 +2118,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24350,
-      "tokens": 6087
+      "bytes": 24379,
+      "tokens": 6095
     },
     "bundle/cursor:.cursor/references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -2993,8 +2993,8 @@
     },
     "bundle/droid:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24350,
-      "tokens": 6087
+      "bytes": 24379,
+      "tokens": 6095
     },
     "bundle/droid:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -3868,8 +3868,8 @@
     },
     "bundle/grok:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24350,
-      "tokens": 6087
+      "bytes": 24379,
+      "tokens": 6095
     },
     "bundle/grok:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -4743,8 +4743,8 @@
     },
     "bundle/kimi:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24350,
-      "tokens": 6087
+      "bytes": 24379,
+      "tokens": 6095
     },
     "bundle/kimi:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",

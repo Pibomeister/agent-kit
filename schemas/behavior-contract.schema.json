@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/behavior-contract.schema.json",
+  "title": "Behavior contract",
+  "description": "Intent-backed behavior for one selected subsystem. Requirements carry a stable property id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
+  "type": "object",
+  "required": ["identity", "requirements", "structure", "properties", "assumptions", "correspondence", "limits"],
+  "properties": {
+    "schema": { "const": "behavior-contract" },
+    "status": {
+      "description": "draft while the contract is being written; active once it is the selected contract for a run; superseded when a later contract replaces it.",
+      "enum": ["draft", "active", "superseded"]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subsystem", "surfaces", "exclusions"],
+      "properties": {
+        "subsystem": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "surfaces": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/surface" }
+        },
+        "exclusions": { "$ref": "common.schema.json#/$defs/string_list" },
+        "source_refs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+        }
+      }
+    },
+    "requirements": {
+      "description": "Required behavior grounded in accepted intent, plus proposed or unresolved items that must not be labelled accepted. An accepted item needs at least one accepted source.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/requirement" },
+      "x-validator-rule": "behavior-contract.accepted-intent-requires-accepted-source"
+    },
+    "observed_behavior": {
+      "description": "Implementation-derived notes. They explain what the code does. They cannot establish that the behavior is wanted and cannot discharge an accepted requirement.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "statement": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "code_refs": {
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/code_location" }
+          }
+        }
+      }
+    },
+    "structure": {
+      "description": "Flat states, events, guards, effects and transitions sufficient to understand the selected properties. Not a hierarchical or parallel chart.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["states", "events", "transitions"],
+      "properties": {
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/named_element" }
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/named_element" }
+        },
+        "transitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transition" }
+        }
+      }
+    },
+    "properties": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/property" },
+      "x-validator-rule": "behavior-contract.proposed-intent-cannot-discharge-accepted"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assumption" }
+    },
+    "correspondence": {
+      "description": "Versioned mappings to implementation entry points and declared model or test assets. A copied transition function is model evidence, not production behavior.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mappings"],
+      "properties": {
+        "mappings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mapping" }
+        },
+        "atomicity_notes": { "$ref": "common.schema.json#/$defs/string_list" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["omits", "checks_establish"],
+      "properties": {
+        "omits": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "checks_establish": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  },
+  "$defs": {
+    "named_element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "label": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "event", "to"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "from": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "event": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "to": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "guard": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "effect": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "intent_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": {
+          "enum": ["ticket", "requirements", "decision", "recorded-decision", "user-instruction"]
+        },
+        "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "hash": { "$ref": "common.schema.json#/$defs/hash" },
+        "note": { "type": "string" }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "intent"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "statement": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "intent": { "enum": ["accepted", "proposed", "unresolved"] },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
+        },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/intent_source" }
+        }
+      },
+      "if": { "properties": { "intent": { "const": "accepted" } } },
+      "then": {
+        "required": ["sources"],
+        "properties": {
+          "sources": { "minItems": 1 }
+        }
+      }
+    },
+    "property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "kind", "requirement_ids"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "statement": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "kind": { "enum": ["safety", "liveness"] },
+        "requirement_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
+        }
+      }
+    },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "basis", "affects"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "statement": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "basis": { "enum": ["enforced", "observed", "assumed"] },
+        "affects": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "layer", "entry"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "layer": { "enum": ["model", "implementation"] },
+        "entry": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "property_ids": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        },
+        "assets": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "atomicity": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [{ "$ref": "common.schema.json#/$defs/envelope" }]
+}
