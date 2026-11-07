@@ -5,10 +5,11 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
 
-import { artifactHash, sha256Hex } from "../util/hash.ts";
+import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { unknownSelector } from "../util/suggest.ts";
 import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
+import { persistFrozenRun } from "../lifecycle/persist-run.ts";
 import { loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
 import { readPublishedProject } from "../kb/local-git.ts";
 import {
@@ -17,6 +18,8 @@ import {
   bindBehaviorPolicy,
   parseBehaviorBinding,
   projectHashOf,
+  RUN_SCHEMA_VERSION,
+  type Json,
   type JsonObject,
 } from "../lifecycle/behavior-policy.ts";
 import { compileSchemas } from "../validation/schemas.ts";
@@ -84,6 +87,10 @@ const ID = /^[a-z0-9][a-z0-9-]*$/;
 const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
+
+function isJsonText(value: Json | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
 
 function isDesignReportBytes(bytes: Buffer): boolean {
   try {
@@ -377,8 +384,9 @@ export class Runner {
     const run = runValue;
     if (run.behavior !== undefined) {
       const raw: unknown = run.behavior;
-      if (!asJson(raw) || parseBehaviorBinding(raw) === undefined)
-        throw new Error("behavior policy snapshot is incomplete");
+      const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+      if (binding === undefined) throw new Error("behavior policy snapshot is incomplete");
+      if (binding.run_id !== run.id) throw new Error("behavior policy snapshot is for a different run");
     }
     if (run.run_state === "cancelled") return run;
     const charterValue: unknown = JSON.parse(readFileSync(run.charter_path, "utf8"));
@@ -679,12 +687,64 @@ export class Runner {
       behavior: this.bindBehavior(id, charter, hash, createdAt),
     };
     this.save(run);
+    this.persistBehaviorEvidence(run);
     return run;
   }
 
-  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string) {
-    const ticket: JsonObject = { schema: "ticket", id, acceptance_criteria: [], verification: [] };
+  private persistBehaviorEvidence(run: Run): void {
+    if (run.behavior === undefined) return;
+    const work = this.workTicket(run.charter);
+    const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
+    if (ticketId === undefined) throw new Error("approved ticket is unnamed");
+    const ticketBytes = new TextEncoder().encode(
+      canonicalJson(Object.fromEntries(Object.entries(work.ticket).filter(([key]) => key !== "approvals"))),
+    );
+    persistFrozenRun(
+      join(this.stateDir, "evidence"),
+      {
+        run_id: run.id,
+        ticket: { id: ticketId, hash: work.hash },
+        opened_at: run.created_at,
+        branch: run.id,
+        base: run.revision,
+        schema_version: RUN_SCHEMA_VERSION,
+        behavior: run.behavior,
+      },
+      ticketBytes,
+    );
+  }
+
+  private workTicket(charter: Charter) {
+    if (!asJsonObject(charter)) throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket") throw new Error("run work source is not an approved ticket");
+    const ref = source.ref;
+    if (!asJsonObject(ref)) throw new Error("approved ticket is unnamed");
+    const ticketId = isJsonText(ref.id) ? ref.id : undefined;
+    const expected = isJsonText(ref.hash) ? ref.hash : undefined;
+    if (ticketId === undefined) throw new Error("approved ticket is unnamed");
+    const path = join(this.stateDir, `${ticketId}.json`);
+    if (!existsSync(path)) throw new Error("approved ticket is absent from the runner store");
+    this.assertPrivatePath(path);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      throw new Error("approved ticket is malformed");
+    }
+    if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId)
+      throw new Error("approved ticket is malformed");
+    const hash = artifactHash(parsed);
+    if (expected !== undefined && expected !== hash)
+      throw new Error("approved ticket does not match the charter work source");
+    return { ticket: parsed, hash };
+  }
+
+  private bindBehavior(id: string, charter: Charter, _charterHash: string, createdAt: string) {
+    const work = this.workTicket(charter);
     const loaded = loadKbBinding(this.workerRoot);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined) throw new Error(bindingError.message);
     let lookup: "unbound" | "resolved" | "unavailable" = "unbound";
     let project: JsonObject | undefined;
     let projectHash: string | undefined;
@@ -703,8 +763,8 @@ export class Runner {
     }
     const bound = bindBehaviorPolicy({
       runId: id,
-      ticket,
-      ticketHash: charterHash,
+      ticket: work.ticket,
+      ticketHash: work.hash,
       project,
       projectHash,
       lookup,

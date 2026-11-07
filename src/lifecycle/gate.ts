@@ -85,7 +85,9 @@ import {
   asJsonObject,
   bindBehaviorPolicy,
   classifyRun,
+  parseBehaviorBinding,
   projectHashOf,
+  ticketCarriesBehaviorChecks,
   ticketProjectId,
   RUN_SCHEMA_VERSION,
   shadowReceipt,
@@ -414,6 +416,8 @@ const artifactPath = (dir: string, run: string, hash: string): string | undefine
   return hex === undefined ? undefined : join(dir, safeRunId(run), "artifacts", hex);
 };
 
+export { persistFrozenRun } from "./persist-run.ts";
+
 function storeArtifact(dir: string, run: string, bytes: Uint8Array): string {
   const hash = sha256(bytes);
   const path = artifactPath(dir, run, hash)!;
@@ -488,6 +492,74 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
   if (typeof ticket.id !== "string" || typeof ticket.hash !== "string") return undefined;
   if (value.closed_at !== undefined && typeof value.closed_at !== "string") return undefined;
   return value as unknown as RunRecord;
+}
+
+function protectedRunnerBinding(dir: string, runId: string): BehaviorBinding | undefined {
+  for (const root of [dirname(dir), dir]) {
+    const path = join(root, `${runId}.json`);
+    if (!existsSync(path)) continue;
+    const raw = readObject(path);
+    if (raw === undefined || raw.id !== runId) continue;
+    const binding = parseBehaviorBinding(asJsonObject(raw.behavior) ? raw.behavior : undefined);
+    if (binding !== undefined) return binding;
+  }
+  return undefined;
+}
+
+function storedTickets(dir: string, run: string, ticketId: string): JsonObject[] {
+  const folder = join(dir, safeRunId(run), "artifacts");
+  if (!existsSync(folder)) return [];
+  const found: JsonObject[] = [];
+  for (const name of readdirSync(folder)) {
+    if (!/^[0-9a-f]{64}$/.test(name)) continue;
+    const path = join(folder, name);
+    const bytes = readFileSync(path);
+    const hash = `sha256:${name}`;
+    if (sha256(bytes) !== hash) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      continue;
+    }
+    if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId) continue;
+    found.push(parsed);
+  }
+  return found;
+}
+
+function parseTicketBytes(bytes: Uint8Array, hash: string): JsonObject | undefined {
+  if (sha256(bytes) !== hash) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return undefined;
+  }
+  return asJsonObject(parsed) ? parsed : undefined;
+}
+
+function creationTicketForRun(dir: string, run: RunRecord): JsonObject | undefined {
+  const stored = storedTickets(dir, run.run_id, run.ticket.id);
+  const withBehavior = stored.filter(ticketCarriesBehaviorChecks);
+  if (withBehavior[0] !== undefined) return withBehavior[0];
+  const namedPath = artifactPath(dir, run.run_id, run.ticket.hash);
+  if (namedPath !== undefined && existsSync(namedPath))
+    return parseTicketBytes(readFileSync(namedPath), run.ticket.hash);
+  return stored[0];
+}
+
+function classifyOpenedRun(dir: string, run: RunRecord, ticket?: JsonObject): BehaviorClass {
+  const authority = protectedRunnerBinding(dir, run.run_id);
+  const record = asJsonObject(run) ? run : undefined;
+  if (record === undefined) return { kind: "incomplete", reason: `run ${run.run_id} is not a JSON object` };
+  return classifyRun(record, run.run_id, ticket, authority);
+}
+
+function policyShadowRetain(dir: string, run: RunRecord, receipt: JsonObject): boolean {
+  if (!shadowReceipt(receipt)) return false;
+  const classified = classifyOpenedRun(dir, run);
+  return classified.kind === "bound" && classified.binding.mode === "shadow";
 }
 
 export interface OpenArgs {
@@ -795,7 +867,8 @@ export function recordGate(
       builtin: a.builtin.name,
     };
   }
-  if ((a.receipts?.length ?? 0) > 0 && readRunRecord(a.dir, a.run) === undefined) {
+  const openedRun = readRunRecord(a.dir, a.run);
+  if ((a.receipts?.length ?? 0) > 0 && openedRun === undefined) {
     return {
       ok: false,
       reason: `run ${a.run} has no task-bound run record; open it with --ticket before recording receipts`,
@@ -850,7 +923,8 @@ export function recordGate(
       storeArtifact(a.dir, a.run, artifactBytes);
     }
     const storedHash = storeArtifact(a.dir, a.run, bytes);
-    const retainOnly = asJsonObject(receipt) && shadowReceipt(receipt) && receipt.status !== "failed";
+    const retainOnly =
+      openedRun !== undefined && asJsonObject(receipt) && policyShadowRetain(a.dir, openedRun, receipt);
     if (retainOnly) {
       skipped.push(`receipt ${receipt.id} is a shadow behavior artifact; retained and not gate evidence`);
       continue;
@@ -1167,22 +1241,11 @@ function evaluateEvidence(
       reasons: [{ code: "unavailable", detail: `run ${a.run} has no task-bound run record` }],
       refs: [],
     };
-  const ticketPath = artifactPath(a.dir, a.run, run.ticket.hash);
-  if (ticketPath === undefined || !existsSync(ticketPath))
+  const ticket = creationTicketForRun(a.dir, run);
+  if (ticket === undefined)
     return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is absent from the run store`);
-  const ticketBytes = readFileSync(ticketPath);
-  if (sha256(ticketBytes) !== run.ticket.hash)
-    return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} does not match ${run.ticket.hash}`);
-  let parsedTicket: unknown;
-  try {
-    parsedTicket = JSON.parse(new TextDecoder().decode(ticketBytes));
-  } catch {
-    return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is malformed`);
-  }
-  if (!asJsonObject(parsedTicket)) return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is malformed`);
-  const ticket = parsedTicket;
   const missingView: BehaviorClass = { kind: "incomplete", reason: `run ${a.run} is not a JSON object` };
-  const classified = asJsonObject(run) ? classifyRun(run, a.run, ticket) : missingView;
+  const classified = asJsonObject(run) ? classifyOpenedRun(a.dir, run, ticket) : missingView;
   if (classified.kind === "incomplete") {
     const code = classified.reason.includes("behavior snapshot is for run") ? "wrong-run" : "behavior-policy";
     return evidenceUnavailable(code, classified.reason);
@@ -1433,7 +1496,7 @@ function evaluateEvidence(
       });
     }
     const valid = reasons.length === before;
-    if (asJsonObject(receipt) && shadowReceipt(receipt) && receipt.status !== "failed") {
+    if (asJsonObject(receipt) && policyShadowRetain(a.dir, run, receipt)) {
       notes.push(`note: receipt ${ref.id} is a shadow behavior artifact; it is retained and is not gate evidence`);
       continue;
     }

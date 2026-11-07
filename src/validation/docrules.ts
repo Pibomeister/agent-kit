@@ -21,6 +21,7 @@ import {
   behaviorContractIntentProblems,
   RULE_ACCEPTED_INTENT,
   RULE_PROPOSED_INTENT,
+  type IntentLookup,
 } from "./behavior-contract-intent.ts";
 
 const REMOTE_SIDE_EFFECTS = new Set([
@@ -1581,9 +1582,17 @@ function coldReadRules(rc: RuleContext): void {
   }
 }
 
+function indexIntentLookup(index: DocIndex): IntentLookup {
+  return (id) => {
+    const found = index.byId.get(id);
+    if (found === undefined || !asJsonObject(found.doc)) return undefined;
+    return { schema: found.schema, id, doc: found.doc };
+  };
+}
+
 function behaviorContractRules(rc: RuleContext): void {
   if (!asJsonObject(rc.doc)) return;
-  for (const problem of behaviorContractIntentProblems(rc.doc)) {
+  for (const problem of behaviorContractIntentProblems(rc.doc, indexIntentLookup(rc.index))) {
     if (problem.startsWith(`${RULE_ACCEPTED_INTENT}: `))
       fail(rc, RULE_ACCEPTED_INTENT, problem.slice(RULE_ACCEPTED_INTENT.length + 2));
     else if (problem.startsWith(`${RULE_PROPOSED_INTENT}: `))

@@ -39,7 +39,7 @@
         {
           "kind": "ticket",
           "ref": "example-ticket-1",
-          "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          "hash": "sha256:646eb0babf4e538eb1ee00d96773aa44668230f5842a7bcd57de4464483ffe23"
         }
       ]
     },

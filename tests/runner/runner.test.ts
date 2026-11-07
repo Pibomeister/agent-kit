@@ -17,12 +17,14 @@ import { dirname, join } from "node:path";
 
 import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
 
+import { runCli } from "../../src/cli.ts";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { asJsonObject, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 import { parseJson } from "../helpers/json.ts";
@@ -252,6 +254,16 @@ function fixture(limit = 3) {
   const requestDir = join(worker, ".runner-requests");
   mkdirSync(requestDir);
   const path = join(privateDir, "charter.json");
+  const toyTicket = {
+    schema: "ticket",
+    schema_version: 1,
+    id: "toy-ticket",
+    project: { id: "toy" },
+    acceptance_criteria: [{ id: "AC-1", text: "Toy work is done." }],
+    verification: [{ id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] }],
+    approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+  };
+  writeFileSync(join(privateDir, "toy-ticket.json"), JSON.stringify(toyTicket));
   const initialCharter = {
     schema: "charter",
     schema_version: 1,
@@ -264,7 +276,7 @@ function fixture(limit = 3) {
     created_at: "2026-10-01T00:00:00Z",
     status: "active",
     immutability: { immutable: true, worker_writable: false, hash: "", location: path },
-    work_source: { kind: "ticket", ref: { id: "toy-ticket", hash: `sha256:${"a".repeat(64)}` } },
+    work_source: { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(toyTicket) } },
     repos: [{ repo: "toy", base_branch: "main", paths: ["src/**"] }],
     artifact_destinations: { kb_root: "toy", runs_path: "runs" },
     allowed_capabilities: [
@@ -649,6 +661,125 @@ describe("runner guards", () => {
     expect(started.behavior?.run_id).toBe("toy-run");
     expect(started.behavior?.mode).toBe("off");
     expect(f.runner.status("toy-run").behavior?.binding_hash).toBe(started.behavior?.binding_hash);
+  });
+
+  test("start freezes the approved ticket and resume plus the gate consume that snapshot", () => {
+    const f = fixture();
+    const HASH = `sha256:${"a".repeat(64)}`;
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: "toy-ticket",
+      project: { id: "toy" },
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+            contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+          },
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+    };
+    writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+    f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const scratch = processScratch("ak-bv-runner-kb-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+    if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+    const project: JsonObject = parsedProject;
+    const identity = asJsonObject(project.identity) ? project.identity : {};
+    project.identity = { ...identity, id: "toy" };
+    project.review = { behavior: "on" };
+    const projectHash = artifactHash(project);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/project/toy",
+          content_hash: projectHash,
+          idempotency_key: projectHash,
+          links: [],
+        },
+        artifact: project,
+      })}\n`,
+    );
+    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
+    Bun.spawnSync([
+      "git",
+      "-C",
+      kb,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.invalid",
+      "commit",
+      "-qm",
+      "project",
+    ]);
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      expect(started.behavior?.mode).toBe("on");
+      expect(started.behavior?.required_checks.map((check) => check.id)).toEqual(["project-check"]);
+      const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
+      expect(resumed.behavior?.binding_hash).toBe(started.behavior?.binding_hash);
+      expect(resumed.behavior?.required_checks).toEqual(started.behavior?.required_checks);
+      const evidence = join(f.privateDir, "evidence");
+      for (const gate of ["build-checks", "review-full", "review-readiness"] as const) {
+        const out: string[] = [];
+        const err: string[] = [];
+        const code = runCli(["lifecycle", "record", "--gate", gate, "--run", "toy-run", "--dir", evidence], {
+          cwd: f.worker,
+          io: { out: (line) => out.push(line), err: (line) => err.push(line) },
+        });
+        expect(code, err.join("\n")).toBe(0);
+      }
+      const runPath = join(evidence, "runs", "toy-run", "run.json");
+      const recordedValue: unknown = JSON.parse(readFileSync(runPath, "utf8"));
+      if (!asJsonObject(recordedValue)) throw new Error("lifecycle run record is not an object");
+      delete recordedValue.behavior;
+      delete recordedValue.schema_version;
+      writeFileSync(runPath, `${JSON.stringify(recordedValue, null, 2)}\n`);
+      const err: string[] = [];
+      const code = runCli(["lifecycle", "check", "--run", "toy-run", "--dir", evidence], {
+        cwd: f.worker,
+        io: { out: () => undefined, err: (line) => err.push(line) },
+      });
+      expect(code, err.join("\n")).toBe(1);
+      expect(err.join("\n")).not.toContain("legacy");
+      expect(err.join("\n")).toMatch(/no passed evidence|verify/);
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("a malformed knowledgebase binding fails closed at start", () => {
+    const f = fixture();
+    writeFileSync(join(f.worker, "ak.kb.yaml"), "this is not: [valid\n");
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow("Not valid YAML");
   });
 
   test("a charter cannot request unattended decisions without event-delivery authority", () => {

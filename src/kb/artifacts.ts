@@ -3,7 +3,7 @@ import type { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
 import { asJsonObject } from "../lifecycle/behavior-policy.ts";
-import { behaviorContractIntentProblems } from "../validation/behavior-contract-intent.ts";
+import { behaviorContractIntentProblems, type IntentLookup } from "../validation/behavior-contract-intent.ts";
 
 import behaviorContractSchema from "../../schemas/behavior-contract.schema.json" with { type: "json" };
 import charterSchema from "../../schemas/charter.schema.json" with { type: "json" };
@@ -116,7 +116,7 @@ function describe(validate: ValidateFunction): string {
  * before any write, so an artifact failing its own schema never reaches the
  * knowledgebase (CONTRACT.md §2, `publishArtifact`).
  */
-export function checkRunArtifact(text: string): ArtifactCheck {
+export function checkRunArtifact(text: string, lookup?: IntentLookup): ArtifactCheck {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -144,7 +144,7 @@ export function checkRunArtifact(text: string): ArtifactCheck {
   }
   if (value.schema === "behavior-contract") {
     if (!asJsonObject(value)) return { artifact: null, problem: "behavior-contract is not an object" };
-    const problems = behaviorContractIntentProblems(value);
+    const problems = behaviorContractIntentProblems(value, lookup);
     if (problems.length > 0) return { artifact: null, problem: problems.join("; ") };
   }
   return { artifact: value, problem: "" };

@@ -37,6 +37,7 @@ import { join } from "node:path";
 import { loadCatalog } from "../../src/catalog/load.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
+import { sealBinding } from "../../src/lifecycle/behavior-policy.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkArtifacts } from "../../src/validation/artifacts.ts";
 import type { CheckContext } from "../../src/validation/context.ts";
@@ -225,6 +226,16 @@ function standingGrant(hash: string, runId: string): StandingGrant {
 
 function writeCharter(privateDir: string, limit: number) {
   const path = join(privateDir, "charter.json");
+  const toyTicket = {
+    schema: "ticket",
+    schema_version: 1,
+    id: "toy-ticket",
+    project: { id: "toy" },
+    acceptance_criteria: [{ id: "AC-1", text: "Toy work is done." }],
+    verification: [{ id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] }],
+    approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+  };
+  writeFileSync(join(privateDir, "toy-ticket.json"), JSON.stringify(toyTicket));
   const charter = {
     schema: "charter",
     schema_version: 1,
@@ -237,7 +248,7 @@ function writeCharter(privateDir: string, limit: number) {
     created_at: "2026-10-01T00:00:00Z",
     status: "active",
     immutability: { immutable: true, worker_writable: false, hash: "", location: path },
-    work_source: { kind: "ticket", ref: { id: "toy-ticket", hash: HASH_A } },
+    work_source: { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(toyTicket) } },
     repos: [{ repo: "toy", base_branch: "main", paths: ["src/**"] }],
     artifact_destinations: { kb_root: "toy", runs_path: "runs" },
     allowed_capabilities: [
@@ -419,6 +430,10 @@ export function liveBudget(world: World): BudgetEntry[] {
 function rehomeRun(world: World, nextId: string): void {
   const current: Run = structuredClone(world.runner.status(world.runId));
   current.id = nextId;
+  if (current.behavior !== undefined) {
+    const { binding_hash: _hash, ...unsigned } = current.behavior;
+    current.behavior = sealBinding({ ...unsigned, run_id: nextId });
+  }
   writeFileSync(join(world.privateDir, `${nextId}.json`), `${JSON.stringify(current, null, 2)}\n`);
   world.runId = nextId;
   world.runner.status(nextId);

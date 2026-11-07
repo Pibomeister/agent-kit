@@ -18132,7 +18132,7 @@ function parseBehaviorBinding(value) {
 function projectHashOf(project) {
   return artifactHash(project);
 }
-var KEBAB, AC, kindOf = (value) => Object.prototype.toString.call(value), isText = (value) => kindOf(value) === "[object String]", isObject = (value) => kindOf(value) === "[object Object]", JSON_KINDS;
+var RUN_SCHEMA_VERSION = 2, KEBAB, AC, kindOf = (value) => Object.prototype.toString.call(value), isText = (value) => kindOf(value) === "[object String]", isObject = (value) => kindOf(value) === "[object Object]", JSON_KINDS;
 var init_behavior_policy = __esm(() => {
   init_hash();
   KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -18150,7 +18150,66 @@ function isText2(value) {
 function textField(value) {
   return isText2(value) && value !== "" ? value : undefined;
 }
-function behaviorContractIntentProblems(doc) {
+function sourceKindSchema(kind) {
+  if (kind === "ticket")
+    return "ticket";
+  if (kind === "decision" || kind === "recorded-decision")
+    return "decision";
+  if (kind === "requirements")
+    return "behavior-contract";
+  if (kind === "user-instruction")
+    return;
+  return;
+}
+function statusOf(doc) {
+  return textField(doc.status);
+}
+function sourceIsAccepted(kind, artifact) {
+  const status = statusOf(artifact.doc);
+  if (kind === "ticket")
+    return artifact.schema === "ticket" && status === "approved";
+  if (kind === "decision" || kind === "recorded-decision") {
+    if (artifact.schema !== "decision" || status !== "ruled")
+      return false;
+    const ruling = artifact.doc.ruling;
+    return asJsonObject(ruling) && ruling.outcome === "decided";
+  }
+  if (kind === "requirements")
+    return artifact.schema === "behavior-contract" && status === "active";
+  if (kind === "user-instruction") {
+    if (status === undefined)
+      return true;
+    return status !== "draft" && status !== "proposed" && status !== "open" && status !== "unresolved";
+  }
+  return false;
+}
+function acceptedSourceProblem(requirementId, source, lookup) {
+  const kind = textField(source.kind);
+  const ref = textField(source.ref);
+  if (kind === undefined || !ACCEPTED_INTENT_SOURCE_KINDS.has(kind) || ref === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} is accepted without a source of accepted intent`;
+  }
+  if (lookup === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not resolved at admission`;
+  }
+  const artifact = lookup(ref);
+  if (artifact === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  const expectedSchema = sourceKindSchema(kind);
+  if (expectedSchema !== undefined && artifact.schema !== expectedSchema) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  const expectedHash = textField(source.hash);
+  if (expectedHash !== undefined && artifactHash(artifact.doc) !== expectedHash) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} does not match ${expectedHash}`;
+  }
+  if (!sourceIsAccepted(kind, artifact)) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  return;
+}
+function behaviorContractIntentProblems(doc, lookup) {
   const problems = [];
   const requirements = new Map;
   for (const value of rows(doc.requirements)) {
@@ -18163,23 +18222,14 @@ function behaviorContractIntentProblems(doc) {
     requirements.set(id, intent);
     if (intent !== "accepted")
       continue;
-    let sourceCount = 0;
-    let hasAcceptedSource = false;
-    for (const sourceValue of rows(value.sources)) {
-      if (!asJsonObject(sourceValue))
-        continue;
-      const source = sourceValue;
-      sourceCount += 1;
-      const kind = textField(source.kind);
-      if (kind !== undefined && ACCEPTED_INTENT_SOURCE_KINDS.has(kind))
-        hasAcceptedSource = true;
-    }
-    if (sourceCount === 0) {
+    const sources = rows(value.sources).filter(asJsonObject);
+    if (sources.length === 0) {
       problems.push(`${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without an intent source`);
       continue;
     }
-    if (!hasAcceptedSource)
-      problems.push(`${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without a source of accepted intent`);
+    const sourceProblems = sources.map((source) => acceptedSourceProblem(id, source, lookup));
+    if (sourceProblems.every((problem) => problem !== undefined))
+      problems.push(sourceProblems[0] ?? `${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without a source of accepted intent`);
   }
   for (const value of rows(doc.properties)) {
     if (!asJsonObject(value))
@@ -18205,6 +18255,7 @@ function behaviorContractIntentProblems(doc) {
 var ACCEPTED_INTENT_SOURCE_KINDS, RULE_ACCEPTED_INTENT = "behavior-contract.accepted-intent-requires-accepted-source", RULE_PROPOSED_INTENT = "behavior-contract.proposed-intent-cannot-discharge-accepted";
 var init_behavior_contract_intent = __esm(() => {
   init_behavior_policy();
+  init_hash();
   ACCEPTED_INTENT_SOURCE_KINDS = new Set([
     "ticket",
     "requirements",
@@ -22974,7 +23025,7 @@ function instance() {
 function describe2(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
-function checkRunArtifact(text) {
+function checkRunArtifact(text, lookup) {
   let value;
   try {
     value = JSON.parse(text);
@@ -23003,7 +23054,7 @@ function checkRunArtifact(text) {
   if (value.schema === "behavior-contract") {
     if (!asJsonObject(value))
       return { artifact: null, problem: "behavior-contract is not an object" };
-    const problems = behaviorContractIntentProblems(value);
+    const problems = behaviorContractIntentProblems(value, lookup);
     if (problems.length > 0)
       return { artifact: null, problem: problems.join("; ") };
   }
@@ -37192,9 +37243,9 @@ init_common_schema();
 var import_ajv16 = __toESM(require_ajv(), 1);
 var import__202013 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync6 } from "child_process";
-import { existsSync as existsSync40, readFileSync as readFileSync40, realpathSync as realpathSync17 } from "fs";
+import { existsSync as existsSync41, readFileSync as readFileSync41, realpathSync as realpathSync17 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename22, isAbsolute as isAbsolute18, join as join51, relative as relative15 } from "path";
+import { basename as basename22, isAbsolute as isAbsolute18, join as join52, relative as relative15 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -38222,10 +38273,22 @@ function publishDocument(kb, request) {
   };
   return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
+function committedIntentLookup(kb) {
+  return (id) => {
+    const doc = readCommittedArtifact(kb, id);
+    if (doc === undefined)
+      return;
+    const schema = isText3(doc.schema) ? doc.schema : undefined;
+    const artifactId = isText3(doc.id) ? doc.id : undefined;
+    if (schema === undefined || artifactId === undefined)
+      return;
+    return { schema, id: artifactId, doc };
+  };
+}
 function publishRunArtifact(kb, text, run, links, trailAttempts) {
   if (!ARTIFACT_ID.test(run))
     return refused("kb.run-invalid", `'${run}' is not a run id.`);
-  const checked = checkRunArtifact(text);
+  const checked = checkRunArtifact(text, committedIntentLookup(kb));
   if (checked.artifact === null) {
     return refused("kb.artifact-invalid", `The artifact is refused before any write: ${checked.problem}.`);
   }
@@ -38314,6 +38377,22 @@ function readPublishedProject(kb, projectId) {
     if (stored === null || stored.artifact.schema !== "project")
       continue;
     if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId)
+      continue;
+    found = stored.artifact;
+  }
+  return found;
+}
+function readCommittedArtifact(kb, id) {
+  const content = committed(kb.root, artifactsPath(kb.binding.project));
+  if (content.status !== "found")
+    return;
+  let found;
+  for (const line of content.text.split(`
+`)) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.id !== id)
+      continue;
+    if (!asJsonObject(stored.artifact))
       continue;
     found = stored.artifact;
   }
@@ -40660,16 +40739,16 @@ function resolveLink(absolute) {
 // src/runner/cli.ts
 init_hash();
 import { timingSafeEqual } from "crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync39, readFileSync as readFileSync34, realpathSync as realpathSync15, unlinkSync } from "fs";
+import { chmodSync as chmodSync4, existsSync as existsSync40, readFileSync as readFileSync35, realpathSync as realpathSync15, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname23, isAbsolute as isAbsolute16, relative as relative13, resolve as resolve17 } from "path";
+import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative13, resolve as resolve17 } from "path";
 
 // src/runner/core.ts
 init_dist();
 init_hash();
-import { createHash as createHash11 } from "crypto";
-import { existsSync as existsSync38, mkdirSync as mkdirSync24, readFileSync as readFileSync31, realpathSync as realpathSync11, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
-import { basename as basename19, dirname as dirname21, isAbsolute as isAbsolute14, join as join43, relative as relative11, resolve as resolve16 } from "path";
+import { createHash as createHash12 } from "crypto";
+import { existsSync as existsSync39, mkdirSync as mkdirSync25, readFileSync as readFileSync32, realpathSync as realpathSync11, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
+import { basename as basename19, dirname as dirname22, isAbsolute as isAbsolute14, join as join44, relative as relative11, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -40679,27 +40758,54 @@ function isDesignReport(value) {
   return isNonArrayObject(value) && "schema" in value && value.schema === "review";
 }
 
+// src/lifecycle/persist-run.ts
+import { createHash as createHash10 } from "crypto";
+import { existsSync as existsSync37, mkdirSync as mkdirSync23, readFileSync as readFileSync29, renameSync as renameSync5, writeFileSync as writeFileSync14 } from "fs";
+import { dirname as dirname20, join as join41 } from "path";
+var safeRunId = (id) => id.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
+var atomicJson = (path, value) => {
+  mkdirSync23(dirname20(path), { recursive: true });
+  const staging = `${path}.partial-${process.pid}`;
+  writeFileSync14(staging, `${JSON.stringify(value, null, 2)}
+`);
+  renameSync5(staging, path);
+};
+var atomicBytes = (path, value) => {
+  mkdirSync23(dirname20(path), { recursive: true });
+  const staging = `${path}.partial-${process.pid}`;
+  writeFileSync14(staging, value);
+  renameSync5(staging, path);
+};
+var sha256 = (value) => `sha256:${createHash10("sha256").update(value).digest("hex")}`;
+function persistFrozenRun(dir, record, ticketBytes) {
+  atomicJson(join41(dir, "runs", safeRunId(record.run_id), "run.json"), record);
+  const hash = sha256(ticketBytes);
+  const path = join41(dir, safeRunId(record.run_id), "artifacts", hash.slice("sha256:".length));
+  if (!existsSync37(path) || sha256(readFileSync29(path)) !== hash)
+    atomicBytes(path, ticketBytes);
+}
+
 // src/runner/core.ts
 init_binding();
 init_behavior_policy();
 
 // src/runner/evidence.ts
-import { mkdirSync as mkdirSync23, readFileSync as readFileSync29, realpathSync as realpathSync8, writeFileSync as writeFileSync14 } from "fs";
-import { isAbsolute as isAbsolute11, join as join41, relative as relative8 } from "path";
+import { mkdirSync as mkdirSync24, readFileSync as readFileSync30, realpathSync as realpathSync8, writeFileSync as writeFileSync15 } from "fs";
+import { isAbsolute as isAbsolute11, join as join42, relative as relative8 } from "path";
 
 class PrivateFileEvidenceStore {
   root;
   constructor(stateDir) {
-    this.root = join41(stateDir, "evidence");
-    mkdirSync23(this.root, { recursive: true, mode: 448 });
+    this.root = join42(stateDir, "evidence");
+    mkdirSync24(this.root, { recursive: true, mode: 448 });
     const resolved = realpathSync8(this.root);
     const rel = relative8(stateDir, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence store escapes runner state directory");
   }
   put(runId, evidenceId, bytes) {
-    const ref = join41(this.root, `${runId}-${evidenceId}.evidence`);
-    writeFileSync14(ref, bytes, { flag: "wx", mode: 384 });
+    const ref = join42(this.root, `${runId}-${evidenceId}.evidence`);
+    writeFileSync15(ref, bytes, { flag: "wx", mode: 384 });
     return ref;
   }
   read(ref) {
@@ -40707,7 +40813,7 @@ class PrivateFileEvidenceStore {
     const rel = relative8(this.root, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence ref escapes runner store");
-    return readFileSync29(resolved);
+    return readFileSync30(resolved);
   }
 }
 
@@ -40953,13 +41059,13 @@ var isEffectConfig = ajv5.compile({
 
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync4 } from "child_process";
-import { createHash as createHash10 } from "crypto";
-import { accessSync, constants, existsSync as existsSync37, lstatSync as lstatSync5, readFileSync as readFileSync30, readlinkSync as readlinkSync3, realpathSync as realpathSync10 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join42, relative as relative10, resolve as resolve15 } from "path";
+import { createHash as createHash11 } from "crypto";
+import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync5, readFileSync as readFileSync31, readlinkSync as readlinkSync3, realpathSync as realpathSync10 } from "fs";
+import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join43, relative as relative10, resolve as resolve15 } from "path";
 
 // src/runner/path.ts
 import { lstatSync as lstatSync4, realpathSync as realpathSync9 } from "fs";
-import { delimiter as delimiter4, dirname as dirname20, isAbsolute as isAbsolute12, relative as relative9, resolve as resolve14 } from "path";
+import { delimiter as delimiter4, dirname as dirname21, isAbsolute as isAbsolute12, relative as relative9, resolve as resolve14 } from "path";
 function workerControlledPath(path, workerRoot) {
   if (!isAbsolute12(path))
     return true;
@@ -40971,7 +41077,7 @@ function workerControlledPath(path, workerRoot) {
     } catch (cause) {
       if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
         return true;
-      const parent = dirname20(existing);
+      const parent = dirname21(existing);
       if (parent === existing)
         return true;
       existing = parent;
@@ -40993,7 +41099,7 @@ function workerFreePath(path, workerRoot) {
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
   for (const directory of path.split(delimiter5)) {
-    const candidate = join42(directory, "git");
+    const candidate = join43(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync10(candidate);
@@ -41042,18 +41148,18 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
   };
 }
 function checkGitControls(context, project) {
-  const entryPath = join42(project, ".git");
+  const entryPath = join43(project, ".git");
   let paths2;
   try {
     const entry = lstatSync5(entryPath);
     if (entry.isDirectory())
-      paths2 = [join42(entryPath, "index"), join42(entryPath, "HEAD")];
+      paths2 = [join43(entryPath, "index"), join43(entryPath, "HEAD")];
     else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = /^gitdir: (.+)$/.exec(readFileSync30(entryPath, "utf8").trim())?.[1];
+      const pointer = /^gitdir: (.+)$/.exec(readFileSync31(entryPath, "utf8").trim())?.[1];
       if (pointer === undefined)
         return failedGit("runner git directory pointer is invalid");
       const gitDir = isAbsolute13(pointer) ? pointer : resolve15(project, pointer);
-      paths2 = [join42(gitDir, "index"), join42(gitDir, "HEAD")];
+      paths2 = [join43(gitDir, "index"), join43(gitDir, "HEAD")];
     } else
       return failedGit("runner git directory entry is not regular");
   } catch (cause) {
@@ -41131,14 +41237,14 @@ function resolvedRevision(context, project, ref) {
 }
 function rawFile(context, project, path) {
   try {
-    const at = join42(project, path);
+    const at = join43(project, path);
     const stat = lstatSync5(at);
     if (stat.isSymbolicLink())
       return `link:${readlinkSync3(at)}`;
     if (stat.isFile())
-      return `file:${stat.mode & 73}:${createHash10("sha256").update(readFileSync30(at)).digest("hex")}`;
+      return `file:${stat.mode & 73}:${createHash11("sha256").update(readFileSync31(at)).digest("hex")}`;
     if (stat.isDirectory()) {
-      if (!existsSync37(join42(at, ".git")))
+      if (!existsSync38(join43(at, ".git")))
         return "dir";
       const tree = treeHash(context, at, []);
       if (!(tree instanceof Object))
@@ -41191,7 +41297,7 @@ function treeHash(context, project, ignoreUntrackedDirs) {
       continue;
     paths2.set(path, ["untracked"]);
   }
-  const digest = createHash10("sha256");
+  const digest = createHash11("sha256");
   const root = realpathSync10(project);
   for (const path of [...paths2.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve15(project, path);
@@ -41231,6 +41337,9 @@ var ID = /^[a-z0-9][a-z0-9-]*$/;
 var EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 var HUMAN_REFUSAL = "no";
 var HUMAN_RETRY = "retry";
+function isJsonText(value) {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
 function isDesignReportBytes(bytes) {
   try {
     return isDesignReport(JSON.parse(bytes.toString()));
@@ -41278,14 +41387,14 @@ function inside(path, root) {
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
   const missing = [];
-  while (!existsSync38(existing)) {
+  while (!existsSync39(existing)) {
     missing.unshift(basename19(existing));
-    existing = dirname21(existing);
+    existing = dirname22(existing);
   }
-  return join43(realpathSync11(existing), ...missing);
+  return join44(realpathSync11(existing), ...missing);
 }
 function digest(bytes) {
-  return `sha256:${createHash11("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash12("sha256").update(bytes).digest("hex")}`;
 }
 function verdictBase(run2) {
   const baseRef = run2.charter.repos[0]?.base_branch;
@@ -41344,12 +41453,12 @@ class Runner {
       throw new Error("runner state is worker-writable");
     const gitContext = resolveRunnerGit(this.workerRoot);
     const commonDir2 = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
-    this.sharedGitDir = commonDir2.code === 0 ? realpathSync11(isAbsolute14(commonDir2.text) ? commonDir2.text : join43(this.workerRoot, commonDir2.text)) : null;
+    this.sharedGitDir = commonDir2.code === 0 ? realpathSync11(isAbsolute14(commonDir2.text) ? commonDir2.text : join44(this.workerRoot, commonDir2.text)) : null;
     if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
       throw new Error("runner bundle cannot use the shared git common directory");
     if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
       throw new Error("runner state cannot use the shared git common directory");
-    mkdirSync24(requestedStateDir, { recursive: true, mode: 448 });
+    mkdirSync25(requestedStateDir, { recursive: true, mode: 448 });
     this.stateDir = realpathSync11(requestedStateDir);
     if (inside(this.stateDir, this.workerRoot))
       throw new Error("runner state resolves into worker root");
@@ -41441,7 +41550,7 @@ class Runner {
         }
       }
     });
-    const policyValue = $parse(readFileSync31(join43(kitRoot, "policies", "invocation.yaml"), "utf8"));
+    const policyValue = $parse(readFileSync32(join44(kitRoot, "policies", "invocation.yaml"), "utf8"));
     if (!policySchema(policyValue))
       throw new Error("runner cannot parse invocation policy");
     this.covers = new Map;
@@ -41455,7 +41564,7 @@ class Runner {
   path(id) {
     if (!ID.test(id))
       throw new Error("invalid run id");
-    return join43(this.stateDir, `${id}.json`);
+    return join44(this.stateDir, `${id}.json`);
   }
   assertPrivatePath(path) {
     const canonical = canonicalFuturePath(path);
@@ -41483,29 +41592,32 @@ class Runner {
       ".claude-plugin/plugin.json",
       ".kimi-plugin/plugin.json",
       ".factory-plugin/plugin.json"
-    ].map((path) => join43(this.kitRoot, path)).find((path) => existsSync38(path));
+    ].map((path) => join44(this.kitRoot, path)).find((path) => existsSync39(path));
     if (manifestPath === undefined)
       throw new Error("recorded bundle version is unavailable");
-    const manifest = JSON.parse(readFileSync31(manifestPath, "utf8"));
+    const manifest = JSON.parse(readFileSync32(manifestPath, "utf8"));
     if (!isVersionManifest(manifest))
       throw new Error("recorded bundle version is invalid");
     const files2 = ["skills/autopilot/SKILL.md", "skills/autopilot/references/checkpoints.md"];
-    const bytes = files2.map((file) => `${file}\x00${readFileSync31(join43(this.kitRoot, file), "utf8")}`).join("\x00");
+    const bytes = files2.map((file) => `${file}\x00${readFileSync32(join44(this.kitRoot, file), "utf8")}`).join("\x00");
     return { bundle_version: manifest.version, hash: `sha256:${sha256Hex(bytes)}` };
   }
   load(id) {
-    const runValue = JSON.parse(readFileSync31(this.path(id), "utf8"));
+    const runValue = JSON.parse(readFileSync32(this.path(id), "utf8"));
     if (!this.runSchema(runValue))
       throw new Error(`runner state is invalid: ${JSON.stringify(this.runSchema.errors)}`);
     const run2 = runValue;
     if (run2.behavior !== undefined) {
       const raw = run2.behavior;
-      if (!asJson(raw) || parseBehaviorBinding(raw) === undefined)
+      const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+      if (binding === undefined)
         throw new Error("behavior policy snapshot is incomplete");
+      if (binding.run_id !== run2.id)
+        throw new Error("behavior policy snapshot is for a different run");
     }
     if (run2.run_state === "cancelled")
       return run2;
-    const charterValue = JSON.parse(readFileSync31(run2.charter_path, "utf8"));
+    const charterValue = JSON.parse(readFileSync32(run2.charter_path, "utf8"));
     if (!this.validateCharter(charterValue))
       throw new Error("charter no longer validates");
     const charter = charterValue;
@@ -41518,7 +41630,7 @@ class Runner {
       const doc = this.decisionArtifact(run2, decision);
       if (!this.decisionSchema(doc))
         throw new Error(`runner decision artifact invalid: ${JSON.stringify(this.decisionSchema.errors)}`);
-      this.atomic(join43(this.stateDir, `${run2.id}-${decision.card.id}.decision.json`), doc);
+      this.atomic(join44(this.stateDir, `${run2.id}-${decision.card.id}.decision.json`), doc);
       const outcome = (decision.answer?.refusal ?? decision.result).status === "complete" ? "ruling" : "escalation";
       const entry = {
         checkpoint: this.covers.get(decision.card.operation)?.covers ?? "align-answer",
@@ -41565,15 +41677,15 @@ class Runner {
     };
     if (!this.ledgerSchema(ledger))
       throw new Error(`runner ledger invalid: ${JSON.stringify(this.ledgerSchema.errors)}`);
-    this.atomic(join43(this.stateDir, `${run2.id}.ledger.json`), ledger);
+    this.atomic(join44(this.stateDir, `${run2.id}.ledger.json`), ledger);
     const target = this.path(run2.id);
     this.atomic(target, run2);
   }
   atomic(target, value) {
     const partial = `${target}.partial-${process.pid}`;
-    writeFileSync15(partial, `${JSON.stringify(value, null, 2)}
+    writeFileSync16(partial, `${JSON.stringify(value, null, 2)}
 `, { mode: 384 });
-    renameSync5(partial, target);
+    renameSync6(partial, target);
   }
   seatsIndependent(run2, card) {
     const seats = run2.charter.supervisors.seats.map((s) => s.id);
@@ -41670,7 +41782,7 @@ class Runner {
   }
   ledger(id) {
     this.save(this.load(id));
-    const value = JSON.parse(readFileSync31(join43(this.stateDir, `${id}.ledger.json`), "utf8"));
+    const value = JSON.parse(readFileSync32(join44(this.stateDir, `${id}.ledger.json`), "utf8"));
     if (!this.ledgerSchema(value))
       throw new Error("runner ledger no longer validates");
     return value;
@@ -41704,7 +41816,7 @@ class Runner {
       throw new Error("start revision differs from worker checkout");
     const source = realpathSync11(charterPath);
     this.assertPrivatePath(source);
-    const charterValue = JSON.parse(readFileSync31(source, "utf8"));
+    const charterValue = JSON.parse(readFileSync32(source, "utf8"));
     if (!this.validateCharter(charterValue))
       throw new Error(`invalid charter: ${JSON.stringify(this.validateCharter.errors)}`);
     const charter = charterValue;
@@ -41758,11 +41870,63 @@ class Runner {
       behavior: this.bindBehavior(id, charter, hash, createdAt)
     };
     this.save(run2);
+    this.persistBehaviorEvidence(run2);
     return run2;
   }
-  bindBehavior(id, charter, charterHash, createdAt) {
-    const ticket = { schema: "ticket", id, acceptance_criteria: [], verification: [] };
+  persistBehaviorEvidence(run2) {
+    if (run2.behavior === undefined)
+      return;
+    const work = this.workTicket(run2.charter);
+    const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
+    if (ticketId === undefined)
+      throw new Error("approved ticket is unnamed");
+    const ticketBytes = new TextEncoder().encode(canonicalJson(Object.fromEntries(Object.entries(work.ticket).filter(([key]) => key !== "approvals"))));
+    persistFrozenRun(join44(this.stateDir, "evidence"), {
+      run_id: run2.id,
+      ticket: { id: ticketId, hash: work.hash },
+      opened_at: run2.created_at,
+      branch: run2.id,
+      base: run2.revision,
+      schema_version: RUN_SCHEMA_VERSION,
+      behavior: run2.behavior
+    }, ticketBytes);
+  }
+  workTicket(charter) {
+    if (!asJsonObject(charter))
+      throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket")
+      throw new Error("run work source is not an approved ticket");
+    const ref = source.ref;
+    if (!asJsonObject(ref))
+      throw new Error("approved ticket is unnamed");
+    const ticketId = isJsonText(ref.id) ? ref.id : undefined;
+    const expected = isJsonText(ref.hash) ? ref.hash : undefined;
+    if (ticketId === undefined)
+      throw new Error("approved ticket is unnamed");
+    const path = join44(this.stateDir, `${ticketId}.json`);
+    if (!existsSync39(path))
+      throw new Error("approved ticket is absent from the runner store");
+    this.assertPrivatePath(path);
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync32(path, "utf8"));
+    } catch {
+      throw new Error("approved ticket is malformed");
+    }
+    if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId)
+      throw new Error("approved ticket is malformed");
+    const hash = artifactHash(parsed);
+    if (expected !== undefined && expected !== hash)
+      throw new Error("approved ticket does not match the charter work source");
+    return { ticket: parsed, hash };
+  }
+  bindBehavior(id, charter, _charterHash, createdAt) {
+    const work = this.workTicket(charter);
     const loaded = loadKbBinding(this.workerRoot);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined)
+      throw new Error(bindingError.message);
     let lookup = "unbound";
     let project;
     let projectHash;
@@ -41783,8 +41947,8 @@ class Runner {
     }
     const bound2 = bindBehaviorPolicy({
       runId: id,
-      ticket,
-      ticketHash: charterHash,
+      ticket: work.ticket,
+      ticketHash: work.hash,
       project,
       projectHash,
       lookup,
@@ -41811,7 +41975,7 @@ class Runner {
     }
     if (revision !== run2.revision || !this.current(run2))
       throw new Error("evidence is stale for current revision");
-    const bytes = readFileSync31(source);
+    const bytes = readFileSync32(source);
     const ref = this.evidenceStore.put(id, evidenceId, bytes);
     const hash = digest(bytes);
     if (digest(this.evidenceStore.read(ref)) !== hash)
@@ -42208,7 +42372,7 @@ class Runner {
   cancel(id, by, rationale) {
     if (!ID.test(by) || !rationale.trim())
       throw new Error("cancel needs a supervisor actor and rationale");
-    const runValue = JSON.parse(readFileSync31(this.path(id), "utf8"));
+    const runValue = JSON.parse(readFileSync32(this.path(id), "utf8"));
     if (!this.runSchema(runValue))
       throw new Error("runner state is invalid and cannot be cancelled");
     const run2 = runValue;
@@ -42518,7 +42682,7 @@ class Runner {
 
 // src/council/config.ts
 var import__202011 = __toESM(require_2020(), 1);
-import { readFileSync as readFileSync32, realpathSync as realpathSync12, statSync as statSync18 } from "fs";
+import { readFileSync as readFileSync33, realpathSync as realpathSync12, statSync as statSync18 } from "fs";
 var DEFAULT_TIMEOUT_MS = 900000;
 var ajv6 = new import__202011.default({ strict: false });
 var nonEmpty = { type: "string", minLength: 1 };
@@ -42584,7 +42748,7 @@ function readCouncilConfig(path) {
   const uid = process.getuid?.();
   if (uid !== undefined && stat.uid !== uid)
     throw new Error("council configuration must be owned by the operator running the council");
-  const value = JSON.parse(readFileSync32(real, "utf8"));
+  const value = JSON.parse(readFileSync33(real, "utf8"));
   if (!isCouncilConfig(value))
     throw new Error(`invalid council configuration: ${JSON.stringify(isCouncilConfig.errors)}`);
   return value;
@@ -42745,14 +42909,14 @@ function chainFailures(seat2, attempts) {
 }
 
 // src/runner/token.ts
-import { readFileSync as readFileSync33, realpathSync as realpathSync14, statSync as statSync19 } from "fs";
-import { dirname as dirname22, isAbsolute as isAbsolute15, relative as relative12 } from "path";
+import { readFileSync as readFileSync34, realpathSync as realpathSync14, statSync as statSync19 } from "fs";
+import { dirname as dirname23, isAbsolute as isAbsolute15, relative as relative12 } from "path";
 function readAdminToken(path, forbiddenRoot) {
   const at = realpathSync14(path);
   const root = realpathSync14(forbiddenRoot);
   const rel = relative12(root, at);
   const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
-  const probe = gitProcess(resolveRunnerGit(root), dirname22(at), [
+  const probe = gitProcess(resolveRunnerGit(root), dirname23(at), [
     "rev-parse",
     "--is-inside-work-tree",
     "--is-inside-git-dir"
@@ -42761,7 +42925,7 @@ function readAdminToken(path, forbiddenRoot) {
     throw new Error("runner admin token file must live outside the Firstmate home, the worker root and any git checkout");
   if ((statSync19(at).mode & 63) !== 0)
     throw new Error("runner admin token file must be mode 0600");
-  const token = readFileSync33(at, "utf8").trim();
+  const token = readFileSync34(at, "utf8").trim();
   if (token.length < 32)
     throw new Error("runner admin token must be at least 32 characters");
   return token;
@@ -43066,7 +43230,7 @@ async function serve(argv, io) {
   const relativeSocket = relative13(workerRoot, socketPath);
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
     throw new Error("runner socket is inside worker root");
-  if (existsSync39(socketPath)) {
+  if (existsSync40(socketPath)) {
     const live = await new Promise((done, fail2) => {
       const probe = createConnection(socketPath);
       probe.once("connect", () => {
@@ -43082,10 +43246,10 @@ async function serve(argv, io) {
     });
     if (live)
       throw new Error("runner socket already has a live service");
-    if (existsSync39(socketPath))
+    if (existsSync40(socketPath))
       unlinkSync(socketPath);
   }
-  const socketParent = realpathSync15(dirname23(socketPath));
+  const socketParent = realpathSync15(dirname24(socketPath));
   const relativeParent = relative13(workerRoot, socketParent);
   if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
@@ -43101,7 +43265,7 @@ async function serve(argv, io) {
   if (seatConfigPath !== undefined) {
     const configPath = realpathSync15(seatConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync34(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isSeatConfig(configValue))
       throw new Error(`invalid seat configuration: ${JSON.stringify(isSeatConfig.errors)}`);
     launchers = configValue.launchers;
@@ -43125,7 +43289,7 @@ async function serve(argv, io) {
   if (verifyConfigPath !== undefined) {
     const configPath = realpathSync15(verifyConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync34(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isVerifyConfig(configValue))
       throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
     verifyCommand = configValue.command;
@@ -43135,7 +43299,7 @@ async function serve(argv, io) {
   if (eventConfigPath !== undefined) {
     const configPath = realpathSync15(eventConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync34(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isEventConfig(configValue))
       throw new Error(`invalid event configuration: ${JSON.stringify(isEventConfig.errors)}`);
     eventCommand = configValue.command;
@@ -43146,7 +43310,7 @@ async function serve(argv, io) {
   if (loopConfigPath !== undefined) {
     const configPath = realpathSync15(loopConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync34(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isEventConfig(configValue))
       throw new Error(`invalid loop configuration: ${JSON.stringify(isEventConfig.errors)}`);
     loopCommand = configValue.command;
@@ -43156,7 +43320,7 @@ async function serve(argv, io) {
   if (effectConfigPath !== undefined) {
     const configPath = realpathSync15(effectConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync34(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isEffectConfig(configValue))
       throw new Error(`invalid effect configuration: ${JSON.stringify(isEffectConfig.errors)}`);
     for (const adapter of configValue.adapters) {
@@ -43325,7 +43489,7 @@ async function serve(argv, io) {
       clearInterval(auditTimer);
     for (const pid of activeChildren)
       killGroup(pid);
-    if (existsSync39(socketPath))
+    if (existsSync40(socketPath))
       unlinkSync(socketPath);
     process.exit(0);
   };
@@ -43402,10 +43566,10 @@ async function runRunner(argv, io) {
 
 // src/council/cli.ts
 var import__202012 = __toESM(require_2020(), 1);
-import { createHash as createHash12 } from "crypto";
-import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync35, rmSync as rmSync14, writeFileSync as writeFileSync16 } from "fs";
+import { createHash as createHash13 } from "crypto";
+import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync36, rmSync as rmSync14, writeFileSync as writeFileSync17 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { basename as basename21, join as join44 } from "path";
+import { basename as basename21, join as join45 } from "path";
 var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
 var isCouncilCard = new import__202012.default({ strict: false }).compile({
   type: "object",
@@ -43418,8 +43582,8 @@ var isCouncilCard = new import__202012.default({ strict: false }).compile({
     approve: { type: "string", minLength: 1 }
   }
 });
-function sha256(text3) {
-  return `sha256:${createHash12("sha256").update(text3).digest("hex")}`;
+function sha2562(text3) {
+  return `sha256:${createHash13("sha256").update(text3).digest("hex")}`;
 }
 function seatEntry(role, seat2, result2) {
   if (!result2.ok)
@@ -43495,13 +43659,13 @@ async function run2(args, io) {
   const problems = rosterProblems([...pair, config.veto]);
   if (problems.length > 0)
     throw new Error(`invalid council configuration: ${problems.join("; ")}`);
-  const cardValue = JSON.parse(readFileSync35(args.card, "utf8"));
+  const cardValue = JSON.parse(readFileSync36(args.card, "utf8"));
   if (!isCouncilCard(cardValue))
     throw new Error(`invalid card: ${JSON.stringify(isCouncilCard.errors)}`);
   const card = cardValue;
   if (!card.options.includes(card.approve))
     throw new Error("the card's approving option is not one of its options");
-  const context = args.context.map((path) => ({ path, name: basename21(path), text: readFileSync35(path, "utf8") }));
+  const context = args.context.map((path) => ({ path, name: basename21(path), text: readFileSync36(path, "utf8") }));
   const items2 = [
     { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}
@@ -43510,13 +43674,13 @@ ${entry.text}` }))
   const payload = JSON.stringify({
     council: "blind",
     card,
-    context: context.map((entry) => ({ name: entry.name, sha256: sha256(entry.text), text: entry.text }))
+    context: context.map((entry) => ({ name: entry.name, sha256: sha2562(entry.text), text: entry.text }))
   });
   const refusals = checkOutbound(items2, payload);
   const seats = [];
   let decided = null;
   if (refusals.length === 0) {
-    const scratch = mkdtempSync3(join44(tmpdir3(), "ak-council-"));
+    const scratch = mkdtempSync3(join45(tmpdir3(), "ak-council-"));
     const live = new Set;
     const stopOn = (code) => () => {
       for (const pid of live)
@@ -43553,11 +43717,11 @@ ${entry.text}` }))
   const disclosed = decided === null ? { card: { id: card.id } } : {
     card,
     payload: {
-      sha256: sha256(payload),
+      sha256: sha2562(payload),
       bytes: Buffer.byteLength(payload, "utf8"),
       context: context.map((entry) => ({
         name: entry.name,
-        sha256: sha256(entry.text),
+        sha256: sha2562(entry.text),
         bytes: Buffer.byteLength(entry.text, "utf8")
       }))
     }
@@ -43579,7 +43743,7 @@ ${entry.text}` }))
   if (args.out === undefined)
     io.out(text3.trimEnd());
   else {
-    writeFileSync16(args.out, text3, { mode: 384 });
+    writeFileSync17(args.out, text3, { mode: 384 });
     io.out(`council ${record.outcome}: ${args.out}`);
   }
   return record.outcome === "approve" || record.outcome === "decline" ? 0 : 1;
@@ -43604,14 +43768,14 @@ async function runCouncil(argv, io) {
 }
 
 // src/semantic-lint/key.ts
-import { lstatSync as lstatSync6, readFileSync as readFileSync36 } from "fs";
+import { lstatSync as lstatSync6, readFileSync as readFileSync37 } from "fs";
 function readKeyFile(path) {
   const stat = lstatSync6(path, { throwIfNoEntry: false });
   if (stat === undefined)
     return null;
   if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 511) !== 384 || process.getuid !== undefined && stat.uid !== process.getuid())
     throw new Error("auth");
-  const lines = readFileSync36(path, "utf8").split(`
+  const lines = readFileSync37(path, "utf8").split(`
 `);
   for (const line of lines) {
     const match = /^(?:TYPESAFE_API_KEY|TYPESAFEAI_API_KEY)\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#'"`$]+))\s*$/.exec(line.trim());
@@ -43640,13 +43804,13 @@ var semantic_lint_default = {
 var import_ajv15 = __toESM(require_ajv(), 1);
 import { randomBytes as randomBytes5 } from "crypto";
 import { homedir as homedir5 } from "os";
-import { join as join48, resolve as resolve19 } from "path";
+import { join as join49, resolve as resolve19 } from "path";
 
 // src/semantic-lint/client.ts
 var import_ajv13 = __toESM(require_ajv(), 1);
 import { randomUUID as randomUUID2 } from "crypto";
-import { mkdirSync as mkdirSync25, writeFileSync as writeFileSync17 } from "fs";
-import { join as join45 } from "path";
+import { mkdirSync as mkdirSync26, writeFileSync as writeFileSync18 } from "fs";
+import { join as join46 } from "path";
 import { setTimeout as delay } from "timers/promises";
 // provenance/semantic-lint-response.schema.json
 var semantic_lint_response_schema_default = {
@@ -43717,7 +43881,7 @@ async function askBatch(input, options) {
   for (let attempt = 1;attempt <= 2; attempt += 1) {
     if (options.signal?.aborted)
       return { status: "error", reason: "cancelled", findings: [] };
-    const path = join45(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
+    const path = join46(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
     const receipt = {
       request,
       requested_model: semantic_lint_default.model,
@@ -43731,8 +43895,8 @@ async function askBatch(input, options) {
       http_status: null
     };
     const save2 = () => {
-      mkdirSync25(options.receipts, { recursive: true, mode: 448 });
-      writeFileSync17(path, `${JSON.stringify(receipt)}
+      mkdirSync26(options.receipts, { recursive: true, mode: 448 });
+      writeFileSync18(path, `${JSON.stringify(receipt)}
 `, { mode: 384 });
     };
     try {
@@ -43815,9 +43979,9 @@ async function askBatch(input, options) {
 // src/semantic-lint/claim.ts
 init_trace();
 var import_ajv14 = __toESM(require_ajv(), 1);
-import { createHash as createHash13, randomBytes as randomBytes4 } from "crypto";
-import { mkdirSync as mkdirSync26, readdirSync as readdirSync12, readFileSync as readFileSync37, renameSync as renameSync6, statSync as statSync20, writeFileSync as writeFileSync18 } from "fs";
-import { join as join46 } from "path";
+import { createHash as createHash14, randomBytes as randomBytes4 } from "crypto";
+import { mkdirSync as mkdirSync27, readdirSync as readdirSync12, readFileSync as readFileSync38, renameSync as renameSync7, statSync as statSync20, writeFileSync as writeFileSync19 } from "fs";
+import { join as join47 } from "path";
 var CLAIM_VERSION = 1;
 var STALE_MS = 120000;
 var ajv8 = new import_ajv14.default({ strict: false });
@@ -43833,7 +43997,7 @@ var isRecord = ajv8.compile({
 });
 var GENERATION = /^[1-9][0-9]*$/;
 function claimKey(body) {
-  return createHash13("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
+  return createHash14("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
 }
 function line(record) {
   return `${JSON.stringify(record)}
@@ -43843,7 +44007,7 @@ function taken(cause) {
   return cause instanceof Error && "code" in cause && cause.code === "EEXIST";
 }
 function current(path) {
-  const text3 = readFileSync37(path, "utf8");
+  const text3 = readFileSync38(path, "utf8");
   try {
     const raw = JSON.parse(text3);
     if (isRecord(raw))
@@ -43852,9 +44016,9 @@ function current(path) {
   return { state: "in-progress", trace: "", started_at: statSync20(path).mtimeMs, ended_at: null };
 }
 function acquireClaim(receipts, key, trace2, now = Date.now) {
-  const dir = join46(receipts, "claims", key);
+  const dir = join47(receipts, "claims", key);
   try {
-    mkdirSync26(dir, { recursive: true, mode: 448 });
+    mkdirSync27(dir, { recursive: true, mode: 448 });
   } catch {
     return { kind: "error" };
   }
@@ -43863,7 +44027,7 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     try {
       const highest2 = Math.max(0, ...readdirSync12(dir).filter((name) => GENERATION.test(name)).map(Number));
       if (highest2 > 0) {
-        const record = current(join46(dir, String(highest2)));
+        const record = current(join47(dir, String(highest2)));
         if (record.state === "complete")
           return { kind: "duplicate", trace: parseTraceparent(record.trace) === null ? null : record.trace };
         if (record.state === "in-progress" && now() - record.started_at < STALE_MS)
@@ -43873,9 +44037,9 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     } catch {
       return { kind: "error" };
     }
-    const path = join46(dir, String(next));
+    const path = join47(dir, String(next));
     try {
-      writeFileSync18(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
+      writeFileSync19(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
         flag: "wx",
         mode: 384
       });
@@ -43891,8 +44055,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
   try {
     const { started_at } = current(claim3.path);
     const temp = `${claim3.path}.${randomBytes4(8).toString("hex")}.tmp`;
-    writeFileSync18(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
-    renameSync6(temp, claim3.path);
+    writeFileSync19(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
+    renameSync7(temp, claim3.path);
     return true;
   } catch {
     return false;
@@ -43901,8 +44065,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync38, realpathSync as realpathSync16 } from "fs";
-import { isAbsolute as isAbsolute17, join as join47, relative as relative14, resolve as resolve18 } from "path";
+import { lstatSync as lstatSync7, readFileSync as readFileSync39, realpathSync as realpathSync16 } from "fs";
+import { isAbsolute as isAbsolute17, join as join48, relative as relative14, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -43946,7 +44110,7 @@ function collectInput(cwd) {
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
         else {
-          const content = readFileSync38(join47(root, path), "utf8");
+          const content = readFileSync39(join48(root, path), "utf8");
           if (binary(content))
             reason2 = "binary";
           else if (SECRET_CONTENT.test(content))
@@ -44054,8 +44218,8 @@ async function hookMain(argv) {
   const result2 = await runHook({
     root: process.cwd(),
     enabled,
-    keyFile: join48(homedir5(), semantic_lint_default.key_file),
-    receipts: join48(process.env.XDG_STATE_HOME ?? join48(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
+    keyFile: join49(homedir5(), semantic_lint_default.key_file),
+    receipts: join49(process.env.XDG_STATE_HOME ?? join49(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal
   });
@@ -44084,13 +44248,13 @@ var isCommand = ajv9.compile({ type: "string" });
 if (false) {}
 
 // src/maintenance/host-probe-version.ts
-import { readdirSync as readdirSync13, readFileSync as readFileSync39 } from "fs";
-import { join as join50 } from "path";
+import { readdirSync as readdirSync13, readFileSync as readFileSync40 } from "fs";
+import { join as join51 } from "path";
 
 // src/review-isolation-probe/host-cli.ts
 import { spawnSync as spawnSync5 } from "child_process";
 import { accessSync as accessSync2, constants as constants2 } from "fs";
-import { join as join49 } from "path";
+import { join as join50 } from "path";
 var VERSION_TIMEOUT_MS = 5000;
 var HOST_VERSION_NOT_ON_PATH = "not on PATH";
 var HOST_VERSION_FIXTURE = "fixture (host CLI not invoked)";
@@ -44120,7 +44284,7 @@ function which(names, pathEnv) {
     for (const dir of path.split(":")) {
       if (dir === "")
         continue;
-      const candidate = join49(dir, name);
+      const candidate = join50(dir, name);
       if (isExecutable(candidate))
         return candidate;
     }
@@ -44241,9 +44405,9 @@ function readLatestProbedHostVersion(factsRoot, host) {
     return null;
   }
   for (const date of dates.toSorted().toReversed()) {
-    const path = join50(factsRoot, date, `review-isolation-${host}.md`);
+    const path = join51(factsRoot, date, `review-isolation-${host}.md`);
     try {
-      const version2 = parseProbedHostVersion(readFileSync39(path, "utf8"));
+      const version2 = parseProbedHostVersion(readFileSync40(path, "utf8"));
       if (version2 !== null)
         return { date, version: version2, path };
     } catch {
@@ -44428,9 +44592,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join51(process.env.CODEX_HOME ?? join51(homedir6(), ".codex"), "config.toml");
+  const file = join52(process.env.CODEX_HOME ?? join52(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync40(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync41(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -44469,10 +44633,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join51(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join52(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson3(readFileSync40(file, "utf8"), validSettings);
+    settings = parseJson3(readFileSync41(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -44483,7 +44647,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync40(join51(root, BINDING_FILE)) ? root : null;
+  return existsSync41(join52(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -44495,7 +44659,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join51(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join52(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -44538,11 +44702,11 @@ function checkLinearis(root, backend) {
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync17(topResult.output) : realpathSync17(root);
   for (const base2 of new Set([root, top])) {
-    const binary2 = join51(base2, "node_modules", ".bin", "linearis");
-    if (!existsSync40(binary2))
+    const binary2 = join52(base2, "node_modules", ".bin", "linearis");
+    if (!existsSync41(binary2))
       continue;
     const target = realpathSync17(binary2);
-    if ([root, top].every((folder) => relative15(join51(realpathSync17(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative15(join52(realpathSync17(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -44555,7 +44719,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute18(root)) {
-      const value = parseJson3(readFileSync40(join51(root, suffix), "utf8"), validManifest);
+      const value = parseJson3(readFileSync41(join52(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -44607,13 +44771,13 @@ async function doctor2(json = false) {
     hasCodex || codexConfigured ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure) : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
-    ...probedHostVersionFindings(join51(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
+    ...probedHostVersionFindings(join52(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
-    checkSemanticLint(join51(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
+    checkSemanticLint(join52(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
   ];
   if (!hasClaude && !hasCodex) {
     items2.push(finding("FAIL", "installation", "ak is absent from both hosts", "Install ak from the published marketplace in Claude Code or Codex."));
@@ -44630,8 +44794,8 @@ async function maintenanceCommandNotice() {
   if (!path || basename22(path) !== "ak")
     return null;
   try {
-    const current2 = readFileSync40(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync40(join51(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current2 = readFileSync41(path, "utf8");
+    const published = isAbsolute18(ROOT) ? readFileSync41(join52(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });

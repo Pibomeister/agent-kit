@@ -7,6 +7,7 @@ import { asJsonObject, type Json, type JsonObject } from "../lifecycle/behavior-
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
+import type { IntentLookup } from "../validation/behavior-contract-intent.ts";
 import type { ResolvedKb } from "./binding.ts";
 import { git } from "./git.ts";
 import { markTrailAttempt } from "./trail-publish.ts";
@@ -721,6 +722,17 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
  * is written, and a link that names no committed record is refused rather
  * than stored dangling.
  */
+function committedIntentLookup(kb: ResolvedKb): IntentLookup {
+  return (id) => {
+    const doc = readCommittedArtifact(kb, id);
+    if (doc === undefined) return undefined;
+    const schema = isText(doc.schema) ? doc.schema : undefined;
+    const artifactId = isText(doc.id) ? doc.id : undefined;
+    if (schema === undefined || artifactId === undefined) return undefined;
+    return { schema, id: artifactId, doc };
+  };
+}
+
 export function publishRunArtifact(
   kb: ResolvedKb,
   text: string,
@@ -729,7 +741,7 @@ export function publishRunArtifact(
   trailAttempts?: string,
 ): PublishOutcome | KbRefusal {
   if (!ARTIFACT_ID.test(run)) return refused("kb.run-invalid", `'${run}' is not a run id.`);
-  const checked = checkRunArtifact(text);
+  const checked = checkRunArtifact(text, committedIntentLookup(kb));
   if (checked.artifact === null) {
     return refused("kb.artifact-invalid", `The artifact is refused before any write: ${checked.problem}.`);
   }
@@ -822,6 +834,20 @@ export function readPublishedProject(kb: ResolvedKb, projectId: string): JsonObj
     const stored = parseStored(line);
     if (stored === null || stored.artifact.schema !== "project") continue;
     if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId) continue;
+    found = stored.artifact;
+  }
+  return found;
+}
+
+/** Latest committed run artifact whose envelope id is `id`. */
+export function readCommittedArtifact(kb: ResolvedKb, id: string): JsonObject | undefined {
+  const content = committed(kb.root, artifactsPath(kb.binding.project));
+  if (content.status !== "found") return undefined;
+  let found: JsonObject | undefined;
+  for (const line of content.text.split("\n")) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.id !== id) continue;
+    if (!asJsonObject(stored.artifact)) continue;
     found = stored.artifact;
   }
   return found;
