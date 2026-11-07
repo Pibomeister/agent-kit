@@ -1327,5 +1327,6 @@ describe("ak doctor", () => {
     expect(checkKnowledgebase(fx.project, fx.registry).level).toBe("PASS");
     writeFileSync(fx.registry, "{");
     expect(checkKnowledgebase(fx.project, fx.registry).level).toBe("FAIL");
-  });
+    // Builds two git fixtures and runs `ak kb register`; a loaded host can pass the 5s default.
+  }, 30_000);
 });

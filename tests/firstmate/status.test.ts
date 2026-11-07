@@ -80,7 +80,8 @@ describe("ak firstmate status complete is audited", () => {
     const verified = fm("status", bindingPath, "--verify");
     expect(verified.code).toBe(0);
     expect(verified.out[0]).toContain(`verified: run ${binding.run_id}`);
-  });
+    // Records every gate through git and the CLI; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("replay of practice run 2, where only the dry-run ship left evidence, is refused", () => {
     const { bindingPath, fm, grants, record } = bound();
@@ -108,7 +109,8 @@ describe("ak firstmate status complete is audited", () => {
         "build-check,verify-receipt,review-full,review-readiness,ship-dry-run",
       ).code,
     ).toBe(0);
-  });
+    // Records five gates through git and the CLI; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("the head is the one ship-preflight names: an edit after ship does not undo done, an edit before it does", () => {
     const { project, bindingPath, binding, fm, grants, record } = bound();
@@ -123,7 +125,8 @@ describe("ak firstmate status complete is audited", () => {
     expect(fm("status", bindingPath, "--verify").code).toBe(0);
     writeFileSync(join(project, "src/a.ts"), "export const a = 10;\n"); // after ship: not what was shipped
     expect(fm("status", bindingPath, "--verify").code).toBe(0);
-  });
+    // Records gates twice and verifies three times through git; a loaded host can pass the 5s default.
+  }, 30_000);
 
   test("a run the supervisor has since merged into main still verifies", () => {
     const { project, bindingPath, binding, fm, grants, record } = bound();
