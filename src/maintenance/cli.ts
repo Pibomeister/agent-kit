@@ -28,6 +28,10 @@ import { readKeyFile } from "../semantic-lint/key.ts";
 import pin from "../../provenance/semantic-lint.json" with { type: "json" };
 import { hookMain } from "../../tools/hooks/semantic-lint.ts";
 import { probedHostVersionFindings, readInstalledHostVersion } from "./host-probe-version.ts";
+import { loadConfig } from "../learn/core/config.ts";
+import { loopDir } from "../learn/core/paths.ts";
+import { sessionRoot } from "../learn/memory/session-context.ts";
+import { classifyLessons, lessonsFindings, readLessons, type LessonFinding } from "../learn/lessons.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -515,7 +519,42 @@ function print(items: Finding[], json = false): number {
   return items.some((item) => item.level === "FAIL") ? 1 : 0;
 }
 
-async function doctor(json = false): Promise<number> {
+/**
+ * Lessons coverage for `ak doctor`: the canonical learnings file is the
+ * current project's memory ledger, unless `--lessons <dir>` names another
+ * ledger, whose pages sit under its `lessons/`. Reading it is
+ * what loads the lessons at a preflight; session start loads the confirmed
+ * ones into the worker's context. A ledger that cannot be resolved is a
+ * warning naming that, never silence.
+ */
+export function doctorLessonsFindings(lessonsDir: string | undefined, ran: readonly Finding[]): Finding[] {
+  let dir = lessonsDir;
+  if (dir === undefined) {
+    try {
+      const root = sessionRoot(process.cwd());
+      if (root === null) throw new Error("no project root");
+      dir = loopDir(loadConfig(process.env), root, "memory");
+    } catch {
+      return [
+        finding(
+          "WARN",
+          "lessons coverage",
+          "the canonical learnings file could not be located for this project",
+          "Pass --lessons <ledger-dir> naming the memory ledger to read.",
+        ),
+      ];
+    }
+  }
+  const coverage = classifyLessons(readLessons(dir));
+  return lessonsFindings(coverage, ran).map((row: LessonFinding): Finding => ({
+    level: row.level,
+    check: row.check,
+    detail: row.detail,
+    remedy: row.remedy,
+  }));
+}
+
+async function doctor(json = false, lessonsDir?: string): Promise<number> {
   const [claudeSource, codexSource] = await Promise.all([manifest("claude-code"), manifest("codex")]);
   const hostRoot = projectRoot();
   const claude = claudeRecords(hostRoot);
@@ -545,6 +584,7 @@ async function doctor(json = false): Promise<number> {
     checkKnowledgebase(process.cwd()),
     checkSemanticLint(join(homedir(), pin.key_file), process.env.AK_JEV_ENABLED),
   ];
+  items.push(...doctorLessonsFindings(lessonsDir, items));
   if (!hasClaude && !hasCodex) {
     items.push(
       finding(
@@ -662,9 +702,27 @@ async function update(): Promise<number> {
   return failures ? 1 : 0;
 }
 
+/** `ak doctor [--json] [--lessons <dir>]`: null when a flag is neither, or `--lessons` has no value. */
+function doctorFlags(flags: readonly string[]): { json: boolean; lessons?: string } | null {
+  let json = false;
+  let lessons: string | undefined;
+  for (let i = 0; i < flags.length; i += 1) {
+    const flag = flags[i];
+    if (flag === undefined) return null;
+    if (flag === "--json") json = true;
+    else if (flag === "--lessons") {
+      lessons = flags[i + 1];
+      if (lessons === undefined || lessons.startsWith("--")) return null;
+      i += 1;
+    } else return null;
+  }
+  return { json, lessons };
+}
+
 if (import.meta.main) {
   const action = process.argv[2];
   const flags = process.argv.slice(3);
+  const doctorArgs = action === "doctor" ? doctorFlags(flags) : null;
   if (action === "learn") {
     // The learning runtime travels in this bundle so a plugin install can run it without a checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
@@ -686,11 +744,8 @@ if (import.meta.main) {
     process.exitCode = await runCouncil(flags, io);
   } else if (action === "semantic-lint" && flags[0] === "hook" && (await hookMain(flags.slice(1))) === 0) {
     // The plugin's Stop hook: hookMain printed the host output.
-  } else if (
-    (action === "doctor" && flags.every((flag) => flag === "--json") && flags.length <= 1) ||
-    (action === "update" && flags.length === 0)
-  )
-    process.exitCode = action === "doctor" ? await doctor(flags[0] === "--json") : await update();
+  } else if (doctorArgs !== null) process.exitCode = await doctor(doctorArgs.json, doctorArgs.lessons);
+  else if (action === "update" && flags.length === 0) process.exitCode = await update();
   else if (action === "delegation" && flags.length === 3 && flags[1] === "--project") {
     // The bundle's only `ak`: super-bound runs the scorer from an install that has no repository checkout.
     try {
@@ -701,7 +756,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]",
+      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]",
     );
     process.exitCode = 2;
   }

@@ -70,6 +70,7 @@ export const LEARN_VALUE_FLAGS = new Set([
   "grok-home",
   "skills-dir",
   "reason",
+  "file",
   "title",
   "max-prs",
 ]);

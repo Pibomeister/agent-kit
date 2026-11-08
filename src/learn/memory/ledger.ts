@@ -9,7 +9,7 @@
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
- * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
+ * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index; a page may carry `failure`, `check` and `issue`, and `src/learn/lessons.ts` reads them for `ak doctor` coverage and after-run triage |
  * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the raw store holds, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *

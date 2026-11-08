@@ -60,9 +60,9 @@ describe("configured test lanes", () => {
         const ignored = (ordinary ?? []).filter((_, index) => ordinary?.[index - 1] === "--path-ignore-patterns");
         const ordinaryFiles = files.filter((file) => !ignored.some((pattern) => new Bun.Glob(pattern).match(file)));
         const integrationFiles = integration.map((call) => {
-          expect(call.slice(0, 2)).toEqual(["test", "--max-concurrency=1"]);
-          expect(call).toHaveLength(3);
-          return call[2]?.replace(/^\.\//, "");
+          expect(call.slice(0, 3)).toEqual(["test", "--max-concurrency=1", "--timeout=30000"]);
+          expect(call).toHaveLength(4);
+          return call[3]?.replace(/^\.\//, "");
         });
         expect(integrationFiles).toEqual(heavy);
         expect(

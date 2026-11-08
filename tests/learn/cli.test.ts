@@ -32,7 +32,7 @@ describe("ak learn hook never fails a session", () => {
     expect(
       await runLearn(["memory", "nope"], { cwd: scratch(), io, env: { ...process.env, CLAUDE_CONFIG_DIR: scratch() } }),
     ).toBe(2);
-    expect(err[0]).toBe("ak learn memory: unknown verb 'nope'; nearest of 8: mute, run, show");
+    expect(err[0]).toBe("ak learn memory: unknown verb 'nope'; nearest of 9: mute, run, show");
   });
 
   test("an unknown area or verb names what was probably meant", async () => {

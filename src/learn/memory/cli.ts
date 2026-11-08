@@ -6,17 +6,18 @@
  * with git. `rollback` restores the wiki layer (memory.md, lessons) only; the
  * raw episodes and runs are never reverted (`core/ledger.ts`).
  */
-import { rmSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { basename, join } from "node:path";
 import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnArea, LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot, projectFolderName, tickLogPath } from "../core/paths.ts";
-import { appendJsonl, nowIso, readJsonl, readText } from "../core/store.ts";
+import { appendJsonl, nowIso, readJsonl, readText, todayLocal, writeGated } from "../core/store.ts";
+import { parseFailureRecords, readLessons, renderLesson, triageFailures, type FailureRecord } from "../lessons.ts";
 import { generations } from "../core/trace.ts";
 import { UNDONE_RUNS_FILE } from "./episodes.ts";
-import { ensureMemoryLedger, memoryDir, readState, saveState } from "./ledger.ts";
+import { appendRun, ensureMemoryLedger, memoryDir, readState, rewriteIndex, saveState } from "./ledger.ts";
 import { logRegistryWarnings, readRegistry, registerRoot, unknownRepo } from "./registry.ts";
 import { sessionRoot } from "./session-context.ts";
 import { type Job, JOBS, tick } from "./tick.ts";
@@ -171,6 +172,78 @@ function status(args: LearnArgs, ctx: LearnContext): number {
   return 0;
 }
 
+/**
+ * After-run triage, deterministic and offline: failures a caller states (a
+ * run record, a person) are deduped against the canonical lessons and within
+ * the file, new ones are appended as the next lesson pages, and failures
+ * with no issue link are recorded as issue candidates in the ledger's raw
+ * layer. No judge call is made and no issue is filed from here — filing is
+ * a separate, human-owned act on the candidate records.
+ */
+function triage(args: LearnArgs, ctx: LearnContext): number {
+  const root = rootFor(args, ctx);
+  if (root === null) return 1;
+  const file = flag(args, "file");
+  if (file === undefined) {
+    ctx.io.err("ak learn memory triage: --file <failures.json> is required");
+    return 2;
+  }
+  let failures: FailureRecord[] | null;
+  try {
+    failures = parseFailureRecords(readFileSync(file, "utf8"));
+  } catch {
+    failures = null;
+  }
+  if (failures === null) {
+    ctx.io.err(
+      `ak learn memory triage: ${file} is not a failures file (a JSON array of {failure, lesson, check?, issue?, scope?})`,
+    );
+    return 1;
+  }
+  const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+  return locked(ctx, ledger, () => {
+    const issueLog = ledger.path("raw", "triage-issues.jsonl");
+    const recorded = new Set(readJsonl<{ lessonId?: string }>(issueLog).flatMap((row) => row.lessonId ?? []));
+    const result = triageFailures(readLessons(ledger.dir), failures, recorded);
+    const today = todayLocal();
+    for (const record of result.created)
+      writeGated(ledger.dir, join(ledger.path("lessons"), `${record.id}.md`), renderLesson(record, today));
+    if (result.created.length > 0) rewriteIndex(ledger);
+    appendJsonl(
+      issueLog,
+      result.issueCandidates.map((candidate) => ({ ts: nowIso(), ...candidate })),
+      ledger.dir,
+    );
+    appendRun(ledger, {
+      job: "triage",
+      created: result.created.map((record) => record.id),
+      duplicates: result.duplicates.map((dup) => ({
+        lessonId: dup.lessonId,
+        check: dup.failure.check ?? "",
+        issue: dup.failure.issue ?? "",
+      })),
+      issue_candidates: result.issueCandidates.map((candidate) => candidate.lessonId),
+    });
+    if (result.created.length > 0) ledger.commit(`triage: +${result.created.length} lessons`);
+    for (const record of result.created) ctx.io.out(`created ${record.id}: ${record.statement}`);
+    for (const dup of result.duplicates) {
+      const named = [
+        (dup.failure.check ?? "") === "" ? "" : `check ${dup.failure.check}`,
+        (dup.failure.issue ?? "") === "" ? "" : `issue ${dup.failure.issue}`,
+      ].filter((part) => part !== "");
+      ctx.io.out(
+        `duplicate of ${dup.lessonId}: ${dup.failure.lesson}` +
+          (named.length > 0 ? ` (${named.join(", ")} not attached)` : ""),
+      );
+    }
+    ctx.io.out(
+      `triage: ${result.created.length} created, ${result.duplicates.length} duplicate(s), ` +
+        `${result.issueCandidates.length} issue candidate(s) recorded in raw/triage-issues.jsonl; no issue was filed`,
+    );
+    return 0;
+  });
+}
+
 export const memoryArea: LearnArea = {
   summary: "observed host sessions -> working memory and lessons, merged into the session-start block",
   verbs: {
@@ -208,6 +281,11 @@ export const memoryArea: LearnArea = {
     status: {
       usage: "memory status [--repo PATH]   registry entry, state, the last runs and tick-log lines",
       run: status,
+    },
+    triage: {
+      usage:
+        "memory triage --file <failures.json> [--repo PATH]   dedupe run failures into new lesson pages and issue-candidate records; no judge call, no issue filed",
+      run: triage,
     },
     show: {
       usage: "memory show [--repo PATH]     memory.md and the lessons index",

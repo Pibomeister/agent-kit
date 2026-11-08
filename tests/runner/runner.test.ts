@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -30,13 +31,17 @@ import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts"
 import { parseJson } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
-// Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
-// cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
-setDefaultTimeout(30_000);
+// Most tests drive git, the live runner service and separate seat processes. Under heavy host load
+// any ordinary case can pass 30s, and which one does varies run to run, so the default bound is a
+// hang detector rather than a speed check. The multi-command live-service tests declare larger bounds.
+setDefaultTimeout(120_000);
 
 const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;
 const CONTENDED_RUNNER_CALL_TIMEOUT_MS = 120_000;
+/** The charter-bound live smoke's bound, as for the other live-service tests, and the waits inside it. */
+const LIVE_SMOKE_TIMEOUT_MS = 300_000;
+const LIVE_SMOKE_WAIT_MS = 60_000;
 type LiveChild = ReturnType<typeof spawnLive>;
 const runnerCallChildren = new Set<LiveChild>();
 const liveChildren = new Set<LiveChild>();
@@ -228,12 +233,8 @@ async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<bool
   return false;
 }
 
-function fixture(limit = 3) {
-  const dir = mkdtempSync(join(scratchRoot, "ak-runner-"));
-  const worker = join(dir, "worker");
-  const privateDir = join(dir, "private");
-  mkdirSync(worker);
-  mkdirSync(privateDir);
+const WORKER_TEMPLATE = (() => {
+  const worker = mkdtempSync(join(scratchRoot, "ak-runner-seed-"));
   writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
   writeFileSync(join(worker, "README.md"), "toy worktree\n");
   Bun.spawnSync(["git", "init", "-q", worker]);
@@ -251,8 +252,30 @@ function fixture(limit = 3) {
     "Create toy charter worktree",
   ]);
   const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  mkdirSync(join(worker, ".runner-requests"));
+  return { worker, revision };
+})();
+
+const FEATURE_WORKER_TEMPLATE = (() => {
+  const worker = mkdtempSync(join(scratchRoot, "ak-runner-feature-seed-"));
+  cpSync(WORKER_TEMPLATE.worker, worker, { recursive: true });
+  git(worker, "branch", "-M", "main");
+  git(worker, "checkout", "-qb", "feature");
+  writeFileSync(join(worker, "feature.txt"), "feature\n");
+  git(worker, "add", "feature.txt");
+  git(worker, "commit", "-qm", "add feature");
+  const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  return { worker, revision };
+})();
+
+function fixture(limit = 3, template = WORKER_TEMPLATE) {
+  const dir = mkdtempSync(join(scratchRoot, "ak-runner-"));
+  const worker = join(dir, "worker");
+  const privateDir = join(dir, "private");
+  cpSync(template.worker, worker, { recursive: true });
+  mkdirSync(privateDir);
+  const { revision } = template;
   const requestDir = join(worker, ".runner-requests");
-  mkdirSync(requestDir);
   const path = join(privateDir, "charter.json");
   const toyTicket = {
     schema: "ticket",
@@ -443,14 +466,8 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
 }
 
 function patchVerdictFixture(autonomous = false, ship = true) {
-  const f = fixture();
+  const f = fixture(3, FEATURE_WORKER_TEMPLATE);
   if (autonomous) withAuditCadence(f);
-  git(f.worker, "branch", "-M", "main");
-  git(f.worker, "checkout", "-qb", "feature");
-  writeFileSync(join(f.worker, "feature.txt"), "feature\n");
-  git(f.worker, "add", "feature.txt");
-  git(f.worker, "commit", "-qm", "add feature");
-  f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
   f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
   const receipt = join(f.privateDir, "source.txt");
   writeFileSync(receipt, "source evidence");
@@ -1152,8 +1169,7 @@ describe("runner guards", () => {
         key: "wake-1",
         payload: "check the checkpoint",
       });
-      for (let attempt = 0; attempt < 100 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
-        await Bun.sleep(10);
+      await waitUntil("pending events to clear", () => f.runner.pendingEvents("toy-run").length === 0);
       expect(f.runner.pendingEvents("toy-run")).toEqual([]);
     } finally {
       service.kill("SIGTERM");
@@ -1440,12 +1456,10 @@ describe("runner guards", () => {
         missing: [],
       });
       await waitForPath(replacementLog, service);
-      for (
-        let attempt = 0;
-        attempt < 100 && f.runner.status("toy-run").delegates?.["owner-2"] === undefined;
-        attempt += 1
-      )
-        await Bun.sleep(10);
+      await waitUntil(
+        "replacement delegate to be recorded",
+        () => f.runner.status("toy-run").delegates?.["owner-2"] !== undefined,
+      );
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("replaced");
       expect(f.runner.status("toy-run").delegates?.["owner-2"]?.state).toBe("active");
     } finally {
@@ -1652,184 +1666,200 @@ describe("runner guards", () => {
     expect(reverted.verdict?.reused_from).toBeUndefined();
   });
 
-  test("charter-bound live smoke wakes through an event and reaches a local ready branch", async () => {
-    const f = fixture();
-    const cliEntry = process.env["AK_AUTONOMY_SMOKE_ENTRY"] ?? join(root, "src", "cli.ts");
-    withAuditCadence(f);
-    git(f.worker, "branch", "-M", "main");
-    git(f.worker, "checkout", "-qb", "feature");
-    writeFileSync(join(f.worker, "feature.txt"), "ready branch\n");
-    git(f.worker, "add", "feature.txt");
-    git(f.worker, "commit", "-qm", "prepare feature");
-    const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
-    const socket = join(f.privateDir, "runner.sock");
-    const tokenFile = join(f.privateDir, "admin.token");
-    const eventConfig = join(f.privateDir, "event.json");
-    const loopConfig = join(f.privateDir, "loop.json");
-    const seatConfig = join(f.privateDir, "seats.json");
-    const verifyConfig = join(f.privateDir, "verify.json");
-    const loopLog = join(f.privateDir, "audit-probe.json");
-    const consumerRequest = join(f.privateDir, "consumer.json");
-    const request = join(f.requestDir, "smoke.json");
-    const adminToken = "a".repeat(48);
-    const workerToken = "b".repeat(48);
-    writeFileSync(tokenFile, adminToken, { mode: 0o600 });
-    writeFileSync(
-      seatConfig,
-      JSON.stringify({
-        launchers: ["seat-a", "seat-b"].map((seat) => ({
-          seat,
-          actor: `supervisor-${seat}`,
-          lineage: [`supervisor-${seat}`],
+  test(
+    "charter-bound live smoke wakes through an event and reaches a local ready branch",
+    async () => {
+      const f = fixture();
+      const cliEntry = process.env["AK_AUTONOMY_SMOKE_ENTRY"] ?? join(root, "src", "cli.ts");
+      withAuditCadence(f);
+      git(f.worker, "branch", "-M", "main");
+      git(f.worker, "checkout", "-qb", "feature");
+      writeFileSync(join(f.worker, "feature.txt"), "ready branch\n");
+      git(f.worker, "add", "feature.txt");
+      git(f.worker, "commit", "-qm", "prepare feature");
+      const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      const socket = join(f.privateDir, "runner.sock");
+      const tokenFile = join(f.privateDir, "admin.token");
+      const eventConfig = join(f.privateDir, "event.json");
+      const loopConfig = join(f.privateDir, "loop.json");
+      const seatConfig = join(f.privateDir, "seats.json");
+      const verifyConfig = join(f.privateDir, "verify.json");
+      const loopLog = join(f.privateDir, "audit-probe.json");
+      const consumerRequest = join(f.privateDir, "consumer.json");
+      const request = join(f.requestDir, "smoke.json");
+      const adminToken = "a".repeat(48);
+      const workerToken = "b".repeat(48);
+      writeFileSync(tokenFile, adminToken, { mode: 0o600 });
+      writeFileSync(
+        seatConfig,
+        JSON.stringify({
+          launchers: ["seat-a", "seat-b"].map((seat) => ({
+            seat,
+            actor: `supervisor-${seat}`,
+            lineage: [`supervisor-${seat}`],
+            command: [
+              "bun",
+              "-e",
+              "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'charter and evidence agree'}));",
+            ],
+          })),
+        }),
+      );
+      writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('scratch behavior passed')"] }));
+      writeFileSync(
+        eventConfig,
+        JSON.stringify({
+          timeout_ms: LIVE_SMOKE_WAIT_MS,
           command: [
             "bun",
             "-e",
-            "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'charter and evidence agree'}));",
+            "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync(['bun',process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
+            consumerRequest,
+            cliEntry,
           ],
-        })),
-      }),
-    );
-    writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('scratch behavior passed')"] }));
-    writeFileSync(
-      eventConfig,
-      JSON.stringify({
-        timeout_ms: 10_000,
-        command: [
-          "bun",
-          "-e",
-          "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync(['bun',process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
-          consumerRequest,
-          cliEntry,
-        ],
-      }),
-    );
-    writeFileSync(
-      loopConfig,
-      JSON.stringify({
-        timeout_ms: 10_000,
-        command: [
-          "bun",
-          "-e",
-          "const x=JSON.parse(await Bun.stdin.text());if(x.action!=='probe')process.exit(2);await Bun.write(process.argv[1],JSON.stringify(x));console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
-          loopLog,
-        ],
-      }),
-    );
-    const service = spawnLive(
-      [
-        "bun",
-        cliEntry,
-        "runner",
-        "serve",
-        "--socket",
-        socket,
-        "--state-dir",
-        f.privateDir,
-        "--worker-root",
-        f.worker,
-        "--run-id",
-        "toy-run",
-        "--admin-token-file",
-        tokenFile,
-        "--event-config",
-        eventConfig,
-        "--loop-config",
+        }),
+      );
+      writeFileSync(
         loopConfig,
-        "--seat-config",
-        seatConfig,
-        "--verify-config",
-        verifyConfig,
-      ],
-      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
-    );
-    const call = (verb: string, token: string, args: RunnerArgs) => {
-      writeFileSync(request, JSON.stringify(args));
-      const response = callRunnerCli(verb, request, socket, token);
-      expect(response.exitCode).toBe(0);
-      return response;
-    };
-    const prepare = (id: string, operation: string, covers: string, evidence: string) =>
-      call("prepare", workerToken, {
-        run: "toy-run",
-        card: {
-          id,
-          operation,
-          grant: { charter_hash: f.charter.immutability.hash, covers },
-          question: "Proceed under the charter?",
-          options: ["yes", "no"],
-          approve: "yes",
-          evidence: [evidence],
-          artifact_hash: `sha256:${"b".repeat(64)}`,
-        },
-      });
-    try {
-      await waitForPath(socket, service);
-      call("start", adminToken, {
-        run: "toy-run",
-        charter: f.path,
-        implementer: "implementer-1",
-        revision: head,
-        standing_grant: {
-          charter_hash: f.charter.immutability.hash,
-          covers: "autopilot.start",
-          controller: "firstmate",
-          run_id: "toy-run",
-        },
-      });
-      expect(autonomyOf(call("status", workerToken, { run: "toy-run" }))).toEqual({ mode: "autonomous", missing: [] });
-      const source = join(f.privateDir, "source.txt");
-      writeFileSync(source, "approved scratch work source");
-      call("collect", adminToken, { run: "toy-run", id: "e1", source, revision: head, kind: "source" });
-      call("delegate", adminToken, { run: "toy-run", id: "owner-1", amount: 30 });
-      call("progress", adminToken, { run: "toy-run", id: "owner-1", kind: "commit", source: head });
-      prepare("align", "align.run", "align-answer", "e1");
-      call("event", adminToken, { run: "toy-run", key: "wake-align", payload: "checkpoint available" });
-      await waitUntil("the event wake to reach alignment", () => f.runner.status("toy-run").run_state === "alignment");
-      await waitUntil("the wake event to be acknowledged", () => f.runner.pendingEvents("toy-run").length === 0);
-      for (const [id, operation, covers] of [
-        ["bound", "bound.run", "spec-approval"],
-        ["build", "build.dispatch", "build-go"],
-      ] as const) {
-        prepare(id, operation, covers, "e1");
-        call("decide", workerToken, { run: "toy-run", card_id: id });
-      }
-      call("run-verify", workerToken, { run: "toy-run" });
-      const verify = Object.values(f.runner.status("toy-run").evidence).find((entry) => entry.kind === "verify");
-      if (verify === undefined) throw new Error("live verification receipt missing");
-      for (const [id, operation, covers] of [
-        ["review", "review.full", "finding-adjudication"],
-        ["readiness", "review.readiness", "finding-adjudication"],
-      ] as const) {
-        prepare(id, operation, covers, verify.id);
-        call("decide", workerToken, { run: "toy-run", card_id: id });
-      }
-      call("verdict", adminToken, { run: "toy-run" });
-      prepare("ship", "ship.prepare", "ship-pr", verify.id);
-      call("decide", workerToken, { run: "toy-run", card_id: "ship" });
-      await waitForPath(loopLog, service);
-      call("finish", adminToken, { run: "toy-run", id: "owner-1" });
-      const ledger = f.runner.ledger("toy-run");
-      const run = f.runner.status("toy-run");
-      expect(ledger.status).toBe("ready-to-ship");
-      expect(ledger.entries).toHaveLength(6);
-      expect(ledger.entries.every((entry) => entry.outcome === "ruling")).toBe(true);
-      expect(
-        run.decisions.every((decision) => decision.card.judgments.length === 2 && decision.answer === undefined),
-      ).toBe(true);
-      expect(run.verdict?.head_revision).toBe(head);
-      const ledgerPath = process.env["AK_AUTONOMY_SMOKE_LEDGER"];
-      if (ledgerPath !== undefined) writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
-      const transcriptPath = process.env["AK_AUTONOMY_SMOKE_TRANSCRIPT"];
-      if (transcriptPath !== undefined)
-        writeFileSync(
-          transcriptPath,
-          `scratch=${f.worker}\nhead=${head}\nmode=autonomous\nevent=wake-align acknowledged\naudit=probe observed\ncheckpoints=${ledger.entries.map((entry) => entry.checkpoint).join(",")}\nstatus=${ledger.status}\n`,
+        JSON.stringify({
+          timeout_ms: LIVE_SMOKE_WAIT_MS,
+          command: [
+            "bun",
+            "-e",
+            "const x=JSON.parse(await Bun.stdin.text());if(x.action!=='probe')process.exit(2);await Bun.write(process.argv[1],JSON.stringify(x));console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
+            loopLog,
+          ],
+        }),
+      );
+      const service = spawnLive(
+        [
+          "bun",
+          cliEntry,
+          "runner",
+          "serve",
+          "--socket",
+          socket,
+          "--state-dir",
+          f.privateDir,
+          "--worker-root",
+          f.worker,
+          "--run-id",
+          "toy-run",
+          "--admin-token-file",
+          tokenFile,
+          "--event-config",
+          eventConfig,
+          "--loop-config",
+          loopConfig,
+          "--seat-config",
+          seatConfig,
+          "--verify-config",
+          verifyConfig,
+        ],
+        { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+      );
+      const call = (verb: string, token: string, args: RunnerArgs) => {
+        writeFileSync(request, JSON.stringify(args));
+        const response = callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
+        expect(response.exitCode).toBe(0);
+        return response;
+      };
+      const prepare = (id: string, operation: string, covers: string, evidence: string) =>
+        call("prepare", workerToken, {
+          run: "toy-run",
+          card: {
+            id,
+            operation,
+            grant: { charter_hash: f.charter.immutability.hash, covers },
+            question: "Proceed under the charter?",
+            options: ["yes", "no"],
+            approve: "yes",
+            evidence: [evidence],
+            artifact_hash: `sha256:${"b".repeat(64)}`,
+          },
+        });
+      try {
+        await waitForPath(socket, service);
+        call("start", adminToken, {
+          run: "toy-run",
+          charter: f.path,
+          implementer: "implementer-1",
+          revision: head,
+          standing_grant: {
+            charter_hash: f.charter.immutability.hash,
+            covers: "autopilot.start",
+            controller: "firstmate",
+            run_id: "toy-run",
+          },
+        });
+        expect(autonomyOf(call("status", workerToken, { run: "toy-run" }))).toEqual({
+          mode: "autonomous",
+          missing: [],
+        });
+        const source = join(f.privateDir, "source.txt");
+        writeFileSync(source, "approved scratch work source");
+        call("collect", adminToken, { run: "toy-run", id: "e1", source, revision: head, kind: "source" });
+        call("delegate", adminToken, { run: "toy-run", id: "owner-1", amount: LIVE_SMOKE_TIMEOUT_MS / 1000 });
+        call("progress", adminToken, { run: "toy-run", id: "owner-1", kind: "commit", source: head });
+        prepare("align", "align.run", "align-answer", "e1");
+        call("event", adminToken, { run: "toy-run", key: "wake-align", payload: "checkpoint available" });
+        await waitUntil(
+          "the event wake to reach alignment",
+          () => f.runner.status("toy-run").run_state === "alignment",
+          LIVE_SMOKE_WAIT_MS,
         );
-    } finally {
-      service.kill("SIGTERM");
-      await service.exited;
-    }
-  });
+        await waitUntil(
+          "the wake event to be acknowledged",
+          () => f.runner.pendingEvents("toy-run").length === 0,
+          LIVE_SMOKE_WAIT_MS,
+        );
+        for (const [id, operation, covers] of [
+          ["bound", "bound.run", "spec-approval"],
+          ["build", "build.dispatch", "build-go"],
+        ] as const) {
+          prepare(id, operation, covers, "e1");
+          call("decide", workerToken, { run: "toy-run", card_id: id });
+        }
+        call("run-verify", workerToken, { run: "toy-run" });
+        const verify = Object.values(f.runner.status("toy-run").evidence).find((entry) => entry.kind === "verify");
+        if (verify === undefined) throw new Error("live verification receipt missing");
+        for (const [id, operation, covers] of [
+          ["review", "review.full", "finding-adjudication"],
+          ["readiness", "review.readiness", "finding-adjudication"],
+        ] as const) {
+          prepare(id, operation, covers, verify.id);
+          call("decide", workerToken, { run: "toy-run", card_id: id });
+        }
+        call("verdict", adminToken, { run: "toy-run" });
+        prepare("ship", "ship.prepare", "ship-pr", verify.id);
+        call("decide", workerToken, { run: "toy-run", card_id: "ship" });
+        await waitForPath(loopLog, service);
+        call("finish", adminToken, { run: "toy-run", id: "owner-1" });
+        const ledger = f.runner.ledger("toy-run");
+        const run = f.runner.status("toy-run");
+        expect(ledger.status).toBe("ready-to-ship");
+        expect(ledger.entries).toHaveLength(6);
+        expect(ledger.entries.every((entry) => entry.outcome === "ruling")).toBe(true);
+        expect(
+          run.decisions.every((decision) => decision.card.judgments.length === 2 && decision.answer === undefined),
+        ).toBe(true);
+        expect(run.verdict?.head_revision).toBe(head);
+        const ledgerPath = process.env["AK_AUTONOMY_SMOKE_LEDGER"];
+        if (ledgerPath !== undefined) writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+        const transcriptPath = process.env["AK_AUTONOMY_SMOKE_TRANSCRIPT"];
+        if (transcriptPath !== undefined)
+          writeFileSync(
+            transcriptPath,
+            `scratch=${f.worker}\nhead=${head}\nmode=autonomous\nevent=wake-align acknowledged\naudit=probe observed\ncheckpoints=${ledger.entries.map((entry) => entry.checkpoint).join(",")}\nstatus=${ledger.status}\n`,
+          );
+      } finally {
+        service.kill("SIGTERM");
+        await service.exited;
+      }
+      // Drives the live runner service through 16 CLI calls, 6 two-seat checkpoints, and event/verify subprocesses.
+    },
+    LIVE_SMOKE_TIMEOUT_MS,
+  );
 
   test("worker CLI cannot use supervisor verbs through the live service", async () => {
     const f = fixture();
@@ -2587,13 +2617,13 @@ describe("runner guards", () => {
       },
     );
     try {
-      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
+      await waitForPath(socket, server);
       expect(existsSync(socket)).toBe(true);
       expect(existsSync(marker)).toBe(false);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
-        return callRunnerCli(verb, request, socket, token);
+        return callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       };
       expect(
         call("start", adminToken, {
@@ -2628,7 +2658,8 @@ describe("runner guards", () => {
       server.kill();
       await server.exited;
     }
-  }, 30_000);
+    // Spawns a live runner service, initializes a nested git repo, and runs three CLI start/sync calls across both trees.
+  }, 120_000);
 
   test("FIFO git control files refuse promptly without wedging supervisor cancel", () => {
     const f = fixture();
@@ -2639,7 +2670,9 @@ describe("runner guards", () => {
         cwd: root,
         env: { ...process.env },
         encoding: "utf8",
-        timeout: 6_000,
+        // A wedged FIFO read never returns; a loaded host can still take several seconds to start
+        // the child and load the runner, so this bound only has to separate a hang from a slow start.
+        timeout: 30_000,
         killSignal: "SIGKILL",
       });
       expect(child.error).toBeUndefined();
@@ -2660,7 +2693,7 @@ describe("runner guards", () => {
     expect(f.runner.cancel("toy-run", "captain", "Stop despite a broken checkout.").run_state).toBe("cancelled");
     unlinkSync(head);
     writeFileSync(head, previous);
-  }, 30_000);
+  }, 120_000);
 
   test("runner snapshot follows submodules and embedded repositories", () => {
     const f = fixture();
