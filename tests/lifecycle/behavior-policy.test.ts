@@ -18,6 +18,7 @@ import { join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
 import { runCli } from "../../src/cli.ts";
+import { bind } from "../../src/firstmate/bind.ts";
 import { checkRunArtifact } from "../../src/kb/artifacts.ts";
 import {
   asJsonObject,
@@ -33,7 +34,9 @@ import {
 import { defaultEvidenceDir, openRun, readRecords, takeSnapshot, type Snapshot } from "../../src/lifecycle/gate.ts";
 import { persistFrozenRun } from "../../src/lifecycle/persist-run.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
+import { Runner } from "../../src/runner/core.ts";
 import { artifactHash, canonicalJson } from "../../src/util/hash.ts";
+import { FIXED_NOW, makeBundle, makeDir, makeHome } from "../firstmate/fixture.ts";
 import { makeTree } from "../helpers/tree.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
@@ -41,6 +44,14 @@ setDefaultTimeout(60_000);
 
 const ROOT = join(import.meta.dir, "..", "..");
 const HASH = `sha256:${"a".repeat(64)}`;
+const evidenceByRun = new Map<string, string>();
+const latestEvidenceByCwd = new Map<string, string>();
+
+function storeFor(cwd: string, run?: string): string {
+  const byRun = run === undefined ? undefined : evidenceByRun.get(run);
+  if (byRun !== undefined) return byRun;
+  return latestEvidenceByCwd.get(cwd) ?? defaultEvidenceDir(cwd);
+}
 
 function gitEnv(cwd: string): NodeJS.ProcessEnv {
   return {
@@ -83,9 +94,14 @@ function repo(): string {
 }
 
 function ak(cwd: string, ...argv: string[]) {
+  const boundDir = latestEvidenceByCwd.get(cwd);
+  const extra = argv.includes("--dir") || boundDir === undefined ? [] : ["--dir", boundDir];
   const out: string[] = [];
   const err: string[] = [];
-  const code = runCli(["lifecycle", ...argv], { cwd, io: { out: (l) => out.push(l), err: (l) => err.push(l) } });
+  const code = runCli(["lifecycle", ...argv, ...extra], {
+    cwd,
+    io: { out: (l) => out.push(l), err: (l) => err.push(l) },
+  });
   return { code, out, err: err.join("\n") };
 }
 
@@ -166,6 +182,23 @@ function attachKb(cwd: string, mode: "off" | "shadow" | "on", id = "example-proj
   const registry = join(scratch, "registry.json");
   writeJson(registry, { knowledgebases: { "fixture-kb": { path: kb } } });
   return { registry, kb, project };
+}
+
+function attachEmptyKb(cwd: string, id = "example-project") {
+  const scratch = processScratch("ak-bv-kb-");
+  const kb = join(scratch, "kb");
+  mkdirSync(join(kb, "projects", id, "runs"), { recursive: true });
+  git(kb, "init", "-q", "-b", "main");
+  git(kb, "config", "user.name", "t");
+  git(kb, "config", "user.email", "t@example.invalid");
+  git(kb, "config", "commit.gpgsign", "false");
+  writeFileSync(join(kb, "projects", id, "runs", "artifacts.jsonl"), "");
+  git(kb, "add", "-A");
+  git(kb, "commit", "-q", "-m", "empty");
+  writeFileSync(join(cwd, "ak.kb.yaml"), `backend: local-git\nproject: ${id}\nlocator:\n  knowledgebase: fixture-kb\n`);
+  const registry = join(scratch, "registry.json");
+  writeJson(registry, { knowledgebases: { "fixture-kb": { path: kb } } });
+  return { registry };
 }
 
 function publishProject(bound: BoundProject, mode: "off" | "shadow" | "on", id = "example-project"): JsonObject {
@@ -268,13 +301,15 @@ function receipt(cwd: string, run: string, ticket: JsonObject, extra: JsonObject
 }
 
 function recordPhases(cwd: string): void {
+  const boundDir = latestEvidenceByCwd.get(cwd);
+  const extra = boundDir === undefined ? [] : ["--dir", boundDir];
   for (const gate of ["build-checks", "review-full", "review-readiness"] as const) {
-    expect(ak(cwd, "record", "--gate", gate).code).toBe(0);
+    expect(ak(cwd, "record", "--gate", gate, ...extra).code).toBe(0);
   }
 }
 
 function runFile(cwd: string, run: string): string {
-  return join(defaultEvidenceDir(cwd), "runs", run, "run.json");
+  return join(storeFor(cwd, run), "runs", run, "run.json");
 }
 
 function readRun(cwd: string, run: string): JsonObject {
@@ -314,40 +349,145 @@ function opened(cwd: string, ticketFile: string, registry?: string): string {
   return result.run.run_id;
 }
 
-function openedMandatory(cwd: string, ticketFile: string, bound: BoundProject): string {
-  const ticket = parseObject(readFileSync(ticketFile, "utf8"));
-  const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-parent-"));
-  const evidence = join(parentDir, "evidence");
-  mkdirSync(evidence);
-  const frozen = bindBehaviorPolicy({
-    runId: "parent-run",
-    ticket,
-    ticketHash: artifactHash(ticket),
-    project: bound.project,
-    projectHash: projectHashOf(bound.project),
-    lookup: "resolved",
-    capturedAt: "2026-09-29T00:00:00Z",
-  });
-  if (!frozen.ok) throw new Error(frozen.reason);
+function ensureTrustedNoMistakes(cwd: string): void {
+  const shown = Bun.spawnSync(["git", "show", "main:.no-mistakes.yaml"], { cwd, env: gitEnv(cwd) });
+  if (shown.exitCode === 0) return;
+  const branch = git(cwd, "rev-parse", "--abbrev-ref", "HEAD");
+  git(cwd, "checkout", "-q", "main");
   writeFileSync(
-    join(parentDir, "parent-run.json"),
-    `${JSON.stringify({ id: "parent-run", behavior: frozen.binding })}\n`,
+    join(cwd, ".no-mistakes.yaml"),
+    "commands:\n  test: bun test\nauto_fix:\n  test: 0\n  lint: 0\n  ci: 0\n",
   );
-  const bindingPath = join(parentDir, "binding.json");
-  writeJson(bindingPath, {
-    schema: "firstmate-binding",
-    run_id: "parent-run",
-    evidence: { location: evidence },
-  });
+  git(cwd, "add", ".no-mistakes.yaml");
+  git(cwd, "commit", "-q", "-m", "no-mistakes");
+  git(cwd, "checkout", "-q", branch);
+}
+
+function openedMandatory(cwd: string, ticketFile: string, bound: BoundProject): string {
+  ensureTrustedNoMistakes(cwd);
+  const ticket = parseObject(readFileSync(ticketFile, "utf8"));
+  const privateDir = realpathSync(mkdtempSync(join(tmpdir(), "ak-bv-runner-")));
+  const evidence = join(privateDir, "evidence");
+  mkdirSync(evidence);
+  const { home, upstream } = makeHome({ patched: true });
+  const ledger = makeDir();
+  const bindingPath = join(home, "data", "T-BV", "binding.json");
+  mkdirSync(join(home, "data", "T-BV"), { recursive: true });
+  const boundFm = bind(
+    {
+      fmHome: home,
+      taskId: "T-BV",
+      project: cwd,
+      mode: "agent-kit",
+      bindingOut: bindingPath,
+      host: "claude-code",
+      evidence: { store: "mock", location: evidence },
+    },
+    {
+      akRoot: ROOT,
+      bundleDir: makeBundle(),
+      pinsDir: makeDir(),
+      ledgerDir: ledger,
+      upstream,
+      now: FIXED_NOW,
+    },
+  );
+  expect(boundFm.ok, boundFm.errors.join("\n")).toBe(true);
+  if (!boundFm.ok || boundFm.binding === undefined) throw new Error(boundFm.errors.join("\n"));
+  const runId = boundFm.binding.run_id;
+  writeFileSync(join(privateDir, `${textField(ticket.id)}.json`), `${JSON.stringify(ticket)}\n`);
+  const charterPath = join(privateDir, "charter.json");
+  const initial = {
+    schema: "charter",
+    schema_version: 1,
+    id: "bv-charter",
+    run_id: runId,
+    project: { id: "example-project", repo: "example" },
+    created_by: { role: "human" },
+    inputs: [],
+    source_revision: null,
+    created_at: "2026-10-01T00:00:00Z",
+    status: "active",
+    immutability: { immutable: true, worker_writable: false, hash: "", location: charterPath },
+    work_source: { kind: "ticket", ref: { id: ticket.id, schema: "ticket", hash: artifactHash(ticket) } },
+    repos: [{ repo: "example", base_branch: "main", paths: ["src/**"] }],
+    artifact_destinations: { kb_root: "example", runs_path: "runs" },
+    allowed_capabilities: [
+      "repository-read",
+      "independent-context",
+      "artifact-write",
+      "runner-grants",
+      "trusted-evidence",
+      "event-delivery",
+    ],
+    default_grants: [
+      "approve-spec",
+      "approve-ticket",
+      "start-implementation-ticket",
+      "adjudicate-finding",
+      "push-branch",
+      "open-pr",
+    ],
+    standing_grants: [{ covers: "autopilot.start", controller: "firstmate" }],
+    denied_actions: ["merge", "deploy"],
+    sensitive_grants: [],
+    checkpoints: ["align-answer", "spec-approval", "build-go", "finding-adjudication", "ship-pr"],
+    limits: {
+      fix_cycles: 2,
+      ci_repair_attempts: 2,
+      alignment_questions: 3,
+      tickets: 3,
+      elapsed_minutes: 60,
+      review_rounds: 2,
+    },
+    budgets: {
+      provided_by: "runner",
+      enforces: ["alignment-questions", "tickets", "review-rounds", "elapsed-minutes"],
+      on_exhaustion: "cap-reached",
+    },
+    supervisors: {
+      seats: [
+        { id: "seat-a", role: "supervisor", filled_by: "supervisor" },
+        { id: "seat-b", role: "supervisor", filled_by: "reviewer-standards" },
+      ],
+      independence: "declared-independent",
+      tie_breaker_allowed: false,
+      may_implement: false,
+      on_missing_seat: "block-and-escalate",
+    },
+    approvals: [{ artifact_hash: "", by: "human", authority: "explicit", at: "2026-10-01T00:00:00Z" }],
+  };
+  const hash = artifactHash({ ...initial, immutability: { ...initial.immutability, hash: "" } });
+  const approval = initial.approvals[0];
+  if (approval === undefined) throw new Error("charter approval missing");
+  approval.artifact_hash = hash;
+  initial.immutability.hash = hash;
+  writeFileSync(charterPath, JSON.stringify(initial));
+  const previousRegistry = process.env.AK_KB_REGISTRY;
+  process.env.AK_KB_REGISTRY = bound.registry;
+  try {
+    new Runner(privateDir, cwd, ROOT).start(runId, charterPath, "implementer-1", git(cwd, "rev-parse", "HEAD"), {
+      charter_hash: hash,
+      covers: "autopilot.start",
+      controller: "firstmate",
+      run_id: runId,
+    });
+  } finally {
+    if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+    else process.env.AK_KB_REGISTRY = previousRegistry;
+  }
   const result = openRun({
-    dir: defaultEvidenceDir(cwd),
+    dir: evidence,
     project: cwd,
     ticket: ticketFile,
     registry: bound.registry,
     binding: bindingPath,
+    ledger,
   });
   expect(result.ok, result.ok ? "" : result.reason).toBe(true);
   if (!result.ok) throw new Error(result.reason);
+  evidenceByRun.set(result.run.run_id, evidence);
+  latestEvidenceByCwd.set(cwd, evidence);
   return result.run.run_id;
 }
 
@@ -498,7 +638,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     writeFileSync(runFile(dir, run), `${JSON.stringify(runDoc, null, 2)}\n`);
     const subject = Object.fromEntries(Object.entries(weaker).filter(([key]) => key !== "approvals"));
     writeFileSync(
-      join(defaultEvidenceDir(dir), run, "artifacts", weakerHash.slice("sha256:".length)),
+      join(storeFor(dir, run), run, "artifacts", weakerHash.slice("sha256:".length)),
       canonicalJson(subject),
     );
     expect(classifyRun(readRun(dir, run), run).kind).toBe("incomplete");
@@ -569,10 +709,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const plain = plainTicket(dir, "strip-replace");
     const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
     const hash = artifactHash(plain);
-    writeFileSync(
-      join(defaultEvidenceDir(dir), run, "artifacts", hash.slice("sha256:".length)),
-      canonicalJson(subject),
-    );
+    writeFileSync(join(storeFor(dir, run), run, "artifacts", hash.slice("sha256:".length)), canonicalJson(subject));
     const doc = readRun(dir, run);
     delete doc.behavior;
     delete doc.schema_version;
@@ -595,10 +732,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const plain = plainTicket(dir, "reseal");
     const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
     const hash = artifactHash(plain);
-    writeFileSync(
-      join(defaultEvidenceDir(dir), run, "artifacts", hash.slice("sha256:".length)),
-      canonicalJson(subject),
-    );
+    writeFileSync(join(storeFor(dir, run), run, "artifacts", hash.slice("sha256:".length)), canonicalJson(subject));
     const weakened = sealBinding({
       run_id: run,
       ticket_hash: hash,
@@ -801,7 +935,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const firstReceiptId = textField(parseObject(readFileSync(firstReceipt, "utf8")).id);
     if (firstReceiptId === undefined) throw new Error("first receipt has no id");
     expect(
-      readRecords(defaultEvidenceDir(dir), first, "verify")
+      readRecords(storeFor(dir, first), first, "verify")
         .flatMap((row) => row.evidence ?? [])
         .map((ref) => ref.id),
     ).toContain(firstReceiptId);
@@ -1012,15 +1146,12 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const run = openedMandatory(dir, ticketPath(dir, "strip-delete"), attachKb(dir, "on"));
     const originalHash = textField(frozenTicket(readRun(dir, run)).hash);
     if (originalHash === undefined) throw new Error("ticket hash missing");
-    const originalPath = join(defaultEvidenceDir(dir), run, "artifacts", originalHash.slice("sha256:".length));
+    const originalPath = join(storeFor(dir, run), run, "artifacts", originalHash.slice("sha256:".length));
     if (existsSync(originalPath)) unlinkSync(originalPath);
     const plain = plainTicket(dir, "strip-delete");
     const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
     const hash = artifactHash(plain);
-    writeFileSync(
-      join(defaultEvidenceDir(dir), run, "artifacts", hash.slice("sha256:".length)),
-      canonicalJson(subject),
-    );
+    writeFileSync(join(storeFor(dir, run), run, "artifacts", hash.slice("sha256:".length)), canonicalJson(subject));
     const doc = readRun(dir, run);
     delete doc.behavior;
     delete doc.schema_version;
@@ -1109,5 +1240,114 @@ describe("BV-T01 policy binding at open, resume and check", () => {
       ],
     };
     expect(checkRunArtifact(JSON.stringify(missing), lookup).problem).toContain("not on this contract");
+  });
+
+  test("a forged parent with only id and behavior is not a runner creation record", () => {
+    const dir = repo();
+    behaviorTicket(dir, "forged-parent");
+    const bound = attachKb(dir, "on");
+    const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-forged-"));
+    const evidence = join(parentDir, "evidence");
+    mkdirSync(evidence);
+    const frozen = bindBehaviorPolicy({
+      runId: "parent-run",
+      ticket: parseObject(readFileSync(ticketPath(dir, "forged-parent"), "utf8")),
+      ticketHash: HASH,
+      project: bound.project,
+      projectHash: projectHashOf(bound.project),
+      lookup: "resolved",
+      capturedAt: "2026-09-29T00:00:00Z",
+    });
+    if (!frozen.ok) throw new Error(frozen.reason);
+    writeFileSync(
+      join(parentDir, "parent-run.json"),
+      `${JSON.stringify({ id: "parent-run", behavior: frozen.binding })}\n`,
+    );
+    const bindingPath = join(parentDir, "binding.json");
+    writeJson(bindingPath, { schema: "firstmate-binding", run_id: "parent-run", evidence: { location: evidence } });
+    const r = openRun({
+      dir: evidence,
+      project: dir,
+      ticket: ticketPath(dir, "forged-parent"),
+      registry: bound.registry,
+      binding: bindingPath,
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("expected forged parent refusal");
+    expect(r.reason).toContain("protected runner creation record");
+  });
+
+  test("dropping pointers and resealing off on a runner evidence store stays incomplete", () => {
+    const dir = repo();
+    const original = behaviorTicket(dir, "drop-pointers");
+    const run = openedMandatory(dir, ticketPath(dir, "drop-pointers"), attachKb(dir, "on"));
+    const plain = plainTicket(dir, "drop-pointers");
+    const subject = Object.fromEntries(Object.entries(plain).filter(([key]) => key !== "approvals"));
+    const hash = artifactHash(plain);
+    writeFileSync(join(storeFor(dir, run), run, "artifacts", hash.slice("sha256:".length)), canonicalJson(subject));
+    const doc = readRun(dir, run);
+    delete doc.binding_run_id;
+    delete doc.binding_evidence_location;
+    delete doc.behavior;
+    delete doc.schema_version;
+    doc.ticket = { id: "drop-pointers", hash };
+    writeFileSync(runFile(dir, run), `${JSON.stringify(doc, null, 2)}\n`);
+    recordPhases(dir);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, plain)).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toMatch(/protected runner creation record|new enabled run/);
+    expect(original.schema).toBe("ticket");
+  });
+
+  test("a pre-feature run without schema_version stays legacy at check", () => {
+    const dir = repo();
+    const ticket = plainTicket(dir, "pre-feature");
+    const run = opened(dir, ticketPath(dir, "pre-feature"));
+    const doc = readRun(dir, run);
+    delete doc.behavior;
+    delete doc.schema_version;
+    writeFileSync(runFile(dir, run), `${JSON.stringify(doc, null, 2)}\n`);
+    expect(classifyRun(readRun(dir, run), run, ticket).kind).toBe("legacy");
+    recordPhases(dir);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticket)).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code, checked.err).toBe(0);
+    expect(checked.err).not.toContain("new enabled run");
+  });
+
+  test("retain-only cannot hide a named failed project-check", () => {
+    const dir = repo();
+    const ticket = plainTicket(dir, "retain-named");
+    const run = opened(dir, ticketPath(dir, "retain-named"), attachKb(dir, "shadow").registry);
+    recordPhases(dir);
+    const failed = receipt(dir, run, ticket, { status: "failed", exit_status: 1 });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", failed, "--retain-only").code).toBe(0);
+    const failedId = textField(parseObject(readFileSync(failed, "utf8")).id);
+    if (failedId === undefined) throw new Error("failed receipt has no id");
+    expect(
+      readRecords(defaultEvidenceDir(dir), run, "verify")
+        .flatMap((row) => row.evidence ?? [])
+        .map((ref) => ref.id),
+    ).toContain(failedId);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("failed evidence");
+  });
+
+  test("confirmed absent project config opens ordinary work off", () => {
+    const dir = repo();
+    const ticket = plainTicket(dir, "absent-project");
+    const empty = attachEmptyKb(dir);
+    const r = openRun({
+      dir: defaultEvidenceDir(dir),
+      project: dir,
+      ticket: ticketPath(dir, "absent-project"),
+      registry: empty.registry,
+    });
+    expect(r.ok, r.ok ? "" : r.reason).toBe(true);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.run.behavior?.mode).toBe("off");
+    expect(ticket.schema).toBe("ticket");
   });
 });

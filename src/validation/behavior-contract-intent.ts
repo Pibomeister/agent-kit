@@ -59,7 +59,6 @@ function sourceIsAccepted(kind: string, artifact: IntentSourceArtifact): boolean
     const ruling = artifact.doc.ruling;
     return asJsonObject(ruling) && ruling.outcome === "decided";
   }
-  if (kind === "requirements") return artifact.schema === "behavior-contract" && status === "active";
   if (kind === "user-instruction") {
     if (artifact.schema === "ticket") return status === "approved";
     if (artifact.schema === "decision") {
@@ -72,10 +71,62 @@ function sourceIsAccepted(kind: string, artifact: IntentSourceArtifact): boolean
   return false;
 }
 
+function requirementRow(doc: JsonObject, requirementId: string): JsonObject | undefined {
+  for (const value of rows(doc.requirements)) {
+    if (!asJsonObject(value)) continue;
+    if (textField(value.id) === requirementId) return value;
+  }
+  return undefined;
+}
+
+function requirementsSourceProblem(
+  requirementId: string,
+  source: JsonObject,
+  lookup: IntentLookup,
+  originId: string,
+  seen: Set<string>,
+): string | undefined {
+  const ref = textField(source.ref);
+  const expectedHash = textField(source.hash);
+  if (ref === undefined || expectedHash === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source needs an immutable hash`;
+  }
+  if (ref === originId || seen.has(ref)) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  const artifact = lookup(ref);
+  if (artifact === undefined || artifact.schema !== "behavior-contract") {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  if (artifactHash(artifact.doc) !== expectedHash) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} does not match ${expectedHash}`;
+  }
+  const cited = requirementRow(artifact.doc, requirementId);
+  if (cited === undefined || textField(cited.intent) !== "accepted") {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  const nested = rows(cited.sources).filter(asJsonObject);
+  if (nested.length === 0) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  const next = new Set(seen);
+  next.add(originId);
+  next.add(ref);
+  const nestedProblems = nested.map((entry) => acceptedSourceProblem(requirementId, entry, lookup, originId, next));
+  if (nestedProblems.every((problem) => problem !== undefined))
+    return (
+      nestedProblems[0] ??
+      `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`
+    );
+  return undefined;
+}
+
 function acceptedSourceProblem(
   requirementId: string,
   source: JsonObject,
   lookup: IntentLookup | undefined,
+  originId: string,
+  seen: Set<string> = new Set(),
 ): string | undefined {
   const kind = textField(source.kind);
   const ref = textField(source.ref);
@@ -85,6 +136,7 @@ function acceptedSourceProblem(
   if (lookup === undefined) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not resolved at admission`;
   }
+  if (kind === "requirements") return requirementsSourceProblem(requirementId, source, lookup, originId, seen);
   const artifact = lookup(ref);
   if (artifact === undefined) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
@@ -94,7 +146,10 @@ function acceptedSourceProblem(
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
   const expectedHash = textField(source.hash);
-  if (expectedHash !== undefined && artifactHash(artifact.doc) !== expectedHash) {
+  if (expectedHash === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} needs an immutable hash`;
+  }
+  if (artifactHash(artifact.doc) !== expectedHash) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} does not match ${expectedHash}`;
   }
   if (!sourceIsAccepted(kind, artifact)) {
@@ -119,7 +174,8 @@ export function behaviorContractIntentProblems(doc: JsonObject, lookup?: IntentL
       problems.push(`${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without an intent source`);
       continue;
     }
-    const sourceProblems = sources.map((source) => acceptedSourceProblem(id, source, lookup));
+    const originId = textField(doc.id) ?? "";
+    const sourceProblems = sources.map((source) => acceptedSourceProblem(id, source, lookup, originId));
     if (sourceProblems.every((problem) => problem !== undefined))
       problems.push(
         sourceProblems[0] ??
