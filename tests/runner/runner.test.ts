@@ -815,7 +815,7 @@ describe("runner guards", () => {
     expect(started.behavior?.required_checks).toEqual([]);
   });
 
-  test("verify consumes frozen checks and refuses when that snapshot is gone", () => {
+  test("verify refuses when a mandatory freeze is missing, and keeps the freeze on the run", () => {
     const f = fixture();
     const HASH = `sha256:${"a".repeat(64)}`;
     const ticket = {
@@ -926,7 +926,7 @@ describe("runner guards", () => {
     }
   });
 
-  test("delegated open copies the protected parent freeze and does not re-resolve live policy", () => {
+  test("open --binding copies a Runner.start freeze and ignores a later live KB off", () => {
     const f = fixture();
     const HASH = `sha256:${"a".repeat(64)}`;
     const ticket = {
@@ -1051,6 +1051,63 @@ describe("runner guards", () => {
       expect(opened.run.behavior?.mode).toBe("on");
       expect(opened.run.behavior?.required_checks).toHaveLength(1);
       expect(opened.run.run_id).not.toBe("toy-run");
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("ordinary ticket-kind start proceeds without a private ticket file when no project is bound", () => {
+    const f = fixture();
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.required_checks).toEqual([]);
+  });
+
+  test("ticket-kind start reads a committed KB ticket when the private file is absent", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = parsed;
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    const scratch = processScratch("ak-bv-runner-committed-ticket-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    const hash = artifactHash(ticket);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: { ref: "run:bootstrap/ticket/toy-ticket", content_hash: hash, idempotency_key: hash, links: [] },
+        artifact: ticket,
+      })}\n`,
+    );
+    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
+    Bun.spawnSync([
+      "git",
+      "-C",
+      kb,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.invalid",
+      "commit",
+      "-qm",
+      "ticket",
+    ]);
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      expect(started.behavior?.mode).toBe("off");
+      expect(started.behavior?.ticket_hash).toBe(hash);
     } finally {
       if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
       else process.env.AK_KB_REGISTRY = previousRegistry;

@@ -826,29 +826,60 @@ function projectIdentityId(artifact: JsonObject): string | undefined {
  * The latest committed project record whose identity.id is `projectId`.
  * Reads the artifacts file from HEAD, the same store publishRunArtifact writes.
  */
-export function readPublishedProject(kb: ResolvedKb, projectId: string): JsonObject | undefined {
+export type ArtifactLookup =
+  | { status: "found"; artifact: JsonObject }
+  | { status: "absent" }
+  | { status: "unavailable"; reason: string };
+
+function lookupArtifactsFile(kb: ResolvedKb): ArtifactLookup & { text?: string } {
   const content = committed(kb.root, artifactsPath(kb.binding.project));
-  if (content.status !== "found") return undefined;
+  if ("message" in content) return { status: "unavailable", reason: content.message };
+  if (content.status === "absent") return { status: "absent" };
+  return { status: "found", artifact: {}, text: content.text };
+}
+
+/**
+ * The latest committed project record whose identity.id is `projectId`.
+ * Distinguishes a confirmed miss from a failed git read.
+ */
+export function lookupPublishedProject(
+  kb: ResolvedKb,
+  projectId: string,
+): { status: "found"; project: JsonObject } | { status: "absent" } | { status: "unavailable"; reason: string } {
+  const file = lookupArtifactsFile(kb);
+  if (file.status !== "found") return file.status === "absent" ? { status: "absent" } : file;
   let found: JsonObject | undefined;
-  for (const line of content.text.split("\n")) {
+  for (const line of (file.text ?? "").split("\n")) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.schema !== "project") continue;
     if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId) continue;
     found = stored.artifact;
   }
-  return found;
+  if (found === undefined) return { status: "absent" };
+  return { status: "found", project: found };
+}
+
+export function readPublishedProject(kb: ResolvedKb, projectId: string): JsonObject | undefined {
+  const looked = lookupPublishedProject(kb, projectId);
+  return looked.status === "found" ? looked.project : undefined;
 }
 
 /** Latest committed run artifact whose envelope id is `id`. */
-export function readCommittedArtifact(kb: ResolvedKb, id: string): JsonObject | undefined {
-  const content = committed(kb.root, artifactsPath(kb.binding.project));
-  if (content.status !== "found") return undefined;
+export function lookupCommittedArtifact(kb: ResolvedKb, id: string): ArtifactLookup {
+  const file = lookupArtifactsFile(kb);
+  if (file.status !== "found") return file.status === "absent" ? { status: "absent" } : file;
   let found: JsonObject | undefined;
-  for (const line of content.text.split("\n")) {
+  for (const line of (file.text ?? "").split("\n")) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.id !== id) continue;
     if (!asJsonObject(stored.artifact)) continue;
     found = stored.artifact;
   }
-  return found;
+  if (found === undefined) return { status: "absent" };
+  return { status: "found", artifact: found };
+}
+
+export function readCommittedArtifact(kb: ResolvedKb, id: string): JsonObject | undefined {
+  const looked = lookupCommittedArtifact(kb, id);
+  return looked.status === "found" ? looked.artifact : undefined;
 }

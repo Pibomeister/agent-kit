@@ -86,7 +86,7 @@ import {
 } from "./gate-lanes.ts";
 import { verificationValidator } from "./verification-schema.ts";
 import { findKbProjectRoot, loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
-import { readPublishedProject } from "../kb/local-git.ts";
+import { lookupPublishedProject } from "../kb/local-git.ts";
 import {
   asJsonObject,
   bindBehaviorPolicy,
@@ -336,6 +336,8 @@ export interface GateRecord {
   evidence?: ArtifactRef[];
   /** `review-full` only. */
   verdict?: ReviewVerdict;
+  /** Shadow-policy artifacts retained and not counted as gate evidence. */
+  retained?: ArtifactRef[];
   /** Present when the phase was started under a bypass grant rather than a typed command (ADR-0008). */
   authority?: GateAuthority;
   /** The unattended policy the record was written under (ADR-0014); absent on every legacy record. */
@@ -499,15 +501,83 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
   return value as unknown as RunRecord;
 }
 
-function loadProtectedParentRun(runId: string, evidenceLocation: string): BehaviorBinding | undefined {
-  for (const path of [join(dirname(evidenceLocation), `${runId}.json`), join(evidenceLocation, `${runId}.json`)]) {
-    if (!existsSync(path)) continue;
-    const raw = readObject(path);
-    if (raw === undefined || raw.id !== runId) continue;
-    const binding = parseBehaviorBinding(asJsonObject(raw.behavior) ? raw.behavior : undefined);
-    if (binding !== undefined) return binding;
+function inside(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function bindingLedgerDir(): string {
+  return join(userInfo().homedir, ".agent-kit", "firstmate", "bindings");
+}
+
+function loadRunnerBinding(path: string, runId: string, project?: string): BehaviorBinding | undefined {
+  if (!existsSync(path)) return undefined;
+  if (project !== undefined && inside(resolve(path), resolve(project))) return undefined;
+  const raw = readObject(path);
+  const charterPath = raw === undefined ? undefined : raw.charter_path;
+  if (raw === undefined || raw.id !== runId || !nonempty(charterPath)) return undefined;
+  if (project !== undefined && inside(resolve(charterPath), resolve(project))) return undefined;
+  return parseBehaviorBinding(asJsonObject(raw.behavior) ? raw.behavior : undefined);
+}
+
+function loadProtectedParentRun(
+  runId: string,
+  evidenceLocation: string,
+  project?: string,
+): BehaviorBinding | undefined {
+  return loadRunnerBinding(join(dirname(evidenceLocation), `${runId}.json`), runId, project);
+}
+
+function runnerOwnedEvidence(evidenceDir: string): boolean {
+  const stateDir = dirname(evidenceDir);
+  if (!existsSync(stateDir)) return false;
+  for (const name of readdirSync(stateDir)) {
+    if (!name.endsWith(".json")) continue;
+    const raw = readObject(join(stateDir, name));
+    if (raw !== undefined && nonempty(raw.id) && nonempty(raw.charter_path)) return true;
   }
-  return undefined;
+  return false;
+}
+
+function registeredFirstmateBinding(
+  bindingPath: string,
+  ledgerDir: string,
+  project: string,
+): { ok: true; run_id: string; location: string } | { ok: false; reason: string } {
+  const binding = readObject(bindingPath);
+  const location = object(binding?.evidence)?.location;
+  if (binding?.schema !== "firstmate-binding" || !nonempty(binding.run_id) || !nonempty(location))
+    return { ok: false, reason: `${bindingPath} is not a Firstmate binding` };
+  if (inside(resolve(bindingPath), resolve(project)))
+    return { ok: false, reason: `binding ${bindingPath} is inside the project, which the worker can write` };
+  const entry = join(ledgerDir, `${binding.run_id}.json`);
+  if (!existsSync(entry))
+    return {
+      ok: false,
+      reason: `${bindingPath} names run ${binding.run_id}, which ak firstmate bind never registered`,
+    };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(entry, "utf8"));
+  } catch {
+    return { ok: false, reason: `ledger record ${entry} is unreadable` };
+  }
+  if (!asJsonObject(parsed)) return { ok: false, reason: `ledger record ${entry} is unreadable` };
+  const at = realpathSync(bindingPath);
+  const sha = sha256(readFileSync(bindingPath));
+  const namedPath = nonempty(parsed.binding_path) ? parsed.binding_path : "unknown";
+  const namedSha = nonempty(parsed.binding_sha256) ? parsed.binding_sha256 : "unknown";
+  if (parsed.binding_path !== at)
+    return {
+      ok: false,
+      reason: `binding ${bindingPath} is not the ${namedPath} ak firstmate bind registered`,
+    };
+  if (parsed.binding_sha256 !== sha)
+    return {
+      ok: false,
+      reason: `binding ${bindingPath} hashes to ${sha}, not the ${namedSha} ak firstmate bind registered`,
+    };
+  return { ok: true, run_id: binding.run_id, location };
 }
 
 function parseTicketBytes(bytes: Uint8Array, hash: string): JsonObject | undefined {
@@ -528,42 +598,55 @@ function creationTicketForRun(dir: string, run: RunRecord): JsonObject | undefin
   return undefined;
 }
 
-function classifyOpenedRun(run: RunRecord, ticket?: JsonObject): BehaviorClass {
-  const record = asJsonObject(run) ? run : undefined;
-  if (record === undefined) return { kind: "incomplete", reason: `run ${run.run_id} is not a JSON object` };
-  if (run.binding_run_id !== undefined && run.binding_evidence_location !== undefined) {
-    const parent = loadProtectedParentRun(run.binding_run_id, run.binding_evidence_location);
-    if (parent !== undefined) {
-      const rebound: unknown = JSON.parse(JSON.stringify(rebindSnapshot(parent, run.run_id)));
-      if (!asJsonObject(rebound))
-        return { kind: "incomplete", reason: `run ${run.run_id} has no complete behavior policy snapshot` };
-      const named = asJsonObject(record.ticket) ? record.ticket : undefined;
-      return classifyRun(
-        {
-          run_id: run.run_id,
-          ticket: named === undefined ? { id: run.ticket.id, hash: run.ticket.hash } : named,
-          opened_at: run.opened_at,
-          branch: run.branch,
-          base: run.base,
-          schema_version: RUN_SCHEMA_VERSION,
-          behavior: rebound,
-        },
-        run.run_id,
-        ticket,
-      );
-    }
-  }
-  const classified = classifyRun(record, run.run_id, ticket);
-  if (classified.kind === "legacy")
-    return {
-      kind: "incomplete",
-      reason: `run ${run.run_id} is a new enabled run with no behavior policy snapshot`,
-    };
-  return classified;
+function classifyFromParent(
+  run: RunRecord,
+  record: JsonObject,
+  parent: BehaviorBinding,
+  ticket?: JsonObject,
+): BehaviorClass {
+  const rebound: unknown = JSON.parse(JSON.stringify(rebindSnapshot(parent, run.run_id)));
+  if (!asJsonObject(rebound))
+    return { kind: "incomplete", reason: `run ${run.run_id} has no complete behavior policy snapshot` };
+  const named = asJsonObject(record.ticket) ? record.ticket : undefined;
+  return classifyRun(
+    {
+      run_id: run.run_id,
+      ticket: named === undefined ? { id: run.ticket.id, hash: run.ticket.hash } : named,
+      opened_at: run.opened_at,
+      branch: run.branch,
+      base: run.base,
+      schema_version: RUN_SCHEMA_VERSION,
+      behavior: rebound,
+    },
+    run.run_id,
+    ticket,
+  );
 }
 
-function policyShadowRetain(run: RunRecord): boolean {
-  const classified = classifyOpenedRun(run);
+function classifyOpenedRun(
+  run: RunRecord,
+  ticket: JsonObject | undefined,
+  evidenceDir: string,
+  project?: string,
+): BehaviorClass {
+  const record = asJsonObject(run) ? run : undefined;
+  if (record === undefined) return { kind: "incomplete", reason: `run ${run.run_id} is not a JSON object` };
+  const own = loadRunnerBinding(join(dirname(evidenceDir), `${run.run_id}.json`), run.run_id, project);
+  if (own !== undefined) return classifyFromParent(run, record, own, ticket);
+  if (run.binding_run_id !== undefined && run.binding_evidence_location !== undefined) {
+    const parent = loadProtectedParentRun(run.binding_run_id, run.binding_evidence_location, project);
+    if (parent !== undefined) return classifyFromParent(run, record, parent, ticket);
+  }
+  if (runnerOwnedEvidence(evidenceDir))
+    return {
+      kind: "incomplete",
+      reason: `run ${run.run_id} is in a runner evidence store with no protected runner creation record`,
+    };
+  return classifyRun(record, run.run_id, ticket);
+}
+
+function policyShadowRetain(run: RunRecord, evidenceDir: string, project?: string): boolean {
+  const classified = classifyOpenedRun(run, undefined, evidenceDir, project);
   return classified.kind === "bound" && classified.binding.mode === "shadow";
 }
 
@@ -579,6 +662,8 @@ export interface OpenArgs {
   projectRecord?: string;
   /** Operator registry path; defaults to `AK_KB_REGISTRY` / the account registry. */
   registry?: string;
+  /** Firstmate binding ledger; defaults to the account ledger `ak firstmate bind` writes. */
+  ledger?: string;
   /** Stamped on the run; pre-ticket phase records at the opening revision are imported into it. */
   policy?: Policy;
 }
@@ -601,6 +686,7 @@ function resolveAuthoritativeProject(
   bindingProjectId?: string,
 ):
   | { lookup: "unbound" }
+  | { lookup: "absent" }
   | { lookup: "unavailable"; reason: string }
   | { lookup: "resolved"; project: JsonObject; hash: string } {
   const projectRoot = findKbProjectRoot(worktree);
@@ -622,14 +708,10 @@ function resolveAuthoritativeProject(
     };
   }
   const wanted = ticketProjectId(ticket) ?? bindingProjectId ?? resolved.resolved.binding.project;
-  const published = readPublishedProject(resolved.resolved, wanted);
-  if (published === undefined || !asJsonObject(published)) {
-    return {
-      lookup: "unavailable",
-      reason: "the authoritative project record is missing; missing project cannot turn this run off",
-    };
-  }
-  return { lookup: "resolved", project: published, hash: projectHashOf(published) };
+  const published = lookupPublishedProject(resolved.resolved, wanted);
+  if (published.status === "unavailable") return { lookup: "unavailable", reason: published.reason };
+  if (published.status === "absent") return { lookup: "absent" };
+  return { lookup: "resolved", project: published.project, hash: projectHashOf(published.project) };
 }
 
 /**
@@ -687,10 +769,18 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   let bound: { binding_run_id: string; binding_evidence_location: string } | undefined;
   let bindingProjectId: string | undefined;
   if (a.binding !== undefined) {
+    if (inside(resolve(a.binding), resolve(a.project)))
+      return { ok: false, reason: `binding ${a.binding} is inside the project, which the worker can write` };
     const binding = readObject(a.binding);
     const location = object(binding?.evidence)?.location;
     if (binding?.schema !== "firstmate-binding" || !nonempty(binding.run_id) || !nonempty(location))
       return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
+    const ledgerDir = a.ledger ?? bindingLedgerDir();
+    const entry = join(ledgerDir, `${binding.run_id}.json`);
+    if (a.ledger !== undefined || existsSync(entry)) {
+      const registered = registeredFirstmateBinding(a.binding, ledgerDir, a.project);
+      if (!registered.ok) return { ok: false, reason: registered.reason };
+    }
     bound = { binding_run_id: binding.run_id, binding_evidence_location: location };
     const namedProject = object(binding.project)?.id;
     if (nonempty(namedProject)) bindingProjectId = namedProject;
@@ -734,15 +824,24 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   let projectDoc: JsonObject | undefined;
   let projectHash: string | undefined;
   if (authoritative.lookup === "unavailable") return { ok: false, reason: authoritative.reason };
+  if (authoritative.lookup === "absent") lookup = "absent";
   if (authoritative.lookup === "resolved") {
     lookup = "resolved";
     projectDoc = authoritative.project;
     projectHash = authoritative.hash;
   }
   const parent =
-    bound === undefined ? undefined : loadProtectedParentRun(bound.binding_run_id, bound.binding_evidence_location);
-  if (parent !== undefined) run.behavior = rebindSnapshot(parent, runId);
-  else {
+    bound === undefined
+      ? undefined
+      : loadProtectedParentRun(bound.binding_run_id, bound.binding_evidence_location, a.project);
+  if (bound !== undefined && parent !== undefined) {
+    if (resolve(a.dir) !== resolve(bound.binding_evidence_location))
+      return {
+        ok: false,
+        reason: "a protected runner parent opens into the evidence store the Firstmate binding names",
+      };
+    run.behavior = rebindSnapshot(parent, runId);
+  } else {
     const boundPolicy = bindBehaviorPolicy({
       runId,
       ticket,
@@ -893,6 +992,7 @@ export function recordGate(
     };
   }
   const refs: ArtifactRef[] = [];
+  const retained: ArtifactRef[] = [];
   const skipped: string[] = [];
   for (const receiptPath of a.receipts ?? []) {
     let bytes: Uint8Array;
@@ -941,8 +1041,16 @@ export function recordGate(
       storeArtifact(a.dir, a.run, artifactBytes);
     }
     const storedHash = storeArtifact(a.dir, a.run, bytes);
-    const retainOnly = a.retainOnly === true && openedRun !== undefined && policyShadowRetain(openedRun);
+    const shadowMark = object(receipt.behavior);
+    const shadowArtifact =
+      shadowMark !== undefined && shadowMark.mode === "shadow" && shadowMark.gate_eligible === false;
+    const retainOnly =
+      a.retainOnly === true &&
+      openedRun !== undefined &&
+      policyShadowRetain(openedRun, a.dir, a.project) &&
+      shadowArtifact;
     if (retainOnly) {
+      retained.push({ id: receipt.id, schema: "verification", hash: storedHash });
       skipped.push(`receipt ${receipt.id} is a shadow behavior artifact; retained and not gate evidence`);
       continue;
     }
@@ -960,6 +1068,7 @@ export function recordGate(
     ...(strengthenedVerify ? { evidence: refs } : {}),
   };
   if (a.verdict !== undefined) record.verdict = a.verdict;
+  if (retained.length > 0) record.retained = retained;
   // One file per gate and snapshot: re-recording the same state is idempotent, and a fix cycle adds a
   // record rather than replacing the one before it.
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
@@ -1262,7 +1371,7 @@ function evaluateEvidence(
   if (ticket === undefined)
     return evidenceUnavailable("unavailable", `ticket ${run.ticket.id} is absent from the run store`);
   const missingView: BehaviorClass = { kind: "incomplete", reason: `run ${a.run} is not a JSON object` };
-  const classified = asJsonObject(run) ? classifyOpenedRun(run, ticket) : missingView;
+  const classified = asJsonObject(run) ? classifyOpenedRun(run, ticket, a.dir, a.project) : missingView;
   if (classified.kind === "incomplete") {
     const code = classified.reason.includes("behavior snapshot is for run") ? "wrong-run" : "behavior-policy";
     return evidenceUnavailable(code, classified.reason);

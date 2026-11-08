@@ -107,9 +107,9 @@ export function ticketProjectId(ticket: JsonObject): string | undefined {
   return isObject(field) && nonempty(field.id) ? field.id : undefined;
 }
 
-export type ProjectLookup = "unbound" | "resolved" | "unavailable";
+export type ProjectLookup = "unbound" | "resolved" | "unavailable" | "absent";
 
-function reviewMode(project: JsonObject | undefined): BehaviorMode | "invalid" {
+export function reviewMode(project: JsonObject | undefined): BehaviorMode | "invalid" {
   if (project === undefined) return "off";
   const review = isObject(project.review) ? project.review : undefined;
   if (review === undefined || review.behavior === undefined || review.behavior === null) return "off";
@@ -232,6 +232,11 @@ export function bindBehaviorPolicy(args: {
       ok: false,
       reason: "the authoritative project record is unavailable; missing project cannot turn this run off",
     };
+  if (args.lookup === "absent" && ticketWantsBehavior)
+    return {
+      ok: false,
+      reason: "enabled behavior checks need an authoritative project record; missing project cannot turn this run off",
+    };
   if (args.lookup === "unbound" && args.callerProjectHash !== undefined)
     return {
       ok: false,
@@ -261,7 +266,7 @@ export function bindBehaviorPolicy(args: {
     )
       return { ok: false, reason: "review.behavior is not off, shadow or on" };
   }
-  const mode = reviewMode(args.project);
+  const mode = args.lookup === "absent" ? "off" : reviewMode(args.project);
   if (mode === "invalid") return { ok: false, reason: "review.behavior is not off, shadow or on" };
   if (args.lookup === "unbound" && ticketWantsBehavior)
     return {
@@ -377,26 +382,7 @@ export function ticketCarriesBehaviorChecks(ticket: JsonObject): boolean {
   return !("reason" in frozen) && frozen.length > 0;
 }
 
-export function classifyRun(
-  record: JsonObject,
-  runId: string,
-  ticket?: JsonObject,
-  authority?: BehaviorBinding,
-): BehaviorClass {
-  if (authority !== undefined) {
-    const raw: unknown = JSON.parse(JSON.stringify(authority));
-    if (!asJsonObject(raw))
-      return { kind: "incomplete", reason: `run ${runId} has no complete behavior policy snapshot` };
-    return classifyRun(
-      {
-        schema_version: RUN_SCHEMA_VERSION,
-        behavior: raw,
-        ticket: { id: authority.run_id, hash: authority.ticket_hash },
-      },
-      runId,
-      ticket,
-    );
-  }
+export function classifyRun(record: JsonObject, runId: string, ticket?: JsonObject): BehaviorClass {
   const frozen = ticket === undefined ? undefined : behaviorChecks(ticket, ticketSurfaces(ticket));
   const ticketWants = frozen !== undefined && !("reason" in frozen) && frozen.length > 0;
   const version = record.schema_version;

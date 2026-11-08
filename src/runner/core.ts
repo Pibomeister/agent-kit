@@ -11,17 +11,16 @@ import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { persistFrozenRun } from "../lifecycle/persist-run.ts";
 import { findKbProjectRoot, loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
-import { readPublishedProject } from "../kb/local-git.ts";
+import { lookupCommittedArtifact, lookupPublishedProject } from "../kb/local-git.ts";
 import {
   asJson,
   asJsonObject,
   bindBehaviorPolicy,
   parseBehaviorBinding,
   projectHashOf,
+  reviewMode,
   RUN_SCHEMA_VERSION,
   ticketCarriesBehaviorChecks,
-  type Json,
-  type JsonObject,
 } from "../lifecycle/behavior-policy.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
@@ -86,12 +85,12 @@ const LIMIT_NAME = new Map([
 const RUNNER_SCHEMA_IDS = ["common", "charter", "decision", "run-ledger"] as const;
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
-const ID = /^[a-z0-9][a-z0-9-]*$/;
+const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
 
-function isJsonText(value: Json | undefined): value is string {
+function isJsonText(value: unknown): value is string {
   return Object.prototype.toString.call(value) === "[object String]";
 }
 
@@ -723,10 +722,16 @@ export class Runner {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket") return undefined;
-    return this.workTicket(charter);
+    return this.loadTicket(charter);
   }
 
   private workTicket(charter: Charter) {
+    const loaded = this.loadTicket(charter);
+    if (loaded === undefined) throw new Error("approved ticket is absent from the runner store");
+    return loaded;
+  }
+
+  private loadTicket(charter: Charter) {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket") throw new Error("run work source is not an approved ticket");
@@ -736,51 +741,83 @@ export class Runner {
     const expected = isJsonText(ref.hash) ? ref.hash : undefined;
     if (ticketId === undefined) throw new Error("approved ticket is unnamed");
     const path = join(this.stateDir, `${ticketId}.json`);
-    if (!existsSync(path)) throw new Error("approved ticket is absent from the runner store");
-    this.assertPrivatePath(path);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(path, "utf8"));
-    } catch {
-      throw new Error("approved ticket is malformed");
+    if (existsSync(path)) {
+      this.assertPrivatePath(path);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(path, "utf8"));
+      } catch {
+        throw new Error("approved ticket is malformed");
+      }
+      if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId)
+        throw new Error("approved ticket is malformed");
+      const hash = artifactHash(parsed);
+      if (expected !== undefined && expected !== hash)
+        throw new Error("approved ticket does not match the charter work source");
+      return { ticket: parsed, hash };
     }
-    if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId)
-      throw new Error("approved ticket is malformed");
-    const hash = artifactHash(parsed);
-    if (expected !== undefined && expected !== hash)
-      throw new Error("approved ticket does not match the charter work source");
-    return { ticket: parsed, hash };
+    return this.loadCommittedTicket(ticketId, expected);
   }
 
-  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string) {
-    const work = this.tryWorkTicket(charter);
+  private loadCommittedTicket(ticketId: string, expected: string | undefined) {
+    const projectRoot = findKbProjectRoot(this.workerRoot);
+    const loaded = loadKbBinding(projectRoot);
+    if (loaded.binding === null) return undefined;
+    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    if (resolved.resolved === null || resolved.state !== "available")
+      throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
+    const looked = lookupCommittedArtifact(resolved.resolved, ticketId);
+    if (looked.status === "unavailable") throw new Error(looked.reason);
+    if (looked.status === "absent") return undefined;
+    if (looked.artifact.schema !== "ticket" || looked.artifact.id !== ticketId)
+      throw new Error("approved ticket is malformed");
+    const hash = artifactHash(looked.artifact);
+    if (expected !== undefined && expected !== hash)
+      throw new Error("approved ticket does not match the charter work source");
+    return { ticket: looked.artifact, hash };
+  }
+
+  private projectLookup(projectId: string) {
     const projectRoot = findKbProjectRoot(this.workerRoot);
     const loaded = loadKbBinding(projectRoot);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined) throw new Error(bindingError.message);
-    let lookup: "unbound" | "resolved" | "unavailable" = "unbound";
-    let project: JsonObject | undefined;
-    let projectHash: string | undefined;
-    if (loaded.binding !== null) {
-      const resolved = resolveKnowledgebase(projectRoot, registryPath());
-      if (resolved.resolved === null || resolved.state !== "available") lookup = "unavailable";
-      else {
-        const published = readPublishedProject(resolved.resolved, charter.project.id);
-        if (published === undefined || !asJsonObject(published)) lookup = "unavailable";
-        else {
-          lookup = "resolved";
-          project = published;
-          projectHash = projectHashOf(published);
-        }
-      }
+    if (loaded.binding === null) {
+      const unbound = loaded.issues.length === 0 || loaded.issues.every((issue) => issue.rule === "kb.unbound");
+      if (unbound) return { lookup: "unbound" as const };
+      const first = loaded.issues[0];
+      throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
+    }
+    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    if (resolved.resolved === null || resolved.state !== "available") return { lookup: "unavailable" as const };
+    const published = lookupPublishedProject(resolved.resolved, projectId);
+    if (published.status === "unavailable") return { lookup: "unavailable" as const };
+    if (published.status === "absent") return { lookup: "absent" as const };
+    return {
+      lookup: "resolved" as const,
+      project: published.project,
+      projectHash: projectHashOf(published.project),
+    };
+  }
+
+  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string) {
+    const work = this.tryWorkTicket(charter);
+    const looked = this.projectLookup(charter.project.id);
+    const raw: unknown = charter;
+    const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    if (work === undefined && source !== undefined && source.kind === "ticket") {
+      if (looked.lookup === "unavailable")
+        throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
+      if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
+        throw new Error("approved ticket is absent from the runner store");
     }
     const bound = bindBehaviorPolicy({
       runId: id,
       ticket: work?.ticket ?? {},
       ticketHash: work?.hash ?? charterHash,
-      project,
-      projectHash,
-      lookup,
+      project: looked.project,
+      projectHash: looked.projectHash,
+      lookup: looked.lookup,
       capturedAt: createdAt,
     });
     if (!bound.ok) throw new Error(bound.reason);
@@ -1447,6 +1484,8 @@ export class Runner {
     const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
     if (run.behavior !== undefined && binding === undefined)
       throw new Error("frozen behavior obligations are unavailable");
+    // Presence of a freeze is not consumption of named checks (GS-017 T03). This
+    // gate only refuses a missing freeze when the ticket names mandatory checks.
     if (work !== undefined && ticketCarriesBehaviorChecks(work.ticket)) {
       if (binding === undefined || binding.mode !== "on" || binding.required_checks.length === 0)
         throw new Error("frozen behavior obligations are unavailable");

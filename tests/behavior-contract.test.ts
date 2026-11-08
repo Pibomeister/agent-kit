@@ -223,6 +223,48 @@ describe("behavior-contract schema", () => {
     });
   });
 
+  test("a requirements source cannot cite this contract or a cycle", () => {
+    const self = withRequirement(0, {
+      sources: [{ kind: "requirements", ref: "example-behavior-contract-1", hash: artifactHash(contract) }],
+    });
+    expect(issuesOf(self).some((line) => line.includes("is not an accepted source"))).toBe(true);
+    const peer = {
+      ...contract,
+      id: "peer-contract",
+      requirements: [
+        {
+          ...requirementAt(0),
+          sources: [{ kind: "requirements", ref: "example-behavior-contract-1", hash: artifactHash(contract) }],
+        },
+        requirementAt(1),
+      ],
+    };
+    const cyclic = withRequirement(0, {
+      sources: [{ kind: "requirements", ref: "peer-contract", hash: artifactHash(peer) }],
+    });
+    expect(issuesOf(cyclic, [peer]).some((line) => line.includes("is not an accepted source"))).toBe(true);
+  });
+
+  test("a requirements source needs an immutable hash and an accepted row", () => {
+    const peer = {
+      ...contract,
+      id: "peer-contract",
+    };
+    const noHash = withRequirement(0, { sources: [{ kind: "requirements", ref: "peer-contract" }] });
+    expect(issuesOf(noHash, [peer]).some((line) => line.includes("needs an immutable hash"))).toBe(true);
+    const proposedPeer = {
+      ...contract,
+      id: "proposed-peer",
+      requirements: [{ ...requirementAt(0), intent: "proposed", sources: [] }, requirementAt(1)],
+    };
+    const citingProposed = withRequirement(0, {
+      sources: [{ kind: "requirements", ref: "proposed-peer", hash: artifactHash(proposedPeer) }],
+    });
+    expect(issuesOf(citingProposed, [proposedPeer]).some((line) => line.includes("is not an accepted source"))).toBe(
+      true,
+    );
+  });
+
   test("the shipped example keeps observed notes out of accepted requirements", () => {
     const observed = contract["observed_behavior"];
     if (!Array.isArray(observed)) throw new Error("expected observed_behavior");

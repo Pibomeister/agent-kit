@@ -1306,21 +1306,6 @@ capabilities:
       Individual donors track some of these fields ad hoc; none has a unified revision-bound
       envelope as a first-class concept.
 
-  - id: behavior-contract
-    capability: Intent-backed behavior contract artifact with accepted, proposed and unresolved requirements kept distinct from observed implementation notes
-    disposition: retained
-    destination: schemas/behavior-contract
-    locator: plan §5.2; plan §8
-    origin: conversation
-    acceptance_test: >-
-      A contract with accepted intent cites an accepted source; a proposed retry limit cannot
-      discharge an accepted requirement; the artifact publishes through the knowledgebase as a
-      run artifact (GS-017 BV-T01).
-    note: >-
-      The contract body and run-open policy snapshot are specified by the GS-017 behavior-verification
-      PRD. They reuse the existing revision-bound envelope (plan §5.2) and central KB publish path
-      (plan §8). No donor implements this artifact. The locator is not a fabricated G:L range.
-
   - id: acceptance-to-evidence-matrix
     capability: The verification artifact shape — one row per acceptance criterion, each mapped to a receipt with command, exit status, revision and environment
     disposition: retained
