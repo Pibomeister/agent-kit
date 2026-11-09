@@ -298,3 +298,11 @@ describe.each(["super-align", "super-bound", "doc-review"])("%s knowledgebase ev
     expect(kbCheckExit("no-knowledgebase-write-continues-unpublished")).toBe(3);
   });
 });
+
+describe("the super-scout return contract", () => {
+  test("names the dossier as not published under a coverage limit, in SKILL.md and skill.yaml", () => {
+    for (const p of ["skills/super-scout/SKILL.md", "skills/super-scout/skill.yaml"]) {
+      expect(flat(p)).toContain("or, under a coverage limit, the dossier named as not published");
+    }
+  });
+});

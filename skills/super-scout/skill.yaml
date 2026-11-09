@@ -75,7 +75,7 @@ outputs:
       limits, unknowns, files not to touch, and a recommendation for further inspection only.
   - id: return-gist
     summary: >-
-      The published record reference, the headline locations, and the counts of coverage limits
+      The published record's reference, or, under a coverage limit, the dossier named as not published; the headline locations, and the counts of coverage limits
       and unknowns. Not the dossier's contents and not the search transcript.
 
 side_effects:

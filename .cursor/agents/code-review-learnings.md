@@ -118,8 +118,8 @@ applicable prior experience still reaches the reader without being raised agains
   missing or unknown `ak kb` command. The project has recorded no learnings this seat can read,
   which is not a failed lookup: the lane's activation condition, a readable corpus with hits on the
   touched surface, is not met, so the review records the lane `skipped` with that limit as its
-  reason, never `unavailable` (`references/knowledgebase-binding/REFERENCE.md`). Seated anyway on
-  another corpus's hits, run against what it can read and name the limit the run states.
+  reason, never `unavailable` (`references/knowledgebase-binding/REFERENCE.md`). If seated anyway,
+  run against what it can read and name the limit the run states.
 - A configured knowledgebase cannot be used (`ak kb check` exit 1), or `readContext` failed: return
   `unavailable`. A search that could not run is not a search that found nothing.
 

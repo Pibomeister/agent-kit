@@ -223,8 +223,8 @@
     },
     "bundle/claude-code:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10321,
-      "tokens": 2579
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/claude-code:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -763,8 +763,8 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14426,
-      "tokens": 3602
+      "bytes": 14503,
+      "tokens": 3621
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -1088,8 +1088,8 @@
     },
     "bundle/codex:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10321,
-      "tokens": 2579
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/codex:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -1628,8 +1628,8 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14426,
-      "tokens": 3602
+      "bytes": 14503,
+      "tokens": 3621
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -1953,8 +1953,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10357,
-      "tokens": 2588
+      "bytes": 10335,
+      "tokens": 2582
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -2488,8 +2488,8 @@
     },
     "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14450,
-      "tokens": 3608
+      "bytes": 14527,
+      "tokens": 3627
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -2818,8 +2818,8 @@
     },
     "bundle/droid:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10321,
-      "tokens": 2579
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/droid:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -3358,8 +3358,8 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14422,
-      "tokens": 3601
+      "bytes": 14499,
+      "tokens": 3620
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -3683,8 +3683,8 @@
     },
     "bundle/grok:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10321,
-      "tokens": 2579
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/grok:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -4223,8 +4223,8 @@
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14426,
-      "tokens": 3602
+      "bytes": 14503,
+      "tokens": 3621
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -4548,8 +4548,8 @@
     },
     "bundle/kimi:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10321,
-      "tokens": 2579
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/kimi:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -5088,8 +5088,8 @@
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14426,
-      "tokens": 3602
+      "bytes": 14503,
+      "tokens": 3621
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -5308,8 +5308,8 @@
     },
     "role:code-review/learnings": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9924,
-      "tokens": 2479
+      "bytes": 9902,
+      "tokens": 2474
     },
     "role:code-review/maintainability": {
       "file": "roles/code-review/maintainability/ROLE.md",
