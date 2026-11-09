@@ -40811,6 +40811,7 @@ var LIMIT_NAME = new Map([
   ["tickets", "tickets"],
   ["review_rounds", "review-rounds"]
 ]);
+var RUNNER_SCHEMA_IDS = ["common", "charter", "decision", "run-ledger"];
 var HASH = /^sha256:[a-f0-9]{64}$/;
 var REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
 var ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -40943,7 +40944,7 @@ class Runner {
       throw new Error("runner state resolves into the shared git common directory");
     this.gitContext = { ...gitContext, home: this.stateDir };
     this.evidenceStore = new PrivateFileEvidenceStore(this.stateDir);
-    const schemas = compileSchemas(kitRoot);
+    const schemas = compileSchemas(kitRoot, RUNNER_SCHEMA_IDS);
     if (schemas.issues.some((issue) => issue.severity === "error"))
       throw new Error("runner cannot compile charter schema");
     const charterSchema = schemas.ajv.getSchema("https://agent-kit.local/schemas/charter.schema.json");
