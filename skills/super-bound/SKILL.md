@@ -99,7 +99,7 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
    found in two lines, and ask only what is left.
 3. When the approved direction spans more than one module, draw the capability map first: a table of
    stable kebab-case module ids, each with its responsibility and what it depends on. The map is
-   gated like every other step; a human reviews it before any module's specification is written.
+   gated like every other step; a human reviews it before any module's specification is written (under the unattended policy that review is an unattended advance, per [the reference](../../references/unattended-lifecycle/REFERENCE.md)).
 4. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
    test seams, verification commands, out of scope. No file paths and no code, except a fragment a
    prototype already settled exactly — a state machine, a reducer, a schema, a type shape. Turn
