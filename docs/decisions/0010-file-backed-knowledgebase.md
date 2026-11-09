@@ -104,5 +104,6 @@ would write project knowledge there. A second backend, `in-repo`
 already commits, at the merge-base of `HEAD` and a base branch so a branch cannot make its own pages
 read as settled, and skips every publish with `kb.read-only`, writing nothing anywhere. That reason
 cannot arise, so a read-only binding is allowed and a writable one is still refused. `local-git` is
-unchanged. CONTRACT §1, §3 and §7 say the same.
+unchanged. The contract's "Capabilities and side effects", "Centrality" and "Bindings" sections
+say the same.
 

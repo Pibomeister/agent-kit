@@ -85,7 +85,7 @@ const validBinding = ajv.compile<KbBinding>(bindingSchema);
  * holds this map equal to the documents in `BACKENDS_DIR`.
  */
 export const BACKEND_VALIDATORS: ReadonlyMap<string, ValidateFunction<KbBinding>> = new Map([
-  ["in-repo", ajv.compile<KbBinding>(inRepoSchema)],
+  [IN_REPO, ajv.compile<KbBinding>(inRepoSchema)],
   ["local-git", ajv.compile<KbBinding>(localGitSchema)],
 ]);
 
@@ -328,7 +328,7 @@ export function resolveKnowledgebase(projectRoot: string, registryFile: string):
   const locator = binding.locator;
   const id = hasKnowledgebaseId(locator) ? locator.knowledgebase : "";
   if (binding.backend === IN_REPO) {
-    // Read in place and never written, so there is no registration and no separate checkout (in-repo.md §2).
+    // Read in place and never written, so there is no registration and no separate checkout (backends/in-repo.md, "No setup").
     const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE);
     if (inRepo.location === null || inRepo.top === null)
       return { resolved: null, state: "unavailable", issues: inRepo.issues };

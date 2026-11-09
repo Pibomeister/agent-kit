@@ -19,6 +19,7 @@ import {
 } from "../tracker/binding.ts";
 import { scoreDelegationFiles } from "../delegation.ts";
 import { findKbProjectRoot, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { IN_REPO_MISSING_REMEDY } from "../kb/in-repo.ts";
 import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
@@ -389,7 +390,7 @@ export function checkKnowledgebase(cwd: string, registry: string = registryPath(
       "WARN",
       "knowledgebase binding",
       `kb.in-repo-missing: ${issue.message}`,
-      "Commit the knowledgebase path on the base branch, fetch the base, or repair ak.kb.yaml, then run ak kb check.",
+      `${IN_REPO_MISSING_REMEDY} Then run ak kb check.`,
     );
   }
   if (resolution.state === "unavailable") {

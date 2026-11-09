@@ -45,9 +45,9 @@ describe("the knowledgebase-binding reference", () => {
   const text = flat("references/knowledgebase-binding/REFERENCE.md");
 
   test("names both new causes and what check exit 0 on a read-only binding means", () => {
-    expect(text).toContain("kb.in-repo-missing");
-    expect(text).toContain("kb.read-only");
-    expect(text).toContain("bound, read-only");
+    expect(text).toContain("- **kb.in-repo-missing** — an in-repo binding whose path is not a directory");
+    expect(text).toContain("- **kb.read-only** — from a publish only: the binding is read-only, nothing was written");
+    expect(text).toContain("| 0 | bound, read-only (backend in-repo)");
   });
 });
 
@@ -55,8 +55,9 @@ describe("the contract and its decisions", () => {
   const contract = flat("adapters/knowledgebase/CONTRACT.md");
 
   test("§1 counts both new causes as unconfigured, never failed", () => {
-    expect(contract).toContain("kb.in-repo-missing");
-    expect(contract).toContain("kb.read-only");
+    expect(contract).toContain(
+      "A missing in-repo knowledgebase (kb.in-repo-missing) and a publish to a read-only one (kb.read-only) are unconfigured too",
+    );
   });
 
   test("§3 allows a read-only knowledgebase inside the application repository and no writable one", () => {

@@ -22,7 +22,7 @@ import {
   type KbResolution,
   type ResolvedKb,
 } from "./binding.ts";
-import { readInRepoContext } from "./in-repo.ts";
+import { IN_REPO, readInRepoContext } from "./in-repo.ts";
 import {
   committedScopes,
   KB_KINDS,
@@ -228,11 +228,7 @@ function read(options: KbOptions, args: KbArgs): number {
   if (resolution.resolved === null) return reportUnresolved(options.io, "kb-read", resolution);
   const resolved = resolution.resolved;
   if (resolved.inRepo !== undefined) {
-    const at = resolved.inRepo;
-    return finish(
-      options.io,
-      readInRepoContext(resolved.root, at, resolved.knowledgebase, resolved.binding.project, kinds.split(","), scope),
-    );
+    return finish(options.io, readInRepoContext(resolved, resolved.inRepo, kinds.split(","), scope));
   }
   const outcome = readContext(resolved, kinds.split(","), scope);
   // The result stays what the contract says (§7); a scope with nothing at or below it is only noted, on stderr.
@@ -286,12 +282,12 @@ function publish(options: KbOptions, args: KbArgs): number {
   if (resolution === null) return usage(options.io, "--dir is not a directory");
   if (resolution.resolved === null) return reportUnresolved(options.io, "kb-write", resolution);
   if (resolution.resolved.inRepo !== undefined) {
-    // Before the file is read or an attempt marked: a read-only knowledgebase writes nothing anywhere (CONTRACT.md §3).
+    // Before the file is read or an attempt marked: a read-only knowledgebase writes nothing anywhere (CONTRACT.md, "Centrality").
     printResult(options.io, {
       status: "skipped",
       capability: "kb-write",
       code: "kb.read-only",
-      message: `Knowledgebase '${resolution.resolved.knowledgebase}' is read-only (backend in-repo), so nothing was published. A coverage limit: name this record as not published and continue.`,
+      message: `Knowledgebase '${resolution.resolved.knowledgebase}' is read-only (backend ${IN_REPO}), so nothing was published. A coverage limit: name this record as not published and continue.`,
     });
     return EXIT_UNAVAILABLE;
   }

@@ -22873,7 +22873,7 @@ function inRepoBindingIssues(binding, file) {
 }
 function missing(file, message) {
   return [
-    warning("kb.in-repo-missing", file, `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.`)
+    warning("kb.in-repo-missing", file, `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. ${IN_REPO_MISSING_REMEDY}`)
   ];
 }
 function baseRevision(top, base) {
@@ -22939,7 +22939,9 @@ function splitFrontMatter(text) {
     return { meta: { title: null, status: null }, body };
   if (!validFrontMatter(value))
     return null;
-  return { meta: { title: value.title ?? null, status: value.status ?? null }, body };
+  const title = value.title === undefined ? null : String(value.title);
+  const status = value.status === undefined ? null : String(value.status);
+  return { meta: { title, status }, body };
 }
 function firstWord(text) {
   const word = text.replaceAll(/[*_`[\]]/g, " ").trim().split(/\s+/)[0] ?? "";
@@ -22961,8 +22963,13 @@ function titleOf(meta, body, id) {
   const heading = /^#[ \t]+(\S.*)$/m.exec(body);
   return heading?.[1]?.trim() ?? id;
 }
+function unreadable(message) {
+  return { status: "failed", code: "kb.unreadable", message };
+}
 function lastChanges(top, revision, dirs) {
   const log = git2(top, ["-c", "core.quotePath=false", "log", "--format=@%H", "--name-only", revision, "--", ...dirs]);
+  if (log.status !== 0)
+    return unreadable(`git could not walk the history of ${dirs.join(", ")}: ${log.stderr.trim()}`);
   const changed = new Map;
   let commit = "";
   for (const line of log.stdout.split(`
@@ -22982,7 +22989,7 @@ function listPages(top, location, kinds) {
       continue;
     const listed = git2(top, ["ls-tree", "-r", "-z", "--full-tree", location.revision, "--", `${dir}/`]);
     if (listed.status !== 0) {
-      return { status: "failed", code: "kb.unreadable", message: `git could not list ${dir}: ${listed.stderr.trim()}` };
+      return unreadable(`git could not list ${dir}: ${listed.stderr.trim()}`);
     }
     for (const entry of listed.stdout.split("\x00")) {
       const tab = entry.indexOf("\t");
@@ -22999,7 +23006,8 @@ function listPages(top, location, kinds) {
   }
   return pages;
 }
-function readInRepoContext(top, location, knowledgebase, project, kinds, scope) {
+function readInRepoContext(kb, location, kinds, scope) {
+  const top = kb.root;
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined)
     return kindProblem(unknown);
@@ -23009,8 +23017,8 @@ function readInRepoContext(top, location, knowledgebase, project, kinds, scope) 
   const scopes = Array.from({ length: segments.length + 1 }, (_, depth) => segments.slice(0, segments.length - depth));
   const outcome = {
     status: "complete",
-    knowledgebase,
-    project,
+    knowledgebase: kb.knowledgebase,
+    project: kb.binding.project,
     documents: [],
     coverage: {
       kinds: [...kinds],
@@ -23031,14 +23039,18 @@ function readInRepoContext(top, location, knowledgebase, project, kinds, scope) 
   const changes = lastChanges(top, location.revision, [
     ...new Set(listed.map((page) => location.kinds[page.kind] ?? ""))
   ]);
+  if (!(changes instanceof Map))
+    return changes;
   for (const page of listed) {
     const id = basename2(page.path, ".md");
-    if (!KEBAB2.test(id) || (stems.get(`${page.kind}/${id}`) ?? 0) > 1) {
+    if (!KEBAB.test(id) || (stems.get(`${page.kind}/${id}`) ?? 0) > 1) {
       outcome.coverage.unreadable.push(shown(page.path));
       continue;
     }
     const content = git2(top, ["show", `${location.revision}:${page.path}`]);
-    const parsed = content.status === 0 ? splitFrontMatter(content.stdout) : null;
+    if (content.status !== 0)
+      return unreadable(`git could not read ${page.path}: ${content.stderr.trim()}`);
+    const parsed = splitFrontMatter(content.stdout);
     if (parsed === null) {
       outcome.coverage.unreadable.push(shown(page.path));
       continue;
@@ -23063,14 +23075,13 @@ function readInRepoContext(top, location, knowledgebase, project, kinds, scope) 
   }
   return outcome;
 }
-var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, KEBAB2, ajv2, validLocator, validFrontMatter;
+var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, ajv2, validLocator, validFrontMatter, IN_REPO_MISSING_REMEDY = "Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.";
 var init_in_repo = __esm(() => {
   init_dist();
   init_git();
   init_local_git();
   import__20206 = __toESM(require__2020(), 1);
   SETTLED_STATUSES = new Set(["accepted", "superseded", "deprecated", "rejected", "proposed"]);
-  KEBAB2 = /^[a-z0-9]+(-[a-z0-9]+)*$/;
   ajv2 = new import__20206.default({ strict: false });
   validLocator = ajv2.compile({
     type: "object",
@@ -23084,7 +23095,7 @@ var init_in_repo = __esm(() => {
   });
   validFrontMatter = ajv2.compile({
     type: "object",
-    properties: { title: { type: "string" }, status: { type: "string" } }
+    properties: { title: { type: ["string", "number", "boolean"] }, status: { type: ["string", "number", "boolean"] } }
   });
 });
 
@@ -23286,7 +23297,7 @@ var init_binding = __esm(() => {
   ajv3.addSchema(common_schema_default);
   validBinding = ajv3.compile(kb_binding_schema_default);
   BACKEND_VALIDATORS = new Map([
-    ["in-repo", ajv3.compile(in_repo_schema_default)],
+    [IN_REPO, ajv3.compile(in_repo_schema_default)],
     ["local-git", ajv3.compile(local_git_schema_default)]
   ]);
   validRegistry = ajv3.compile({
@@ -38215,6 +38226,7 @@ function scoreDelegationFiles(ticketInput, projectInput, cwd = process.cwd()) {
 
 // src/maintenance/cli.ts
 init_binding();
+init_in_repo();
 
 // src/kb/cli.ts
 init_binding();
@@ -38343,8 +38355,7 @@ function read(options, args) {
     return reportUnresolved(options.io, "kb-read", resolution);
   const resolved = resolution.resolved;
   if (resolved.inRepo !== undefined) {
-    const at = resolved.inRepo;
-    return finish(options.io, readInRepoContext(resolved.root, at, resolved.knowledgebase, resolved.binding.project, kinds.split(","), scope));
+    return finish(options.io, readInRepoContext(resolved, resolved.inRepo, kinds.split(","), scope));
   }
   const outcome = readContext(resolved, kinds.split(","), scope);
   if (outcome.status === "complete" && scope !== PROJECT_SCOPE) {
@@ -38402,7 +38413,7 @@ function publish(options, args) {
       status: "skipped",
       capability: "kb-write",
       code: "kb.read-only",
-      message: `Knowledgebase '${resolution.resolved.knowledgebase}' is read-only (backend in-repo), so nothing was published. A coverage limit: name this record as not published and continue.`
+      message: `Knowledgebase '${resolution.resolved.knowledgebase}' is read-only (backend ${IN_REPO}), so nothing was published. A coverage limit: name this record as not published and continue.`
     });
     return EXIT_UNAVAILABLE;
   }
@@ -44392,7 +44403,7 @@ function checkKnowledgebase(cwd, registry = registryPath()) {
   }
   const issue = resolution.issues[0];
   if (issue?.rule === "kb.in-repo-missing") {
-    return finding("WARN", "knowledgebase binding", `kb.in-repo-missing: ${issue.message}`, "Commit the knowledgebase path on the base branch, fetch the base, or repair ak.kb.yaml, then run ak kb check.");
+    return finding("WARN", "knowledgebase binding", `kb.in-repo-missing: ${issue.message}`, `${IN_REPO_MISSING_REMEDY} Then run ak kb check.`);
   }
   if (resolution.state === "unavailable") {
     return finding("WARN", "knowledgebase binding", issue?.rule === "kb.unregistered" ? "ak.kb.yaml names a knowledgebase this machine has not registered" : "no ak.kb.yaml, so knowledgebase reads are unavailable and publishes refuse", "Commit ak.kb.yaml at the project root and run ak kb register <knowledgebase-id> <path>, then ak kb check.");

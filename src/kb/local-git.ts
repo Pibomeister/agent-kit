@@ -29,7 +29,7 @@ export const PROJECT_SCOPE = "project";
 
 /** The one file under `projects/<project>/runs/` that holds the project's run artifacts, a record per line. */
 const ARTIFACTS_FILE = "artifacts.jsonl";
-const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /** Names the layout uses, which a scope segment may not reuse: a scope carrying one is a path. */
 const RESERVED_SEGMENTS = new Set([...KB_KINDS, PROJECT_SCOPE, "projects", "documents", "runs"]);

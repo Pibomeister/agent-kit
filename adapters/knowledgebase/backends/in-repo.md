@@ -26,9 +26,8 @@ locator:
     adr: decisions
 ```
 
-`schemas/kb-backends/in-repo.schema.json` refuses a path or directory that is absolute, carries a
-backslash, or has a `.` or `..` segment; a kind outside the nine; an empty `kinds`; and a base that
-is not a branch name. `ak kb check` also refuses a `kinds` map in which one directory equals or
+`schemas/kb-backends/in-repo.schema.json` holds the locator to one invariant: it names no machine
+path, no directory outside the project folder, and only the nine kinds. `ak kb check` also refuses a `kinds` map in which one directory equals or
 contains another, so no page is read under two kinds (`kb.binding-invalid`).
 
 ## 2. No setup
@@ -77,6 +76,6 @@ exit 3 with `kb.in-repo-missing`, a coverage limit, and the message names the fi
 
 ## 6. Why the application repository is allowed here
 
-Contract §3 refuses a knowledgebase inside the application repository because a publish through it
+The contract's "Centrality" section refuses a knowledgebase inside the application repository because a publish through it
 would write project knowledge into that repository. This binding has no write path, so that cannot
 happen: agent-kit still writes nothing into the application repository.

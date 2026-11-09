@@ -4,11 +4,12 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { error, warning, type Issue } from "../validation/types.ts";
-import type { KbBinding } from "./binding.ts";
+import type { KbBinding, ResolvedKb } from "./binding.ts";
 import { git, workTreeTop } from "./git.ts";
 import {
   documentHash,
   KB_KINDS,
+  KEBAB,
   kindProblem,
   normalizeBody,
   PROJECT_SCOPE,
@@ -24,7 +25,7 @@ import {
  * pages committed in the project's own repository, read in place. Nothing here
  * writes: a publish is skipped before it reaches a backend (src/kb/cli.ts), so
  * no project knowledge is ever written into the application repository
- * (adapters/knowledgebase/CONTRACT.md §3).
+ * (adapters/knowledgebase/CONTRACT.md, "Centrality").
  *
  * The revision read is the merge-base of the checkout's HEAD and the binding's
  * base branch, so a page a branch commits, or a status it sets, is not
@@ -35,7 +36,6 @@ export const IN_REPO = "in-repo";
 
 /** The statuses a page keeps as declared; any other declaration, or none, reads as `unreviewed`. */
 const SETTLED_STATUSES = new Set(["accepted", "superseded", "deprecated", "rejected", "proposed"]);
-const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Where an in-repo binding reads, once resolved. */
 export interface InRepoLocation {
@@ -68,10 +68,10 @@ interface InRepoLocator {
   kinds: Record<string, string>;
 }
 
-/** The page-header keys this backend reads; any other key is left alone. */
+/** The page-header keys this backend reads, when scalar; any other key is left alone. */
 interface FrontMatter {
-  title?: string;
-  status?: string;
+  title?: string | number | boolean;
+  status?: string | number | boolean;
 }
 
 const ajv = new Ajv2020({ strict: false });
@@ -87,7 +87,7 @@ const validLocator = ajv.compile<InRepoLocator>({
 });
 const validFrontMatter = ajv.compile<FrontMatter>({
   type: "object",
-  properties: { title: { type: "string" }, status: { type: "string" } },
+  properties: { title: { type: ["string", "number", "boolean"] }, status: { type: ["string", "number", "boolean"] } },
 });
 
 /** The binding's locator, parsed; empty when it is not an in-repo locator, which check has refused already. */
@@ -119,12 +119,16 @@ export function inRepoBindingIssues(binding: KbBinding, file: string): Issue[] {
   return [];
 }
 
+/** How to clear kb.in-repo-missing, said once for ak kb and ak doctor. */
+export const IN_REPO_MISSING_REMEDY =
+  "Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.";
+
 function missing(file: string, message: string): Issue[] {
   return [
     warning(
       "kb.in-repo-missing",
       file,
-      `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.`,
+      `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. ${IN_REPO_MISSING_REMEDY}`,
     ),
   ];
 }
@@ -197,7 +201,9 @@ function splitFrontMatter(text: string): { meta: PageMeta; body: string } | null
   const body = normalized.slice(end + 5);
   if (value === null || value === undefined) return { meta: { title: null, status: null }, body };
   if (!validFrontMatter(value)) return null;
-  return { meta: { title: value.title ?? null, status: value.status ?? null }, body };
+  const title = value.title === undefined ? null : String(value.title);
+  const status = value.status === undefined ? null : String(value.status);
+  return { meta: { title, status }, body };
 }
 
 /** The first word of a declaration, lowercased, without markdown emphasis or punctuation. */
@@ -226,9 +232,14 @@ function titleOf(meta: PageMeta, body: string, id: string): string {
   return heading?.[1]?.trim() ?? id;
 }
 
+function unreadable(message: string): KbRefusal {
+  return { status: "failed", code: "kb.unreadable", message };
+}
+
 /** The commit at `revision` that last changed each path under `dirs`, from one log walk. */
-function lastChanges(top: string, revision: string, dirs: readonly string[]): Map<string, string> {
+function lastChanges(top: string, revision: string, dirs: readonly string[]): Map<string, string> | KbRefusal {
   const log = git(top, ["-c", "core.quotePath=false", "log", "--format=@%H", "--name-only", revision, "--", ...dirs]);
+  if (log.status !== 0) return unreadable(`git could not walk the history of ${dirs.join(", ")}: ${log.stderr.trim()}`);
   const changed = new Map<string, string>();
   let commit = "";
   for (const line of log.stdout.split("\n")) {
@@ -251,7 +262,7 @@ function listPages(top: string, location: InRepoLocation, kinds: readonly string
     if (dir === undefined) continue;
     const listed = git(top, ["ls-tree", "-r", "-z", "--full-tree", location.revision, "--", `${dir}/`]);
     if (listed.status !== 0) {
-      return { status: "failed", code: "kb.unreadable", message: `git could not list ${dir}: ${listed.stderr.trim()}` };
+      return unreadable(`git could not list ${dir}: ${listed.stderr.trim()}`);
     }
     for (const entry of listed.stdout.split("\0")) {
       const tab = entry.indexOf("\t");
@@ -272,13 +283,12 @@ function listPages(top: string, location: InRepoLocation, kinds: readonly string
  * scope and every scope above it.
  */
 export function readInRepoContext(
-  top: string,
+  kb: ResolvedKb,
   location: InRepoLocation,
-  knowledgebase: string,
-  project: string,
   kinds: readonly string[],
   scope: string,
 ): ReadOutcome | KbRefusal {
+  const top = kb.root;
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined) return kindProblem(unknown);
   const segments = scopeSegments(scope);
@@ -286,8 +296,8 @@ export function readInRepoContext(
   const scopes = Array.from({ length: segments.length + 1 }, (_, depth) => segments.slice(0, segments.length - depth));
   const outcome: ReadOutcome = {
     status: "complete",
-    knowledgebase,
-    project,
+    knowledgebase: kb.knowledgebase,
+    project: kb.binding.project,
     documents: [],
     coverage: {
       kinds: [...kinds],
@@ -308,6 +318,7 @@ export function readInRepoContext(
   const changes = lastChanges(top, location.revision, [
     ...new Set(listed.map((page) => location.kinds[page.kind] ?? "")),
   ]);
+  if (!(changes instanceof Map)) return changes;
   for (const page of listed) {
     const id = basename(page.path, ".md");
     if (!KEBAB.test(id) || (stems.get(`${page.kind}/${id}`) ?? 0) > 1) {
@@ -315,7 +326,8 @@ export function readInRepoContext(
       continue;
     }
     const content = git(top, ["show", `${location.revision}:${page.path}`]);
-    const parsed = content.status === 0 ? splitFrontMatter(content.stdout) : null;
+    if (content.status !== 0) return unreadable(`git could not read ${page.path}: ${content.stderr.trim()}`);
+    const parsed = splitFrontMatter(content.stdout);
     if (parsed === null) {
       outcome.coverage.unreadable.push(shown(page.path));
       continue;

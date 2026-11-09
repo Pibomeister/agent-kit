@@ -1,7 +1,7 @@
 # Execution contract for doc-review (schemas/skill.schema.json).
 # Prose mirror: skills/doc-review/SKILL.md. The two are one statement in two forms.
 id: doc-review
-version: 0.4.0
+version: 0.5.0
 kind: standalone
 invocation: M
 summary: >-

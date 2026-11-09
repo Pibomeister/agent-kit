@@ -5,8 +5,11 @@ import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { runKb } from "../src/kb/cli.ts";
+import { ingest } from "../src/learn/review/ingest.ts";
+import { reviewLedger } from "../src/learn/review/ledger.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
+import { testContext } from "./learn/helpers.ts";
 
 /**
  * The read-only `in-repo` backend (adapters/knowledgebase/backends/in-repo.md):
@@ -238,17 +241,19 @@ describe("readContext on an in-repo binding", () => {
     expect(byId(result.documents, "use-postgres")).toBeUndefined();
   });
 
-  test("a page whose front matter does not parse, or gives a title or status that is not text, is unreadable", () => {
+  test("a page whose front matter does not parse, or gives a list or map title or status, is unreadable; a scalar is text", () => {
     const fx = fixture({
       pages: {
         "concepts/fine.md": "---\ntitle: Fine\n---\n\nBody.\n",
         "concepts/unterminated.md": "---\ntitle: Never closed\n\nBody.\n",
         "concepts/list-title.md": "---\ntitle: [a, b]\n---\n\nBody.\n",
         "concepts/map-status.md": "---\nstatus:\n  value: accepted\n---\n\nBody.\n",
+        "concepts/number-title.md": "---\ntitle: 42\n---\n\nBody.\n",
       },
     });
     const { result } = read(fx, "concept");
-    expect(result.documents.map((doc) => doc.id)).toEqual(["fine"]);
+    expect(result.documents.map((doc) => doc.id).toSorted()).toEqual(["fine", "number-title"]);
+    expect(byId(result.documents, "number-title")?.title).toBe("42");
     expect(result.coverage.unreadable.toSorted()).toEqual(
       [
         "docs/wiki/concepts/list-title.md",
@@ -344,6 +349,11 @@ describe("a missing in-repo knowledgebase is a coverage limit", () => {
     const fx = fixture({ binding: BINDING.replace("base: main", "base: trunk") });
     expectMissing(kb(fx, "check"));
     expectMissing(kb(fx, "read", "--kind", "concept", "--scope", "project"));
+    const page = join(fx.scratch, "page.md");
+    writeFileSync(page, "# A page\n");
+    expectMissing(
+      kb(fx, "publish", "document", "--kind", "adr", "--scope", "project", "--id", "x", "--title", "X", "--file", page),
+    );
   });
 
   test("ak doctor warns with the cause, and passes a resolvable binding as read-only", () => {
@@ -392,5 +402,25 @@ describe("a project folder below the git top", () => {
     expect(run.code).toBe(0);
     expect(result.documents.map((doc) => doc.id)).toEqual(["auth-model"]);
     expect(readFileSync(join(fx.project, "ak.kb.yaml"), "utf8")).toBe(BINDING);
+  });
+});
+
+describe("the learning review's knowledgebase-findings source", () => {
+  const options = { skipGithub: true, skipMem: true };
+
+  test("an in-repo binding carries no findings and reads no local-git path under the project", () => {
+    const fx = fixture();
+    const ctx = testContext({ env: { AK_KB_REGISTRY: fx.registry } });
+    const result = ingest(ctx, reviewLedger(ctx.config, fx.project), fx.project, options);
+    expect(result.events.filter((event) => event.source === "kb-finding")).toEqual([]);
+    expect(result.unavailable).not.toContain("kb-finding");
+  });
+
+  test("a missing in-repo knowledgebase records the source unavailable with its cause", () => {
+    const fx = fixture({ binding: BINDING.replace("path: docs/wiki", "path: docs/nowhere") });
+    const ctx = testContext({ env: { AK_KB_REGISTRY: fx.registry } });
+    const result = ingest(ctx, reviewLedger(ctx.config, fx.project), fx.project, options);
+    expect(result.unavailable).toContain("kb-finding");
+    expect(ctx.err.join("\n")).toContain("'docs/nowhere' is not a directory");
   });
 });
