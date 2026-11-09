@@ -81,6 +81,12 @@ describe("the contract and its decisions", () => {
     expect(adr).toContain("read through a read-only binding");
   });
 
+  test("ruling kb-binding-is-a-locator carries the read-only exception", () => {
+    const ruling = flat("policies/resolved-conflicts.yaml");
+    expect(ruling).toContain("A binding that can be written and resolves to the application repository");
+    expect(ruling).toContain("a read-only binding may name a directory inside it, because it carries no publish");
+  });
+
   test("the local-git binding names the in-repo exception", () => {
     expect(flat("adapters/knowledgebase/backends/local-git.md")).toContain("backends/in-repo.md");
   });

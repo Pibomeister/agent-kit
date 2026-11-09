@@ -2,7 +2,7 @@
 
 A backend binding under [`adapters/knowledgebase/CONTRACT.md`](../CONTRACT.md) §7. Everything generic — the seven
 operations, the two artifact classes, centrality — is the contract's; this document states only how
-this one binding meets it. The code is `src/kb/in-repo.ts`.
+this one binding meets it (ruling `kb-binding-is-a-locator`). The code is `src/kb/in-repo.ts`.
 
 **Carries:** `readContext`. A publish is **skipped** (§4); the other five operations refuse.
 
@@ -78,4 +78,5 @@ exit 3 with `kb.in-repo-missing`, a coverage limit, and the message names the fi
 
 The contract's "Centrality" section refuses a knowledgebase inside the application repository because a publish through it
 would write project knowledge into that repository. This binding has no write path, so that cannot
-happen: agent-kit still writes nothing into the application repository.
+happen: agent-kit still writes nothing into the application repository (ruling
+`kb-binding-is-a-locator`, which carries this read-only exception).
