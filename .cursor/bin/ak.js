@@ -22879,7 +22879,7 @@ function missing(file, message) {
 }
 function baseRevision(top, base) {
   for (const ref of [`refs/remotes/origin/${base}`, `refs/heads/${base}`]) {
-    const found = git2(top, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    const found = git2(top, ["rev-parse", "--verify", "--quiet", ref]);
     if (found.status === 0)
       return found.stdout.trim();
   }
@@ -22900,7 +22900,7 @@ function resolveInRepo(projectRoot, binding, file) {
       issues: missing(file, `The base branch '${base}' resolves as neither refs/remotes/origin/${base} nor refs/heads/${base}.`)
     };
   }
-  if (git2(top, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0) {
+  if (git2(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git2(top, ["merge-base", "HEAD", baseSha]);
