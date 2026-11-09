@@ -124,12 +124,15 @@ Cases scaffolded on these fixtures:
 | `doc-review/changed-evidence-resurfaces-a-rejected-finding` | search-migration-round-two |
 | `doc-review/drafted-spec-gets-a-panel` | knowledgebase checkout (own pages) |
 | `compound/no-knowledgebase-means-no-repo-fallback` | tiny-service-repo |
-| `doc-review/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
+| `doc-review/configured-knowledgebase-failure-stops` | tiny-service-repo |
+| `doc-review/no-knowledgebase-write-continues-unpublished` | tiny-service-repo |
 | `doc-review/third-round-does-not-run` | tiny-service-repo |
 | `receiving-review/refuses-to-produce-a-fresh-review` | tiny-service-repo |
-| `super-align/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
+| `super-align/configured-knowledgebase-failure-stops` | tiny-service-repo |
+| `super-align/no-knowledgebase-write-continues-unpublished` | tiny-service-repo |
 | `super-align/typo-fix-does-not-start-alignment` | tiny-service-repo |
-| `super-bound/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
+| `super-bound/configured-knowledgebase-failure-stops` | tiny-service-repo |
+| `super-bound/no-knowledgebase-write-continues-unpublished` | tiny-service-repo |
 | `super-bound/reviewed-ticket-does-not-reopen-bounding` | tiny-service-repo |
 | `super-build/round-cap-adjudicates-open-findings` | tiny-service-repo |
 | `super-review/baseline-reset-is-not-a-third-delta-loop` | tiny-service-repo |

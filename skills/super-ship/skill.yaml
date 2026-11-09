@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.4.0
+version: 0.5.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -218,8 +218,9 @@ stop_conditions:
   - complete in dry-run when the payload and the pre-flight record are emitted and no remote call was
     made.
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
-    lesson candidate is drafted, and the watch lane holds the pull request; under the unattended
-    policy, also once the pull request carries the disclosure and `ship-preflight --pr <n>` succeeded.
+    lesson candidate is drafted (or, under a knowledgebase coverage limit, named as not published),
+    and the watch lane holds the pull request; under the unattended policy, also once the pull
+    request carries the disclosure and `ship-preflight --pr <n>` succeeded.
   - needs-input when the run was started by none of the typed command, a validated grant, a passing
     bypass check and the unattended policy's passing `unattended check`, receipts or the verdict are
     missing or bound to another revision, the mode was not named, or a sensitive action is required
@@ -227,6 +228,9 @@ stop_conditions:
     or stale verify, readiness or review record also stops here.
   - needs-input when the autonomous form has no trusted evidence. The message names trusted evidence
     as unavailable and says the manual form remains open.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped draft is named in the result as not published, and of these results only exit 1 stops.
 
 failure_outcomes:
   - status: needs-input

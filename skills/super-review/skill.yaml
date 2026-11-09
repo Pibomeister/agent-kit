@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-review/SKILL.md (AUTHORING.md §4.1).
 
 id: super-review
-version: 0.1.5
+version: 0.2.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -250,6 +250,12 @@ stop_conditions:
   - A delta that ends by establishing a new baseline stops with complete (ruling `delta-baseline-reset-not-third-loop`).
     The reset closes that scope, records what changed materially and the new comparison base, and the
     new scope opens at pass 1 rather than continuing the loop.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped publish is named in the result as not published, and of these results only exit 1 stops.
+    A seat that reads the knowledgebase runs against what it can read and names the limit, so a
+    lane whose only gap is that limit is covered, not unavailable; the learnings lane, which
+    activates only on a readable corpus with hits, is recorded skipped with the limit as its reason.
 
 failure_outcomes:
   - status: needs-input

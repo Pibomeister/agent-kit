@@ -154,8 +154,8 @@ absence is recorded ([`policies/limits.yaml`](../../references/shared/policies/l
 14. A committed ticket then runs the trail, steps 14 to 16, a resumed run by the work-trail
     protocol's resume rule; steps 12 and 13 never wait on it (ruling
     `work-trail-is-account-not-evidence`). One stopped before its commit gets no audit or published
-    stretch, as the report says; a failed receipt publish stops the build as before, short of the
-    trail. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
+    stretch, as the report says; a configured knowledgebase (exit 1) failing a receipt publish stops the build short of the
+    trail, while under a knowledgebase coverage limit the receipts are named as not published and the build goes on. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
     none it holds back is sent. A refused or failed trail publish is never repaired or resent and is
     not itself a build gate; the protocol's stop conditions describe shared-file failures that
     can block later required receipts. The trail writes no gate record; `complete` does not depend on it.
@@ -275,8 +275,8 @@ stands, and every open finding with its adjudication. It is not a pass and the t
 or a check seat that cannot be filled independently. Returns what is missing and the lane that owns
 it, never a narrowed version of the work.
 
-`failed`: no writable worktree, the branch is checked out elsewhere, or the knowledgebase refuses a
-receipt, ticket result or check result. The worktree and the ledger are left intact for the resume.
+`failed`: no writable worktree, the branch is checked out elsewhere, or a configured knowledgebase refuses a
+receipt, ticket result or check result. The worktree and the ledger are left intact for the resume. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered) or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the ticket mid-run. The branch, the worktree and the recorded
 rulings are kept rather than cleaned up, because the next run reads them instead of re-deriving them.
