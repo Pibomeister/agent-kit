@@ -305,4 +305,11 @@ describe("the super-scout return contract", () => {
       expect(flat(p)).toContain("or, under a coverage limit, the dossier named as not published");
     }
   });
+  test("every return-gist sentence in SKILL.md carries the coverage-limit alternative", () => {
+    const sentences = flat("skills/super-scout/SKILL.md")
+      .split(/(?<=\.)\s+/)
+      .filter((s) => /published record('s)? reference/.test(s));
+    expect(sentences.length).toBeGreaterThan(1);
+    for (const s of sentences) expect(s).toMatch(/under a coverage limit, the dossier named as not published/);
+  });
 });

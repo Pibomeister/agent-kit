@@ -147,8 +147,9 @@ The scout supplies no path: the
 knowledgebase resolves placement, and a scout that writes a documentation tree into the repository
 it is reading has broken the read-only gate and the central-ownership boundary in one step.
 
-The return value to the caller is a short gist: the published record reference, the headline
-locations, and the count of coverage limits and unknowns. It repeats neither the dossier's contents
+The return value to the caller is a short gist: the published record reference (under a coverage
+limit, the dossier named as not published), the headline locations, and the count of coverage limits
+and unknowns. It repeats neither the dossier's contents
 nor the search transcript.
 
 ## Side effects
