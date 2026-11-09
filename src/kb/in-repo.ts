@@ -68,12 +68,6 @@ interface InRepoLocator {
   kinds: Record<string, string>;
 }
 
-/** The page-header keys this backend reads, when scalar; any other key is left alone. */
-interface FrontMatter {
-  title?: string | number | boolean;
-  status?: string | number | boolean;
-}
-
 const ajv = new Ajv2020({ strict: false });
 const validLocator = ajv.compile<InRepoLocator>({
   type: "object",
@@ -85,9 +79,17 @@ const validLocator = ajv.compile<InRepoLocator>({
     kinds: { type: "object", additionalProperties: { type: "string" } },
   },
 });
-const validFrontMatter = ajv.compile<FrontMatter>({
+/** A header mapping whose `title` is a scalar; a list, a map or nothing leaves the title to the body. */
+const hasScalarTitle = ajv.compile<{ title: string | number | boolean }>({
   type: "object",
-  properties: { title: { type: ["string", "number", "boolean"] }, status: { type: ["string", "number", "boolean"] } },
+  required: ["title"],
+  properties: { title: { type: ["string", "number", "boolean"] } },
+});
+/** The same for `status`. */
+const hasScalarStatus = ajv.compile<{ status: string | number | boolean }>({
+  type: "object",
+  required: ["status"],
+  properties: { status: { type: ["string", "number", "boolean"] } },
 });
 
 /** The binding's locator, parsed; empty when it is not an in-repo locator, which check has refused already. */
@@ -160,14 +162,29 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
     };
   }
   const merged = git(top, ["merge-base", "HEAD", baseSha]);
-  if (merged.status !== 0) {
+  // git merge-base exits 1 when the two share no ancestor, and higher when git itself failed.
+  if (merged.status === 1) {
     return { location: null, top, issues: missing(file, `HEAD shares no history with the base branch '${base}'.`) };
+  }
+  if (merged.status !== 0) {
+    return {
+      location: null,
+      top,
+      issues: [error("kb.unreadable", file, `git merge-base failed: ${merged.stderr.trim()}`)],
+    };
   }
   const revision = merged.stdout.trim();
   const projectPrefix = relative(top, project).split(sep).join("/");
   const path = posix.join(projectPrefix, locator.path);
-  const type = git(top, ["cat-file", "-t", `${revision}:${path}`]);
-  if (type.status !== 0 || type.stdout.trim() !== "tree") {
+  const listed = git(top, ["ls-tree", "--full-tree", revision, "--", path]);
+  if (listed.status !== 0) {
+    return {
+      location: null,
+      top,
+      issues: [error("kb.unreadable", file, `git could not list ${path}: ${listed.stderr.trim()}`)],
+    };
+  }
+  if (!/^\d+ tree [0-9a-f]+\t/.test(listed.stdout)) {
     return {
       location: null,
       top,
@@ -186,24 +203,37 @@ interface PageMeta {
   status: string | null;
 }
 
-/** A page's own header, when it has one: `---`, YAML, `---`. Null text means the header does not parse. */
-function splitFrontMatter(text: string): { meta: PageMeta; body: string } | null {
+/** A page split into what its header declares and the body after it. */
+interface Page {
+  meta: PageMeta;
+  body: string;
+}
+
+/**
+ * A page's own header, when it has one: `---`, YAML, `---`. A header that is not
+ * closed, does not parse or is not a mapping reads as absent, and a title or
+ * status that is not a scalar reads as absent too, so the page falls back to its
+ * heading, its id and the status its body declares.
+ */
+function splitFrontMatter(text: string): Page {
   const normalized = text.replace(/\r+\n/g, "\n");
   if (!normalized.startsWith("---\n")) return { meta: { title: null, status: null }, body: normalized };
   const end = normalized.indexOf("\n---\n", 3);
-  if (end === -1) return null;
-  let value: unknown;
+  if (end === -1) return { meta: { title: null, status: null }, body: normalized };
+  return { meta: headerMeta(normalized.slice(4, end)), body: normalized.slice(end + 5) };
+}
+
+/** The title and status a header's YAML gives, each absent unless it is a scalar; YAML that does not parse gives neither. */
+function headerMeta(yaml: string): PageMeta {
   try {
-    value = parseYaml(normalized.slice(4, end));
+    const parsed: unknown = parseYaml(yaml);
+    return {
+      title: hasScalarTitle(parsed) ? String(parsed.title) : null,
+      status: hasScalarStatus(parsed) ? String(parsed.status) : null,
+    };
   } catch {
-    return null;
+    return { title: null, status: null };
   }
-  const body = normalized.slice(end + 5);
-  if (value === null || value === undefined) return { meta: { title: null, status: null }, body };
-  if (!validFrontMatter(value)) return null;
-  const title = value.title === undefined ? null : String(value.title);
-  const status = value.status === undefined ? null : String(value.status);
-  return { meta: { title, status }, body };
 }
 
 /** The first word of a declaration, lowercased, without markdown emphasis or punctuation. */
@@ -328,10 +358,6 @@ export function readInRepoContext(
     const content = git(top, ["show", `${location.revision}:${page.path}`]);
     if (content.status !== 0) return unreadable(`git could not read ${page.path}: ${content.stderr.trim()}`);
     const parsed = splitFrontMatter(content.stdout);
-    if (parsed === null) {
-      outcome.coverage.unreadable.push(shown(page.path));
-      continue;
-    }
     const body = normalizeBody(parsed.body);
     const title = titleOf(parsed.meta, body, id);
     const declared = declaredStatus(parsed.meta, body);

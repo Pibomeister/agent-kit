@@ -1,8 +1,9 @@
 # Binding `in-repo` — a read-only knowledgebase committed in the project's own repository
 
-A backend binding under [`adapters/knowledgebase/CONTRACT.md`](../CONTRACT.md) §7. Everything generic — the seven
-operations, the two artifact classes, centrality — is the contract's; this document states only how
-this one binding meets it (ruling `kb-binding-is-a-locator`). The code is `src/kb/in-repo.ts`.
+A backend binding under the "Bindings" section of [`adapters/knowledgebase/CONTRACT.md`](../CONTRACT.md). Everything
+generic — the seven operations, the two artifact classes, centrality — is the contract's; this
+document states only how this one binding meets it (ruling `kb-binding-is-a-locator`). The code is
+`src/kb/in-repo.ts`.
 
 **Carries:** `readContext`. A publish is **skipped** (§4); the other five operations refuse.
 
@@ -26,9 +27,10 @@ locator:
     adr: decisions
 ```
 
-[`schemas/kb-backends/in-repo.schema.json`](../../../schemas/kb-backends/in-repo.schema.json) holds the locator to one invariant: it names no machine
-path, no directory outside the project folder, and only the nine kinds. `.cursor/bin/ak kb check` also refuses a `kinds` map in which one directory equals or
-contains another, so no page is read under two kinds (`kb.binding-invalid`).
+[`schemas/kb-backends/in-repo.schema.json`](../../../schemas/kb-backends/in-repo.schema.json) admits only plain relative directories (forward slashes;
+not empty, absolute or `.`; no backslash and no `..` anywhere), a nonempty `kinds` map of the nine
+kinds, and a base shaped as a branch name. `.cursor/bin/ak kb check` also refuses a `kinds` map in which one
+directory equals or contains another, so no page is read under two kinds (`kb.binding-invalid`).
 
 ## 2. No setup
 
@@ -76,7 +78,7 @@ exit 3 with `kb.in-repo-missing`, a coverage limit, and the message names the fi
 
 ## 6. Why the application repository is allowed here
 
-The contract's "Centrality" section refuses a knowledgebase inside the application repository because a publish through it
-would write project knowledge into that repository. This binding has no write path, so that cannot
-happen: agent-kit still writes nothing into the application repository (ruling
+The contract's "Centrality" section refuses a knowledgebase inside the application repository
+because a publish through it would write project knowledge into that repository. This binding has no
+write path, so that cannot happen: agent-kit still writes nothing into the application repository (ruling
 `kb-binding-is-a-locator`, which carries this read-only exception).

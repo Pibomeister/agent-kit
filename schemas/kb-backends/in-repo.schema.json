@@ -7,9 +7,10 @@
   "required": ["locator"],
   "$defs": {
     "relative_dir": {
-      "description": "A directory as forward-slash segments relative to where it is read from: no leading slash, no backslash, and no segment that is `.` or `..`.",
+      "description": "A directory as forward-slash segments relative to where it is read from: no leading slash, no backslash, no segment that is `.`, and no `..` anywhere.",
       "type": "string",
-      "pattern": "^(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+)*$"
+      "pattern": "^(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+)*$",
+      "not": { "pattern": "\\.\\." }
     }
   },
   "properties": {

@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { runKb } from "../src/kb/cli.ts";
-import { ingest } from "../src/learn/review/ingest.ts";
+import findingExample from "../templates/finding.example.json" with { type: "json" };
+import { publishRunArtifact } from "../src/kb/local-git.ts";
+import { eventsFromKbFindings, ingest } from "../src/learn/review/ingest.ts";
 import { reviewLedger } from "../src/learn/review/ledger.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -241,7 +243,7 @@ describe("readContext on an in-repo binding", () => {
     expect(byId(result.documents, "use-postgres")).toBeUndefined();
   });
 
-  test("a page whose front matter does not parse, or gives a list or map title or status, is unreadable; a scalar is text", () => {
+  test("a header that is not closed, does not parse or gives a list or map reads as absent; a scalar is text", () => {
     const fx = fixture({
       pages: {
         "concepts/fine.md": "---\ntitle: Fine\n---\n\nBody.\n",
@@ -249,18 +251,32 @@ describe("readContext on an in-repo binding", () => {
         "concepts/list-title.md": "---\ntitle: [a, b]\n---\n\nBody.\n",
         "concepts/map-status.md": "---\nstatus:\n  value: accepted\n---\n\nBody.\n",
         "concepts/number-title.md": "---\ntitle: 42\n---\n\nBody.\n",
+        "concepts/colon-title.md": "---\ntitle: System: Chat\n---\n\n# Chat\n\n## Status\n\nAccepted\n",
       },
     });
     const { result } = read(fx, "concept");
-    expect(result.documents.map((doc) => doc.id).toSorted()).toEqual(["fine", "number-title"]);
-    expect(byId(result.documents, "number-title")?.title).toBe("42");
-    expect(result.coverage.unreadable.toSorted()).toEqual(
-      [
-        "docs/wiki/concepts/list-title.md",
-        "docs/wiki/concepts/map-status.md",
-        "docs/wiki/concepts/unterminated.md",
-      ].toSorted(),
-    );
+    expect(result.coverage.unreadable).toEqual([]);
+    const titles = Object.fromEntries(result.documents.map((doc) => [doc.id, doc.title]));
+    expect(titles).toEqual({
+      "colon-title": "Chat",
+      fine: "Fine",
+      "list-title": "list-title",
+      "map-status": "map-status",
+      "number-title": "42",
+      unterminated: "unterminated",
+    });
+    expect(byId(result.documents, "map-status")?.declared_status).toBeNull();
+    expect(byId(result.documents, "colon-title")?.status).toBe("accepted");
+  });
+
+  test("a page git cannot read fails the read rather than vanishing from it", () => {
+    const fx = fixture();
+    const blob = git(fx.top, "rev-parse", "main:docs/wiki/concepts/auth-model.md").trim();
+    rmSync(join(fx.top, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
+    const run = kb(fx, "read", "--kind", "concept", "--scope", "project");
+    expect(run.code).toBe(1);
+    expect(run.out).toContain('"status": "failed"');
+    expect(run.out).toContain("kb.unreadable");
   });
 
   test("a component scope returns the project pages with no note on stderr", () => {
@@ -373,6 +389,7 @@ describe("an in-repo binding that is not valid is refused", () => {
   const cases = {
     "an absolute path": BINDING.replace("path: docs/wiki", "path: /docs/wiki"),
     "a path with ..": BINDING.replace("path: docs/wiki", "path: ../wiki"),
+    "a path containing .. inside a segment": BINDING.replace("path: docs/wiki", "path: docs/a..b"),
     "a path that is .": BINDING.replace("path: docs/wiki", "path: ."),
     "a path with a backslash": BINDING.replace("path: docs/wiki", "path: docs\\\\wiki"),
     "an unknown kind": BINDING.replace("concept: concepts", "glossary: concepts"),
@@ -410,6 +427,19 @@ describe("the learning review's knowledgebase-findings source", () => {
 
   test("an in-repo binding carries no findings and reads no local-git path under the project", () => {
     const fx = fixture();
+    // A finding the local-git reader would ingest, committed where it would look under this project.
+    const stored = publishRunArtifact(
+      {
+        root: fx.top,
+        knowledgebase: "example-wiki",
+        binding: { backend: "local-git", project: "example-project", locator: {} },
+      },
+      JSON.stringify({ ...findingExample, project: { id: "example-project", repo: "acme/example" } }),
+      findingExample.run_id,
+      [],
+    );
+    expect(stored.status).toBe("complete");
+    expect(eventsFromKbFindings(fx.top, "example-project")).toHaveLength(1);
     const ctx = testContext({ env: { AK_KB_REGISTRY: fx.registry } });
     const result = ingest(ctx, reviewLedger(ctx.config, fx.project), fx.project, options);
     expect(result.events.filter((event) => event.source === "kb-finding")).toEqual([]);

@@ -17495,9 +17495,10 @@ var init_in_repo_schema = __esm(() => {
     required: ["locator"],
     $defs: {
       relative_dir: {
-        description: "A directory as forward-slash segments relative to where it is read from: no leading slash, no backslash, and no segment that is `.` or `..`.",
+        description: "A directory as forward-slash segments relative to where it is read from: no leading slash, no backslash, no segment that is `.`, and no `..` anywhere.",
         type: "string",
-        pattern: "^(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+)*$"
+        pattern: "^(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+)*$",
+        not: { pattern: "\\.\\." }
       }
     },
     properties: {
@@ -22900,14 +22901,28 @@ function resolveInRepo(projectRoot, binding, file) {
     };
   }
   const merged = git2(top, ["merge-base", "HEAD", baseSha]);
-  if (merged.status !== 0) {
+  if (merged.status === 1) {
     return { location: null, top, issues: missing(file, `HEAD shares no history with the base branch '${base}'.`) };
+  }
+  if (merged.status !== 0) {
+    return {
+      location: null,
+      top,
+      issues: [error("kb.unreadable", file, `git merge-base failed: ${merged.stderr.trim()}`)]
+    };
   }
   const revision = merged.stdout.trim();
   const projectPrefix = relative3(top, project).split(sep2).join("/");
   const path = posix.join(projectPrefix, locator.path);
-  const type = git2(top, ["cat-file", "-t", `${revision}:${path}`]);
-  if (type.status !== 0 || type.stdout.trim() !== "tree") {
+  const listed = git2(top, ["ls-tree", "--full-tree", revision, "--", path]);
+  if (listed.status !== 0) {
+    return {
+      location: null,
+      top,
+      issues: [error("kb.unreadable", file, `git could not list ${path}: ${listed.stderr.trim()}`)]
+    };
+  }
+  if (!/^\d+ tree [0-9a-f]+\t/.test(listed.stdout)) {
     return {
       location: null,
       top,
@@ -22927,21 +22942,19 @@ function splitFrontMatter(text) {
 ---
 `, 3);
   if (end === -1)
-    return null;
-  let value;
+    return { meta: { title: null, status: null }, body: normalized };
+  return { meta: headerMeta(normalized.slice(4, end)), body: normalized.slice(end + 5) };
+}
+function headerMeta(yaml) {
   try {
-    value = $parse(normalized.slice(4, end));
+    const parsed = $parse(yaml);
+    return {
+      title: hasScalarTitle(parsed) ? String(parsed.title) : null,
+      status: hasScalarStatus(parsed) ? String(parsed.status) : null
+    };
   } catch {
-    return null;
+    return { title: null, status: null };
   }
-  const body = normalized.slice(end + 5);
-  if (value === null || value === undefined)
-    return { meta: { title: null, status: null }, body };
-  if (!validFrontMatter(value))
-    return null;
-  const title = value.title === undefined ? null : String(value.title);
-  const status = value.status === undefined ? null : String(value.status);
-  return { meta: { title, status }, body };
 }
 function firstWord(text) {
   const word = text.replaceAll(/[*_`[\]]/g, " ").trim().split(/\s+/)[0] ?? "";
@@ -23051,10 +23064,6 @@ function readInRepoContext(kb, location, kinds, scope) {
     if (content.status !== 0)
       return unreadable(`git could not read ${page.path}: ${content.stderr.trim()}`);
     const parsed = splitFrontMatter(content.stdout);
-    if (parsed === null) {
-      outcome.coverage.unreadable.push(shown(page.path));
-      continue;
-    }
     const body = normalizeBody(parsed.body);
     const title = titleOf(parsed.meta, body, id);
     const declared = declaredStatus(parsed.meta, body);
@@ -23075,7 +23084,7 @@ function readInRepoContext(kb, location, kinds, scope) {
   }
   return outcome;
 }
-var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, ajv2, validLocator, validFrontMatter, IN_REPO_MISSING_REMEDY = "Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.";
+var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, ajv2, validLocator, hasScalarTitle, hasScalarStatus, IN_REPO_MISSING_REMEDY = "Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.";
 var init_in_repo = __esm(() => {
   init_dist();
   init_git();
@@ -23093,9 +23102,15 @@ var init_in_repo = __esm(() => {
       kinds: { type: "object", additionalProperties: { type: "string" } }
     }
   });
-  validFrontMatter = ajv2.compile({
+  hasScalarTitle = ajv2.compile({
     type: "object",
-    properties: { title: { type: ["string", "number", "boolean"] }, status: { type: ["string", "number", "boolean"] } }
+    required: ["title"],
+    properties: { title: { type: ["string", "number", "boolean"] } }
+  });
+  hasScalarStatus = ajv2.compile({
+    type: "object",
+    required: ["status"],
+    properties: { status: { type: ["string", "number", "boolean"] } }
   });
 });
 
@@ -23248,8 +23263,10 @@ function resolveKnowledgebase(projectRoot, registryFile) {
   const id = hasKnowledgebaseId(locator) ? locator.knowledgebase : "";
   if (binding.backend === IN_REPO) {
     const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE2);
-    if (inRepo.location === null || inRepo.top === null)
-      return { resolved: null, state: "unavailable", issues: inRepo.issues };
+    if (inRepo.location === null || inRepo.top === null) {
+      const failed = inRepo.issues.some((issue) => issue.severity === "error");
+      return { resolved: null, state: failed ? "failed" : "unavailable", issues: inRepo.issues };
+    }
     return {
       resolved: { binding, knowledgebase: id, root: inRepo.top, inRepo: inRepo.location },
       state: "available",

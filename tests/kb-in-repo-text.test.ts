@@ -54,18 +54,18 @@ describe("the knowledgebase-binding reference", () => {
 describe("the contract and its decisions", () => {
   const contract = flat("adapters/knowledgebase/CONTRACT.md");
 
-  test("§1 counts both new causes as unconfigured, never failed", () => {
+  test("Capabilities and side effects counts both new causes as unconfigured, never failed", () => {
     expect(contract).toContain(
       "A missing in-repo knowledgebase (kb.in-repo-missing) and a publish to a read-only one (kb.read-only) are unconfigured too",
     );
   });
 
-  test("§3 allows a read-only knowledgebase inside the application repository and no writable one", () => {
+  test("Centrality allows a read-only knowledgebase inside the application repository and no writable one", () => {
     expect(contract).toContain("A knowledgebase that can be written never resolves to the application repository");
     expect(contract).toContain("A read-only binding (backend in-repo) may");
   });
 
-  test("§7 lists the in-repo binding", () => {
+  test("Bindings lists the in-repo binding", () => {
     expect(contract).toContain("| in-repo |");
   });
 
@@ -75,7 +75,7 @@ describe("the contract and its decisions", () => {
     expect(adr).toContain("A knowledgebase that can be written is never the application repository");
   });
 
-  test("ADR-0001 records the read-only divergence from its §1", () => {
+  test("ADR-0001 records the read-only divergence from its central-ownership decision", () => {
     const adr = flat("docs/decisions/0001-kb-document-vocabulary.md");
     expect(adr).toContain("**Amended:** 2026-11-09");
     expect(adr).toContain("read through a read-only binding");

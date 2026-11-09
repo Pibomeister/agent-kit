@@ -1323,8 +1323,8 @@ conflicts:
       application repository, one of its work trees or a directory inside it is refused; a
       read-only binding may name a directory inside it, because it carries no publish: every
       publish to it is skipped (kb.read-only) and nothing is written anywhere. A configured
-      knowledgebase that cannot be used is failed, never unavailable. A backend carries only the operations its
-      document names, and the rest refuse.
+      knowledgebase that cannot be used is failed, never unavailable. A backend carries only the
+      operations its document names, and the rest refuse.
     discharged_in: [inputs, side-effects, outputs]
     binds:
       adapters: [knowledgebase]

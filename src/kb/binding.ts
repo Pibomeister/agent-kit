@@ -330,8 +330,10 @@ export function resolveKnowledgebase(projectRoot: string, registryFile: string):
   if (binding.backend === IN_REPO) {
     // Read in place and never written, so there is no registration and no separate checkout (backends/in-repo.md, "No setup").
     const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE);
-    if (inRepo.location === null || inRepo.top === null)
-      return { resolved: null, state: "unavailable", issues: inRepo.issues };
+    if (inRepo.location === null || inRepo.top === null) {
+      const failed = inRepo.issues.some((issue) => issue.severity === "error");
+      return { resolved: null, state: failed ? "failed" : "unavailable", issues: inRepo.issues };
+    }
     return {
       resolved: { binding, knowledgebase: id, root: inRepo.top, inRepo: inRepo.location },
       state: "available",
