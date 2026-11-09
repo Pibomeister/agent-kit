@@ -93,6 +93,11 @@ Decisions. Shadow routing is the calling skill's, not this seat's.
   a comprehension finding is how this lane loses its meaning.
 - It was given the document without the snapshot, or the snapshot moved under it: return
   `unavailable` naming which.
+- Under a knowledgebase coverage limit (`ak kb check` exit 3, or a missing or unknown `ak kb`
+  command) a linked knowledgebase page cannot be read: name each such page as not read under the
+  limit and judge the rest. The limit alone never makes this lane unavailable. A configured
+  knowledgebase that cannot be used (`ak kb check` exit 1) leaves the seat without its required
+  context, and returns `unavailable`.
 
 ## Rationalizations this seat makes
 

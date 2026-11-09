@@ -35,9 +35,10 @@ precondition. A ticket whose delegation class makes a human the author is implem
 within its allowed changes, with the true class, floor and `author_kind: agent` recorded.
 
 Every other stop still stops: a missing or unsupported prerequisite (for example bound without
-project guidance), a blocking review finding, a prototype that needs a person, unprovable or
-failed evidence, and every sensitive action, including production writes, deploys, releases,
-destructive external operations and credential or protection changes. Merge is never the run's.
+project guidance; a knowledgebase coverage limit is not one, as the knowledgebase-binding reference
+says), a blocking review finding, a prototype that needs a person, unprovable or failed evidence,
+and every sensitive action, including production writes, deploys, releases, destructive external
+operations and credential or protection changes. Merge is never the run's.
 
 ## Recording each phase
 
@@ -56,6 +57,10 @@ node <bundle>/bin/ak-gate.mjs record --gate <gate> -- <command> [args...]
 | build | `build-checks` | the project's test command |
 | verify | `verify` | the verification command, with the receipts as `--receipt` |
 | review | `review-full`, `review-delta`, `review-readiness` | the read-back of the review artifact |
+
+Under a knowledgebase coverage limit, align and bound record a read-back of the run's own record
+instead (the restatement, or the plan record and ticket, written outside the repository and read
+with `/bin/cat`), and scout reads back its unpublished dossier the same way.
 
 A non-zero exit is recorded as failed evidence; a later passing run of the same argv replaces it.
 A command that changes the working tree is refused. Align, bound and scout recorded before the run

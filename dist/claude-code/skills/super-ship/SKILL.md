@@ -158,7 +158,7 @@ The project's own release checks, discovered rather than assumed.
     `gh`; commit preparation precedes the gates (ruling `direct-push-as-ship-transport`):
     `./references/transport-direct.md`.
 12. Draft the lesson candidate through the knowledgebase adapter; publication needs separate
-    authority.
+    authority. Under a knowledgebase coverage limit, name it as not published.
 13. Hand a directly opened pull request to the watch lane and report the ship as prepared until
     that lane owns it. Report every skipped action and why.
 
@@ -263,7 +263,7 @@ In `dry-run` the effects performed are `artifact-write` alone.
 `complete`: under no-mistakes delivery, the committed handoff head and ship-preflight are recorded
 with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request carries the disclosure and `ship-preflight --pr <n>` succeeded. In direct `dry-run`, the payload and pre-flight record are
 emitted. In direct `publish`, the branch and PR exist with read-backs, the lesson candidate is
-drafted, and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful `--pr` check).
+drafted (or named as not published under a knowledgebase coverage limit), and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful `--pr` check).
 
 `needs-input`: the run was started by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive
@@ -274,7 +274,7 @@ evidence: the message names trusted evidence as unavailable and says the manual 
 
 `failed`: a candidate secret or an internal marker was found, a required release check failed, or
 the pull-request lookup returned an outcome that is neither success nor an empty list. The reason is
-named and the run stays resumable.
+named and the run stays resumable. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered) or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped draft is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew mid-run. Effects already performed are reported with their
 idempotency keys so a resumed run recognises them.

@@ -230,7 +230,10 @@ returns, read before the write and confirmed after it ([`adapters/runner-contrac
 - `cap-reached` — two fix rounds are used, a Decision is still open, and no recorded human
   extension authorizes another. Returns the open forks and the review as it stands.
 - `cancelled` — the caller ended the run before the panel returned.
-- `failed` — the knowledgebase is unreachable, or a publication's read-back cannot be performed.
+- `failed` — a configured knowledgebase is unreachable, or a publication's read-back cannot be
+  performed. A knowledgebase coverage limit (no binding, an unregistered one, or a missing or
+  unknown `ak kb` command) stops nothing: the records are returned in the session and named as not
+  published, and the calling phase continues.
 
 ## Limits
 
