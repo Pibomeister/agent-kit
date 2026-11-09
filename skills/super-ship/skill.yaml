@@ -220,22 +220,24 @@ stop_conditions:
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
     lesson candidate is drafted, and the watch lane holds the pull request; under the unattended
     policy, also once the pull request carries the disclosure and `ship-preflight --pr <n>` succeeded.
-  - needs-input when the run was started by neither the typed command nor a validated grant,
-    receipts or the verdict are missing or bound to another revision, the mode was not named, or a
-    sensitive action is required and no charter entry covers it. A no-mistakes handoff with an
-    uncommitted head, non-empty diff or stale verify, readiness or review record also stops here.
+  - needs-input when the run was started by none of the typed command, a validated grant, a passing
+    bypass check and the unattended policy's passing `unattended check`, receipts or the verdict are
+    missing or bound to another revision, the mode was not named, or a sensitive action is required
+    and no charter entry covers it. A no-mistakes handoff with an uncommitted head, non-empty diff
+    or stale verify, readiness or review record also stops here.
   - needs-input when the autonomous form has no trusted evidence. The message names trusted evidence
     as unavailable and says the manual form remains open.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The run was started by neither the typed command nor a validated grant, receipts or the
-      review verdict are missing or bound to another revision, the mode was not named, or a
-      sensitive action is required and no charter entry covers it. Also when the autonomous form has
-      no trusted evidence, in which case the message names trusted evidence as unavailable and says
-      the manual form remains open. A no-mistakes handoff also stops when the head is uncommitted,
-      the diff is non-empty or verify, readiness or the review is stale. No remote effect is performed.
+      The run was started by none of the typed command, a validated grant, a passing bypass check
+      and the unattended policy's passing `unattended check`, receipts or the review verdict are
+      missing or bound to another revision, the mode was not named, or a sensitive action is
+      required and no charter entry covers it. Also when the autonomous form has no trusted
+      evidence, in which case the message names trusted evidence as unavailable and says the manual
+      form remains open. A no-mistakes handoff also stops when the head is uncommitted, the diff is
+      non-empty or verify, readiness or the review is stale. No remote effect is performed.
     next_permitted_action: >-
       A human types the command, or the run is re-invoked with the missing evidence, with the mode
       named, or with a charter entry approved for the action. Without trusted evidence, invoke the

@@ -183,8 +183,8 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 8455,
+      "tokens": 2114
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -733,13 +733,13 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15734,
-      "tokens": 3926
+      "bytes": 15810,
+      "tokens": 3945
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23579,
-      "tokens": 5887
+      "bytes": 23840,
+      "tokens": 5952
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -768,8 +768,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23064,
-      "tokens": 5762
+      "bytes": 23140,
+      "tokens": 5781
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -1048,8 +1048,8 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 8455,
+      "tokens": 2114
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1598,13 +1598,13 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15852,
-      "tokens": 3955
+      "bytes": 15928,
+      "tokens": 3974
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23697,
-      "tokens": 5917
+      "bytes": 23958,
+      "tokens": 5982
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -1633,8 +1633,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23225,
-      "tokens": 5802
+      "bytes": 23301,
+      "tokens": 5821
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -1913,8 +1913,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8456,
-      "tokens": 2114
+      "bytes": 8479,
+      "tokens": 2120
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2458,13 +2458,13 @@
     },
     "bundle/cursor:.cursor/skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15719,
-      "tokens": 3922
+      "bytes": 15795,
+      "tokens": 3941
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23591,
-      "tokens": 5890
+      "bytes": 23852,
+      "tokens": 5955
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -2493,8 +2493,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23073,
-      "tokens": 5765
+      "bytes": 23149,
+      "tokens": 5784
     },
     "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -2778,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 8455,
+      "tokens": 2114
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3328,13 +3328,13 @@
     },
     "bundle/droid:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15837,
-      "tokens": 3952
+      "bytes": 15913,
+      "tokens": 3971
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23685,
-      "tokens": 5914
+      "bytes": 23946,
+      "tokens": 5979
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -3363,8 +3363,8 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23208,
-      "tokens": 5798
+      "bytes": 23284,
+      "tokens": 5817
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -3643,8 +3643,8 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 8455,
+      "tokens": 2114
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -4193,13 +4193,13 @@
     },
     "bundle/grok:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15719,
-      "tokens": 3922
+      "bytes": 15795,
+      "tokens": 3941
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23567,
-      "tokens": 5884
+      "bytes": 23828,
+      "tokens": 5949
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -4228,8 +4228,8 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23049,
-      "tokens": 5759
+      "bytes": 23125,
+      "tokens": 5778
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -4508,8 +4508,8 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 8455,
+      "tokens": 2114
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -5058,13 +5058,13 @@
     },
     "bundle/kimi:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15867,
-      "tokens": 3959
+      "bytes": 15943,
+      "tokens": 3978
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23709,
-      "tokens": 5920
+      "bytes": 23970,
+      "tokens": 5985
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -5093,8 +5093,8 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23240,
-      "tokens": 5806
+      "bytes": 23316,
+      "tokens": 5825
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",

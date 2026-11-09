@@ -178,10 +178,11 @@ stop_conditions:
     by a ticket, every implementation ticket carries its three evidence blocks, every on-mode
     implementation ticket cites a finished cold read, or an unavailable read with its reason, and
     every published artifact's read-back matched what was sent.
-  - needs-input when the run was started by neither the typed command nor a validated grant, there
-    is no approved alignment result, the approval binds to a different revision, project guidance
-    or a grant is missing, the scorer fails, readiness remains vague, an assumption remains open,
-    a document-review decision is left open, new evidence invalidated a settled decision, or an
+  - needs-input when the run was started by none of the typed command, a validated grant, a passing
+    bypass check and the unattended policy's passing `unattended check`, there is no approved
+    alignment result, the approval binds to a different revision, project guidance or a grant is
+    missing, the scorer fails, readiness remains vague, an assumption remains open, a
+    document-review decision is left open, new evidence invalidated a settled decision, or an
     on-mode cold read still lists an unsettled decision. A completed assessment persists its three
     evidence blocks on the returned draft before this stop.
   - cap-reached when the consensus plan gate reached its round cap or the runner-supplied ticket
@@ -192,16 +193,17 @@ stop_conditions:
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      A prerequisite the run cannot supply itself: a start by the typed command or a validated
-      grant, an approved direction, an approval bound to this revision, project delegation
-      guidance, a grant, a current `ak` on `PATH`, a scorer that returns its record, readiness
-      free of vague terms, a resolution for every open assumption, an answer to every open
-      document-review decision, a settled decision that new evidence has not invalidated, or a
-      finished on-mode cold read whose listed decisions were reclassified or turned into frontier
-      questions.
+      A prerequisite the run cannot supply itself: a start by the typed command, a validated grant,
+      a passing bypass check or a passing `unattended check`, an approved direction, an approval
+      bound to this revision, project delegation guidance, a grant, a current `ak` on `PATH`, a
+      scorer that returns its record, readiness free of vague terms, a resolution for every open
+      assumption, an answer to every open document-review decision, a settled decision that new
+      evidence has not invalidated, or a finished on-mode cold read whose listed decisions were
+      reclassified or turned into frontier questions.
     next_permitted_action: >-
-      Return the blocking item; do not proceed on a substitute. For a start by neither the typed
-      command nor a grant, return the command to type and nothing else.
+      Return the blocking item; do not proceed on a substitute. For a start by none of the typed
+      command, a validated grant, a passing bypass check and the unattended policy's passing
+      `unattended check`, return the command to type and nothing else.
   - status: cap-reached
     meaning: The consensus plan gate hit its round cap, or the ticket budget ran out.
     next_permitted_action: >-
