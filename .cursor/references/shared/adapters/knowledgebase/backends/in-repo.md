@@ -20,7 +20,6 @@ project: example-project       # the project_ref id the result names
 locator:
   knowledgebase: example-wiki  # a name for the knowledgebase, reported by check and read
   path: docs/wiki              # relative to the folder holding ak.kb.yaml; never a machine path
-  base: main                   # the branch whose merge with HEAD is the revision read
   kinds:                       # kind -> directory under path; an unmapped directory is never read
     concept: concepts
     system: systems
@@ -28,8 +27,8 @@ locator:
 ```
 
 [`schemas/kb-backends/in-repo.schema.json`](../../../schemas/kb-backends/in-repo.schema.json) admits only plain relative directories (forward slashes;
-not empty, absolute or `.`; no backslash and no `..` anywhere), a nonempty `kinds` map of the nine
-kinds, and a base shaped as a branch name. `.cursor/bin/ak kb check` also refuses a `kinds` map in which one
+not empty, absolute or `.`; no backslash and no `..` anywhere) and a nonempty `kinds` map of the
+nine kinds, and refuses any other key, `base` included. `.cursor/bin/ak kb check` also refuses a `kinds` map in which one
 directory equals or contains another, so no page is read under two kinds (`kb.binding-invalid`).
 
 ## 2. No setup
@@ -41,10 +40,12 @@ project reads its own committed tree, so `.cursor/bin/ak kb register` has no par
 
 `.cursor/bin/ak kb read --kind <kind>[,<kind>…] --scope <scope>`
 
-- **The revision read is the merge-base of `HEAD` and the base**, the base being
-  `refs/remotes/origin/<base>`, else `refs/heads/<base>`. A page a branch adds or edits, and any
-  status it sets, is not knowledge until it is merged, as a page drafted in a local-git checkout is
-  not. Working files are never read.
+- **The revision read is the merge-base of `HEAD` and the remote's default branch**,
+  `refs/remotes/origin/HEAD`, with no local fallback. The binding cannot name another branch: it
+  is committed on the branch being read, so a branch could name itself and read its own pages as
+  settled (ruling `kb-binding-is-a-locator`). A page a branch adds or edits, and any status it sets,
+  is not knowledge until it is merged, as a page drafted in a local-git checkout is not. Working
+  files are never read.
 - **Pages.** The regular `.md` files under each requested kind's directory, its subdirectories
   included, `index.md` excepted. Every page is filed at scope `project`, so any valid scope returns
   them (the scope and every scope above it).
@@ -67,16 +68,17 @@ project reads its own committed tree, so `.cursor/bin/ak kb register` has no par
 
 `.cursor/bin/ak kb publish document …` and `.cursor/bin/ak kb publish artifact …`, with or without `--trail-attempts`, exit
 3 with `status: skipped`, `capability: kb-write` and `code: kb.read-only`. Nothing is read from the
-file, no attempt is marked and nothing is written anywhere. That is a coverage limit, not a
+file, no attempt is marked and nothing is written anywhere (ruling `kb-binding-is-a-locator`). That is a coverage limit, not a
 refusal: the phase names the record as not published and continues
 ([`references/knowledgebase-binding/REFERENCE.md`](../../../references/knowledgebase-binding/REFERENCE.md)).
 
 ## 5. A missing knowledgebase
 
-A project not in a git work tree, a `HEAD` with no commit yet, a base that resolves to nothing, a
-`HEAD` that shares no history with it, or a path that is not a directory at the revision read:
-`.cursor/bin/ak kb check`, `read` and `publish` exit 3 with `kb.in-repo-missing`, a coverage limit, and the
-message names the fix. git itself failing (a merge-base or listing error, an object it cannot read)
+A project not in a git work tree, a `HEAD` with no commit yet, no `refs/remotes/origin/HEAD` (a
+fork or a clone without the remote's default branch set; `git remote set-head origin --auto` sets
+it), a `HEAD` that shares no history with it, or a path that is not a directory at the revision
+read: `.cursor/bin/ak kb check`, `read` and `publish` exit 3 with `kb.in-repo-missing`, a coverage limit, and
+the message names the fix. git itself failing (a merge-base or listing error, an object it cannot read)
 is `failed` with `kb.unreadable`, exit 1.
 
 ## 6. Why the application repository is allowed here

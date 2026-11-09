@@ -190,7 +190,7 @@ function check(options: KbOptions, args: KbArgs): number {
     const kb = resolution.resolved;
     const at = resolution.resolved.inRepo;
     options.io.out(
-      `ak kb check: bound, read-only. ${BINDING_FILE} names backend ${kb.binding.backend}, knowledgebase '${kb.knowledgebase}' at path '${at.configuredPath}' read at ${at.revision.slice(0, 12)} (the merge-base of HEAD and base '${at.base}'), project '${kb.binding.project}'. readContext is carried; a publish is skipped (kb.read-only, a coverage limit); the other five operations refuse.`,
+      `ak kb check: bound, read-only. ${BINDING_FILE} names backend ${kb.binding.backend}, knowledgebase '${kb.knowledgebase}' at path '${at.configuredPath}' read at ${at.revision.slice(0, 12)} (the merge-base of HEAD and the remote default branch ${at.base}), project '${kb.binding.project}'. readContext is carried; a publish is skipped (kb.read-only, a coverage limit); the other five operations refuse.`,
     );
     return 0;
   }

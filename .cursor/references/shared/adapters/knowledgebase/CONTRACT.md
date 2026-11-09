@@ -86,7 +86,7 @@ scenario 21, and it is the single most common way a donor's behavior survives wh
 missing is the unconfigured case, and the result says which and names the step that supplies it.
 A read-only binding (§7, `in-repo`) needs no registration. A missing in-repo knowledgebase
 (`kb.in-repo-missing`) and a publish to a read-only one (`kb.read-only`) are unconfigured too: the
-result names the cause, nothing is written, and the run continues.
+result names the cause, nothing is written, and the run continues (ruling `kb-binding-is-a-locator`).
 `ak.install.yaml` is neither: it decides which adapters an install *attaches*, which sets packaged
 mode ceilings (the table below), and it never makes a knowledgebase reachable. A checkout with no
 `ak.install.yaml` is the default install, not a broken one.
@@ -286,7 +286,8 @@ checkout, any of its work trees, or a directory inside its tree is refused on ev
 because a publish through it would be the write this section forbids. A read-only binding (backend
 `in-repo`) may name a directory the project already commits, because it carries no publish: every
 publish to it is skipped (`kb.read-only`) and nothing is written anywhere, so no operation here
-creates or extends a documentation tree in the application repository.
+creates or extends a documentation tree in the application repository (ruling
+`kb-binding-is-a-locator`).
 
 ---
 

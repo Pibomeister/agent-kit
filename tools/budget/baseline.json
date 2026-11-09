@@ -18,18 +18,18 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25922,
-      "tokens": 6435
+      "bytes": 25992,
+      "tokens": 6452
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5124,
-      "tokens": 1278
+      "bytes": 5372,
+      "tokens": 1340
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13704,
-      "tokens": 3419
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -168,8 +168,8 @@
     },
     "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 7215,
-      "tokens": 1801
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -408,8 +408,8 @@
     },
     "bundle/claude-code:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2152,
-      "tokens": 538
+      "bytes": 2069,
+      "tokens": 518
     },
     "bundle/claude-code:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -893,18 +893,18 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25922,
-      "tokens": 6435
+      "bytes": 25992,
+      "tokens": 6452
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5124,
-      "tokens": 1278
+      "bytes": 5372,
+      "tokens": 1340
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13704,
-      "tokens": 3419
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1043,8 +1043,8 @@
     },
     "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 7215,
-      "tokens": 1801
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1283,8 +1283,8 @@
     },
     "bundle/codex:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2152,
-      "tokens": 538
+      "bytes": 2069,
+      "tokens": 518
     },
     "bundle/codex:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -1768,18 +1768,18 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25994,
-      "tokens": 6453
+      "bytes": 26064,
+      "tokens": 6470
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5196,
-      "tokens": 1296
+      "bytes": 5444,
+      "tokens": 1358
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13788,
-      "tokens": 3440
+      "bytes": 13823,
+      "tokens": 3449
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1918,8 +1918,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 7311,
-      "tokens": 1825
+      "bytes": 7560,
+      "tokens": 1887
     },
     "bundle/cursor:.cursor/references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2158,8 +2158,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2176,
-      "tokens": 544
+      "bytes": 2093,
+      "tokens": 524
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -2643,18 +2643,18 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25922,
-      "tokens": 6435
+      "bytes": 25992,
+      "tokens": 6452
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5124,
-      "tokens": 1278
+      "bytes": 5372,
+      "tokens": 1340
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13704,
-      "tokens": 3419
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2793,8 +2793,8 @@
     },
     "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 7215,
-      "tokens": 1801
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -3033,8 +3033,8 @@
     },
     "bundle/droid:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2152,
-      "tokens": 538
+      "bytes": 2069,
+      "tokens": 518
     },
     "bundle/droid:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -3518,18 +3518,18 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25922,
-      "tokens": 6435
+      "bytes": 25992,
+      "tokens": 6452
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5124,
-      "tokens": 1278
+      "bytes": 5372,
+      "tokens": 1340
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13704,
-      "tokens": 3419
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3668,8 +3668,8 @@
     },
     "bundle/grok:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 7215,
-      "tokens": 1801
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/grok:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -3908,8 +3908,8 @@
     },
     "bundle/grok:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2152,
-      "tokens": 538
+      "bytes": 2069,
+      "tokens": 518
     },
     "bundle/grok:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -4393,18 +4393,18 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25922,
-      "tokens": 6435
+      "bytes": 25992,
+      "tokens": 6452
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5124,
-      "tokens": 1278
+      "bytes": 5372,
+      "tokens": 1340
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13704,
-      "tokens": 3419
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -4543,8 +4543,8 @@
     },
     "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 7215,
-      "tokens": 1801
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -4783,8 +4783,8 @@
     },
     "bundle/kimi:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2152,
-      "tokens": 538
+      "bytes": 2069,
+      "tokens": 518
     },
     "bundle/kimi:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",

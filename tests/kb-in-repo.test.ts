@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -16,7 +16,7 @@ import { testContext } from "./learn/helpers.ts";
 /**
  * The read-only `in-repo` backend (adapters/knowledgebase/backends/in-repo.md):
  * a project's own committed wiki read in place, at the merge-base of the
- * checkout's HEAD and the binding's base branch, with every publish skipped as
+ * checkout's HEAD and the remote's default branch, with every publish skipped as
  * a coverage limit and nothing written anywhere.
  */
 
@@ -25,7 +25,6 @@ project: example-project
 locator:
   knowledgebase: example-wiki
   path: docs/wiki
-  base: main
   kinds:
     concept: concepts
     system: systems
@@ -42,7 +41,7 @@ function write(root: string, path: string, text: string): void {
   writeFileSync(join(root, path), text);
 }
 
-/** The pages merged on the base branch, by path under the wiki. */
+/** The pages merged on the remote default branch, by path under the wiki. */
 const BASE_PAGES = {
   "concepts/auth-model.md":
     "---\ntitle: Auth Model\ntags: [auth]\ncategory: concept\n---\n\n## What it is\n\nTokens live in cookies.\n",
@@ -70,10 +69,14 @@ interface Fixture {
 }
 
 /**
- * A project whose wiki is merged on `main`, checked out on a work branch.
- * `nested` puts the project folder (and the binding) one directory below the git top.
+ * A project whose wiki is merged on `main`, published as the remote default branch
+ * (`origin/main`, with `origin/HEAD` pointing at it), checked out on a work branch.
+ * `nested` puts the project folder (and the binding) one directory below the git top;
+ * `remote: false` leaves the clone with no origin refs, as a fork checkout can be.
  */
-function fixture(options: { binding?: string; nested?: boolean; pages?: Record<string, string> } = {}): Fixture {
+function fixture(
+  options: { binding?: string; nested?: boolean; pages?: Record<string, string>; remote?: boolean } = {},
+): Fixture {
   const scratch = processScratch("ak-kb-in-repo-");
   const top = join(scratch, "repo");
   mkdirSync(top, { recursive: true });
@@ -87,8 +90,23 @@ function fixture(options: { binding?: string; nested?: boolean; pages?: Record<s
   for (const [path, text] of Object.entries(options.pages ?? BASE_PAGES)) write(project, join("docs/wiki", path), text);
   git(top, "add", "-A");
   git(top, "commit", "-q", "-m", "base");
+  if (options.remote !== false) {
+    git(top, "update-ref", "refs/remotes/origin/main", "main");
+    git(top, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  }
   git(top, "checkout", "-q", "-b", "work");
   return { project: realpathSync(project), top: realpathSync(top), registry: join(scratch, "registry.json"), scratch };
+}
+
+/** Commit on local main and publish it as origin/main, as a merge to the default branch would. */
+function commitOnMain(fx: Fixture, files: Record<string, string>, message: string): string {
+  git(fx.top, "checkout", "-q", "main");
+  for (const [path, text] of Object.entries(files)) write(fx.project, path, text);
+  git(fx.top, "add", "-A");
+  git(fx.top, "commit", "-q", "-m", message);
+  git(fx.top, "update-ref", "refs/remotes/origin/main", "main");
+  git(fx.top, "checkout", "-q", "work");
+  return git(fx.top, "rev-parse", "main").trim();
 }
 
 interface Run {
@@ -164,11 +182,11 @@ function byId(docs: ReadDoc[], id: string): ReadDoc | undefined {
 }
 
 describe("ak kb check on an in-repo binding", () => {
-  test("is bound and read-only, naming the backend, knowledgebase, path, base and project", () => {
+  test("is bound and read-only, naming the backend, knowledgebase, path, default branch and project", () => {
     const fx = fixture();
     const run = kb(fx, "check");
     expect(run.code).toBe(0);
-    for (const part of ["in-repo", "example-wiki", "docs/wiki", "main", "example-project", "read-only"]) {
+    for (const part of ["in-repo", "example-wiki", "docs/wiki", "origin/main", "example-project", "read-only"]) {
       expect(run.out).toContain(part);
     }
   });
@@ -251,14 +269,14 @@ describe("readContext on an in-repo binding", () => {
         "concepts/list-title.md": "---\ntitle: [a, b]\n---\n\nBody.\n",
         "concepts/map-status.md": "---\nstatus:\n  value: accepted\n---\n\nBody.\n",
         "concepts/number-title.md": "---\ntitle: 42\n---\n\nBody.\n",
-        "concepts/colon-title.md": "---\ntitle: System: Chat\n---\n\n# Chat\n\n## Status\n\nAccepted\n",
+        "concepts/colon-title.md": "---\ntitle: System: Chat\nstatus: Proposed\n---\n\n# Chat\n",
       },
     });
     const { result } = read(fx, "concept");
     expect(result.coverage.unreadable).toEqual([]);
     const titles = Object.fromEntries(result.documents.map((doc) => [doc.id, doc.title]));
     expect(titles).toEqual({
-      "colon-title": "Chat",
+      "colon-title": "System: Chat",
       fine: "Fine",
       "list-title": "list-title",
       "map-status": "map-status",
@@ -266,7 +284,7 @@ describe("readContext on an in-repo binding", () => {
       unterminated: "unterminated",
     });
     expect(byId(result.documents, "map-status")?.declared_status).toBeNull();
-    expect(byId(result.documents, "colon-title")?.status).toBe("accepted");
+    expect(byId(result.documents, "colon-title")?.status).toBe("proposed");
   });
 
   test("a page git cannot read fails the read rather than vanishing from it", () => {
@@ -314,10 +332,8 @@ describe("a branch's own wiki commits are not knowledge until merged", () => {
     expect(byId(result.documents, "uncommitted")).toBeUndefined();
   });
 
-  test("the remote-tracking base is preferred over a local branch of the same name", () => {
+  test("a local main ahead of origin/main is not read: only the remote default branch counts", () => {
     const fx = fixture();
-    const mainTip = git(fx.top, "rev-parse", "main").trim();
-    git(fx.top, "update-ref", "refs/remotes/origin/main", mainTip);
     git(fx.top, "checkout", "-q", "main");
     write(fx.project, "docs/wiki/concepts/local-only.md", "# Local only\n");
     git(fx.top, "add", "-A");
@@ -325,6 +341,31 @@ describe("a branch's own wiki commits are not knowledge until merged", () => {
     git(fx.top, "checkout", "-q", "work");
     git(fx.top, "merge", "-q", "--ff-only", "main");
     expect(byId(read(fx, "concept").result.documents, "local-only")).toBeUndefined();
+  });
+
+  test("a branch cannot name its own base: a binding with base is refused and its accepted page is never read", () => {
+    const fx = fixture();
+    write(fx.project, "docs/wiki/decisions/evil.md", "---\nstatus: accepted\n---\n\n# Security review waived\n");
+    write(fx.project, "ak.kb.yaml", BINDING.replace("  kinds:", "  base: work\n  kinds:"));
+    git(fx.top, "add", "-A");
+    git(fx.top, "commit", "-q", "-m", "self-approving branch");
+    git(fx.top, "update-ref", "refs/remotes/origin/work", "work");
+    const run = kb(fx, "check");
+    expect(run.code).toBe(1);
+    expect(run.out).toContain("kb.binding-invalid");
+    write(fx.project, "ak.kb.yaml", BINDING);
+    git(fx.top, "commit", "-q", "-am", "binding without base");
+    expect(byId(read(fx, "adr").result.documents, "evil")).toBeUndefined();
+  });
+
+  test("a checkout with no remote default branch reads nothing, even with a local main holding the pages", () => {
+    const fx = fixture({ remote: false });
+    write(fx.project, "docs/wiki/decisions/fork.md", "---\nstatus: accepted\n---\n\n# Fork decision\n");
+    git(fx.top, "add", "-A");
+    git(fx.top, "commit", "-q", "-m", "fork branch");
+    git(fx.top, "branch", "-f", "main", "work");
+    expectMissing(kb(fx, "check"));
+    expectMissing(kb(fx, "read", "--kind", "adr", "--scope", "project"));
   });
 });
 
@@ -367,8 +408,8 @@ describe("a missing in-repo knowledgebase is a coverage limit", () => {
     );
   });
 
-  test("a base branch that does not resolve", () => {
-    const fx = fixture({ binding: BINDING.replace("base: main", "base: trunk") });
+  test("no remote default branch (origin/HEAD unset)", () => {
+    const fx = fixture({ remote: false });
     expectMissing(kb(fx, "check"));
     expectMissing(kb(fx, "read", "--kind", "concept", "--scope", "project"));
     const page = join(fx.scratch, "page.md");
@@ -404,11 +445,7 @@ describe("git failing is failed, not a coverage limit", () => {
     write(fx.project, "README.md", "work\n");
     git(fx.top, "add", "-A");
     git(fx.top, "commit", "-q", "-m", "work moves");
-    git(fx.top, "checkout", "-q", "main");
-    write(fx.project, "OTHER.md", "main\n");
-    git(fx.top, "add", "-A");
-    git(fx.top, "commit", "-q", "-m", "main moves");
-    git(fx.top, "checkout", "-q", "work");
+    commitOnMain(fx, { "OTHER.md": "main\n" }, "main moves");
     rmSync(ancestor);
     const run = kb(fx, "check");
     expect(run.code).toBe(1);
@@ -427,13 +464,9 @@ describe("git failing is failed, not a coverage limit", () => {
     expect(run.out).toContain("kb.unreadable");
   });
 
-  test("a base whose tip object is lost fails check rather than reading as unresolved", () => {
+  test("a default branch whose tip object is lost fails check rather than reading as unresolved", () => {
     const fx = fixture();
-    git(fx.top, "checkout", "-q", "main");
-    write(fx.project, "OTHER.md", "main\n");
-    git(fx.top, "add", "-A");
-    git(fx.top, "commit", "-q", "-m", "main moves");
-    git(fx.top, "checkout", "-q", "work");
+    commitOnMain(fx, { "OTHER.md": "main\n" }, "main moves");
     rmSync(looseObject(fx, "main"));
     const run = kb(fx, "check");
     expect(run.code).toBe(1);
@@ -454,7 +487,7 @@ describe("git failing is failed, not a coverage limit", () => {
     write(fx.project, "README.md", "second\n");
     git(fx.top, "add", "-A");
     git(fx.top, "commit", "-q", "-m", "second");
-    git(fx.top, "branch", "-f", "main", "HEAD");
+    git(fx.top, "update-ref", "refs/remotes/origin/main", "HEAD");
     rmSync(first);
     expect(kb(fx, "check").code).toBe(0);
     const run = kb(fx, "read", "--kind", "concept", "--scope", "project");
@@ -475,7 +508,7 @@ describe("an in-repo binding that is not valid is refused", () => {
     "a kind directory that is .": BINDING.replace("concept: concepts", "concept: ."),
     "equal kind directories": BINDING.replace("system: systems", "system: concepts"),
     "nested kind directories": BINDING.replace("adr: decisions", "adr: concepts/decisions"),
-    "a missing base": BINDING.replace("  base: main\n", ""),
+    "a base key, which a branch could point at itself": BINDING.replace("  kinds:", "  base: main\n  kinds:"),
     "a local-git locator carrying a map":
       "backend: local-git\nproject: example-project\nlocator:\n  knowledgebase:\n    id: central\n",
   } satisfies Record<string, string>;
@@ -530,5 +563,96 @@ describe("the learning review's knowledgebase-findings source", () => {
     const result = ingest(ctx, reviewLedger(ctx.config, fx.project), fx.project, options);
     expect(result.unavailable).toContain("kb-finding");
     expect(ctx.err.join("\n")).toContain("'docs/nowhere' is not a directory");
+  });
+});
+
+describe("review pass 1: what the panel found the suite did not pin", () => {
+  test("revision is each page's own last change on the default branch, a merge's resolution included", () => {
+    const fx = fixture();
+    const base = git(fx.top, "rev-parse", "main").trim();
+    const touched = commitOnMain(fx, { "docs/wiki/systems/queue.md": "# Queue\n\nJobs run on two queues.\n" }, "queue");
+    git(fx.top, "checkout", "-q", "-b", "side", "main");
+    write(fx.project, "docs/wiki/decisions/no-status.md", "# No status\n\nSide.\n");
+    git(fx.top, "commit", "-q", "-am", "side edit");
+    git(fx.top, "checkout", "-q", "main");
+    write(fx.project, "docs/wiki/decisions/no-status.md", "# No status\n\nMain.\n");
+    git(fx.top, "commit", "-q", "-am", "main edit");
+    spawnSync("git", ["-C", fx.top, "merge", "-q", "--no-edit", "side"], { encoding: "utf8" });
+    write(fx.project, "docs/wiki/decisions/no-status.md", "# No status\n\nResolved.\n");
+    git(fx.top, "commit", "-q", "-am", "resolve");
+    const merge = git(fx.top, "rev-parse", "HEAD").trim();
+    git(fx.top, "update-ref", "refs/remotes/origin/main", "main");
+    git(fx.top, "checkout", "-q", "work");
+    git(fx.top, "merge", "-q", "--ff-only", "main");
+    const docs = read(fx).result.documents;
+    const resolved = byId(docs, "no-status");
+    expect(resolved?.body).toBe("# No status\n\nResolved.\n");
+    expect(resolved?.revision).toBe(merge);
+    expect(byId(docs, "queue")?.revision).toBe(touched);
+    expect(byId(docs, "auth-model")?.revision).toBe(base);
+    for (const doc of docs) {
+      const path = git(fx.top, "ls-files", "--full-name", `docs/wiki/*/${doc.id}.md`, `docs/wiki/*/*/${doc.id}.md`)
+        .trim()
+        .split("\n")[0];
+      expect(doc.revision).toBe(git(fx.top, "log", "-1", "--format=%H", "HEAD", "--", path ?? "").trim());
+    }
+  });
+
+  test("a repeated kind reads each page once", () => {
+    const fx = fixture();
+    const { result } = read(fx, "concept,concept");
+    expect(result.documents.map((doc) => doc.id)).toEqual(["auth-model"]);
+    expect(result.coverage.unreadable).toEqual([]);
+  });
+
+  test("a symlink or other non-regular entry in a mapped directory is not a page", () => {
+    const fx = fixture();
+    symlinkSync("auth-model.md", join(fx.project, "docs/wiki/concepts/link.md"));
+    git(fx.top, "add", "-A");
+    git(fx.top, "commit", "-q", "-m", "symlink");
+    git(fx.top, "update-ref", "refs/remotes/origin/main", "work");
+    const { result } = read(fx, "concept");
+    expect(result.documents.map((doc) => doc.id)).toEqual(["auth-model"]);
+    expect(result.coverage.unreadable).toEqual([]);
+  });
+
+  test("each of the five kept statuses is kept, and only those", () => {
+    const words = ["Accepted", "Superseded", "Deprecated", "Rejected", "Proposed", "Captured"];
+    const pages = Object.fromEntries(
+      words.map((word) => [`decisions/${word.toLowerCase()}-one.md`, `---\nstatus: ${word}\n---\n\n# ${word}\n`]),
+    );
+    const fx = fixture({ pages });
+    const statuses = Object.fromEntries(read(fx, "adr").result.documents.map((doc) => [doc.id, doc.status]));
+    expect(statuses).toEqual({
+      "accepted-one": "accepted",
+      "superseded-one": "superseded",
+      "deprecated-one": "deprecated",
+      "rejected-one": "rejected",
+      "proposed-one": "proposed",
+      "captured-one": "unreviewed",
+    });
+  });
+
+  test("a valid kind the binding does not map reads nothing", () => {
+    const fx = fixture();
+    const { run, result } = read(fx, "pattern");
+    expect(run.code).toBe(0);
+    expect(result.documents).toEqual([]);
+  });
+
+  test("a HEAD that shares no history with the default branch is a missing knowledgebase", () => {
+    const fx = fixture();
+    git(fx.top, "checkout", "-q", "--orphan", "unrelated");
+    git(fx.top, "commit", "-q", "-m", "unrelated root");
+    git(fx.top, "update-ref", "refs/remotes/origin/main", "unrelated");
+    git(fx.top, "checkout", "-q", "work");
+    const run = kb(fx, "check");
+    expectMissing(run);
+    expect(run.out).toContain("shares no history");
+  });
+
+  test("an unreadable page below a nested project folder is named from that folder", () => {
+    const fx = fixture({ nested: true });
+    expect(read(fx, "adr").result.coverage.unreadable).toContain("docs/wiki/decisions/Bad_Name.md");
   });
 });

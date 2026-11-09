@@ -45,9 +45,21 @@ describe("the knowledgebase-binding reference", () => {
   const text = flat("references/knowledgebase-binding/REFERENCE.md");
 
   test("names both new causes and what check exit 0 on a read-only binding means", () => {
-    expect(text).toContain("- **kb.in-repo-missing** — an in-repo binding whose path is not a directory");
+    expect(text).toContain(
+      "- **kb.in-repo-missing** — an in-repo binding with nothing to read at the revision it would read",
+    );
+    expect(text).toContain("superseded, deprecated and rejected are not settled either");
     expect(text).toContain("- **kb.read-only** — from a publish only: the binding is read-only, nothing was written");
     expect(text).toContain("| 0 | bound, read-only (backend in-repo)");
+  });
+});
+
+describe("the in-repo binding document", () => {
+  test("reads at the remote default branch and lets no binding name its own base", () => {
+    const text = flat("adapters/knowledgebase/backends/in-repo.md");
+    expect(text).toContain("The revision read is the merge-base of HEAD and the remote's default branch");
+    expect(text).toContain("refs/remotes/origin/HEAD, with no local fallback");
+    expect(text).not.toContain("base: main");
   });
 });
 

@@ -17490,7 +17490,7 @@ var init_in_repo_schema = __esm(() => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://agent-kit.local/schemas/kb-backends/in-repo.schema.json",
     title: "Knowledgebase binding: in-repo",
-    description: "What adapters/knowledgebase/backends/in-repo.md reads from ak.kb.yaml, applied by `ak kb check` after the generic schemas/kb-binding.schema.json has passed. The knowledgebase is a directory of pages committed in the project's own repository, read only, so the locator names a path relative to the project folder and never a machine path, a base branch whose merge with the checkout is the revision read, and the directory each kind is read from. `ak kb check` also refuses a kind map in which one directory equals or contains another (kb.binding-invalid), which a schema cannot say.",
+    description: "What adapters/knowledgebase/backends/in-repo.md reads from ak.kb.yaml, applied by `ak kb check` after the generic schemas/kb-binding.schema.json has passed. The knowledgebase is a directory of pages committed in the project's own repository, read only, so the locator names a path relative to the project folder and never a machine path, and the directory each kind is read from. The revision read is the merge-base of the checkout's HEAD and the remote's default branch (refs/remotes/origin/HEAD); the binding cannot name another, because a binding a branch commits could name that branch itself (ruling `kb-binding-is-a-locator`). `ak kb check` also refuses a kind map in which one directory equals or contains another (kb.binding-invalid), which a schema cannot say.",
     type: "object",
     required: ["locator"],
     $defs: {
@@ -17504,16 +17504,11 @@ var init_in_repo_schema = __esm(() => {
     properties: {
       locator: {
         type: "object",
-        required: ["knowledgebase", "path", "base", "kinds"],
-        propertyNames: { enum: ["knowledgebase", "path", "base", "kinds"] },
+        required: ["knowledgebase", "path", "kinds"],
+        propertyNames: { enum: ["knowledgebase", "path", "kinds"] },
         properties: {
           knowledgebase: { type: "string", pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" },
           path: { $ref: "#/$defs/relative_dir" },
-          base: {
-            description: "A branch name, resolved as refs/remotes/origin/<base> and then refs/heads/<base>.",
-            type: "string",
-            pattern: "^(?![-/.])(?!.*(?:\\.\\.|//|/\\.|\\.lock$|/$))[A-Za-z0-9._/-]+$"
-          },
           kinds: {
             type: "object",
             minProperties: 1,
@@ -22857,7 +22852,7 @@ import { realpathSync as realpathSync3 } from "fs";
 import { basename as basename2, posix, relative as relative3, sep as sep2 } from "path";
 function locatorOf(binding) {
   const locator = binding.locator;
-  return validLocator(locator) ? locator : { knowledgebase: "", path: "", base: "", kinds: {} };
+  return validLocator(locator) ? locator : { knowledgebase: "", path: "", kinds: {} };
 }
 function inRepoBindingIssues(binding, file) {
   const dirs = Object.entries(locatorOf(binding).kinds);
@@ -22877,13 +22872,12 @@ function missing(file, message) {
     warning("kb.in-repo-missing", file, `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. ${IN_REPO_MISSING_REMEDY}`)
   ];
 }
-function baseRevision(top, base) {
-  for (const ref of [`refs/remotes/origin/${base}`, `refs/heads/${base}`]) {
-    const found = git2(top, ["rev-parse", "--verify", "--quiet", ref]);
-    if (found.status === 0)
-      return found.stdout.trim();
-  }
-  return null;
+function defaultBranch(top) {
+  const target = git2(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
+  const found = git2(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (found.status !== 0)
+    return null;
+  return { name: target.status === 0 ? target.stdout.trim() : "origin/HEAD", sha: found.stdout.trim() };
 }
 function resolveInRepo(projectRoot, binding, file) {
   const project = realpathSync3(projectRoot);
@@ -22891,21 +22885,26 @@ function resolveInRepo(projectRoot, binding, file) {
   if (top === null)
     return { location: null, top, issues: missing(file, `${project} is not in a git work tree.`) };
   const locator = locatorOf(binding);
-  const base = locator.base;
-  const baseSha = baseRevision(top, base);
-  if (baseSha === null) {
+  const remote = defaultBranch(top);
+  if (remote === null) {
     return {
       location: null,
       top,
-      issues: missing(file, `The base branch '${base}' resolves as neither refs/remotes/origin/${base} nor refs/heads/${base}.`)
+      issues: missing(file, "refs/remotes/origin/HEAD does not resolve, so there is no remote default branch to read.")
     };
   }
+  const base = remote.name;
+  const baseSha = remote.sha;
   if (git2(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git2(top, ["merge-base", "HEAD", baseSha]);
   if (merged.status === 1) {
-    return { location: null, top, issues: missing(file, `HEAD shares no history with the base branch '${base}'.`) };
+    return {
+      location: null,
+      top,
+      issues: missing(file, `HEAD shares no history with the remote default branch ${base}.`)
+    };
   }
   if (merged.status !== 0) {
     return {
@@ -22929,7 +22928,7 @@ function resolveInRepo(projectRoot, binding, file) {
     return {
       location: null,
       top,
-      issues: missing(file, `'${locator.path}' is not a directory at ${revision.slice(0, 12)}, the merge-base of HEAD and '${base}'.`)
+      issues: missing(file, `'${locator.path}' is not a directory at ${revision.slice(0, 12)}, the merge-base of HEAD and the remote default branch ${base}.`)
     };
   }
   const kinds = Object.fromEntries(Object.entries(locator.kinds).map(([kind, dir]) => [kind, posix.join(path, dir)]));
@@ -22956,8 +22955,14 @@ function headerMeta(yaml) {
       status: hasScalarStatus(parsed) ? String(parsed.status) : null
     };
   } catch {
-    return { title: null, status: null };
+    return { title: headerLine(yaml, "title"), status: headerLine(yaml, "status") };
   }
+}
+function headerLine(yaml, key) {
+  const line = yaml.split(`
+`).find((text) => text.startsWith(`${key}:`));
+  const value = line?.slice(key.length + 1).trim().replace(/^(["'])(.*)\1$/, "$2") ?? "";
+  return value === "" ? null : value;
 }
 function firstWord(text) {
   const word = text.replaceAll(/[*_`[\]]/g, " ").trim().split(/\s+/)[0] ?? "";
@@ -22983,7 +22988,17 @@ function unreadable(message) {
   return { status: "failed", code: "kb.unreadable", message };
 }
 function lastChanges(top, revision, dirs) {
-  const log = git2(top, ["-c", "core.quotePath=false", "log", "--format=@%H", "--name-only", revision, "--", ...dirs]);
+  const log = git2(top, [
+    "-c",
+    "core.quotePath=false",
+    "log",
+    "--cc",
+    "--format=@%H",
+    "--name-only",
+    revision,
+    "--",
+    ...dirs
+  ]);
   if (log.status !== 0)
     return unreadable(`git could not walk the history of ${dirs.join(", ")}: ${log.stderr.trim()}`);
   const changed = new Map;
@@ -23024,6 +23039,7 @@ function listPages(top, location, kinds) {
 }
 function readInRepoContext(kb, location, kinds, scope) {
   const top = kb.root;
+  kinds = [...new Set(kinds)];
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined)
     return kindProblem(unknown);
@@ -23087,7 +23103,7 @@ function readInRepoContext(kb, location, kinds, scope) {
   }
   return outcome;
 }
-var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, ajv2, validLocator, hasScalarTitle, hasScalarStatus, IN_REPO_MISSING_REMEDY = "Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.";
+var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, ajv2, validLocator, hasScalarTitle, hasScalarStatus, IN_REPO_MISSING_REMEDY = "Commit the knowledgebase path on the remote's default branch, fetch origin (and run `git remote set-head origin --auto` if origin/HEAD is unset), or repair the binding.";
 var init_in_repo = __esm(() => {
   init_dist();
   init_git();
@@ -23097,11 +23113,10 @@ var init_in_repo = __esm(() => {
   ajv2 = new import__20206.default({ strict: false });
   validLocator = ajv2.compile({
     type: "object",
-    required: ["knowledgebase", "path", "base", "kinds"],
+    required: ["knowledgebase", "path", "kinds"],
     properties: {
       knowledgebase: { type: "string" },
       path: { type: "string" },
-      base: { type: "string" },
       kinds: { type: "object", additionalProperties: { type: "string" } }
     }
   });
@@ -38343,7 +38358,7 @@ function check(options, args) {
   if (resolution.resolved?.inRepo !== undefined) {
     const kb = resolution.resolved;
     const at = resolution.resolved.inRepo;
-    options.io.out(`ak kb check: bound, read-only. ${BINDING_FILE2} names backend ${kb.binding.backend}, knowledgebase '${kb.knowledgebase}' at path '${at.configuredPath}' read at ${at.revision.slice(0, 12)} (the merge-base of HEAD and base '${at.base}'), project '${kb.binding.project}'. readContext is carried; a publish is skipped (kb.read-only, a coverage limit); the other five operations refuse.`);
+    options.io.out(`ak kb check: bound, read-only. ${BINDING_FILE2} names backend ${kb.binding.backend}, knowledgebase '${kb.knowledgebase}' at path '${at.configuredPath}' read at ${at.revision.slice(0, 12)} (the merge-base of HEAD and the remote default branch ${at.base}), project '${kb.binding.project}'. readContext is carried; a publish is skipped (kb.read-only, a coverage limit); the other five operations refuse.`);
     return 0;
   }
   if (resolution.resolved !== null) {

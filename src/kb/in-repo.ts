@@ -27,9 +27,10 @@ import {
  * no project knowledge is ever written into the application repository
  * (adapters/knowledgebase/CONTRACT.md, "Centrality").
  *
- * The revision read is the merge-base of the checkout's HEAD and the binding's
- * base branch, so a page a branch commits, or a status it sets, is not
- * knowledge until it is merged: the same rule local-git keeps by reading only
+ * The revision read is the merge-base of the checkout's HEAD and the remote's
+ * default branch (refs/remotes/origin/HEAD), never a branch the binding names: a
+ * binding is committed on the branch, so a branch could name itself. A page a
+ * branch commits, or a status it sets, is not knowledge until it is merged: the same rule local-git keeps by reading only
  * what its own repository committed.
  */
 export const IN_REPO = "in-repo";
@@ -43,9 +44,9 @@ export interface InRepoLocation {
   configuredPath: string;
   /** The wiki directory relative to the git top level, forward slashes. */
   path: string;
-  /** The base branch as the binding names it. */
+  /** The remote default branch read against, as `origin/<name>`. */
   base: string;
-  /** The commit read: the merge-base of HEAD and the base ref. */
+  /** The commit read: the merge-base of HEAD and the remote default branch. */
   revision: string;
   /** Each mapped kind's directory relative to the git top level. */
   kinds: Record<string, string>;
@@ -64,18 +65,16 @@ export interface InRepoResolution {
 interface InRepoLocator {
   knowledgebase: string;
   path: string;
-  base: string;
   kinds: Record<string, string>;
 }
 
 const ajv = new Ajv2020({ strict: false });
 const validLocator = ajv.compile<InRepoLocator>({
   type: "object",
-  required: ["knowledgebase", "path", "base", "kinds"],
+  required: ["knowledgebase", "path", "kinds"],
   properties: {
     knowledgebase: { type: "string" },
     path: { type: "string" },
-    base: { type: "string" },
     kinds: { type: "object", additionalProperties: { type: "string" } },
   },
 });
@@ -95,7 +94,7 @@ const hasScalarStatus = ajv.compile<{ status: string | number | boolean }>({
 /** The binding's locator, parsed; empty when it is not an in-repo locator, which check has refused already. */
 function locatorOf(binding: KbBinding): InRepoLocator {
   const locator = binding.locator;
-  return validLocator(locator) ? locator : { knowledgebase: "", path: "", base: "", kinds: {} };
+  return validLocator(locator) ? locator : { knowledgebase: "", path: "", kinds: {} };
 }
 
 /**
@@ -123,7 +122,7 @@ export function inRepoBindingIssues(binding: KbBinding, file: string): Issue[] {
 
 /** How to clear kb.in-repo-missing, said once for ak kb and ak doctor. */
 export const IN_REPO_MISSING_REMEDY =
-  "Commit the knowledgebase path on the base branch, fetch the base, or repair the binding.";
+  "Commit the knowledgebase path on the remote's default branch, fetch origin (and run `git remote set-head origin --auto` if origin/HEAD is unset), or repair the binding.";
 
 function missing(file: string, message: string): Issue[] {
   return [
@@ -135,13 +134,13 @@ function missing(file: string, message: string): Issue[] {
   ];
 }
 
-function baseRevision(top: string, base: string): string | null {
-  for (const ref of [`refs/remotes/origin/${base}`, `refs/heads/${base}`]) {
-    // The ref alone, not peeled: a ref whose object git cannot read reaches merge-base and fails there.
-    const found = git(top, ["rev-parse", "--verify", "--quiet", ref]);
-    if (found.status === 0) return found.stdout.trim();
-  }
-  return null;
+/** The remote's default branch: its `origin/<name>` and commit, or null when origin/HEAD is unset. No local fallback. */
+function defaultBranch(top: string): { name: string; sha: string } | null {
+  const target = git(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
+  // The ref alone, not peeled: a ref whose object git cannot read reaches merge-base and fails there.
+  const found = git(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (found.status !== 0) return null;
+  return { name: target.status === 0 ? target.stdout.trim() : "origin/HEAD", sha: found.stdout.trim() };
 }
 
 /** Where the binding of the project at `projectRoot` reads, or why it reads nothing (kb.in-repo-missing). */
@@ -150,18 +149,16 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
   const top = workTreeTop(project);
   if (top === null) return { location: null, top, issues: missing(file, `${project} is not in a git work tree.`) };
   const locator = locatorOf(binding);
-  const base = locator.base;
-  const baseSha = baseRevision(top, base);
-  if (baseSha === null) {
+  const remote = defaultBranch(top);
+  if (remote === null) {
     return {
       location: null,
       top,
-      issues: missing(
-        file,
-        `The base branch '${base}' resolves as neither refs/remotes/origin/${base} nor refs/heads/${base}.`,
-      ),
+      issues: missing(file, "refs/remotes/origin/HEAD does not resolve, so there is no remote default branch to read."),
     };
   }
+  const base = remote.name;
+  const baseSha = remote.sha;
   // Unpeeled, so only an unborn HEAD lands here; a HEAD whose commit object is lost fails at merge-base.
   if (git(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
@@ -169,7 +166,11 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
   const merged = git(top, ["merge-base", "HEAD", baseSha]);
   // git merge-base exits 1 when the two share no ancestor, and higher when git itself failed.
   if (merged.status === 1) {
-    return { location: null, top, issues: missing(file, `HEAD shares no history with the base branch '${base}'.`) };
+    return {
+      location: null,
+      top,
+      issues: missing(file, `HEAD shares no history with the remote default branch ${base}.`),
+    };
   }
   if (merged.status !== 0) {
     return {
@@ -195,7 +196,7 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
       top,
       issues: missing(
         file,
-        `'${locator.path}' is not a directory at ${revision.slice(0, 12)}, the merge-base of HEAD and '${base}'.`,
+        `'${locator.path}' is not a directory at ${revision.slice(0, 12)}, the merge-base of HEAD and the remote default branch ${base}.`,
       ),
     };
   }
@@ -228,7 +229,11 @@ function splitFrontMatter(text: string): Page {
   return { meta: headerMeta(normalized.slice(4, end)), body: normalized.slice(end + 5) };
 }
 
-/** The title and status a header's YAML gives, each absent unless it is a scalar; YAML that does not parse gives neither. */
+/**
+ * The title and status a header gives, each absent unless it is a scalar. A header
+ * that is not strict YAML (an unquoted colon in a title is common in hand-written
+ * wikis) still gives a top-level `title:` or `status:` line, read as written.
+ */
 function headerMeta(yaml: string): PageMeta {
   try {
     const parsed: unknown = parseYaml(yaml);
@@ -237,8 +242,19 @@ function headerMeta(yaml: string): PageMeta {
       status: hasScalarStatus(parsed) ? String(parsed.status) : null,
     };
   } catch {
-    return { title: null, status: null };
+    return { title: headerLine(yaml, "title"), status: headerLine(yaml, "status") };
   }
+}
+
+/** A top-level `key: value` line of a header, unquoted; null when there is none or it is empty. */
+function headerLine(yaml: string, key: string): string | null {
+  const line = yaml.split("\n").find((text) => text.startsWith(`${key}:`));
+  const value =
+    line
+      ?.slice(key.length + 1)
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2") ?? "";
+  return value === "" ? null : value;
 }
 
 /** The first word of a declaration, lowercased, without markdown emphasis or punctuation. */
@@ -273,7 +289,18 @@ function unreadable(message: string): KbRefusal {
 
 /** The commit at `revision` that last changed each path under `dirs`, from one log walk. */
 function lastChanges(top: string, revision: string, dirs: readonly string[]): Map<string, string> | KbRefusal {
-  const log = git(top, ["-c", "core.quotePath=false", "log", "--format=@%H", "--name-only", revision, "--", ...dirs]);
+  // --cc lists a path under a merge that differs from every parent there, as `git log -1 -- <path>` would find it.
+  const log = git(top, [
+    "-c",
+    "core.quotePath=false",
+    "log",
+    "--cc",
+    "--format=@%H",
+    "--name-only",
+    revision,
+    "--",
+    ...dirs,
+  ]);
   if (log.status !== 0) return unreadable(`git could not walk the history of ${dirs.join(", ")}: ${log.stderr.trim()}`);
   const changed = new Map<string, string>();
   let commit = "";
@@ -324,6 +351,8 @@ export function readInRepoContext(
   scope: string,
 ): ReadOutcome | KbRefusal {
   const top = kb.root;
+  // A kind asked for twice is still one kind; listing it twice would make every page its own duplicate.
+  kinds = [...new Set(kinds)];
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined) return kindProblem(unknown);
   const segments = scopeSegments(scope);

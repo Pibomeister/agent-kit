@@ -94,15 +94,15 @@ The rule is ruling `kb-binding-is-a-locator`; the contract is
 
 ## Amendment: a read-only in-repo knowledgebase (2026-11-09)
 
-**Authority:** Firstmate's A-prime decision, relayed 2026-11-09, after a two-family council found
+**Authority:** Firstmate's A-prime decision, relayed 2026-11-09, after an independent council found
 that a project's own committed wiki could not be bound and that a bound knowledgebase refusing every
 publish would stop each lifecycle phase at its first publish.
 
 Item 5 refused every knowledgebase inside the application repository because a publish through it
 would write project knowledge there. A second backend, `in-repo`
 (`adapters/knowledgebase/backends/in-repo.md`), carries no publish: it reads the pages a project
-already commits, at the merge-base of `HEAD` and a base branch so a branch cannot make its own pages
-read as settled, and skips every publish with `kb.read-only`, writing nothing anywhere. That reason
+already commits, at the merge-base of `HEAD` and the remote's default branch so a branch cannot make
+its own pages read as settled, and skips every publish with `kb.read-only`, writing nothing anywhere. That reason
 cannot arise, so a read-only binding is allowed and a writable one is still refused. `local-git` is
 unchanged. The contract's "Capabilities and side effects", "Centrality" and "Bindings" sections
 say the same.
