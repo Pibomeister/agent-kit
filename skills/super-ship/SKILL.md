@@ -268,7 +268,7 @@ with an empty diff and no remote effect; under the unattended policy, only once 
 emitted. In direct `publish`, the branch and PR exist with read-backs, the lesson candidate is
 drafted, and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful `--pr` check).
 
-`needs-input`: the run was started by none of the typed command, a validated grant and the unattended policy's passing `unattended check`, receipts or
+`needs-input`: the run was started by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive
 action lacks a charter entry. Either transport with an uncommitted head, non-empty diff or stale
 verify, readiness or review record also stops here. Returns what it would need, which for the first

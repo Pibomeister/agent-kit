@@ -733,13 +733,13 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15734,
-      "tokens": 3926
+      "bytes": 15810,
+      "tokens": 3945
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23737,
-      "tokens": 5927
+      "bytes": 23840,
+      "tokens": 5952
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -768,8 +768,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23116,
-      "tokens": 5775
+      "bytes": 23140,
+      "tokens": 5781
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -1598,13 +1598,13 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15852,
-      "tokens": 3955
+      "bytes": 15928,
+      "tokens": 3974
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23855,
-      "tokens": 5956
+      "bytes": 23958,
+      "tokens": 5982
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -1633,8 +1633,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23277,
-      "tokens": 5815
+      "bytes": 23301,
+      "tokens": 5821
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -2458,13 +2458,13 @@
     },
     "bundle/cursor:.cursor/skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15719,
-      "tokens": 3922
+      "bytes": 15795,
+      "tokens": 3941
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23749,
-      "tokens": 5930
+      "bytes": 23852,
+      "tokens": 5955
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -2493,8 +2493,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23125,
-      "tokens": 5778
+      "bytes": 23149,
+      "tokens": 5784
     },
     "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -3328,13 +3328,13 @@
     },
     "bundle/droid:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15837,
-      "tokens": 3952
+      "bytes": 15913,
+      "tokens": 3971
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23843,
-      "tokens": 5953
+      "bytes": 23946,
+      "tokens": 5979
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -3363,8 +3363,8 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23260,
-      "tokens": 5811
+      "bytes": 23284,
+      "tokens": 5817
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -4193,13 +4193,13 @@
     },
     "bundle/grok:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15719,
-      "tokens": 3922
+      "bytes": 15795,
+      "tokens": 3941
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23725,
-      "tokens": 5924
+      "bytes": 23828,
+      "tokens": 5949
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -4228,8 +4228,8 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23101,
-      "tokens": 5772
+      "bytes": 23125,
+      "tokens": 5778
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -5058,13 +5058,13 @@
     },
     "bundle/kimi:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15867,
-      "tokens": 3959
+      "bytes": 15943,
+      "tokens": 3978
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23867,
-      "tokens": 5959
+      "bytes": 23970,
+      "tokens": 5985
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -5093,8 +5093,8 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23292,
-      "tokens": 5819
+      "bytes": 23316,
+      "tokens": 5825
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",

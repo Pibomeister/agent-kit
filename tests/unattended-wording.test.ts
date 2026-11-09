@@ -15,8 +15,43 @@ describe("unattended wording", () => {
     const body = read("skills/super-ship/SKILL.md");
     const at = body.indexOf("`needs-input`:");
     expect(at).toBeGreaterThan(-1);
-    const condition = body.slice(at, body.indexOf("the mode was not named", at));
-    expect(condition).toContain("unattended check");
+    const end = body.indexOf("the mode was not named", at);
+    expect(end).toBeGreaterThan(at);
+    expect(body.slice(at, end)).toContain("unattended check");
+  });
+
+  const START =
+    "none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`";
+  const HUMAN_STARTED = ["super-align", "super-bound", "super-ship"];
+
+  test.each(HUMAN_STARTED)("%s prose needs-input names every accepted start", (skill) => {
+    const body = read(`skills/${skill}/SKILL.md`);
+    const section = body.indexOf("## Stop conditions");
+    expect(section).toBeGreaterThan(-1);
+    const at = body.indexOf("`needs-input`", section);
+    expect(at).toBeGreaterThan(-1);
+    expect(body.slice(at, at + 400)).toContain(START);
+    expect(body).not.toContain("neither the typed command nor a validated grant");
+  });
+
+  test.each(HUMAN_STARTED)("%s manifest stop wording names every accepted start", (skill) => {
+    const yaml = read(`skills/${skill}/skill.yaml`);
+    expect(yaml).not.toContain("neither the typed command nor a validated grant");
+    expect(yaml).not.toContain("neither the typed command nor a grant");
+    expect(yaml.split(START).length - 1).toBeGreaterThanOrEqual(2);
+  });
+
+  test("super-bound Authority lists the capability-map review as an unattended advance", () => {
+    const body = read("skills/super-bound/SKILL.md");
+    const at = body.indexOf("Under the unattended policy (ADR-0014)");
+    expect(at).toBeGreaterThan(-1);
+    const para = body.slice(at, body.indexOf("## Workflow", at));
+    expect(para).toContain("the capability-map review");
+  });
+
+  test("super-bound manifest does not require a human approval channel unattended", () => {
+    const yaml = read("skills/super-bound/skill.yaml");
+    expect(yaml).toContain("approval on, except under the unattended policy (ADR-0014) optional: true");
   });
 
   test("the unattended reference lists the capability-map review as an advance", () => {
