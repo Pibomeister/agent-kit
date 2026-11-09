@@ -29,7 +29,7 @@ its typed command or a grant.
 Every point where a lifecycle skill waits for a human answer or approval proceeds with the answer
 the skill itself recommends, recorded as an **unattended advance** that names the question and the
 answer. It is never written as an approval, and nothing claims a human read it. The instances:
-align's frontier rounds and its restatement approval; bound's approved-alignment precondition, open
+align's frontier rounds and its restatement approval; bound's approved-alignment precondition, capability-map review, open
 document-review decisions, specification approval and ticket approvals; build's approved-ticket
 precondition. A ticket whose delegation class makes a human the author is implemented by the agent
 within its allowed changes, with the true class, floor and `author_kind: agent` recorded.

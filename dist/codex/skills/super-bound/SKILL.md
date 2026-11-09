@@ -55,7 +55,7 @@ approves its own specification or tickets.
 
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
 check --phase super-bound` exiting 0 is the start, with no command or grant (an exception to ruling
-`entrypoint-phase-operation-split`). The approved-alignment input, open document-review decisions, the specification approval and the ticket approvals then
+`entrypoint-phase-operation-split`). The approved-alignment input, open document-review decisions, the capability-map review, the specification approval and the ticket approvals then
 proceed with your own recommended answers, recorded as unattended advances and never as approvals;
 a ticket whose class makes a human the author keeps that class. Record the `bound` gate as
 [the unattended-lifecycle reference](../../references/shared/references/unattended-lifecycle/REFERENCE.md) says.
@@ -95,7 +95,7 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
    found in two lines, and ask only what is left.
 3. When the approved direction spans more than one module, draw the capability map first: a table of
    stable kebab-case module ids, each with its responsibility and what it depends on. The map is
-   gated like every other step; a human reviews it before any module's specification is written.
+   gated like every other step; a human reviews it before any module's specification is written (under the unattended policy that review is an unattended advance, per [the reference](../../references/shared/references/unattended-lifecycle/REFERENCE.md)).
 4. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
    test seams, verification commands, out of scope. No file paths and no code, except a fragment a
    prototype already settled exactly — a state machine, a reducer, a schema, a type shape. Turn
@@ -269,7 +269,7 @@ performed is `failed`, never complete.
   ticket, every implementation ticket carries the three evidence blocks, every on-mode
   implementation ticket cites a finished cold read, or an unavailable read with its reason, and
   every published artifact's read-back matched what was sent.
-- `needs-input` — a start by neither the typed command nor a validated grant, which returns the
+- `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different
   revision, missing project guidance or grant at `bound.run`, a failed scorer, an unresolved
   assumption or vague criterion, a document-review decision left open, a settled decision that

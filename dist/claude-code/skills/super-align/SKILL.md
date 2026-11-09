@@ -182,7 +182,7 @@ performed is `failed`, never complete.
 
 - `complete` — the human approved the restated direction (under the unattended policy, a recorded
   unattended advance, never an approval), and every published artifact's read-back matched what was sent.
-- `needs-input` — a start by neither the typed command nor a validated grant, no request, no
+- `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, no request, no
   explicit approval (outside the unattended policy, whose recorded advance stands in), a question outside the charter at `align.run`, a fork only the human can
   settle, or publication reached an unavailable knowledgebase adapter. The first returns the
   command to type and nothing else. The unavailable-adapter result names `kb-read` and `kb-write`
