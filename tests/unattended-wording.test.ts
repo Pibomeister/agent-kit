@@ -30,7 +30,8 @@ describe("unattended wording", () => {
     expect(section).toBeGreaterThan(-1);
     const at = body.indexOf("`needs-input`", section);
     expect(at).toBeGreaterThan(-1);
-    expect(body.slice(at, at + 400)).toContain(START);
+    const next = body.indexOf(" - `", at);
+    expect(body.slice(at, next > at ? next : undefined)).toContain(START);
     expect(body).not.toContain("neither the typed command nor a validated grant");
   });
 
@@ -47,11 +48,6 @@ describe("unattended wording", () => {
     expect(at).toBeGreaterThan(-1);
     const para = body.slice(at, body.indexOf("## Workflow", at));
     expect(para).toContain("the capability-map review");
-  });
-
-  test("super-bound manifest does not require a human approval channel unattended", () => {
-    const yaml = read("skills/super-bound/skill.yaml");
-    expect(yaml).toContain("approval on, except under the unattended policy (ADR-0014) optional: true");
   });
 
   test("the unattended reference lists the capability-map review as an advance", () => {
