@@ -385,6 +385,59 @@ describe("a missing in-repo knowledgebase is a coverage limit", () => {
   });
 });
 
+/** Where git keeps `rev`'s object loose in a fixture that has never been packed. */
+function looseObject(fx: Fixture, rev: string): string {
+  const sha = git(fx.top, "rev-parse", rev).trim();
+  return join(fx.top, ".git", "objects", sha.slice(0, 2), sha.slice(2));
+}
+
+describe("git failing is failed, not a coverage limit", () => {
+  test("a HEAD with no commit yet is a missing knowledgebase", () => {
+    const fx = fixture();
+    git(fx.top, "checkout", "-q", "--orphan", "unborn");
+    expectMissing(kb(fx, "check"));
+  });
+
+  test("git merge-base failing on a lost ancestor fails check", () => {
+    const fx = fixture();
+    const ancestor = looseObject(fx, "main");
+    write(fx.project, "README.md", "work\n");
+    git(fx.top, "add", "-A");
+    git(fx.top, "commit", "-q", "-m", "work moves");
+    git(fx.top, "checkout", "-q", "main");
+    write(fx.project, "OTHER.md", "main\n");
+    git(fx.top, "add", "-A");
+    git(fx.top, "commit", "-q", "-m", "main moves");
+    git(fx.top, "checkout", "-q", "work");
+    rmSync(ancestor);
+    const run = kb(fx, "check");
+    expect(run.code).toBe(1);
+    expect(run.out).toContain("kb.unreadable");
+  });
+
+  test("git ls-tree failing on a lost directory tree fails check", () => {
+    const fx = fixture();
+    rmSync(looseObject(fx, "main:docs"));
+    const run = kb(fx, "check");
+    expect(run.code).toBe(1);
+    expect(run.out).toContain("kb.unreadable");
+  });
+
+  test("git log failing on lost history fails the read while check still binds", () => {
+    const fx = fixture();
+    const first = looseObject(fx, "main");
+    write(fx.project, "README.md", "second\n");
+    git(fx.top, "add", "-A");
+    git(fx.top, "commit", "-q", "-m", "second");
+    git(fx.top, "branch", "-f", "main", "HEAD");
+    rmSync(first);
+    expect(kb(fx, "check").code).toBe(0);
+    const run = kb(fx, "read", "--kind", "concept", "--scope", "project");
+    expect(run.code).toBe(1);
+    expect(run.out).toContain("could not walk");
+  });
+});
+
 describe("an in-repo binding that is not valid is refused", () => {
   const cases = {
     "an absolute path": BINDING.replace("path: docs/wiki", "path: /docs/wiki"),

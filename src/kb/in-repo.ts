@@ -161,6 +161,9 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
       ),
     };
   }
+  if (git(top, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0) {
+    return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
+  }
   const merged = git(top, ["merge-base", "HEAD", baseSha]);
   // git merge-base exits 1 when the two share no ancestor, and higher when git itself failed.
   if (merged.status === 1) {

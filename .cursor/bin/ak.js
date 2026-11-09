@@ -22900,6 +22900,9 @@ function resolveInRepo(projectRoot, binding, file) {
       issues: missing(file, `The base branch '${base}' resolves as neither refs/remotes/origin/${base} nor refs/heads/${base}.`)
     };
   }
+  if (git2(top, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0) {
+    return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
+  }
   const merged = git2(top, ["merge-base", "HEAD", baseSha]);
   if (merged.status === 1) {
     return { location: null, top, issues: missing(file, `HEAD shares no history with the base branch '${base}'.`) };

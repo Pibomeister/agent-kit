@@ -51,14 +51,15 @@ project reads its own committed tree, so `ak kb register` has no part here.
 - **Each page.** `id` is the file stem and must be kebab-case. `title` is front matter `title`, else
   the first `# ` heading, else the id. `body` is the text after front matter. `content_hash` is
   computed as local-git computes it, and `revision` is the last commit at the revision read that
-  changed the file. The ref is `doc:project/<kind>/<id>`.
+  changed the file. The ref is `doc:project/<kind>/<id>`. A header that is not closed, does not
+  parse or is not a mapping reads as absent, and so does a `title` or `status` that is not a scalar.
 - **Status** is the first declaration among front matter `status`, an inline `**Status:** …` and
   the first line of a `## Status` section, as its first word lowercased. It is kept when it is
   `accepted`, `superseded`, `deprecated`, `rejected` or `proposed`; anything else, or nothing, reads
   as `unreviewed`. The declared word is returned as `declared_status` (null when none).
-- **Coverage.** A stem that is not kebab-case, every copy of a stem repeated within one kind, and a
-  page whose front matter does not parse are named in `coverage.unreadable`, by path from the
-  project folder, and not returned.
+- **Coverage.** A stem that is not kebab-case and every copy of a stem repeated within one kind are
+  named in `coverage.unreadable`, by path from the project folder, and not returned. A page git
+  cannot read fails the whole read (`kb.unreadable`).
 - **Not carried:** narrowing by tag, revision or recency, and run-artifact links
   (`run_artifact_links: not-selected`).
 
@@ -72,9 +73,11 @@ refusal: the phase names the record as not published and continues
 
 ## 5. A missing knowledgebase
 
-A project not in a git work tree, a base that resolves to nothing, a `HEAD` that shares no history
-with it, or a path that is not a directory at the revision read: `ak kb check`, `read` and `publish`
-exit 3 with `kb.in-repo-missing`, a coverage limit, and the message names the fix.
+A project not in a git work tree, a `HEAD` with no commit yet, a base that resolves to nothing, a
+`HEAD` that shares no history with it, or a path that is not a directory at the revision read:
+`ak kb check`, `read` and `publish` exit 3 with `kb.in-repo-missing`, a coverage limit, and the
+message names the fix. git itself failing (a merge-base or listing error, an object it cannot read)
+is `failed` with `kb.unreadable`, exit 1.
 
 ## 6. Why the application repository is allowed here
 
