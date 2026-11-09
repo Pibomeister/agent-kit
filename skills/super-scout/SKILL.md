@@ -164,15 +164,20 @@ No `workspace-write`, no `local-commit`: a scout cannot edit the repository it i
 
 ## Stop conditions
 
-`complete`: the dossier is published. A dossier whose `status` is `limited` is complete — the
-coverage limits materially restrict what it supports, and saying so is the result.
+`complete`: the dossier is published, or named as not published under a knowledgebase coverage
+limit. A dossier whose `status` is `limited` is complete — the coverage limits materially restrict
+what it supports, and saying so is the result.
 
 `needs-input`: no bounded question, or a question broad enough that no search would end it. Returns
 the narrower question it proposes and no partial dossier.
 
-`failed`: the repository is unreadable at the named revision, or the knowledgebase refuses the write.
-The dossier content is returned to the caller unpublished, with the refusal, rather than written to a
-path in the repository.
+`failed`: the repository is unreadable at the named revision, or a configured knowledgebase refuses
+the write. The dossier content is returned to the caller unpublished, with the refusal, rather than
+written to a path in the repository.
+
+A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered) or a
+missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable,
+each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the question mid-run. Searches already recorded are discarded
 rather than published as a dossier nobody asked to keep.

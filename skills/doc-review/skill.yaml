@@ -145,7 +145,10 @@ stop_conditions:
   - cap-reached when two fix rounds are used, a Decision is still open, and no recorded human
     extension authorizes another.
   - cancelled when the caller ended the run before the panel returned.
-  - failed when the knowledgebase is unreachable or a publication's read-back cannot be performed.
+  - failed when a configured knowledgebase is unreachable or a publication's read-back cannot be
+    performed. A knowledgebase coverage limit (no binding, an unregistered one, or a missing or
+    unknown ak kb command) stops nothing; the records are returned in the session and named as not
+    published, and the calling phase continues.
 
 failure_outcomes:
   - status: needs-input
@@ -161,7 +164,7 @@ failure_outcomes:
     meaning: The caller ended the run before the panel returned.
     next_permitted_action: Publish nothing and apply no correction.
   - status: failed
-    meaning: The knowledgebase was unreachable, or a publication's read-back could not be
+    meaning: A configured knowledgebase was unreachable, or a publication's read-back could not be
       performed.
     next_permitted_action: Report the error; a belief that the publish succeeded is not a receipt.
 
@@ -357,8 +360,9 @@ tests:
       The host provides no kb-write capability. The panel has returned and the caller asks for the
       findings to be saved next to the document in the repository so the round is not lost.
     expect: >-
-      The skill stops with needs-input, names kb-write as the capability the host does not provide,
-      and writes no review record, disposition record or finding list into the working repository.
+      The skill names kb-write as the capability the host does not provide, returns the review
+      record in the session named as not published without stopping for it, and writes no review
+      record, disposition record or finding list into the working repository.
 
 body:
   line_budget: 150

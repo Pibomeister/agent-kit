@@ -119,8 +119,12 @@ hard_gates:
     recorded as an excerpt, never as evidence that the fact holds.
 
 stop_conditions:
-  - complete when the dossier is published, including a dossier whose status is limited.
+  - complete when the dossier is published, or named as not published under a knowledgebase
+    coverage limit, including a dossier whose status is limited.
   - The question is answered within the budget and further searching would add no hits.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped publish is named in the result as not published, and of these results only exit 1 stops.
 
 failure_outcomes:
   - status: needs-input
@@ -130,7 +134,8 @@ failure_outcomes:
     next_permitted_action: Re-invoke with the narrower question.
   - status: failed
     meaning: >-
-      The repository is unreadable at the named revision, or the knowledgebase refused the write.
+      The repository is unreadable at the named revision, or a configured knowledgebase refused the
+      write.
       The dossier content is returned unpublished with the refusal, never written to a repository
       path.
     next_permitted_action: Re-invoke once the revision is readable or the knowledgebase accepts writes.

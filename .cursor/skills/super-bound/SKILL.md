@@ -65,8 +65,8 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
   approval of this one.
 - Recorded project context, read through the knowledgebase adapter's `readContext`: the `prd` in
   scope, the settled `adr` pages, and the glossary the vocabulary was agreed in. An empty result is
-  a fact; an unreachable knowledgebase returns `failed`. The commands, and what an unconfigured
-  knowledgebase obliges, are in
+  a fact; a configured knowledgebase that cannot be reached returns `failed`. The commands, and
+  what an unconfigured knowledgebase obliges (a coverage limit, never a stop), are in
   [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 - The project record's configured guidance ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)) for change size and test
   shape. Absent: the starting points below are advisory and nothing enforces them.
@@ -276,7 +276,10 @@ performed is `failed`, never complete.
 - `cap-reached` — the consensus plan gate reached its round cap, or the runner-supplied ticket
   budget ran out. Returns the unresolved architectural question or the undecomposed remainder.
 - `cancelled` — the human ended the run before approving the specification.
-- `failed` — the knowledgebase is unreachable, or a publication's read-back cannot be performed.
+- `failed` — a configured knowledgebase is unreachable, or a publication's read-back cannot be
+  performed. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered)
+  or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are
+  unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 
 ## Limits
 

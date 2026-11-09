@@ -243,12 +243,11 @@ disposition, and every ruling written at the round cap. A per-ticket check is a 
 than a review panel — it emits no `review` artifact, and a later panel never reads it as a lane it no
 longer has to cover.
 
-All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`); the commands are in
-[the knowledgebase-binding reference pack](../../references/knowledgebase-binding/REFERENCE.md).
-This skill names no repository path for project-derived content. Each implementer seat's stretch
-(`schemas/trail.schema.json`) and the trail audit (`schemas/trail-audit.schema.json`) go through
-`publishArtifact` too, as an account, never evidence (ruling `work-trail-is-account-not-evidence`).
+All of it is published through the knowledgebase adapter's `publishArtifact` operation with a run-artifact placement
+(`adapters/knowledgebase/CONTRACT.md`); the commands are in [the knowledgebase-binding reference pack](../../references/knowledgebase-binding/REFERENCE.md).
+This skill names no repository path for project-derived content. Each implementer seat's stretch (`schemas/trail.schema.json`)
+and the trail audit (`schemas/trail-audit.schema.json`) go through `publishArtifact` too, as an account, never evidence
+(ruling `work-trail-is-account-not-evidence`).
 
 ## Side effects
 
@@ -275,8 +274,9 @@ stands, and every open finding with its adjudication. It is not a pass and the t
 or a check seat that cannot be filled independently. Returns what is missing and the lane that owns
 it, never a narrowed version of the work.
 
-`failed`: no writable worktree, the branch is checked out elsewhere, or the knowledgebase refuses a
-receipt, ticket result or check result. The worktree and the ledger are left intact for the resume.
+`failed`: no writable worktree, the branch is checked out elsewhere, or a configured knowledgebase refuses a receipt, ticket result or
+check result; the worktree and ledger stay intact for the resume. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound,
+kb.unregistered) or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the ticket mid-run. The branch, the worktree and the recorded
 rulings are kept rather than cleaned up, because the next run reads them instead of re-deriving them.

@@ -232,15 +232,19 @@ is reported, not accommodated.
 ## Stop conditions
 
 `complete`: every acceptance criterion has an outcome and a reason where that outcome is not a pass,
-and the receipts are published. A run whose checks all failed is complete; the failures are the
-result.
+and the receipts are published (or, under a knowledgebase coverage limit, named as not published).
+A run whose checks all failed is complete; the failures are the result.
 
 `needs-input`: the claim resolves to no acceptance criterion, or no revision was named. Returns the
 criterion or the revision it would need, and no partial matrix presented as a verdict.
 
 `failed`: the repository is unreadable at the named revision, the environment cannot be identified,
-or the knowledgebase refuses the write. The receipts are returned unpublished with the refusal rather
-than written to a path in the repository.
+or a configured knowledgebase refuses the write. The receipts are returned unpublished with the
+refusal rather than written to a path in the repository.
+
+A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered) or a
+missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable,
+each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the claim mid-run. Receipts already taken are kept and published as
 what they are — evidence about the checks that ran — because a completed check is a fact whether or

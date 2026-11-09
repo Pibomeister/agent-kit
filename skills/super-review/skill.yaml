@@ -250,6 +250,9 @@ stop_conditions:
   - A delta that ends by establishing a new baseline stops with complete (ruling `delta-baseline-reset-not-third-loop`).
     The reset closes that scope, records what changed materially and the new comparison base, and the
     new scope opens at pass 1 rather than continuing the loop.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped publish is named in the result as not published, and of these results only exit 1 stops.
 
 failure_outcomes:
   - status: needs-input

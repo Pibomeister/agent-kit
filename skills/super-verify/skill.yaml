@@ -163,9 +163,13 @@ hard_gates:
 
 stop_conditions:
   - complete when every acceptance criterion has an outcome, every outcome that is not a pass carries
-    a reason, and the receipts are published.
+    a reason, and the receipts are published or, under a knowledgebase coverage limit, named as
+    not published.
   - A run whose checks all failed is complete; the failures are the result, not a reason to withhold
     one.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped publish is named in the result as not published, and of these results only exit 1 stops.
 
 failure_outcomes:
   - status: needs-input
@@ -176,7 +180,8 @@ failure_outcomes:
   - status: failed
     meaning: >-
       The repository is unreadable at the named revision, the environment cannot be identified, or
-      the knowledgebase refused the write. The receipts are returned unpublished with the refusal.
+      a configured knowledgebase refused the write. The receipts are returned unpublished with the
+      refusal.
     next_permitted_action: Re-invoke once the revision is readable or the knowledgebase accepts writes.
   - status: cancelled
     meaning: >-

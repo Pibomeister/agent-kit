@@ -194,6 +194,9 @@ stop_conditions:
   - complete when the ticket is committed, every acceptance criterion has a receipt bound to the
     committed revision, and every finding is closed on that evidence or parked with a written ruling.
   - The two axes return no findings this lane is obliged to act on, and the receipts bind.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped publish is named in the result as not published, and of these results only exit 1 stops.
 
 failure_outcomes:
   - status: cap-reached
@@ -212,10 +215,10 @@ failure_outcomes:
       finding sharpened or the seat available.
   - status: failed
     meaning: >-
-      No writable worktree, the branch is already checked out elsewhere, or the knowledgebase
-      refused a receipt, the ticket result or the check result; a refused trail record fails
-      nothing (ruling `work-trail-is-account-not-evidence`). The worktree and the ledger are left
-      intact for the resume.
+      No writable worktree, the branch is already checked out elsewhere, or a configured
+      knowledgebase refused a receipt, the ticket result or the check result; a refused trail
+      record fails nothing (ruling `work-trail-is-account-not-evidence`). The worktree and the
+      ledger are left intact for the resume.
     next_permitted_action: Re-invoke once the worktree is available or the knowledgebase accepts writes.
   - status: cancelled
     meaning: >-
