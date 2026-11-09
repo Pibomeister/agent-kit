@@ -122,7 +122,7 @@ stop_conditions:
   - complete when the dossier is published, or named as not published under a knowledgebase
     coverage limit, including a dossier whose status is limited.
   - The question is answered within the budget and further searching would add no hits.
-  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped publish is named in the result as not published, and of these results only exit 1 stops.
 

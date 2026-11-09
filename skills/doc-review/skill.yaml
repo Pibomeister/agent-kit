@@ -146,7 +146,7 @@ stop_conditions:
     extension authorizes another.
   - cancelled when the caller ended the run before the panel returned.
   - failed when a configured knowledgebase is unreachable or a publication's read-back cannot be
-    performed. A knowledgebase coverage limit (no binding, an unregistered one, or a missing or
+    performed. A knowledgebase coverage limit (no binding, an unregistered one, a publish skipped as read-only (kb.read-only), a missing in-repo one (kb.in-repo-missing), or a missing or
     unknown ak kb command) stops nothing; the records are returned in the session and named as not
     published, and the calling phase continues.
 
