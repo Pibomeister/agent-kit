@@ -223,8 +223,8 @@
     },
     "bundle/claude-code:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10268,
+      "tokens": 2565
     },
     "bundle/claude-code:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -278,8 +278,8 @@
     },
     "bundle/claude-code:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/claude-code:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -328,13 +328,13 @@
     },
     "bundle/claude-code:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/claude-code:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/claude-code:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -748,8 +748,8 @@
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25910,
-      "tokens": 6470
+      "bytes": 26065,
+      "tokens": 6509
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1088,8 +1088,8 @@
     },
     "bundle/codex:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10268,
+      "tokens": 2565
     },
     "bundle/codex:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -1143,8 +1143,8 @@
     },
     "bundle/codex:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/codex:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -1193,13 +1193,13 @@
     },
     "bundle/codex:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/codex:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/codex:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -1613,8 +1613,8 @@
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25957,
-      "tokens": 6481
+      "bytes": 26112,
+      "tokens": 6520
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1953,8 +1953,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10304,
+      "tokens": 2574
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -2008,8 +2008,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7360,
+      "tokens": 1840
     },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -2058,13 +2058,13 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9849,
+      "tokens": 2457
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9055,
+      "tokens": 2261
     },
     "bundle/cursor:.cursor/references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -2473,8 +2473,8 @@
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25946,
-      "tokens": 6479
+      "bytes": 26101,
+      "tokens": 6518
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2818,8 +2818,8 @@
     },
     "bundle/droid:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10268,
+      "tokens": 2565
     },
     "bundle/droid:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -2873,8 +2873,8 @@
     },
     "bundle/droid:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/droid:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -2923,13 +2923,13 @@
     },
     "bundle/droid:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/droid:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/droid:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -3343,8 +3343,8 @@
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25955,
-      "tokens": 6481
+      "bytes": 26110,
+      "tokens": 6520
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -3683,8 +3683,8 @@
     },
     "bundle/grok:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10268,
+      "tokens": 2565
     },
     "bundle/grok:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -3738,8 +3738,8 @@
     },
     "bundle/grok:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/grok:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -3788,13 +3788,13 @@
     },
     "bundle/grok:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/grok:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/grok:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -4208,8 +4208,8 @@
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25910,
-      "tokens": 6470
+      "bytes": 26065,
+      "tokens": 6509
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -4548,8 +4548,8 @@
     },
     "bundle/kimi:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10268,
+      "tokens": 2565
     },
     "bundle/kimi:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -4603,8 +4603,8 @@
     },
     "bundle/kimi:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/kimi:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -4653,13 +4653,13 @@
     },
     "bundle/kimi:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/kimi:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/kimi:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -5073,8 +5073,8 @@
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25957,
-      "tokens": 6481
+      "bytes": 26112,
+      "tokens": 6520
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -5308,8 +5308,8 @@
     },
     "role:code-review/learnings": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9318,
-      "tokens": 2328
+      "bytes": 9871,
+      "tokens": 2466
     },
     "role:code-review/maintainability": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -5363,8 +5363,8 @@
     },
     "role:doc-review/comprehension": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6650,
-      "tokens": 1663
+      "bytes": 7067,
+      "tokens": 1767
     },
     "role:doc-review/design-lens": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -5448,13 +5448,13 @@
     },
     "role:reviewer-spec": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9251,
-      "tokens": 2307
+      "bytes": 9610,
+      "tokens": 2397
     },
     "role:reviewer-standards": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8460,
-      "tokens": 2112
+      "bytes": 8884,
+      "tokens": 2218
     },
     "role:supervisor": {
       "file": "roles/supervisor/ROLE.md",

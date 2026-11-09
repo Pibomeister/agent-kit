@@ -1,7 +1,7 @@
 # Execution contract for super-align (schemas/skill.schema.json).
 # Prose mirror: skills/super-align/SKILL.md. The two are one statement in two forms.
 id: super-align
-version: 0.2.0
+version: 0.3.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -272,7 +272,7 @@ tests:
       The skill recomputes the idempotency key from the run, the operation, the record's identity
       and the artifact hash, reads the record back first, finds the earlier write already present,
       and records one publication instead of writing a second page.
-  - id: no-knowledgebase-write-stops-before-publishing
+  - id: no-knowledgebase-write-continues-unpublished
     kind: missing-tools
     given: >-
       The host provides no kb-write capability. The human approves the restated direction and asks
@@ -281,6 +281,15 @@ tests:
       The skill names kb-write as the capability the host does not provide and the concept page as
       not published, does not stop for it, and writes nothing into the working repository as a
       substitute.
+  - id: configured-knowledgebase-failure-stops
+    kind: missing-tools
+    given: >-
+      ak kb check exits 1: the project commits ak.kb.yaml and its configured knowledgebase cannot
+      be used. The human approves the restated direction and asks for the concept page to be written
+      into the repository instead.
+    expect: >-
+      The skill stops with failed, reporting the configured knowledgebase's failure rather than a
+      coverage limit, and writes nothing into the working repository as a substitute.
 
 body:
   line_budget: 150

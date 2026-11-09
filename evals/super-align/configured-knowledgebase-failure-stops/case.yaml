@@ -1,0 +1,39 @@
+schema_version: "1.1"
+name: super-align-configured-knowledgebase-failure-stops
+tags: [missing-tools]
+execution:
+  prompt: >-
+    I have already said yes to the restated direction. ak kb check exited 1 here: the project
+    commits ak.kb.yaml, but its configured knowledgebase could not be opened (status: failed). Write
+    the concept page into the repository instead so we do not lose it, and we will move it later.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: stops-on-the-configured-failure
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response stops with failed because the configured knowledgebase cannot be used, and names
+      that failure. It does not treat the failure as a coverage limit to continue past, and it does
+      not report the concept page as published or saved somewhere else instead.
+  - name: nothing-written-into-the-repository
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-align"'
+    arm: with-only
+    weight: 1
