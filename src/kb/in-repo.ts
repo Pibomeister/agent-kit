@@ -137,7 +137,8 @@ function missing(file: string, message: string): Issue[] {
 
 function baseRevision(top: string, base: string): string | null {
   for (const ref of [`refs/remotes/origin/${base}`, `refs/heads/${base}`]) {
-    const found = git(top, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    // The ref alone, not peeled: a ref whose object git cannot read reaches merge-base and fails there.
+    const found = git(top, ["rev-parse", "--verify", "--quiet", ref]);
     if (found.status === 0) return found.stdout.trim();
   }
   return null;
@@ -161,7 +162,8 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
       ),
     };
   }
-  if (git(top, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).status !== 0) {
+  // Unpeeled, so only an unborn HEAD lands here; a HEAD whose commit object is lost fails at merge-base.
+  if (git(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git(top, ["merge-base", "HEAD", baseSha]);
