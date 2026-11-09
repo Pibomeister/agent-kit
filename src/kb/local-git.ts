@@ -169,14 +169,14 @@ function failed(code: string, message: string): KbRefusal {
  * extension, a leading slash, a layout directory, a kind -- is a path the
  * caller computed, which ADR-0001 §7 leaves to the knowledgebase.
  */
-function scopeSegments(scope: string): string[] | null {
+export function scopeSegments(scope: string): string[] | null {
   if (scope === PROJECT_SCOPE) return [];
   const segments = scope.split("/");
   if (segments.length > MAX_SCOPE_DEPTH) return null;
   return segments.every((segment) => KEBAB.test(segment) && !RESERVED_SEGMENTS.has(segment)) ? segments : null;
 }
 
-function scopeProblem(scope: string): KbRefusal {
+export function scopeProblem(scope: string): KbRefusal {
   return refused(
     "kb.scope-is-a-path",
     `'${scope}' is not a scope. Pass the component as kebab-case words joined by '/', or '${PROJECT_SCOPE}' for the whole project; the knowledgebase resolves it to a location, and a path the caller computed is refused (ADR-0001 §7).`,
@@ -189,7 +189,7 @@ function nearKind(kind: string): string {
   return near.length === 0 ? "" : ` (did you mean ${near.join(" or ")}?)`;
 }
 
-function kindProblem(kind: string): KbRefusal {
+export function kindProblem(kind: string): KbRefusal {
   return refused(
     "kb.kind-unknown",
     `'${kind}' is not a knowledgebase document kind${nearKind(kind)}. The nine are ${KB_KINDS.join(", ")}; there is no tenth (ADR-0001 §2).`,
@@ -245,7 +245,7 @@ function refCommitted(root: string, project: string, ref: string): CommittedRef 
   return { status: "absent" };
 }
 
-function documentHash(request: DocumentRequest): string {
+export function documentHash(request: DocumentRequest): string {
   const subject = {
     kind: request.kind,
     scope: request.scope,
@@ -283,7 +283,7 @@ function committed(root: string, path: string): CommittedContent {
     : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
 }
 
-function normalizeBody(body: string): string {
+export function normalizeBody(body: string): string {
   return `${body.replace(/\r+\n/g, "\n").replace(/^\n+/, "").replace(/\s+$/, "")}\n`;
 }
 

@@ -379,11 +379,19 @@ export function checkKnowledgebase(cwd: string, registry: string = registryPath(
     return finding(
       "PASS",
       "knowledgebase binding",
-      `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'`,
+      `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'${kb.inRepo === undefined ? "" : ", read-only: a publish is skipped"}`,
       "No action needed.",
     );
   }
   const issue = resolution.issues[0];
+  if (issue?.rule === "kb.in-repo-missing") {
+    return finding(
+      "WARN",
+      "knowledgebase binding",
+      `kb.in-repo-missing: ${issue.message}`,
+      "Commit the knowledgebase path on the base branch, fetch the base, or repair ak.kb.yaml, then run ak kb check.",
+    );
+  }
   if (resolution.state === "unavailable") {
     return finding(
       "WARN",

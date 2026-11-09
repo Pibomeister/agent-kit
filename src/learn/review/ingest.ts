@@ -477,8 +477,11 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
   const kb = resolveKnowledgebase(root, kbRegistryPath(ctx.env));
   if (kb.state === "failed")
     throw new Error(`knowledgebase findings: ${kb.issues.map((issue) => issue.message).join("; ")}`);
-  if (kb.resolved !== null) events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
-  else if (kb.issues.some((issue) => issue.rule === "kb.unregistered")) {
+  // A read-only in-repo knowledgebase keeps no run artifacts, so it carries no findings to ingest.
+  if (kb.resolved !== null) {
+    if (kb.resolved.inRepo === undefined)
+      events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
+  } else if (kb.issues.some((issue) => issue.rule === "kb.unregistered" || issue.rule === "kb.in-repo-missing")) {
     unavailable.push("kb-finding");
     ctx.io.err(
       `ak learn review: review source kb-finding unavailable: ${kb.issues.map((issue) => issue.message).join("; ")}`,
