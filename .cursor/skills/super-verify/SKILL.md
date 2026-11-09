@@ -125,7 +125,8 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
 9. Never rewrite a recorded receipt. To correct one, record a new passed or failed receipt for the
    same check, covering every criterion it supports, whose `supersedes` names its `{id, hash}`.
 10. Claim exactly what the receipts support, and publish the matrix and the receipts through the
-    knowledgebase adapter's `publishArtifact` operation with a run-artifact placement. Return the
+    knowledgebase adapter's `publishArtifact` operation with a run-artifact placement (under a
+    knowledgebase coverage limit, skip it and name them as not published). Return the
     receipts and matrix exactly as artifacts. Do not add a prose approval over them; each criterion's
     outcome is the verdict. Publish a successful newly discovered recipe as a content-addressed
     `verification-recipe` artifact for later runs.

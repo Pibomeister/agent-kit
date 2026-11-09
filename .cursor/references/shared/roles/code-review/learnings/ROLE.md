@@ -29,7 +29,7 @@ contradicts a lesson the project recorded.
 - The immutable snapshot, bound by its recorded revisions and input hashes
   ([`policies/review.yaml`](../../../policies/review.yaml) `pass_1.snapshot`).
 - Access to the project's recorded knowledge through the knowledgebase adapter's `readContext`,
-  or the run's statement that the knowledgebase is a coverage limit, but never a repository path. Directory names under the knowledgebase root are configurable and the
+  not a repository path. Directory names under the knowledgebase root are configurable and the
   seat never walks a local documentation tree in their place (ruling
   `central-kb-owns-project-artifacts`; [`adapters/knowledgebase/CONTRACT.md`](../../../adapters/knowledgebase/CONTRACT.md)).
 - The project's own vocabulary as the knowledgebase exposes it, so a search is grounded in the
@@ -110,9 +110,10 @@ applicable prior experience still reaches the reader without being raised agains
   context notes and `empty` findings.
 - A knowledgebase coverage limit: `.cursor/bin/ak kb check` exit 3 (`kb.unbound`, `kb.unregistered`) or a
   missing or unknown `.cursor/bin/ak kb` command. The project has recorded no learnings this seat can read,
-  which is not a failed lookup. Run against no recorded learnings and return `empty` naming the
-  coverage limit; the review records the lane `covered` with that limit as its reason, never
-  `unavailable` ([`references/knowledgebase-binding/REFERENCE.md`](../../../references/knowledgebase-binding/REFERENCE.md)).
+  which is not a failed lookup: the lane's activation condition, a readable corpus with hits on the
+  touched surface, is not met, so the review records the lane `skipped` with that limit as its
+  reason, never `unavailable` ([`references/knowledgebase-binding/REFERENCE.md`](../../../references/knowledgebase-binding/REFERENCE.md)). Seated anyway on
+  another corpus's hits, run against what it can read and name the limit the run states.
 - A configured knowledgebase cannot be used (`.cursor/bin/ak kb check` exit 1), or `readContext` failed: return
   `unavailable`. A search that could not run is not a search that found nothing.
 

@@ -154,8 +154,8 @@ absence is recorded ([`policies/limits.yaml`](../../references/shared/policies/l
 14. A committed ticket then runs the trail, steps 14 to 16, a resumed run by the work-trail
     protocol's resume rule; steps 12 and 13 never wait on it (ruling
     `work-trail-is-account-not-evidence`). One stopped before its commit gets no audit or published
-    stretch, as the report says; a failed receipt publish stops the build as before, short of the
-    trail. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
+    stretch, as the report says; a configured knowledgebase (exit 1) failing a receipt publish stops the build short of the
+    trail, while under a knowledgebase coverage limit the receipts are named as not published and the build goes on. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
     none it holds back is sent. A refused or failed trail publish is never repaired or resent and is
     not itself a build gate; the protocol's stop conditions describe shared-file failures that
     can block later required receipts. The trail writes no gate record; `complete` does not depend on it.
@@ -243,11 +243,12 @@ disposition, and every ruling written at the round cap. A per-ticket check is a 
 than a review panel — it emits no `review` artifact, and a later panel never reads it as a lane it no
 longer has to cover.
 
-All of it is published through the knowledgebase adapter's `publishArtifact` operation with a run-artifact placement
-([`adapters/knowledgebase/CONTRACT.md`](../../references/shared/adapters/knowledgebase/CONTRACT.md)); the commands are in [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
-This skill names no repository path for project-derived content. Each implementer seat's stretch ([`schemas/trail.schema.json`](../../references/shared/schemas/trail.schema.json))
-and the trail audit ([`schemas/trail-audit.schema.json`](../../references/shared/schemas/trail-audit.schema.json)) go through `publishArtifact` too, as an account, never evidence
-(ruling `work-trail-is-account-not-evidence`).
+All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
+run-artifact placement ([`adapters/knowledgebase/CONTRACT.md`](../../references/shared/adapters/knowledgebase/CONTRACT.md)); the commands are in
+[the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
+This skill names no repository path for project-derived content. Each implementer seat's stretch
+([`schemas/trail.schema.json`](../../references/shared/schemas/trail.schema.json)) and the trail audit ([`schemas/trail-audit.schema.json`](../../references/shared/schemas/trail-audit.schema.json)) go through
+`publishArtifact` too, as an account, never evidence (ruling `work-trail-is-account-not-evidence`).
 
 ## Side effects
 
@@ -274,9 +275,8 @@ stands, and every open finding with its adjudication. It is not a pass and the t
 or a check seat that cannot be filled independently. Returns what is missing and the lane that owns
 it, never a narrowed version of the work.
 
-`failed`: no writable worktree, the branch is checked out elsewhere, or a configured knowledgebase refuses a receipt, ticket result or
-check result; the worktree and ledger stay intact for the resume. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound,
-kb.unregistered) or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
+`failed`: no writable worktree, the branch is checked out elsewhere, or a configured knowledgebase refuses a
+receipt, ticket result or check result. The worktree and the ledger are left intact for the resume. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered) or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the ticket mid-run. The branch, the worktree and the recorded
 rulings are kept rather than cleaned up, because the next run reads them instead of re-deriving them.

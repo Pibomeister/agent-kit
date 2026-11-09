@@ -93,8 +93,8 @@ search and it is `assumed` at best until read back in the source.
 9. Write `recommendation.further_inspection`: what to look at next and why the evidence so far does
    not settle it. Nothing else goes in this field.
 10. Publish the dossier through the knowledgebase adapter's `publishArtifact` operation with a
-    run-artifact placement, then return a short gist naming the published record and the headline
-    locations. The caller reads the dossier; the raw search transcript is not returned.
+    run-artifact placement (under a knowledgebase coverage limit, skip it and name the dossier as not
+    published), then return a short gist naming the published record and the headline locations. The caller reads the dossier; the raw search transcript is not returned.
 
 ## Hard gates
 

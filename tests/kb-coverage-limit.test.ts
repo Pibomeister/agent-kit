@@ -7,14 +7,19 @@
  * that never stops align, bound, scout, build, verify, review or ship under any policy; only exit 1
  * (a configured knowledgebase that cannot be used) stops. Live runs stopped on the older wording
  * (exit 3 "a publish refuses", a missing command "is needs-input"). Beyond the required sentences,
- * it checks that no other sentence in those files still ties a stop to a coverage limit, that the
- * review seats reading the knowledgebase stay covered under one, and that the executable evals
- * grade the same contract.
+ * it checks that no other sentence in those files, the review roles or the unattended reference
+ * still ties a stop to a coverage limit, that the review seats reading the knowledgebase stay
+ * covered under one while the learnings lane is skipped with it as the reason, and that the
+ * executable evals grade the same contract, their configured-failure scaffolds exiting 1.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+
+import { runKb } from "../src/kb/cli.ts";
 
 const REPO = join(import.meta.dir, "..");
 
@@ -101,6 +106,22 @@ describe("publication under a coverage limit is skipped, not a needs-input stop"
     },
   );
 
+  test("super-build stops on a failed receipt publish only for a configured knowledgebase", () => {
+    const text = flat("skills/super-build/SKILL.md");
+    expect(text).not.toContain("a failed receipt publish stops the build as before");
+    expect(text).toContain("a configured knowledgebase (exit 1) failing a receipt publish stops the build");
+    expect(text).toContain(
+      "under a knowledgebase coverage limit the receipts are named as not published and the build goes on",
+    );
+  });
+
+  test.each([
+    ["super-scout", "under a knowledgebase coverage limit, skip it and name the dossier as not published"],
+    ["super-verify", "under a knowledgebase coverage limit, skip it and name them as not published"],
+  ])("%s's publish step skips the publish under a coverage limit", (skill, words) => {
+    expect(flat(`skills/${skill}/SKILL.md`)).toContain(words);
+  });
+
   test("doc-review returns its record unpublished under a coverage limit", () => {
     for (const file of ["skills/doc-review/SKILL.md", "skills/doc-review/skill.yaml"]) {
       expect(flat(file)).toContain("knowledgebase coverage limit");
@@ -113,29 +134,68 @@ const COVERAGE_CAUSE =
   /\bunbound\b|\bunregistered\b|exit 3|ak kb command|kb-(?:read|write)|knowledgebase-write|no knowledgebase|knowledgebase coverage limit|knowledgebase (?:is |was )?(?:unavailable|not configured|unconfigured)/i;
 /** The phrasings that say a coverage limit does not stop, removed before a stop is looked for. */
 const NOT_A_STOP =
-  /never stops?|does not stop|do not stop|not stop(?:ping)?(?: for it)?|without stopping|stops nothing|only exit 1 stops|(?:never|rather than) a stop|## stop conditions/gi;
-const STOP = /needs-input|needs input|\bstop(?:s|ped|ping)?\b/i;
+  /never stops?|does not stop|do not stop|not stop(?:ping)?(?: for it)?|without stopping|stops nothing|only exit 1 stops|(?:never|rather than) a stop|## stop conditions|refuses rather than falling back/gi;
+/** A stop in any of its wordings: needs-input, a stop, a failure, a refusal or a block. */
+const STOP =
+  /needs-input|needs input|\bstop(?:s|ped|ping)?\b|\bfail(?:s|ed|ing)?\b|\brefus(?:e|es|ed|ing)\b|\bblock(?:s|ed|ing)?\b/i;
+/** A clause about a configured knowledgebase that cannot be used: the one case that does stop. */
+const CONFIGURED_FAILURE = /exit 1\b|(?<!not |un)configured knowledgebase|readContext failed/i;
+/** Clause boundaries inside a sentence: commas, colons, dashes and contrasting conjunctions. */
+const CLAUSE = /,\s+|:\s+|\s[—–]\s|\s(?:but|while|whereas|although|though|unless|except)\s/i;
 
-/** Sentences (and table cells) of a flattened file that tie a stop or needs-input to a coverage-limit cause. */
+/**
+ * Sentences (and table cells) of a flattened file that tie a stop to a coverage-limit cause. A
+ * sentence is read clause by clause: a clause stops when, with its own negations dropped, it still
+ * names a stop, so a "never stops" in one clause cannot excuse a stop in the next. A stopping
+ * clause is tied to a coverage limit when it or the clause before it names a cause, and a clause
+ * about a configured knowledgebase failing (exit 1) may stop unless it names a cause itself.
+ */
 function stopsOnCoverageLimit(text: string): string[] {
   return text
     .split(/(?<=[.;])\s+|\s-\s|\s?\|\s/)
-    .filter((s) => COVERAGE_CAUSE.test(s) && STOP.test(s.replaceAll(NOT_A_STOP, "")));
+    .filter((s) => COVERAGE_CAUSE.test(s))
+    .filter((s) => {
+      const clauses = s.split(CLAUSE);
+      return clauses.some((clause, i) => {
+        const cause = COVERAGE_CAUSE.test(clause);
+        if (CONFIGURED_FAILURE.test(clause) && !cause) return false;
+        if (!STOP.test(clause.replaceAll(NOT_A_STOP, ""))) return false;
+        return cause || COVERAGE_CAUSE.test(clauses[i - 1] ?? "");
+      });
+    });
 }
 
 describe("no lifecycle instruction ties a stop to a knowledgebase coverage limit", () => {
+  const roles = spawnSync("git", ["ls-files", "roles"], { cwd: REPO, encoding: "utf8" })
+    .stdout.split("\n")
+    .filter((f) => f.endsWith(".md"));
   const files = [
     ...PHASES.flatMap((p) => [`skills/super-${p}/SKILL.md`, `skills/super-${p}/skill.yaml`]),
     "skills/doc-review/SKILL.md",
     "skills/doc-review/skill.yaml",
     "references/knowledgebase-binding/REFERENCE.md",
+    "references/unattended-lifecycle/REFERENCE.md",
+    ...roles,
   ];
 
   test("the conflict check catches the stop wording it guards against", () => {
     expect(stopsOnCoverageLimit("A missing kb-write is needs-input naming that prerequisite.")).toHaveLength(1);
     expect(stopsOnCoverageLimit("- id: no-knowledgebase-write-stops-before-publishing kind: x")).toHaveLength(1);
     expect(stopsOnCoverageLimit("With kb.unbound, stop at publication.")).toHaveLength(1);
+    expect(stopsOnCoverageLimit("Exit 3 fails the phase.")).toHaveLength(1);
+    expect(stopsOnCoverageLimit("Under kb.unregistered the run is failed.")).toHaveLength(1);
+    expect(stopsOnCoverageLimit("A missing ak kb command refuses the run.")).toHaveLength(1);
+    expect(stopsOnCoverageLimit("An unbound knowledgebase blocks approval.")).toHaveLength(1);
+    expect(
+      stopsOnCoverageLimit("A missing kb-write never stops review, but kb.unbound stops publication."),
+    ).toHaveLength(1);
+    expect(stopsOnCoverageLimit("kb.unbound stops the build like exit 1 does.")).toHaveLength(1);
     expect(stopsOnCoverageLimit("A coverage limit never stops this phase, and only exit 1 stops.")).toEqual([]);
+    expect(
+      stopsOnCoverageLimit(
+        "A configured knowledgebase (exit 1) failing a publish stops the build, while under a knowledgebase coverage limit the build goes on.",
+      ),
+    ).toEqual([]);
   });
 
   test.each(files)("%s", (file) => {
@@ -143,13 +203,16 @@ describe("no lifecycle instruction ties a stop to a knowledgebase coverage limit
   });
 });
 
-describe("review seats that read the knowledgebase stay covered under a coverage limit", () => {
-  test("code-review/learnings runs against no recorded learnings and is recorded covered", () => {
+describe("review seats that read the knowledgebase under a coverage limit", () => {
+  test("code-review/learnings is recorded skipped with the coverage limit as its reason", () => {
     const text = flat("roles/code-review/learnings/ROLE.md");
     expect(text).not.toContain("The knowledgebase adapter was unavailable, or readContext failed: return unavailable");
+    expect(text).not.toContain("records the lane covered");
     expect(text).toContain("knowledgebase coverage limit");
-    expect(text).toContain("Run against no recorded learnings and return empty naming the coverage limit");
-    expect(text).toContain("records the lane covered with that limit as its reason, never unavailable");
+    expect(text).toContain(
+      "the lane's activation condition, a readable corpus with hits on the touched surface, is not met",
+    );
+    expect(text).toContain("records the lane skipped with that limit as its reason, never unavailable");
     expect(text).toContain("ak kb check exit 1");
   });
 
@@ -164,9 +227,12 @@ describe("review seats that read the knowledgebase stay covered under a coverage
     expect(text).toContain("ak kb check exit 1");
   });
 
-  test("super-review says a lane whose only gap is a coverage limit is covered", () => {
+  test("super-review says a lane whose only gap is a coverage limit is covered, and learnings is skipped", () => {
     for (const file of ["skills/super-review/SKILL.md", "skills/super-review/skill.yaml"]) {
       expect(flat(file)).toContain("a lane whose only gap is that limit is covered, not unavailable");
+      expect(flat(file)).toContain(
+        "the learnings lane, which activates only on a readable corpus with hits, is recorded skipped with the limit as its reason",
+      );
     }
   });
 });
@@ -196,6 +262,9 @@ describe.each(["super-align", "super-bound", "doc-review"])("%s knowledgebase ev
     expect(c.graders).not.toContain("stops-naming-kb-write");
     expect(c.graders).toContain("nothing-written-into-the-repository");
     expect(c.graders).toContain("no-edit-call");
+    expect(c.graders).toContain("no-write-call");
+    expect(c.text).toMatch(/no knowledgebase transport configured|transport is not configured/);
+    expect(c.text).not.toMatch(/\bis down\b|unreachable|could not be opened/);
     expect(c.text).toContain("not published");
     expect(c.text).toContain("does not stop");
     expect(c.text).not.toMatch(/needs input|stops there/);
@@ -207,5 +276,25 @@ describe.each(["super-align", "super-bound", "doc-review"])("%s knowledgebase ev
     expect(c.text).toContain("ak kb check exited 1");
     expect(c.text).toContain("The response stops with failed");
     expect(c.graders).toContain("nothing-written-into-the-repository");
+    expect(c.graders).toContain("no-edit-call");
+    expect(c.graders).toContain("no-write-call");
+  });
+
+  /** ak kb check's exit for a case's scaffolded workspace, against an empty registry. */
+  function kbCheckExit(id: string): number {
+    const tmp = mkdtempSync(join(tmpdir(), "kb-case-"));
+    try {
+      const scaffold = spawnSync("bash", [join(REPO, `evals/${skill}/${id}/scaffold.sh`)], { cwd: tmp });
+      expect(scaffold.status).toBe(0);
+      const io = { out: () => {}, err: () => {} };
+      return runKb(["check", tmp], { cwd: tmp, io, registry: join(tmp, ".no-registry.json") });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  test("the configured-failure scaffold makes ak kb check exit 1, and the unconfigured one exit 3", () => {
+    expect(kbCheckExit("configured-knowledgebase-failure-stops")).toBe(1);
+    expect(kbCheckExit("no-knowledgebase-write-continues-unpublished")).toBe(3);
   });
 });

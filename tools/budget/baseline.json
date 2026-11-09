@@ -223,8 +223,8 @@
     },
     "bundle/claude-code:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10268,
-      "tokens": 2565
+      "bytes": 10321,
+      "tokens": 2579
     },
     "bundle/claude-code:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -743,13 +743,13 @@
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25475,
-      "tokens": 6362
+      "bytes": 25615,
+      "tokens": 6397
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26065,
-      "tokens": 6509
+      "bytes": 26188,
+      "tokens": 6539
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -763,12 +763,12 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14340,
-      "tokens": 3581
+      "bytes": 14426,
+      "tokens": 3602
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23547,
+      "bytes": 23546,
       "tokens": 5882
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
@@ -788,8 +788,8 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19963,
-      "tokens": 4985
+      "bytes": 20046,
+      "tokens": 5006
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -1088,8 +1088,8 @@
     },
     "bundle/codex:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10268,
-      "tokens": 2565
+      "bytes": 10321,
+      "tokens": 2579
     },
     "bundle/codex:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -1608,13 +1608,13 @@
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25475,
-      "tokens": 6362
+      "bytes": 25615,
+      "tokens": 6397
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26112,
-      "tokens": 6520
+      "bytes": 26235,
+      "tokens": 6551
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1628,12 +1628,12 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14340,
-      "tokens": 3581
+      "bytes": 14426,
+      "tokens": 3602
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23708,
+      "bytes": 23707,
       "tokens": 5922
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
@@ -1653,8 +1653,8 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19963,
-      "tokens": 4985
+      "bytes": 20046,
+      "tokens": 5006
     },
     "bundle/codex:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -1953,8 +1953,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10304,
-      "tokens": 2574
+      "bytes": 10357,
+      "tokens": 2588
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -2468,13 +2468,13 @@
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25499,
-      "tokens": 6368
+      "bytes": 25639,
+      "tokens": 6403
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26101,
-      "tokens": 6518
+      "bytes": 26224,
+      "tokens": 6548
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2488,12 +2488,12 @@
     },
     "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14364,
-      "tokens": 3587
+      "bytes": 14450,
+      "tokens": 3608
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23580,
+      "bytes": 23579,
       "tokens": 5890
     },
     "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
@@ -2513,8 +2513,8 @@
     },
     "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19987,
-      "tokens": 4991
+      "bytes": 20070,
+      "tokens": 5012
     },
     "bundle/cursor:.cursor/skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -2818,8 +2818,8 @@
     },
     "bundle/droid:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10268,
-      "tokens": 2565
+      "bytes": 10321,
+      "tokens": 2579
     },
     "bundle/droid:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -3338,13 +3338,13 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25471,
-      "tokens": 6361
+      "bytes": 25611,
+      "tokens": 6396
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26110,
-      "tokens": 6520
+      "bytes": 26233,
+      "tokens": 6550
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -3358,12 +3358,12 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14336,
-      "tokens": 3580
+      "bytes": 14422,
+      "tokens": 3601
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23691,
+      "bytes": 23690,
       "tokens": 5918
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
@@ -3383,8 +3383,8 @@
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19959,
-      "tokens": 4984
+      "bytes": 20042,
+      "tokens": 5005
     },
     "bundle/droid:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -3683,8 +3683,8 @@
     },
     "bundle/grok:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10268,
-      "tokens": 2565
+      "bytes": 10321,
+      "tokens": 2579
     },
     "bundle/grok:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -4203,13 +4203,13 @@
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25475,
-      "tokens": 6362
+      "bytes": 25615,
+      "tokens": 6397
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26065,
-      "tokens": 6509
+      "bytes": 26188,
+      "tokens": 6539
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -4223,12 +4223,12 @@
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14340,
-      "tokens": 3581
+      "bytes": 14426,
+      "tokens": 3602
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23532,
+      "bytes": 23531,
       "tokens": 5878
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
@@ -4248,8 +4248,8 @@
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19963,
-      "tokens": 4985
+      "bytes": 20046,
+      "tokens": 5006
     },
     "bundle/grok:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -4548,8 +4548,8 @@
     },
     "bundle/kimi:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 10268,
-      "tokens": 2565
+      "bytes": 10321,
+      "tokens": 2579
     },
     "bundle/kimi:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -5068,13 +5068,13 @@
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25475,
-      "tokens": 6362
+      "bytes": 25615,
+      "tokens": 6397
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26112,
-      "tokens": 6520
+      "bytes": 26235,
+      "tokens": 6551
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -5088,12 +5088,12 @@
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14340,
-      "tokens": 3581
+      "bytes": 14426,
+      "tokens": 3602
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23723,
+      "bytes": 23722,
       "tokens": 5926
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
@@ -5113,8 +5113,8 @@
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19963,
-      "tokens": 4985
+      "bytes": 20046,
+      "tokens": 5006
     },
     "bundle/kimi:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -5308,8 +5308,8 @@
     },
     "role:code-review/learnings": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9871,
-      "tokens": 2466
+      "bytes": 9924,
+      "tokens": 2479
     },
     "role:code-review/maintainability": {
       "file": "roles/code-review/maintainability/ROLE.md",

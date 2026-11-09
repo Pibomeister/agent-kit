@@ -277,11 +277,11 @@ this stop.
 `cap-reached`: a third fix cycle was requested. Stops with the cap decision (blocked, replan,
 merge-with-follow-ups or design-decision) and every open finding attached.
 
-`failed`: a required lane returned `unavailable` and the run cannot proceed, or the snapshot could not be frozen. The lane and
-the reason are named, and the run stays resumable. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered)
-or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops. A seat that reads the knowledgebase runs against what it can read and names the limit, so a lane whose only gap is that limit is covered, not unavailable.
+`failed`: a required lane returned `unavailable` and the run cannot proceed, or the snapshot could
+not be frozen. The lane and the reason are named, and the run stays resumable. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered) or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops. A seat that reads the knowledgebase runs against what it can read and names the limit, so a lane whose only gap is that limit is covered, not unavailable; the learnings lane, which activates only on a readable corpus with hits, is recorded skipped with the limit as its reason.
 
-`cancelled`: the caller withdrew mid-run. Lane results already collected are kept and emitted as what they are.
+`cancelled`: the caller withdrew mid-run. Lane results already collected are kept and emitted as
+what they are.
 
 ## Limits
 
