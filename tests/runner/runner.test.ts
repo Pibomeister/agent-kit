@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -1178,24 +1178,16 @@ describe("runner guards", () => {
   test("ordinary ticket-kind start proceeds without a private ticket file when no project is bound", () => {
     const f = fixture();
     unlinkSync(join(f.privateDir, "toy-ticket.json"));
-    const writes: string[] = [];
-    const write = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((
-      chunk: string | Uint8Array,
-      encoding?: BufferEncoding | ((err?: Error) => void),
-      cb?: (err?: Error) => void,
-    ) => {
-      writes.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-      if (typeof encoding === "function") return write(chunk, encoding);
-      return write(chunk, encoding, cb);
-    }) as typeof process.stderr.write;
+    const spy = spyOn(process.stderr, "write");
     let started;
+    let warning = "";
     try {
       started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      warning = spy.mock.calls.map((call) => String(call[0])).join("");
     } finally {
-      process.stderr.write = write;
+      spy.mockRestore();
     }
-    expect(writes.join("")).toContain("Runner.start: ticket toy-ticket is unresolved");
+    expect(warning).toContain("Runner.start: ticket toy-ticket is unresolved");
     expect(started.behavior?.mode).toBe("off");
     expect(started.behavior?.required_checks).toEqual([]);
     expect(started.behavior?.ticket_resolution).toBe("unresolved");
@@ -1216,11 +1208,12 @@ describe("runner guards", () => {
         },
       ],
     };
-    const classified = classifyRun(
-      { schema_version: RUN_SCHEMA_VERSION, behavior: started.behavior },
-      "toy-run",
-      later,
+    if (!asJsonObject(later)) throw new Error("later ticket is not an object");
+    const record: unknown = JSON.parse(
+      JSON.stringify({ schema_version: RUN_SCHEMA_VERSION, behavior: started.behavior }),
     );
+    if (!asJsonObject(record)) throw new Error("run record is not an object");
+    const classified = classifyRun(record, "toy-run", later);
     expect(classified.kind).toBe("incomplete");
     expect(classified.kind === "incomplete" ? classified.reason : "").toContain("not frozen-clean");
   });
