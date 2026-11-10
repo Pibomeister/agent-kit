@@ -23,8 +23,8 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5372,
-      "tokens": 1340
+      "bytes": 5660,
+      "tokens": 1412
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -408,8 +408,8 @@
     },
     "bundle/claude-code:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2069,
-      "tokens": 518
+      "bytes": 2110,
+      "tokens": 528
     },
     "bundle/claude-code:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -898,8 +898,8 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5372,
-      "tokens": 1340
+      "bytes": 5660,
+      "tokens": 1412
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -1283,8 +1283,8 @@
     },
     "bundle/codex:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2069,
-      "tokens": 518
+      "bytes": 2110,
+      "tokens": 528
     },
     "bundle/codex:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -1773,8 +1773,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5444,
-      "tokens": 1358
+      "bytes": 5732,
+      "tokens": 1430
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -2158,8 +2158,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2093,
-      "tokens": 524
+      "bytes": 2134,
+      "tokens": 534
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -2648,8 +2648,8 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5372,
-      "tokens": 1340
+      "bytes": 5660,
+      "tokens": 1412
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -3033,8 +3033,8 @@
     },
     "bundle/droid:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2069,
-      "tokens": 518
+      "bytes": 2110,
+      "tokens": 528
     },
     "bundle/droid:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -3523,8 +3523,8 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5372,
-      "tokens": 1340
+      "bytes": 5660,
+      "tokens": 1412
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -3908,8 +3908,8 @@
     },
     "bundle/grok:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2069,
-      "tokens": 518
+      "bytes": 2110,
+      "tokens": 528
     },
     "bundle/grok:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
@@ -4398,8 +4398,8 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5372,
-      "tokens": 1340
+      "bytes": 5660,
+      "tokens": 1412
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -4783,8 +4783,8 @@
     },
     "bundle/kimi:references/shared/schemas/kb-backends/in-repo.schema.json": {
       "file": "schemas/kb-backends/in-repo.schema.json",
-      "bytes": 2069,
-      "tokens": 518
+      "bytes": 2110,
+      "tokens": 528
     },
     "bundle/kimi:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",

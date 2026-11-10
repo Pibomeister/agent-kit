@@ -43,7 +43,7 @@ project reads its own committed tree, so `.cursor/bin/ak kb register` has no par
 - **The revision read is the merge-base of `HEAD` and the remote's default branch**,
   `refs/remotes/origin/HEAD`, with no local fallback. The binding cannot name another branch: it
   is committed on the branch being read, so a branch could name itself and read its own pages as
-  settled (ruling `kb-binding-is-a-locator`). A page a branch adds or edits, and any status it sets,
+  settled (`docs/decisions/0010-file-backed-knowledgebase.md`, amendment of 2026-11-09). A page a branch adds or edits, and any status it sets,
   is not knowledge until it is merged, as a page drafted in a local-git checkout is not. Working
   files are never read.
 - **Pages.** The regular `.md` files under each requested kind's directory, its subdirectories
@@ -52,8 +52,11 @@ project reads its own committed tree, so `.cursor/bin/ak kb register` has no par
 - **Each page.** `id` is the file stem and must be kebab-case. `title` is front matter `title`, else
   the first `# ` heading, else the id. `body` is the text after front matter. `content_hash` is
   computed as local-git computes it, and `revision` is the last commit at the revision read that
-  changed the file. The ref is `doc:project/<kind>/<id>`. A header that is not closed, does not
-  parse or is not a mapping reads as absent, and so does a `title` or `status` that is not a scalar.
+  changed the file. The ref is `doc:project/<kind>/<id>`. A header that is not closed or is not a
+  mapping reads as absent, and so does a `title` or `status` that is not a scalar. A header that does
+  not parse as YAML (an unquoted colon in a title is common) still gives a top-level `title:` or
+  `status:` line whose value is plain text, read as written; a value that opens a list, a map, a
+  block, an anchor or an alias reads as absent.
 - **Status** is the first declaration among front matter `status`, an inline `**Status:** …` and
   the first line of a `## Status` section, as its first word lowercased. It is kept when it is
   `accepted`, `superseded`, `deprecated`, `rejected` or `proposed`; anything else, or nothing, reads

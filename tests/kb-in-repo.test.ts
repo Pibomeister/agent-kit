@@ -261,7 +261,25 @@ describe("readContext on an in-repo binding", () => {
     expect(byId(result.documents, "use-postgres")).toBeUndefined();
   });
 
-  test("a header that is not closed, does not parse or gives a list or map reads as absent; a scalar is text", () => {
+  test("a header that is not strict YAML gives only plain-text title and status lines, never a list, block or alias", () => {
+    const fx = fixture({
+      pages: {
+        "decisions/list-status.md": "---\nstatus: [accepted]\nbroken: [\n---\n\n# List status\n",
+        "decisions/block-status.md": "---\nstatus: |\n  accepted\nbroken: [\n---\n\n# Block status\n",
+        "decisions/alias-status.md": "---\nstatus: *ok\nbroken: [\n---\n\n# Alias status\n",
+        "decisions/plain-status.md": "---\ntitle: Plain: one\nstatus: Accepted\n---\n\n# Plain\n",
+      },
+    });
+    const docs = read(fx, "adr").result.documents;
+    const status = (id: string) => [byId(docs, id)?.status, byId(docs, id)?.declared_status];
+    expect(status("list-status")).toEqual(["unreviewed", null]);
+    expect(status("block-status")).toEqual(["unreviewed", null]);
+    expect(status("alias-status")).toEqual(["unreviewed", null]);
+    expect(status("plain-status")).toEqual(["accepted", "accepted"]);
+    expect(byId(docs, "plain-status")?.title).toBe("Plain: one");
+  });
+
+  test("a header that is not closed or is not a mapping reads as absent, and a list or map title or status reads as absent; a scalar is text", () => {
     const fx = fixture({
       pages: {
         "concepts/fine.md": "---\ntitle: Fine\n---\n\nBody.\n",

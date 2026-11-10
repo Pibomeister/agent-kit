@@ -246,15 +246,16 @@ function headerMeta(yaml: string): PageMeta {
   }
 }
 
-/** A top-level `key: value` line of a header, unquoted; null when there is none or it is empty. */
+/**
+ * A top-level `key: value` line of a header, unquoted, when its value is plain text. A value that
+ * opens a flow collection, a block, an anchor, an alias, a tag or a directive is not a scalar, as
+ * strict YAML would not read it as one, so it reads as absent; null too when there is no line.
+ */
 function headerLine(yaml: string, key: string): string | null {
   const line = yaml.split("\n").find((text) => text.startsWith(`${key}:`));
-  const value =
-    line
-      ?.slice(key.length + 1)
-      .trim()
-      .replace(/^(["'])(.*)\1$/, "$2") ?? "";
-  return value === "" ? null : value;
+  const raw = line?.slice(key.length + 1).trim() ?? "";
+  if (raw === "" || /^[[\]{}|>&*!%@`#-]/.test(raw)) return null;
+  return raw.replace(/^(["'])(.*)\1$/, "$2");
 }
 
 /** The first word of a declaration, lowercased, without markdown emphasis or punctuation. */

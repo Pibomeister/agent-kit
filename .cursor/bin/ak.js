@@ -17490,7 +17490,7 @@ var init_in_repo_schema = __esm(() => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://agent-kit.local/schemas/kb-backends/in-repo.schema.json",
     title: "Knowledgebase binding: in-repo",
-    description: "What adapters/knowledgebase/backends/in-repo.md reads from ak.kb.yaml, applied by `ak kb check` after the generic schemas/kb-binding.schema.json has passed. The knowledgebase is a directory of pages committed in the project's own repository, read only, so the locator names a path relative to the project folder and never a machine path, and the directory each kind is read from. The revision read is the merge-base of the checkout's HEAD and the remote's default branch (refs/remotes/origin/HEAD); the binding cannot name another, because a binding a branch commits could name that branch itself (ruling `kb-binding-is-a-locator`). `ak kb check` also refuses a kind map in which one directory equals or contains another (kb.binding-invalid), which a schema cannot say.",
+    description: "What adapters/knowledgebase/backends/in-repo.md reads from ak.kb.yaml, applied by `ak kb check` after the generic schemas/kb-binding.schema.json has passed. The knowledgebase is a directory of pages committed in the project's own repository, read only, so the locator names a path relative to the project folder and never a machine path, and the directory each kind is read from. The revision read is the merge-base of the checkout's HEAD and the remote's default branch (refs/remotes/origin/HEAD); the binding cannot name another, because a binding a branch commits could name that branch itself (docs/decisions/0010-file-backed-knowledgebase.md, amendment of 2026-11-09). `ak kb check` also refuses a kind map in which one directory equals or contains another (kb.binding-invalid), which a schema cannot say.",
     type: "object",
     required: ["locator"],
     $defs: {
@@ -22961,8 +22961,10 @@ function headerMeta(yaml) {
 function headerLine(yaml, key) {
   const line = yaml.split(`
 `).find((text) => text.startsWith(`${key}:`));
-  const value = line?.slice(key.length + 1).trim().replace(/^(["'])(.*)\1$/, "$2") ?? "";
-  return value === "" ? null : value;
+  const raw = line?.slice(key.length + 1).trim() ?? "";
+  if (raw === "" || /^[[\]{}|>&*!%@`#-]/.test(raw))
+    return null;
+  return raw.replace(/^(["'])(.*)\1$/, "$2");
 }
 function firstWord(text) {
   const word = text.replaceAll(/[*_`[\]]/g, " ").trim().split(/\s+/)[0] ?? "";
