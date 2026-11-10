@@ -105,6 +105,10 @@ function expectedShippedReference(
   return rewriteAkCommands(out, host, sourcePath);
 }
 
+function unwrapMentionLinks(text: string): string {
+  return text.replace(/\[(`[^`\n]+`)\]\([^)\s]+\)/g, "$1");
+}
+
 /**
  * Each case resolves a profile against the real schemas, several times over. Under a loaded host
  * (load average about 100 on 16 CPUs) two cases measured 7.5s and 11.0s against bun's 5s default.
@@ -1242,15 +1246,8 @@ describe("bundle planning", () => {
   test("a core-profile plan copies every authored role as source bytes and ships every authored reference", () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("repository has no catalog");
-    const mentionRewrittenRefs = [
-      "delegation",
-      "domain-modeling",
-      "engineering-principles",
-      "knowledgebase-binding",
-      "prose-quality",
-      "tracker-of-record",
-      "unattended-lifecycle",
-    ];
+    const authoredRefs = catalog.bySection("references").filter((entry) => entry.status === "authored");
+    expect(authoredRefs).toHaveLength(10);
     for (const host of ["claude-code", "codex", "cursor"] as const) {
       const plan = planBundle({ root: REPO, catalog }, host, { profile: "core" });
       expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
@@ -1272,29 +1269,21 @@ describe("bundle planning", () => {
       expect({ host, missingRoles }).toEqual({ host, missingRoles: [] });
       expect({ host, driftedRoles }).toEqual({ host, driftedRoles: [] });
       const missingRefs: string[] = [];
-      const byteChecked: string[] = [];
-      const presenceOnly: string[] = [];
-      for (const entry of catalog.bySection("references")) {
-        if (entry.status !== "authored") continue;
+      const driftedRefs: string[] = [];
+      for (const entry of authoredRefs) {
         const source = entryBodyPath("references", entry.id);
         const expected = readFileSync(join(REPO, source), "utf8");
         const shipped = [...plan.files.values()].filter((file) => file.source === source);
         if (shipped.length === 0) missingRefs.push(source);
         for (const file of shipped) {
-          const normalised = expectedShippedReference(source, file.path, expected, host, includedSkills);
-          if (file.contents === normalised) byteChecked.push(entry.id);
-          else presenceOnly.push(entry.id);
+          const normalised = unwrapMentionLinks(
+            expectedShippedReference(source, file.path, expected, host, includedSkills),
+          );
+          if (unwrapMentionLinks(file.contents) !== normalised) driftedRefs.push(source);
         }
       }
       expect({ host, missingRefs }).toEqual({ host, missingRefs: [] });
-      expect({ host, byteChecked: byteChecked.toSorted() }).toEqual({
-        host,
-        byteChecked: ["codebase-design-vocabulary", "read-economy", "verification-evidence"],
-      });
-      expect({ host, presenceOnly: presenceOnly.toSorted() }).toEqual({
-        host,
-        presenceOnly: mentionRewrittenRefs,
-      });
+      expect({ host, driftedRefs }).toEqual({ host, driftedRefs: [] });
     }
   });
 

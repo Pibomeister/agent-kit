@@ -2153,7 +2153,7 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     expect(checked.out.join("\n")).toContain('"code": "unsupported-version"');
   });
 
-  test("reading a legacy verify record does not fabricate an isolation attestation", () => {
+  test("reading a legacy (seat-less) receipt does not fabricate an isolation attestation", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "legacy-isolation");
     const run = openedRun(dir, ticketPath);
