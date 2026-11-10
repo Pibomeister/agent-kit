@@ -82,6 +82,27 @@ project artifact references used for the run wherever another artifact consumes 
 must not reproduce the formula, weights, cut points, floor table or lowering logic. A missing or
 failed scorer run leaves no delegation record and blocks the checkpoint.
 
+Under the unattended policy only, a delegation coverage limit — no project record, a valid one
+without delegation guidance, or a missing `ak delegation` command — is not a missing scorer run and
+never stops a phase. Record it once naming its cause. A missing `ak delegation` command is one not on `PATH`, an unknown subcommand or a usage error from an older CLI, as in a sandbox with only `node <bundle>/bin/ak-gate.mjs`. With it, a present record's validity is not checked, and the cause reads `missing ak delegation command, project record validity not checked`. A present project record is decided by `ak delegation`, never by hand, whether
+or not the draft ticket carries a `delegation` block, since the command reports the project's
+errors before the ticket's missing block: `ak delegation: project does not match its schema: …` is
+`needs-input`, and `ak delegation: project has no guidance.delegation block (weights and cut points)`
+is the coverage limit. Decide it at super-bound step 10. A ticket-side error
+(`ak delegation: ticket has no delegation block to score`, or
+`ak delegation: ticket does not match its schema: …`) is about the draft, not the record. Under the
+limit the persisted unscored ticket carries no `delegation` block, seeded or default, so build has
+no class to pass. Only an absent project
+record skips the command. The ticket carries no `delegation` block, keeps `readiness` and
+`assumptions`, and adds an assumption, resolved `non-goal`, reading
+`delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>`,
+listing the attached never-dropped packs and required sensitive actions in place of the floor.
+Scorer inputs are never invented, and every required sensitive action still stops. No class is
+derived for the ticket downstream: build records no class but still declares the implementer seat,
+and ship states the class as unscored with those packs and actions. A project record that fails
+[`schemas/project.schema.json`](../../schemas/project.schema.json) validation stops under every policy, and outside the unattended
+policy missing delegation guidance is `needs-input`.
+
 ## Factor evidence
 
 Every factor carries a project-guided score and at least one evidence string. The meanings are

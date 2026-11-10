@@ -38212,12 +38212,12 @@ function floorClass(floor) {
   return highest(...floor.packs.map((pack) => PACK_FLOORS.get(pack) ?? "green"), ...floor.sensitive_actions.map((action) => ACTION_FLOORS.get(action) ?? "yellow-owner"));
 }
 function scoreDelegation(ticket, project) {
-  const source = ticket.delegation;
-  if (source === undefined)
-    throw new Error("ticket has no delegation block to score");
   const guidance = project.guidance.delegation;
   if (guidance === undefined)
     throw new Error("project has no guidance.delegation block (weights and cut points)");
+  const source = ticket.delegation;
+  if (source === undefined)
+    throw new Error("ticket has no delegation block to score");
   const { yellow_agent: yellowAgent, yellow_owner: yellowOwner, red } = guidance.cut_points;
   if (!(yellowAgent < yellowOwner && yellowOwner < red)) {
     throw new Error("project.guidance.delegation cut points must be strictly ascending");

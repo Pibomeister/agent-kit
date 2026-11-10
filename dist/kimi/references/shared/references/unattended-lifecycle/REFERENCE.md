@@ -34,11 +34,34 @@ document-review decisions, specification approval and ticket approvals; build's 
 precondition. A ticket whose delegation class makes a human the author is implemented by the agent
 within its allowed changes, with the true class, floor and `author_kind: agent` recorded.
 
-Every other stop still stops: a missing or unsupported prerequisite (for example bound without
-project guidance; a knowledgebase coverage limit is not one, as the knowledgebase-binding reference
-says), a blocking review finding, a prototype that needs a person, unprovable or failed evidence,
-and every sensitive action, including production writes, deploys, releases, destructive external
-operations and credential or protection changes. Merge is never the run's.
+Every other stop still stops: a missing or unsupported prerequisite (for example a project record
+that fails [`schemas/project.schema.json`](../../schemas/project.schema.json) validation; a delegation coverage limit is not one, and a
+knowledgebase coverage limit is not one either, as the knowledgebase-binding reference says), a
+blocking review finding, a prototype that needs a person, unprovable or failed evidence, and every
+sensitive action, including production writes, deploys, releases, destructive external operations
+and credential or protection changes. Merge is never the run's.
+
+A delegation coverage limit is no project record, a valid one without delegation guidance, or a
+missing `ak delegation` command. A missing `ak delegation` command is one not on `PATH`, an unknown subcommand or a usage error from an older CLI, as in a sandbox with only `node <bundle>/bin/ak-gate.mjs`. With it, a present record's validity is not checked, and the cause reads `missing ak delegation command, project record validity not checked`. Bound
+records it once naming its cause and never stops a phase for it: `ak delegation` decides a present
+record and is not run without one, and each ticket carries no `delegation` block and an assumption reading
+`delegation unscored: <cause> (coverage limit)` that states the floor not evaluated and lists the
+attached packs and required sensitive actions, as the delegation reference says. Build, verify,
+review and ship take that ticket as it is: no class is recorded or derived for it, scorer inputs are
+never invented, and every required sensitive action still stops. The build still declares the
+implementer seat, so self-verification is still refused.
+
+Bound still records every ticket, scored or unscored, with acceptance criteria and named verification
+derived from the work source (the issue text or plan). A ticket that declares neither at all is a
+coverage limit for verify, never a stop: it records the cause once and verifies with the repository
+checks actually run, the project's declared test command among them when it declares one, each
+recorded on the `verify` gate by the independent verifier seat with its real command, exit status
+and output digest. A verify must always declare an independent seat; the gate checks its independence
+against the seat the build recorded, so a build recorded with no seat leaves it unchecked. The gate
+counts those checks and nothing else, refuses a verify recorded by the build's implementer seat or by
+no seat, and records the limit on its ship decision and in the ship disclosure. A
+ticket that declares criteria or verification the gate cannot read is judged like any other.
+Outside the policy it is `unavailable`.
 
 ## Recording each phase
 
