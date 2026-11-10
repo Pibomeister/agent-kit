@@ -73,25 +73,25 @@ only if check exits 0 on the candidate HEAD.
 
 ## 5. Stale evidence
 
-Declare check id `tp-life-oracle` in the ticket's verification list. Open a
-lifecycle run. Record the green receipt, then confirm the record is accepted:
+This receipt is not a lifecycle verify receipt. `ak lifecycle check --evidence`
+does not accept it.
 
-```bash
-ak lifecycle record --gate verify --receipt /tmp/tp-life-receipt.json
-ak lifecycle check --evidence
-```
-
-`ak lifecycle check --evidence` refuses a receipt whose check is not in that
-list. Then change the specification or the fixture so HEAD or the working tree
-no longer matches. `ak lifecycle check --evidence` must refuse the recorded
-receipt. Confirm with:
+Show staleness with `scripts/tp-life.sh receipt check`. It exits 0 before you
+edit a tracked file, and 2 after. Editing a tracked file stops the step-4
+receipts from binding.
 
 ```bash
 scripts/tp-life.sh receipt check /tmp/tp-life-receipt.json
 ```
 
-Expect exit 2 once HEAD or the working tree no longer matches. Revert the
-spec and fixture edit before step 7 so the receipts still bind.
+Expect exit 0. Then edit a tracked file. Check again:
+
+```bash
+scripts/tp-life.sh receipt check /tmp/tp-life-receipt.json
+```
+
+Expect exit 2. Revert the tracked-file edit before step 7 so the receipts
+still bind.
 
 ## 6. Negative paths
 

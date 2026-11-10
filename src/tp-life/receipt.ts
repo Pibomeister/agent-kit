@@ -47,7 +47,7 @@ const boundValidator: ValidateFunction<BoundRaw> = new Ajv2020({ strict: false }
       properties: {
         repo: { type: "string", minLength: 1 },
         revision: { type: "string", minLength: 40 },
-        diff_hash: { type: "string", minLength: 1 },
+        diff_hash: { type: "string", minLength: 1, pattern: "^sha256:[0-9a-f]{64}$" },
       },
     },
   },
@@ -107,16 +107,18 @@ function parseBoundRaw(text: string): BoundRaw | null {
   }
 }
 
-function missingBoundField(): string {
+function boundShapeError(): string {
   const first = boundValidator.errors?.[0];
-  if (first === undefined) return "source_revision.diff_hash";
+  if (first === undefined) return "source_revision.diff_hash is missing";
   const params = first.params;
   const path = first.instancePath.replace(/^\//, "").replaceAll("/", ".");
-  if (Object.prototype.hasOwnProperty.call(params, "missingProperty")) {
+  if (first.keyword === "required" && Object.prototype.hasOwnProperty.call(params, "missingProperty")) {
     const missing = String(params.missingProperty);
-    return path.length > 0 ? `${path}.${missing}` : missing;
+    const named = path.length > 0 ? `${path}.${missing}` : missing;
+    return `${named} is missing`;
   }
-  return path.length > 0 ? path : "source_revision.diff_hash";
+  const named = path.length > 0 ? path : "source_revision.diff_hash";
+  return `${named} is invalid`;
 }
 
 function readPackageVersion(repo: string): string {
@@ -214,16 +216,17 @@ export function readBoundReceipt(repo: string, receiptPath: string): BoundRead {
     return { code: 1, message: "tp-life receipt check: receipt is not JSON\n", view: null };
   }
   const validate = compileSchemas(repo).validatorFor("verification");
-  if (validate === undefined || !validate(parsed)) {
-    return { code: 1, message: "tp-life receipt check: receipt failed schemas/verification.schema.json\n", view: null };
-  }
+  const schemaOk = validate !== undefined && validate(parsed);
   const bound = parseBoundRaw(raw);
   if (bound === null) {
     return {
       code: 2,
-      message: `tp-life receipt check: refused, ${missingBoundField()} is missing\n`,
+      message: `tp-life receipt check: refused, ${boundShapeError()}\n`,
       view: null,
     };
+  }
+  if (!schemaOk) {
+    return { code: 1, message: "tp-life receipt check: receipt failed schemas/verification.schema.json\n", view: null };
   }
   if (bound.source_revision.repo !== snap.repo) {
     return {

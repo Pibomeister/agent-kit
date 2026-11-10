@@ -17,10 +17,36 @@ const ORACLE_TIMEOUT = 25_000;
 
 const children: ChildProcess[] = [];
 
-afterAll(() => {
-  for (const child of children) {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+function stopFixture(child: ChildProcess): void {
+  if (child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // already gone
+    }
   }
+}
+
+function liveFixtureLines(): string {
+  const listed = spawnSync("pgrep", ["-af", "tp-life/service/server.mjs"], { encoding: "utf8" });
+  const lines: string[] = [];
+  for (const line of (listed.stdout ?? "").split("\n")) {
+    if (line.includes("tp-life/service/server.mjs") && !line.includes("pgrep")) lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+afterAll(() => {
+  for (const child of children) stopFixture(child);
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline && liveFixtureLines() !== "") {
+    spawnSync("sleep", ["0.05"]);
+  }
+  const left = liveFixtureLines();
+  if (left !== "") throw new Error(`fixture still running:\n${left}`);
 });
 
 function runScript(args: string[], extra: { cwd?: string; timeout?: number } = {}) {
@@ -39,6 +65,7 @@ function startFixture(broken?: string): Promise<string> {
     cwd: REPO,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   children.push(child);
   return new Promise((ready, reject) => {
@@ -238,6 +265,23 @@ describe("bound receipts", () => {
     const check = runScript(["receipt", "check", missingPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("diff_hash is missing")).toBe(true);
+    expect(check.stderr.includes("is invalid")).toBe(false);
+  });
+
+  test("a receipt with an invalid diff_hash is refused as invalid", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-baddiffshape-");
+    const written = writeOracle(base, dir, "receipt");
+    const mutatedPath = join(dir, "invalid-hash.json");
+    const mutated = readFileSync(written.receipt, "utf8").replace(
+      /"diff_hash": "sha256:[0-9a-f]+"/,
+      '"diff_hash": "not-a-hash"',
+    );
+    writeFileSync(mutatedPath, mutated);
+    const check = runScript(["receipt", "check", mutatedPath]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("diff_hash is invalid")).toBe(true);
+    expect(check.stderr.includes("is missing")).toBe(false);
   });
 
   test("a receipt with a different diff_hash is refused with exit 2", async () => {
@@ -412,6 +456,19 @@ describe("G4 evidence", () => {
     expect(printed?.oracle_sub_verdict).toBe("incomplete");
   });
 
+  test("a failed observation with a non-1 exit_status is incomplete", () => {
+    const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
+    const template = parseEvidenceRecord(raw);
+    expect(template === null).toBe(false);
+    if (template === null) return;
+    const printed = decideEvidence(template, [
+      observation("failed.json", "sha256:a", "failed", 0, "duplicate"),
+      observation("passed.json", "sha256:b", "passed", 0),
+    ]);
+    expect(printed.verdict).toBe("not-run");
+    expect(printed.oracle_sub_verdict).toBe("incomplete");
+  });
+
   test("a passed observation with nonzero exit_status is incomplete", () => {
     const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
     const template = parseEvidenceRecord(raw);
@@ -458,6 +515,28 @@ describe("G4 evidence", () => {
     const check = runScript(["receipt", "check", mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("different repo")).toBe(true);
+  });
+
+  test("stopping a fixture leaves no listener on its port", async () => {
+    const base = await startFixture();
+    const port = base.slice("http://127.0.0.1:".length);
+    const child = children[children.length - 1];
+    expect(child === undefined).toBe(false);
+    if (child === undefined) return;
+    const alive = await fetch(base, { signal: AbortSignal.timeout(500) });
+    expect(alive.ok).toBe(true);
+    stopFixture(child);
+    const deadline = Date.now() + 2000;
+    let open = true;
+    while (Date.now() < deadline) {
+      try {
+        await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(150) });
+      } catch {
+        open = false;
+        break;
+      }
+    }
+    expect(open).toBe(false);
   });
 
   test("an edited template verdict does not pass G4", () => {
