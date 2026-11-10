@@ -31,7 +31,8 @@ function lockPinRows(root: string): Array<{ path: string; commit: string }> {
       `import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 for (const d of parse(readFileSync(process.env.AK_LOCK, "utf8")).donors ?? []) {
-  if (typeof d.path === "string" && typeof d.commit === "string") console.log(d.path + "\\t" + d.commit);
+  if (typeof d.path !== "string" || typeof d.commit !== "string") process.exit(1);
+  console.log(d.path + "\\t" + d.commit);
 }`,
     ],
     {
@@ -321,11 +322,13 @@ donors: []
     expect(existsSync(join(dest, ".donors/donor_one/.git"))).toBe(true);
   });
 
-  test("a stale pin in a partial clone with a dead origin does not fetch", () => {
+  test("a stale pin in a partial clone does not fetch from a live origin", () => {
     const scratch = processScratch("ak-extract-lazy-");
     mkdirSync(join(scratch, "provenance"), { recursive: true });
     const origin = processScratch("ak-extract-lazy-origin-");
     makeDonorClone(origin);
+    git(origin, "config", "uploadpack.allowFilter", "true");
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
     const clone = join(scratch, ".donors/donor_one");
     const cloned = spawnSync("git", ["clone", "-q", "--filter=blob:none", "--no-local", origin, clone], {
       encoding: "utf8",
@@ -336,7 +339,17 @@ donors: []
     git(origin, "add", "-A");
     git(origin, "commit", "-q", "-m", "later");
     const pin = git(origin, "rev-parse", "HEAD").trim();
-    git(clone, "remote", "set-url", "origin", "file:///no-such-ak-gs006f-origin");
+    const marker = join(scratch, "upload-pack.mark");
+    const wrapper = join(scratch, "git-upload-pack-wrap");
+    writeFileSync(
+      wrapper,
+      `#!/bin/sh
+printf 'fetched\\n' > "${marker}"
+exec git upload-pack "$@"
+`,
+      { mode: 0o755 },
+    );
+    git(clone, "config", "remote.origin.uploadpack", wrapper);
     writeFileSync(
       join(scratch, "provenance/upstream.lock.yaml"),
       `schema_version: 1
@@ -357,7 +370,12 @@ donors:
       "pre-push: warning: pin check skipped because the local donors are not at the lock pins",
     );
     expect(existsSync(join(dest, ".donors"))).toBe(false);
-    expect(existsSync(join(clone, ".git/FETCH_HEAD"))).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+    const stillMissing = spawnSync("git", ["-C", clone, "cat-file", "-e", `${pin}^{commit}`], {
+      encoding: "utf8",
+      env: gitEnv({ GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0" }),
+    });
+    expect(stillMissing.status).not.toBe(0);
   }, 15_000);
 
   test("a copy failure warns, strips a partial .donors, and still returns 0", () => {
@@ -484,7 +502,7 @@ donors:
       join(bin, "bun"),
       `#!/bin/sh
 if [ "$1" = "run" ] && [ "$2" = "ak" ]; then
-  printf 'GIT_DIR=%s\\n' "\${GIT_DIR-}" > "$HOOK_MARK"
+  printf 'GIT_DIR=%s\\nGIT_NO_LAZY_FETCH=%s\\nGIT_TERMINAL_PROMPT=%s\\n' "\${GIT_DIR-}" "\${GIT_NO_LAZY_FETCH-}" "\${GIT_TERMINAL_PROMPT-}" > "$HOOK_MARK"
   exit 0
 fi
 exec "${bunBin}" "$@"
@@ -508,7 +526,7 @@ exec "${bunBin}" "$@"
     });
     expect(run.status, run.stderr).toBe(0);
     expect(run.stderr).toContain("pre-push: pin check will run");
-    expect(readFileSync(mark, "utf8").trim()).toBe("GIT_DIR=");
+    expect(readFileSync(mark, "utf8").trim()).toBe("GIT_DIR=\nGIT_NO_LAZY_FETCH=1\nGIT_TERMINAL_PROMPT=0");
   }, 60_000);
 
   test("a separate git dir with GIT_DIR exported still refuses a failing build", () => {
