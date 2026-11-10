@@ -194,7 +194,12 @@ export function writeOracleReceipt(repo: string, oracleJsonPath: string, outPath
     io.err("tp-life receipt write: constructed receipt failed schemas/verification.schema.json\n");
     return 1;
   }
-  writeFileSync(outFile, `${JSON.stringify(receipt, null, 2)}\n`);
+  try {
+    writeFileSync(outFile, `${JSON.stringify(receipt, null, 2)}\n`);
+  } catch {
+    io.err(`tp-life receipt write: cannot write ${outPath}\n`);
+    return 1;
+  }
   io.out(`wrote ${outFile} status=${receipt.status} revision=${snap.revision} unattested\n`);
   return 0;
 }

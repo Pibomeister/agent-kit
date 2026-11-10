@@ -8,6 +8,7 @@
 #   scripts/tp-life.sh evidence
 #
 # The fixture and the oracle are separate programs. The oracle speaks HTTP only.
+# Relative paths on receipt write and check resolve against the repo.
 # evidence always prints G4 as not-run. oracle_sub_verdict is computed from
 # unattested receipts under research/tp-life/receipts/. Local fixture runs do
 # not write that directory.

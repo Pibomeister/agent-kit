@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { decideEvidence, TEMPLATE_REL } from "../src/tp-life/evidence.ts";
@@ -53,13 +53,24 @@ async function stopRunChildren(): Promise<void> {
 
 afterEach(stopRunChildren);
 
-process.on("SIGINT", () => {
+function onSigint(): void {
   for (const child of children) stopFixture(child);
   process.exit(130);
-});
-process.on("SIGTERM", () => {
+}
+
+function onSigterm(): void {
   for (const child of children) stopFixture(child);
   process.exit(143);
+}
+
+beforeAll(() => {
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
+});
+
+afterAll(() => {
+  process.off("SIGINT", onSigint);
+  process.off("SIGTERM", onSigterm);
 });
 
 function runScript(args: string[], extra: { cwd?: string; timeout?: number } = {}) {
@@ -254,20 +265,26 @@ describe("bound receipts", () => {
 
   test("write then check with a relative path", async () => {
     const base = await startFixture();
-    const dir = processScratch("ak-tp-life-rel-");
-    const oracleJson = join(dir, "report.oracle.json");
+    const work = processScratch("ak-tp-life-rel-");
+    const oracleJson = join(work, "report.oracle.json");
     const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
     expect(oracle.status).toBe(0);
-    const rel = join("research/tp-life/receipts", "relative-write.json");
-    const abs = join(REPO, rel);
-    try {
-      const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", rel]);
-      expect(written.status).toBe(0);
-      const check = runScript(["receipt", "check", rel]);
-      expect(check.status).toBe(0);
-    } finally {
-      if (existsSync(abs)) unlinkSync(abs);
-    }
+    cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
+    copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
+    writeFileSync(join(work, ".gitignore"), "rel.json\n");
+    const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    spawnSync("git", ["-C", work, "init", "-q"], { env: gitEnv });
+    spawnSync("git", ["-C", work, "add", "-A"], { env: gitEnv });
+    const commit = spawnSync(
+      "git",
+      ["-C", work, "-c", "user.email=td@example.invalid", "-c", "user.name=td", "commit", "-qm", "td"],
+      { encoding: "utf8", env: gitEnv },
+    );
+    expect(commit.status).toBe(0);
+    const written = runScript(["receipt", "write", "--cwd", work, "--oracle-json", oracleJson, "--out", "rel.json"]);
+    expect(written.status).toBe(0);
+    const check = runScript(["receipt", "check", "--cwd", work, "rel.json"]);
+    expect(check.status).toBe(0);
   });
 
   test("a null receipt is refused as not an object", () => {
@@ -289,23 +306,44 @@ describe("bound receipts", () => {
   });
 
   test("a missing oracle JSON prints one line and exits non-zero", () => {
+    const dir = processScratch("ak-tp-life-miss-oracle-");
     const run = runScript([
       "receipt",
       "write",
       "--oracle-json",
-      "/tmp/ak-tp-life-missing-oracle.json",
+      join(dir, "missing-oracle.json"),
       "--out",
-      "/tmp/ak-tp-life-missing-out.json",
+      join(dir, "missing-out.json"),
     ]);
-    expect(run.status === 0).toBe(false);
+    expect(run.status).toBe(1);
     expect(run.stderr.includes("cannot read")).toBe(true);
     expect(run.stderr.includes("\n    at ")).toBe(false);
   });
 
   test("a missing receipt prints one line and exits non-zero", () => {
-    const run = runScript(["receipt", "check", "/tmp/ak-tp-life-missing-receipt.json"]);
-    expect(run.status === 0).toBe(false);
+    const dir = processScratch("ak-tp-life-miss-receipt-");
+    const run = runScript(["receipt", "check", join(dir, "missing-receipt.json")]);
+    expect(run.status).toBe(1);
     expect(run.stderr.includes("cannot read")).toBe(true);
+    expect(run.stderr.includes("\n    at ")).toBe(false);
+  });
+
+  test("a missing --out directory prints one line and exits non-zero", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-miss-outdir-");
+    const oracleJson = join(dir, "report.oracle.json");
+    const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
+    expect(oracle.status).toBe(0);
+    const run = runScript([
+      "receipt",
+      "write",
+      "--oracle-json",
+      oracleJson,
+      "--out",
+      join(dir, "no-such", "receipt.json"),
+    ]);
+    expect(run.status).toBe(1);
+    expect(run.stderr.includes("cannot write")).toBe(true);
     expect(run.stderr.includes("\n    at ")).toBe(false);
   });
 
