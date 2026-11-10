@@ -55,10 +55,11 @@
 # point of the first refusal is that the subject must be the commit you
 # validated; a second gate measuring the working tree would undo it.
 #
-# It does NOT run `bun test`. The suite needs `.donors/`, which an extract does
-# not have, so it would report a failure that is a property of the extract and
-# not of the commit. A gate that cries wolf is a gate people pass --no-verify to,
-# and that would take the first refusal down with it.
+# It does NOT run `bun test`. CI runs that after clone.sh with AK_REQUIRE_DONORS.
+# This gate copies `.donors/` into the extract when the working tree has them,
+# so `ak build`'s validate step runs the pin check. It still does not run the
+# test suite. A gate that cries wolf is a gate people pass --no-verify to, and
+# that would take the first refusal down with it.
 #
 # It measures the default install. A skill's packaged mode depends on
 # ak.install.yaml, which is gitignored and so never in an archive; the rm below
@@ -76,6 +77,9 @@ build_gate() {
   [ -d "$root/node_modules" ] || return 0
   tmp=$(mktemp -d) || return 0
   git archive "$sha" 2>/dev/null | tar -x -C "$tmp" 2>/dev/null || { rm -rf "$tmp"; return 0; }
+  if [ -d "$root/.donors" ]; then
+    cp -R "$root/.donors" "$tmp/.donors" 2>/dev/null || { rm -rf "$tmp"; return 0; }
+  fi
   ln -s "$root/node_modules" "$tmp/node_modules" 2>/dev/null || { rm -rf "$tmp"; return 0; }
   rm -f "$tmp/ak.install.yaml"
   out=$(cd "$tmp" && bun run ak build 2>&1)
