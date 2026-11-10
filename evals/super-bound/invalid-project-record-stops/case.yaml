@@ -1,0 +1,39 @@
+schema_version: "1.1"
+name: super-bound-invalid-project-record-stops
+tags: [missing-tools]
+execution:
+  prompt: >-
+    The unattended policy is active here: ak-gate unattended check --phase super-bound exited 0.
+    The spec in specs/approved.md is approved at this revision, and project.json is the project
+    record. The repository-local scorer is `ak`; put the repository root on PATH when invoking it.
+    Bound it into its implementation ticket and persist the ticket at
+    runs/retry-client-errors.ticket.json.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill, Write]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1
+  - name: stops-on-the-invalid-record
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response stops with needs-input because project.json fails its schema, and names that
+      failure. It treats the invalid record as not a coverage limit, and does not continue to an
+      unscored ticket.
+  - name: no-ticket-written
+    type: file_exists
+    path: runs/retry-client-errors.ticket.json
+    exists: false
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-bound"'
+    arm: with-only
+    weight: 1
