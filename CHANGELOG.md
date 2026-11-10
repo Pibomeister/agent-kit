@@ -6,7 +6,9 @@ The semantic-lint Stop hook is opt-in. It no longer POSTs changed files just bec
 `~/.config/agent-kit/jev.env` exists.
 
 To keep the check, export `AK_JEV_ENABLED=1` into the host process that runs the hook.
-For a Firstmate worker, that is the supervisor's environment. Codex passing its
+For a Firstmate worker, set it in the environment the worker pane launches with. Firstmate does not
+pass the supervisor's current environment through, and with config/launch-env-allowlist the name must
+be listed. Codex passing its
 environment through to hook commands is not yet receipted. Unset, empty, `0`, and any
 other value skip quietly before the hook reads the key file or the repository.
 

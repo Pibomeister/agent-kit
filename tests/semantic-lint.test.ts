@@ -270,7 +270,7 @@ describe("optional semantic sibling hook", () => {
     });
   });
 
-  test("a disabled hook in a dirty git checkout runs no git and makes no POST", () => {
+  test("a disabled hook in a dirty git checkout runs no git and skips as disabled", () => {
     const options = fixture();
     writeFileSync(join(options.root, "cart.ts"), "export function cart() { return 1; }\n");
     const bin = join(options.root, "bin");
