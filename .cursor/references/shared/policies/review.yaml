@@ -159,6 +159,41 @@ pass_1:
     ruling: panel-composition-by-declared-risk
     scenario: 1
 
+  depth:
+    applies_when: >-
+      The project record sets `review.routing` to `on`. With `shadow`, the depth is computed and
+      recorded and the panel does not change. With `off` or no key, this block has no effect.
+    by_class:
+      green: single
+      yellow-agent: reduced
+      yellow-owner: reduced
+      red: full
+    baseline:
+      single: >-
+        One reviewer seat that holds the five review points of the owner's ask: the patterns and
+        conventions of the surrounding code, the project's rules cited rule by rule, likely bugs,
+        reuse of an existing helper where the change adds a new one, and correctness against the
+        acceptance criteria.
+      reduced: >-
+        The lean panel as `pass_1.proportionality.lean_panel.seats` defines it. The class selects
+        it. The size guidance does not.
+      full: >-
+        The pass-1 selection as `pass_1.seats` and `pass_1.proportionality` define it, unchanged.
+    activated_seats: >-
+      Every conditional and stack seat that the evidence activates sits at every depth. A seat
+      with `required_when_activated` stays required.
+    absent_class_evidence: >-
+      The depth is `full` when there is no ticket delegation block, no project
+      `guidance.delegation`, or no successful scorer run. The review records the reason.
+    direction: >-
+      A run may move to a deeper depth and never to a shallower one. The merge-stage class is
+      never below the ticket-stage class without a named human's lowering.
+    forbidden:
+      - selecting a shallower depth to save tokens
+      - dropping an activated seat at any depth
+      - treating the class as a finding
+    ruling: review-depth-follows-delegation-class
+
   not_a_seat:
     - id: deployment-verification
       note: >-

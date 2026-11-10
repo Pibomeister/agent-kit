@@ -14,6 +14,7 @@
 # Row 34 is the first raised by publishing with no supervisor and no gate at all. Row 35 keeps the
 # implementer's work trail, an account, from every seat that judges the change. Rows 36-37
 # are the comprehension seat: it stays naive, and a gap is not contestable on the author's word.
+# Row 38 is the first raised by an owner decision on review cost: review depth follows the class.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -195,7 +196,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 37
+rows: 38
 
 conflicts:
 
@@ -1491,3 +1492,32 @@ conflicts:
       that synthesis must not settle the finding by picking a side.
     source:
       plan: "§6.5"
+
+  - id: review-depth-follows-delegation-class
+    tension: >-
+      Ruling `panel-composition-by-declared-risk` selects the first-pass panel from declared risk
+      and the size guidance, while the owner's ask of 2026-11-10 makes the delegation class decide
+      the level of scrutiny.
+    ruling: >-
+      The merge-stage delegation class selects the review depth, and the depth selects only the
+      baseline seats. Green sits one generalist reviewer. Both yellow classes sit the lean panel.
+      Red sits today's selection. Every conditional and stack seat that the artifact evidence
+      activates sits at every depth, and the security and adversarial seats stay required once
+      activated. Absent class evidence, the depth is full. A run may move to a deeper depth and
+      never to a shallower one. The class stays an authority input and is never a finding.
+    discharged_in: [inputs, workflow]
+    binds:
+      policies: [review]
+    scenario: 1
+    coverage: indirect
+    note: >-
+      Scenario 1 exercises proportional seating on the neighbouring declared-risk case: a
+      documentation typo does not run a six-persona panel. The class-to-depth map has no scenario
+      of its own. `inputs` carries the class and the depth, which the first pass receives;
+      `workflow` carries the selection step. Rejected `hard-gates`, the near miss: the never-drop
+      rule reads as a gate, but the row decides a selection. The binding is the policy record
+      alone; the review skill and the generalist seat join the row when the changes that
+      implement it land, rather than receiving citations first.
+    source:
+      plan: "§6.1"
+      adr: docs/decisions/0017-review-depth-follows-delegation-class.md
