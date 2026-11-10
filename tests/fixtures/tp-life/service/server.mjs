@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "public/index.html"));
 const argv = process.argv.slice(2);
+const BROKEN = new Set(["pending", "success", "failure", "disconnect", "duplicate", "unknown"]);
+const FINISH_MS = 80;
+const HANG_FINISH_MS = 25;
+const SLOW_BODY_MS = 1500;
 
 let port = Number(process.env.PORT ?? 0);
 let broken = process.env.AK_TP_LIFE_BROKEN ?? "";
@@ -18,6 +22,10 @@ for (let i = 0; i < argv.length; i += 1) {
     i += 1;
     broken = String(argv[i] ?? "");
   }
+}
+if (broken !== "" && !BROKEN.has(broken)) {
+  process.stderr.write(`tp-life fixture: unknown --broken ${broken}\n`);
+  process.exit(2);
 }
 
 /** @typedef {{ id: string, idempotency_key: string, op: string, status: string }} Job */
@@ -46,9 +54,31 @@ function readBody(req) {
   });
 }
 
-function finish(job) {
-  if (job.op === "succeed") job.status = "success";
-  else if (job.op === "fail") job.status = "failure";
+function scheduleFinish(job) {
+  if (broken === "success" && job.op === "succeed") return;
+  if (broken === "failure" && job.op === "fail") {
+    setTimeout(() => {
+      job.status = "success";
+    }, FINISH_MS);
+    return;
+  }
+  if (job.op === "succeed") {
+    setTimeout(() => {
+      job.status = "success";
+    }, FINISH_MS);
+    return;
+  }
+  if (job.op === "fail") {
+    setTimeout(() => {
+      job.status = "failure";
+    }, FINISH_MS);
+    return;
+  }
+  if (job.op === "hang" && broken === "pending") {
+    setTimeout(() => {
+      job.status = "success";
+    }, HANG_FINISH_MS);
+  }
 }
 
 const server = createServer((req, res) => {
@@ -104,9 +134,9 @@ async function handle(req, res) {
     const id = `job-${next}`;
     next += 1;
     const job = { id, idempotency_key: keyText, op, status: "pending" };
-    finish(job);
     jobs.set(id, job);
     byKey.set(keyText, id);
+    scheduleFinish(job);
     sendJson(res, 201, job);
     return;
   }
@@ -114,7 +144,36 @@ async function handle(req, res) {
   if (req.method === "GET" && match !== null) {
     const job = jobs.get(match[1]);
     if (job === undefined) {
+      if (broken === "unknown") {
+        sendJson(res, 200, { id: match[1], status: "pending" });
+        return;
+      }
       sendJson(res, 404, { error: "unknown job" });
+      return;
+    }
+    if (url.searchParams.get("slow") === "1") {
+      let finished = false;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write(" ");
+      const drop = () => {
+        if (!finished && broken === "disconnect") {
+          jobs.delete(job.id);
+          byKey.delete(job.idempotency_key);
+        }
+      };
+      req.on("aborted", drop);
+      req.on("close", drop);
+      res.on("close", drop);
+      if (broken === "disconnect") {
+        drop();
+        req.destroy();
+        return;
+      }
+      setTimeout(() => {
+        if (res.writableEnded || res.destroyed) return;
+        finished = true;
+        res.end(JSON.stringify(job));
+      }, SLOW_BODY_MS);
       return;
     }
     sendJson(res, 200, job);

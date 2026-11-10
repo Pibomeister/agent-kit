@@ -3,7 +3,11 @@
  * TP-LIFE oracle. Talks HTTP only. Does not import the fixture service.
  * Expected states come from research/tp-life/spec-v2.md, not from server code.
  */
-const CASES = ["pending", "success", "failure", "disconnect", "duplicate"];
+const CASES = ["pending", "success", "failure", "disconnect", "duplicate", "unknown"];
+const FETCH_MS = 4000;
+const POLL_DEADLINE_MS = 1500;
+const POLL_EVERY_MS = 40;
+const TERMINAL = new Set(["success", "failure"]);
 
 function argValue(argv, name) {
   const index = argv.indexOf(name);
@@ -19,18 +23,32 @@ function pass(id, detail) {
   return { id, verdict: "pass", detail };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function fetchSignal(extra) {
+  const timeout = AbortSignal.timeout(FETCH_MS);
+  if (extra === undefined) return timeout;
+  return AbortSignal.any([timeout, extra]);
+}
+
 async function postJob(base, key, op) {
   const res = await fetch(`${base}/jobs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ idempotency_key: key, op }),
+    signal: fetchSignal(),
   });
   const body = await res.json();
   return { http: res.status, body };
 }
 
 async function getJob(base, id, init) {
-  const res = await fetch(`${base}/jobs/${id}`, init);
+  const extra = init === undefined ? undefined : init.signal;
+  const res = await fetch(`${base}/jobs/${id}`, {
+    signal: fetchSignal(extra),
+  });
   const body = await res.json();
   return { http: res.status, body };
 }
@@ -42,12 +60,35 @@ function jobId(created) {
   return String(id);
 }
 
+async function pollUntil(base, id, want) {
+  const seen = [];
+  const start = Date.now();
+  let last = { http: 0, body: { status: undefined } };
+  while (Date.now() - start < POLL_DEADLINE_MS) {
+    last = await getJob(base, id);
+    seen.push(last.body.status);
+    if (last.body.status === want) return { last, seen };
+    if (TERMINAL.has(last.body.status)) return { last, seen };
+    await sleep(POLL_EVERY_MS);
+  }
+  return { last, seen };
+}
+
+function sawPendingThen(seen, terminal) {
+  let pending = false;
+  for (const status of seen) {
+    if (status === "pending") pending = true;
+    if (status === terminal && pending) return true;
+  }
+  return false;
+}
+
 async function runPending(base) {
   const created = await postJob(base, "pend-1", "hang");
   const id = jobId(created);
   if (id === undefined) return fail("pending", "submit of hang job was rejected");
   const first = await getJob(base, id);
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await sleep(40);
   const second = await getJob(base, id);
   if (first.body.status !== "pending" || second.body.status !== "pending") {
     return fail("pending", `wanted pending then pending, got ${first.body.status} then ${second.body.status}`);
@@ -59,18 +100,22 @@ async function runSuccess(base) {
   const created = await postJob(base, "ok-1", "succeed");
   const id = jobId(created);
   if (id === undefined) return fail("success", "submit of succeed job was rejected");
-  const got = await getJob(base, id);
-  if (got.body.status !== "success") return fail("success", `wanted success, got ${got.body.status}`);
-  return pass("success", "succeed job reached success");
+  const poll = await pollUntil(base, id, "success");
+  if (!sawPendingThen(poll.seen, "success")) {
+    return fail("success", `wanted pending then success, got ${poll.seen.join(",") || "no polls"}`);
+  }
+  return pass("success", "succeed job was pending then success");
 }
 
 async function runFailure(base) {
   const created = await postJob(base, "fail-1", "fail");
   const id = jobId(created);
   if (id === undefined) return fail("failure", "submit of fail job was rejected");
-  const got = await getJob(base, id);
-  if (got.body.status !== "failure") return fail("failure", `wanted failure, got ${got.body.status}`);
-  return pass("failure", "fail job reached failure");
+  const poll = await pollUntil(base, id, "failure");
+  if (!sawPendingThen(poll.seen, "failure")) {
+    return fail("failure", `wanted pending then failure, got ${poll.seen.join(",") || "no polls"}`);
+  }
+  return pass("failure", "fail job was pending then failure");
 }
 
 async function runDisconnect(base) {
@@ -78,21 +123,20 @@ async function runDisconnect(base) {
   const id = jobId(created);
   if (id === undefined) return fail("disconnect", "submit of hang job was rejected");
   const ac = new AbortController();
-  const aborted = getJob(base, id, { signal: ac.signal });
-  ac.abort();
   try {
-    await aborted;
+    const res = await fetch(`${base}/jobs/${id}?slow=1`, { signal: fetchSignal(ac.signal) });
+    const reader = res.body === null ? undefined : res.body.getReader();
+    if (reader !== undefined) await reader.read();
+    ac.abort();
+    if (reader !== undefined) await reader.cancel();
   } catch {
-    // The in-flight poll was cancelled. The job must still be readable.
+    // The in-flight poll was cancelled after the server accepted it.
   }
   const got = await getJob(base, id);
   if (got.http !== 200 || got.body.id !== id) {
     return fail("disconnect", "job missing after an aborted poll");
   }
-  if (got.body.status !== "pending") {
-    return fail("disconnect", `wanted pending after reconnect, got ${got.body.status}`);
-  }
-  return pass("disconnect", "aborted poll left the hang job readable as pending");
+  return pass("disconnect", "aborted poll left the job readable");
 }
 
 async function runDuplicate(base) {
@@ -105,25 +149,60 @@ async function runDuplicate(base) {
   return pass("duplicate", "same idempotency_key returned the original job");
 }
 
+async function runUnknown(base) {
+  const got = await getJob(base, "job-missing-404");
+  if (got.http !== 404) return fail("unknown", `wanted 404, got ${got.http}`);
+  return pass("unknown", "unknown id returned 404");
+}
+
 const runners = {
   pending: runPending,
   success: runSuccess,
   failure: runFailure,
   disconnect: runDisconnect,
   duplicate: runDuplicate,
+  unknown: runUnknown,
 };
+
+async function runCase(id, base) {
+  try {
+    return await runners[id](base);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return fail(id, detail.length > 0 ? detail : "case threw");
+  }
+}
+
+function uniqueComplete(cases) {
+  if (cases.length !== CASES.length) return false;
+  const seen = new Set();
+  for (const row of cases) {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+  }
+  for (const id of CASES) {
+    if (!seen.has(id)) return false;
+  }
+  return true;
+}
 
 async function main() {
   const argv = process.argv.slice(2);
-  const base = argValue(argv, "--base-url");
+  const baseArg = argValue(argv, "--base-url");
   const out = argValue(argv, "--out");
-  if (base === undefined || base.length === 0) {
+  if (baseArg === undefined || baseArg.length === 0) {
     process.stderr.write("usage: oracle.mjs --base-url http://127.0.0.1:PORT [--out report.json]\n");
     process.exit(2);
   }
+  const base = baseArg.replace(/\/$/, "");
+  const started = new Date();
   const cases = [];
   for (const id of CASES) {
-    cases.push(await runners[id](base.replace(/\/$/, "")));
+    cases.push(await runCase(id, base));
+  }
+  if (!uniqueComplete(cases)) {
+    process.stderr.write("tp-life oracle: case ids are not a unique complete set\n");
+    process.exit(2);
   }
   let passed = 0;
   let failed = 0;
@@ -131,7 +210,14 @@ async function main() {
     if (row.verdict === "pass") passed += 1;
     else failed += 1;
   }
-  const report = { passed, failed, cases };
+  const report = {
+    base_url: base,
+    started_at: started.toISOString(),
+    duration_ms: Date.now() - started.getTime(),
+    passed,
+    failed,
+    cases,
+  };
   const text = `${JSON.stringify(report, null, 2)}\n`;
   if (out !== undefined) await Bun.write(out, text);
   process.stdout.write(text);

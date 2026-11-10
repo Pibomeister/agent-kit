@@ -26,7 +26,8 @@ then a later GET of the same id, still returns that job.
 An independent process that only uses HTTP must observe:
 
 1. pending: a hang job stays `pending` across two polls
-2. success: a succeed job is `success`
-3. failure: a fail job is `failure`
-4. disconnect: abort one GET, then GET again, job still present
+2. success: a succeed job is `pending`, then `success`
+3. failure: a fail job is `pending`, then `failure`
+4. disconnect: abort one GET after the server has accepted it, then GET again, job still present
 5. duplicate: two POSTs with the same key return the same `id`
+6. unknown: GET of an id the service does not hold returns 404

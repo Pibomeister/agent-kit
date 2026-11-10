@@ -7,14 +7,17 @@ const ajv = new Ajv2020({ strict: false });
 const oracleValidator: ValidateFunction<OracleReport> = ajv.compile({
   type: "object",
   additionalProperties: false,
-  required: ["passed", "failed", "cases"],
+  required: ["base_url", "started_at", "duration_ms", "passed", "failed", "cases"],
   properties: {
+    base_url: { type: "string", minLength: 1 },
+    started_at: { type: "string", minLength: 1 },
+    duration_ms: { type: "integer", minimum: 0 },
     passed: { type: "integer", minimum: 0 },
     failed: { type: "integer", minimum: 0 },
     cases: {
       type: "array",
-      minItems: 5,
-      maxItems: 5,
+      minItems: CASE_IDS.length,
+      maxItems: CASE_IDS.length,
       items: {
         type: "object",
         additionalProperties: false,
@@ -37,6 +40,7 @@ const evidenceValidator: ValidateFunction<EvidenceRecord> = ajv.compile({
     procedure: { const: "TP-LIFE" },
     gate: { const: "G4" },
     suite: { const: "T5" },
+    covers: { type: "array", items: { type: "string" } },
     verdict: { type: "string", enum: ["not-run", "passed", "failed"] },
     reason: { type: "string", minLength: 1 },
     receipts: { type: "array", items: { type: "string" } },
@@ -44,11 +48,37 @@ const evidenceValidator: ValidateFunction<EvidenceRecord> = ajv.compile({
   },
 });
 
+function uniqueComplete(cases: OracleReport["cases"]): boolean {
+  if (cases.length !== CASE_IDS.length) return false;
+  const seen = new Set<string>();
+  for (const row of cases) {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+  }
+  for (const id of CASE_IDS) {
+    if (!seen.has(id)) return false;
+  }
+  return true;
+}
+
+function countsFrom(cases: OracleReport["cases"]) {
+  let passed = 0;
+  let failed = 0;
+  for (const row of cases) {
+    if (row.verdict === "pass") passed += 1;
+    else failed += 1;
+  }
+  return { passed, failed };
+}
+
 export function parseOracleReport(text: string): OracleReport | null {
   try {
     // SAFETY: JSON.parse is any; oracleValidator is the contract before use.
     const value = JSON.parse(text) as unknown;
-    return oracleValidator(value) ? value : null;
+    if (!oracleValidator(value)) return null;
+    if (!uniqueComplete(value.cases)) return null;
+    const counts = countsFrom(value.cases);
+    return { ...value, passed: counts.passed, failed: counts.failed };
   } catch {
     return null;
   }

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # TP-LIFE fixture, independent oracle, HEAD-bound receipts, G4 evidence record.
 #
-#   scripts/tp-life.sh fixture [--port PORT] [--broken duplicate]
+#   scripts/tp-life.sh fixture [--port PORT] [--broken pending|success|failure|disconnect|duplicate|unknown]
 #   scripts/tp-life.sh oracle --base-url http://127.0.0.1:PORT [--out report.json]
 #   scripts/tp-life.sh receipt write --oracle-json report.json --out receipt.json
 #   scripts/tp-life.sh receipt check receipt.json
 #   scripts/tp-life.sh evidence
 #
 # The fixture and the oracle are separate programs. The oracle speaks HTTP only.
-# evidence prints G4. The verdict stays not-run until research/tp-life/receipts/
-# holds receipts bound to HEAD. Local fixture runs do not write that directory.
+# evidence prints G4. The verdict is computed from receipts under
+# research/tp-life/receipts/ that bind to HEAD. The template verdict is ignored.
+# Local fixture runs do not write that directory.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cmd="${1:-}"

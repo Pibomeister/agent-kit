@@ -9,14 +9,14 @@ import type { Io } from "./types.ts";
 
 const USAGE = `tp-life: fixture oracle receipts and the G4 evidence record.
 
-  scripts/tp-life.sh fixture [--port PORT] [--broken duplicate]
+  scripts/tp-life.sh fixture [--port PORT] [--broken pending|success|failure|disconnect|duplicate|unknown]
   scripts/tp-life.sh oracle --base-url URL [--out report.json]
   scripts/tp-life.sh receipt write --oracle-json report.json --out receipt.json
   scripts/tp-life.sh receipt check receipt.json
   scripts/tp-life.sh evidence
 
-evidence prints the G4 record. The verdict stays not-run until research/tp-life/receipts/
-holds receipts bound to HEAD. Local fixture runs do not fill that directory.
+evidence prints the G4 record. The verdict is computed from receipts under
+research/tp-life/receipts/ that bind to HEAD. The template verdict is ignored.
 `;
 
 const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");

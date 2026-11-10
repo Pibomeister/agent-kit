@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { decideEvidence, TEMPLATE_REL } from "../src/tp-life/evidence.ts";
 import { parseEvidenceRecord, parseOracleReport } from "../src/tp-life/parse.ts";
+import { CASE_IDS, RECEIPTS_REL } from "../src/tp-life/types.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
 
@@ -12,20 +13,31 @@ const REPO = resolve(import.meta.dir, "..");
 const SCRIPT = join(REPO, "scripts", "tp-life.sh");
 const ORACLE = join(REPO, "tests/fixtures/tp-life/oracle/oracle.mjs");
 const SERVICE = join(REPO, "tests/fixtures/tp-life/service/server.mjs");
+const ORACLE_TIMEOUT = 25_000;
 
 const children: ChildProcess[] = [];
+
+function removeTestReceipts(): void {
+  const dir = join(REPO, RECEIPTS_REL);
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith("test-") || !name.endsWith(".json")) continue;
+    unlinkSync(join(dir, name));
+  }
+}
 
 afterAll(() => {
   for (const child of children) {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
   }
+  removeTestReceipts();
 });
 
 function runScript(args: string[], extra: { cwd?: string; timeout?: number } = {}) {
   return spawnSync("bash", [SCRIPT, ...args], {
     cwd: extra.cwd ?? REPO,
     encoding: "utf8",
-    timeout: extra.timeout ?? 20_000,
+    timeout: extra.timeout ?? ORACLE_TIMEOUT,
     killSignal: "SIGKILL",
     env: process.env,
   });
@@ -57,7 +69,18 @@ function startFixture(broken?: string): Promise<string> {
         ready(base);
       }
     });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      buf += chunk.toString("utf8");
+    });
   });
+}
+
+function placeReceipt(name: string, from: string): string {
+  const destDir = join(REPO, RECEIPTS_REL);
+  mkdirSync(destDir, { recursive: true });
+  const dest = join(destDir, name);
+  copyFileSync(from, dest);
+  return dest;
 }
 
 describe("independence", () => {
@@ -74,29 +97,58 @@ describe("independence", () => {
 });
 
 describe("fixture and oracle", () => {
-  test("clean fixture: five cases pass", async () => {
+  test("clean fixture: six cases pass", async () => {
     const base = await startFixture();
     const out = join(processScratch("ak-tp-life-"), "oracle.json");
     const run = runScript(["oracle", "--base-url", base, "--out", out]);
     expect(run.status).toBe(0);
     const report = parseOracleReport(readFileSync(out, "utf8"));
     expect(report).not.toBeNull();
-    expect(report?.passed).toBe(5);
+    expect(report?.passed).toBe(CASE_IDS.length);
     expect(report?.failed).toBe(0);
+    expect(report?.base_url).toBe(base);
+    expect((report?.duration_ms ?? -1) >= 0).toBe(true);
     const html = await fetch(`${base}/`);
     const page = await html.text();
     expect(page.includes('fetch("/jobs/"')).toBe(true);
   });
 
-  test("broken duplicate: oracle fails that case and exits 1", async () => {
-    const base = await startFixture("duplicate");
-    const run = runScript(["oracle", "--base-url", base]);
-    expect(run.status).toBe(1);
-    const report = parseOracleReport(run.stdout);
-    expect(report).not.toBeNull();
-    expect(report?.failed).toBeGreaterThan(0);
-    const dup = report?.cases.find((row) => row.id === "duplicate");
-    expect(dup?.verdict).toBe("fail");
+  for (const id of CASE_IDS) {
+    test(`broken ${id}: only that case fails`, async () => {
+      const base = await startFixture(id);
+      const run = runScript(["oracle", "--base-url", base]);
+      expect(run.status).toBe(1);
+      const report = parseOracleReport(run.stdout);
+      expect(report).not.toBeNull();
+      if (report === null) return;
+      expect(report.failed).toBe(1);
+      expect(report.passed).toBe(CASE_IDS.length - 1);
+      for (const row of report.cases) {
+        expect(row.verdict).toBe(row.id === id ? "fail" : "pass");
+      }
+    });
+  }
+
+  test("unknown --broken is refused", () => {
+    const run = spawnSync("bash", [SCRIPT, "fixture", "--broken", "nope"], {
+      cwd: REPO,
+      encoding: "utf8",
+      timeout: 5_000,
+      env: process.env,
+    });
+    expect(run.status).toBe(2);
+    expect(run.stderr.includes("unknown --broken")).toBe(true);
+  });
+
+  test("unknown AK_TP_LIFE_BROKEN is refused", () => {
+    const run = spawnSync("bash", [SCRIPT, "fixture"], {
+      cwd: REPO,
+      encoding: "utf8",
+      timeout: 5_000,
+      env: { ...process.env, AK_TP_LIFE_BROKEN: "nope" },
+    });
+    expect(run.status).toBe(2);
+    expect(run.stderr.includes("unknown --broken")).toBe(true);
   });
 });
 
@@ -121,35 +173,154 @@ describe("bound receipts", () => {
     expect(validate(receipt)).toBe(true);
   });
 
-  test("a receipt bound to the wrong head is refused with exit 2", () => {
+  test("a receipt bound to the wrong head is refused with exit 2", async () => {
+    const base = await startFixture();
     const dir = processScratch("ak-tp-life-wrong-");
-    const receiptPath = join(dir, "wrong.json");
-    writeFileSync(
-      receiptPath,
-      `${JSON.stringify({ source_revision: { revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } })}\n`,
+    const oracleJson = join(dir, "oracle.json");
+    const receiptPath = join(dir, "receipt.json");
+    const mutatedPath = join(dir, "wrong-head.json");
+    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]).status).toBe(0);
+    const mutated = readFileSync(receiptPath, "utf8").replace(
+      /"revision": "[0-9a-f]{40}"/,
+      '"revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
     );
-    const check = runScript(["receipt", "check", receiptPath]);
+    writeFileSync(mutatedPath, mutated);
+    const check = runScript(["receipt", "check", mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("refused")).toBe(true);
+  });
+
+  test("a receipt missing diff_hash is refused with exit 2", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-nodiff-");
+    const oracleJson = join(dir, "oracle.json");
+    const receiptPath = join(dir, "receipt.json");
+    const missingPath = join(dir, "missing-hash.json");
+    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]).status).toBe(0);
+    const missing = readFileSync(receiptPath, "utf8").replace(/,\s*"diff_hash": "sha256:[0-9a-f]+"/, "");
+    writeFileSync(missingPath, missing);
+    const check = runScript(["receipt", "check", missingPath]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("diff_hash is missing")).toBe(true);
+  });
+
+  test("a receipt with a different diff_hash is refused with exit 2", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-baddiff-");
+    const oracleJson = join(dir, "oracle.json");
+    const receiptPath = join(dir, "receipt.json");
+    const mutatedPath = join(dir, "other-hash.json");
+    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]).status).toBe(0);
+    const mutated = readFileSync(receiptPath, "utf8").replace(
+      /"diff_hash": "sha256:[0-9a-f]+"/,
+      `"diff_hash": "sha256:${"b".repeat(64)}"`,
+    );
+    writeFileSync(mutatedPath, mutated);
+    const check = runScript(["receipt", "check", mutatedPath]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("different working tree")).toBe(true);
+  });
+
+  test("a genuine oracle receipt copied into receipts/ binds", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-bind-");
+    const oracleJson = join(dir, "oracle.json");
+    const receiptPath = join(dir, "receipt.json");
+    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]).status).toBe(0);
+    const dest = placeReceipt("test-bind.json", receiptPath);
+    try {
+      const check = runScript(["receipt", "check", dest]);
+      expect(check.status).toBe(0);
+      const evidence = runScript(["evidence"]);
+      expect(evidence.status).toBe(0);
+      const printed = parseEvidenceRecord(evidence.stdout);
+      expect(printed === null).toBe(false);
+      if (printed === null) return;
+      expect(printed.verdict).toBe("passed");
+      expect(printed.receipts).toEqual([`${RECEIPTS_REL}/test-bind.json`]);
+    } finally {
+      unlinkSync(dest);
+    }
   });
 });
 
 describe("G4 evidence", () => {
   test("template and evidence command stay not-run with no live receipts", () => {
+    removeTestReceipts();
     const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
     const template = parseEvidenceRecord(raw);
     expect(template === null).toBe(false);
     if (template === null) return;
     expect(template.verdict).toBe("not-run");
     expect(template.receipts).toEqual([]);
-    expect(decideEvidence(template, 0).verdict).toBe("not-run");
-    const forced = decideEvidence({ ...template, verdict: "passed" }, 0);
+    expect(raw.includes("FR-12")).toBe(false);
+    expect(template.covers).toEqual(["AT-01", "AT-16", "AT-24", "AT-25", "AT-26"]);
+    expect(decideEvidence(template, []).verdict).toBe("not-run");
+    const forced = decideEvidence({ ...template, verdict: "passed", receipts: ["nope.json"] }, []);
     expect(forced.verdict).toBe("not-run");
+    expect(forced.receipts).toEqual([]);
     const run = runScript(["evidence"]);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed === null).toBe(false);
     if (printed === null) return;
     expect(printed.verdict).toBe("not-run");
+    expect(printed.receipts).toEqual([]);
+  });
+
+  test("a forged minimal receipt in receipts/ leaves G4 not-run", () => {
+    removeTestReceipts();
+    const destDir = join(REPO, RECEIPTS_REL);
+    mkdirSync(destDir, { recursive: true });
+    const dest = join(destDir, "test-forged.json");
+    writeFileSync(
+      dest,
+      `${JSON.stringify({ source_revision: { revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", diff_hash: "sha256:" + "a".repeat(64) } })}\n`,
+    );
+    try {
+      const run = runScript(["evidence"]);
+      expect(run.status).toBe(0);
+      const printed = parseEvidenceRecord(run.stdout);
+      expect(printed?.verdict).toBe("not-run");
+      expect(printed?.receipts).toEqual([]);
+    } finally {
+      unlinkSync(dest);
+    }
+  });
+
+  test("a failed oracle receipt in receipts/ leaves G4 not-run", async () => {
+    removeTestReceipts();
+    const base = await startFixture("duplicate");
+    const dir = processScratch("ak-tp-life-fail-");
+    const oracleJson = join(dir, "oracle.json");
+    const receiptPath = join(dir, "receipt.json");
+    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(1);
+    expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]).status).toBe(0);
+    const dest = placeReceipt("test-failed.json", receiptPath);
+    try {
+      const check = runScript(["receipt", "check", dest]);
+      expect(check.status).toBe(0);
+      const run = runScript(["evidence"]);
+      expect(run.status).toBe(0);
+      const printed = parseEvidenceRecord(run.stdout);
+      expect(printed?.verdict).toBe("not-run");
+      expect(printed?.receipts).toEqual([]);
+    } finally {
+      unlinkSync(dest);
+    }
+  });
+
+  test("an edited template verdict does not pass G4", () => {
+    const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
+    const template = parseEvidenceRecord(raw);
+    expect(template === null).toBe(false);
+    if (template === null) return;
+    const edited = decideEvidence({ ...template, verdict: "passed" }, []);
+    expect(edited.verdict).toBe("not-run");
+    expect(edited.receipts).toEqual([]);
   });
 });
