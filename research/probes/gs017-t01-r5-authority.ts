@@ -350,7 +350,10 @@ function receipt(cwd: string, run: string, ticket: JsonObject, extra: JsonObject
   return path;
 }
 
-function forgedParentBinding(ticket: JsonObject, project: JsonObject): { bindingPath: string; parentDir: string } {
+function forgedParentBinding(
+  ticket: JsonObject,
+  project: JsonObject,
+): { bindingPath: string; parentDir: string; ledger: string } {
   const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-r5-parent-"));
   const evidence = join(parentDir, "evidence");
   mkdirSync(evidence);
@@ -366,11 +369,20 @@ function forgedParentBinding(ticket: JsonObject, project: JsonObject): { binding
   if (!frozen.ok) throw new Error(frozen.reason);
   writeFileSync(
     join(parentDir, "parent-run.json"),
-    `${JSON.stringify({ id: "parent-run", behavior: frozen.binding })}\n`,
+    `${JSON.stringify({
+      id: "parent-run",
+      charter_path: join(parentDir, "charter.json"),
+      behavior: frozen.binding,
+    })}\n`,
   );
+  writeJson(join(parentDir, "charter.json"), { schema: "charter", run_id: "parent-run" });
   const bindingPath = join(parentDir, "binding.json");
   writeJson(bindingPath, { schema: "firstmate-binding", run_id: "parent-run", evidence: { location: evidence } });
-  return { bindingPath, parentDir };
+  const ledger = mkdtempSync(join(tmpdir(), "ak-bv-r5-ledger-"));
+  const at = realpathSync(bindingPath);
+  const sha = `sha256:${createHash("sha256").update(readFileSync(bindingPath)).digest("hex")}`;
+  writeJson(join(ledger, "parent-run.json"), { binding_path: at, binding_sha256: sha });
+  return { bindingPath, parentDir, ledger };
 }
 
 function e1a_forgedParentCliOpen() {
@@ -378,7 +390,8 @@ function e1a_forgedParentCliOpen() {
   const ticket = behaviorTicket("forged-parent");
   writeJson(join(dir, "forged-parent.json"), ticket);
   const bound = attachKb(dir, "on");
-  const { bindingPath } = forgedParentBinding(ticket, bound.project);
+  const { bindingPath, parentDir, ledger } = forgedParentBinding(ticket, bound.project);
+  const evidence = join(parentDir, "evidence");
   const spawned = spawnCli(
     dir,
     bound.registry,
@@ -387,16 +400,16 @@ function e1a_forgedParentCliOpen() {
     join(dir, "forged-parent.json"),
     "--binding",
     bindingPath,
+    "--ledger",
+    ledger,
     "--project",
     dir,
     "--dir",
-    defaultEvidenceDir(dir),
+    evidence,
   );
   const run = openedLine(spawned.out);
   const record =
-    run === undefined
-      ? undefined
-      : parseObject(readFileSync(join(defaultEvidenceDir(dir), "runs", run, "run.json"), "utf8"));
+    run === undefined ? undefined : parseObject(readFileSync(join(evidence, "runs", run, "run.json"), "utf8"));
   return {
     cli: "bun src/cli.ts lifecycle open --binding",
     code: spawned.code,
@@ -409,6 +422,7 @@ function e1a_forgedParentCliOpen() {
         ? record.behavior.required_checks.length
         : undefined,
     parent_was_two_handwritten_files: true,
+    charter_path: true,
     premise_holds_if_opened: spawned.code === 0,
   };
 }
@@ -428,6 +442,8 @@ function e1b_pointerRemovalReseal() {
     join(dir, "reseal.json"),
     "--binding",
     started.bindingPath,
+    "--ledger",
+    started.ledger,
     "--project",
     dir,
     "--dir",
@@ -528,6 +544,8 @@ function e1c_realFirstmateBind() {
     join(dir, "fm-real.json"),
     "--binding",
     out,
+    "--ledger",
+    ledgerDir,
     "--project",
     dir,
     "--dir",
@@ -567,6 +585,8 @@ function e1_authenticFirstmateRunnerCli() {
     join(dir, "fm-auth.json"),
     "--binding",
     started.bindingPath,
+    "--ledger",
+    started.ledger,
     "--project",
     dir,
     "--dir",
@@ -964,5 +984,6 @@ const report = {
   },
 };
 
-writeFileSync("/opt/cursor/artifacts/gs017-t01-r5-exploit-after.json", `${JSON.stringify(report, null, 2)}\n`);
-console.log(JSON.stringify(report, null, 2));
+const reportPath = join(import.meta.dir, "gs017-t01-r5-exploit-after.json");
+writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+console.log(JSON.stringify({ ...report, report_path: reportPath }, null, 2));
