@@ -225,6 +225,8 @@ Also absent, and worth knowing before relying on this binding:
 The registered checkout is refused on every operation, and at registration too when `.cursor/bin/ak kb register`
 runs from a bound project, when it is the
 project's own checkout, another work tree of the same repository, or a directory inside or around
-the project's tree (contract §3). Every git call this binding makes drops the caller's `GIT_*`
+the project's tree (contract §3). The one exception is a binding that cannot write:
+`backends/in-repo.md` reads pages the project itself commits and skips every publish (ruling
+`kb-binding-is-a-locator`). Every git call this binding makes drops the caller's `GIT_*`
 environment first, so a hook's `GIT_DIR` cannot point a publish at the repository the run is
 working in.

@@ -18,13 +18,18 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -73,8 +78,8 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -163,8 +168,8 @@
     },
     "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6663,
-      "tokens": 1664
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -401,6 +406,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/claude-code:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/claude-code:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -408,8 +418,8 @@
     },
     "bundle/claude-code:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/claude-code:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -583,8 +593,8 @@
     },
     "bundle/claude-code:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20542,
-      "tokens": 5128
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/claude-code:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -733,23 +743,23 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15948,
-      "tokens": 3978
+      "bytes": 16002,
+      "tokens": 3992
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27161,
-      "tokens": 6781
+      "bytes": 27215,
+      "tokens": 6794
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 26017,
-      "tokens": 6498
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26188,
-      "tokens": 6539
+      "bytes": 26242,
+      "tokens": 6553
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -763,13 +773,13 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14564,
-      "tokens": 3637
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23797,
-      "tokens": 5945
+      "bytes": 23851,
+      "tokens": 5958
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -788,8 +798,8 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21000,
-      "tokens": 5245
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -883,13 +893,18 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -938,8 +953,8 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1028,8 +1043,8 @@
     },
     "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6663,
-      "tokens": 1664
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1266,6 +1281,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/codex:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/codex:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -1273,8 +1293,8 @@
     },
     "bundle/codex:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/codex:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -1448,8 +1468,8 @@
     },
     "bundle/codex:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20542,
-      "tokens": 5128
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/codex:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -1598,23 +1618,23 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 16066,
-      "tokens": 4008
+      "bytes": 16120,
+      "tokens": 4021
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27279,
-      "tokens": 6810
+      "bytes": 27333,
+      "tokens": 6824
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 26017,
-      "tokens": 6498
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26235,
-      "tokens": 6551
+      "bytes": 26289,
+      "tokens": 6564
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1628,13 +1648,13 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14564,
-      "tokens": 3637
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23958,
-      "tokens": 5985
+      "bytes": 24012,
+      "tokens": 5998
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -1653,8 +1673,8 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21000,
-      "tokens": 5245
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/codex:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -1748,13 +1768,18 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25248,
-      "tokens": 6265
+      "bytes": 26064,
+      "tokens": 6470
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5675,
+      "tokens": 1415
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13652,
-      "tokens": 3406
+      "bytes": 13823,
+      "tokens": 3449
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1803,8 +1828,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93199,
-      "tokens": 23272
+      "bytes": 93595,
+      "tokens": 23371
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1893,8 +1918,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6759,
-      "tokens": 1688
+      "bytes": 7560,
+      "tokens": 1887
     },
     "bundle/cursor:.cursor/references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2131,6 +2156,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/cursor:.cursor/references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2134,
+      "tokens": 534
+    },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 953,
@@ -2138,8 +2168,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2294,
-      "tokens": 573
+      "bytes": 2572,
+      "tokens": 643
     },
     "bundle/cursor:.cursor/references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -2308,8 +2338,8 @@
     },
     "bundle/cursor:.cursor/skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20554,
-      "tokens": 5131
+      "bytes": 20645,
+      "tokens": 5154
     },
     "bundle/cursor:.cursor/skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -2458,23 +2488,23 @@
     },
     "bundle/cursor:.cursor/skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15969,
-      "tokens": 3984
+      "bytes": 16023,
+      "tokens": 3997
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27269,
-      "tokens": 6808
+      "bytes": 27323,
+      "tokens": 6821
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 26041,
-      "tokens": 6504
+      "bytes": 26095,
+      "tokens": 6517
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26224,
-      "tokens": 6548
+      "bytes": 26278,
+      "tokens": 6562
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2488,13 +2518,13 @@
     },
     "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14588,
-      "tokens": 3643
+      "bytes": 14642,
+      "tokens": 3656
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23830,
-      "tokens": 5953
+      "bytes": 23884,
+      "tokens": 5966
     },
     "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -2513,8 +2543,8 @@
     },
     "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21024,
-      "tokens": 5251
+      "bytes": 21078,
+      "tokens": 5264
     },
     "bundle/cursor:.cursor/skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -2613,13 +2643,18 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2668,8 +2703,8 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -2758,8 +2793,8 @@
     },
     "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6663,
-      "tokens": 1664
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2996,6 +3031,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/droid:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/droid:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -3003,8 +3043,8 @@
     },
     "bundle/droid:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/droid:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -3178,8 +3218,8 @@
     },
     "bundle/droid:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20542,
-      "tokens": 5128
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/droid:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -3328,23 +3368,23 @@
     },
     "bundle/droid:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 16051,
-      "tokens": 4004
+      "bytes": 16105,
+      "tokens": 4018
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27267,
-      "tokens": 6807
+      "bytes": 27321,
+      "tokens": 6821
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 26013,
-      "tokens": 6497
+      "bytes": 26067,
+      "tokens": 6510
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26233,
-      "tokens": 6550
+      "bytes": 26287,
+      "tokens": 6564
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -3358,13 +3398,13 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14560,
-      "tokens": 3636
+      "bytes": 14614,
+      "tokens": 3649
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23941,
-      "tokens": 5980
+      "bytes": 23995,
+      "tokens": 5994
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -3383,8 +3423,8 @@
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 20996,
-      "tokens": 5244
+      "bytes": 21050,
+      "tokens": 5257
     },
     "bundle/droid:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -3478,13 +3518,18 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3533,8 +3578,8 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -3623,8 +3668,8 @@
     },
     "bundle/grok:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6663,
-      "tokens": 1664
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/grok:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -3861,6 +3906,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/grok:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/grok:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -3868,8 +3918,8 @@
     },
     "bundle/grok:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/grok:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -4043,8 +4093,8 @@
     },
     "bundle/grok:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20542,
-      "tokens": 5128
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/grok:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -4193,23 +4243,23 @@
     },
     "bundle/grok:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15933,
-      "tokens": 3975
+      "bytes": 15987,
+      "tokens": 3988
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27149,
-      "tokens": 6778
+      "bytes": 27203,
+      "tokens": 6791
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 26017,
-      "tokens": 6498
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26188,
-      "tokens": 6539
+      "bytes": 26242,
+      "tokens": 6553
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -4223,13 +4273,13 @@
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14564,
-      "tokens": 3637
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23782,
-      "tokens": 5941
+      "bytes": 23836,
+      "tokens": 5954
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -4248,8 +4298,8 @@
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21000,
-      "tokens": 5245
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/grok:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -4343,13 +4393,18 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -4398,8 +4453,8 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -4488,8 +4543,8 @@
     },
     "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6663,
-      "tokens": 1664
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -4726,6 +4781,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/kimi:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/kimi:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -4733,8 +4793,8 @@
     },
     "bundle/kimi:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/kimi:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -4908,8 +4968,8 @@
     },
     "bundle/kimi:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20542,
-      "tokens": 5128
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/kimi:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -5058,23 +5118,23 @@
     },
     "bundle/kimi:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 16081,
-      "tokens": 4012
+      "bytes": 16135,
+      "tokens": 4025
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27291,
-      "tokens": 6813
+      "bytes": 27345,
+      "tokens": 6827
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 26017,
-      "tokens": 6498
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26235,
-      "tokens": 6551
+      "bytes": 26289,
+      "tokens": 6564
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -5088,13 +5148,13 @@
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 14564,
-      "tokens": 3637
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23973,
-      "tokens": 5988
+      "bytes": 24027,
+      "tokens": 6002
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -5113,8 +5173,8 @@
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21000,
-      "tokens": 5245
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/kimi:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",

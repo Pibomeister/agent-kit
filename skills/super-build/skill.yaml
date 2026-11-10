@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-build/SKILL.md (AUTHORING.md §4.1).
 
 id: super-build
-version: 0.4.0
+version: 0.5.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -194,7 +194,7 @@ stop_conditions:
   - complete when the ticket is committed, every acceptance criterion has a receipt bound to the
     committed revision, and every finding is closed on that evidence or parked with a written ruling.
   - The two axes return no findings this lane is obliged to act on, and the receipts bind.
-  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped publish is named in the result as not published, and of these results only exit 1 stops.
 

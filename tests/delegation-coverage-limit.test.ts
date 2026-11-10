@@ -262,7 +262,7 @@ describe("downstream readers accept an unscored ticket under the unattended poli
       "An unscored ticket has no class to pass: declare the seat with --author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat> and no --class",
     );
     expect(text).toContain("never a derived one or a seeded default");
-    expect(readFileSync(join(REPO, "skills/super-build/skill.yaml"), "utf8")).toMatch(/^version: 0\.4\.0$/m);
+    expect(readFileSync(join(REPO, "skills/super-build/skill.yaml"), "utf8")).toMatch(/^version: 0\.5\.0$/m);
   });
 
   test("super-ship states the class as unscored instead of deriving one", () => {
@@ -327,7 +327,7 @@ describe("an unscored ticket still carries criteria and named verification, and 
     expect(text).toContain(
       "The gate counts those checks and nothing else, refuses a verify recorded by the build's implementer seat or by no seat, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
     );
-    expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.4\.0$/m);
+    expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.5\.0$/m);
   });
 });
 

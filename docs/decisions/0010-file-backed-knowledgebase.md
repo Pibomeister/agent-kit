@@ -2,6 +2,9 @@
 
 **Status:** Accepted.
 **Date:** 2026-10-05.
+**Amended:** 2026-11-09. Item 5 now refuses only a knowledgebase that can be written; a read-only
+binding may read pages the project already commits. See "Amendment: a read-only in-repo
+knowledgebase" below.
 **Authority:** the owner's choice of "Build file-backed KB (Recommended)" for the question of who
 fixes the knowledgebase adapter, and of a private local git repository with no remote as the
 knowledgebase's location, both relayed by Firstmate on 2026-10-06 (UTC). Diverges from one sentence
@@ -60,9 +63,9 @@ backend is built to it: the nine kinds, the two artifact classes, placement by s
 4. **Two operations are carried: `readContext` and `publishArtifact`.** `recordDecision`,
    `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests` and `proposeLesson` refuse and
    write nothing.
-5. **The knowledgebase is never the application repository.** A registration or binding that
-   resolves to the project's checkout, another work tree of it, or a directory inside or around
-   its tree is refused.
+5. **A knowledgebase that can be written is never the application repository.** A registration or
+   binding that resolves to the project's checkout, another work tree of it, or a directory inside
+   or around its tree is refused, unless the binding is read-only (amended 2026-11-09, below).
 6. **Unavailable says why.** The report names the missing setup step, a binding file or a
    registration, and says that `ak.install.yaml` is not it.
 
@@ -88,3 +91,19 @@ The rule is ruling `kb-binding-is-a-locator`; the contract is
   continues past an unavailable read and publication still stops with `needs-input`. What changed
   is that a configured knowledgebase is now possible, and that the stop names its cause.
 - **ADR-0005 is untouched.** Nothing here changes who may start a phase.
+
+## Amendment: a read-only in-repo knowledgebase (2026-11-09)
+
+**Authority:** Firstmate's A-prime decision, relayed 2026-11-09, after an independent council found
+that a project's own committed wiki could not be bound and that a bound knowledgebase refusing every
+publish would stop each lifecycle phase at its first publish.
+
+Item 5 refused every knowledgebase inside the application repository because a publish through it
+would write project knowledge there. A second backend, `in-repo`
+(`adapters/knowledgebase/backends/in-repo.md`), carries no publish: it reads the pages a project
+already commits, at the merge-base of `HEAD` and the remote's default branch so a branch cannot make
+its own pages read as settled, and skips every publish with `kb.read-only`, writing nothing anywhere. That reason
+cannot arise, so a read-only binding is allowed and a writable one is still refused. `local-git` is
+unchanged. The contract's "Capabilities and side effects", "Centrality" and "Bindings" sections
+say the same.
+

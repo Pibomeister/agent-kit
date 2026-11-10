@@ -1315,12 +1315,16 @@ conflicts:
       A project reaches its knowledgebase through a committed binding file, `ak.kb.yaml`, that
       names a backend, the project id and a knowledgebase id, and holds neither a machine path nor
       a secret. Where that knowledgebase is on a machine is registered once per machine, outside
-      every checkout. With no binding, or no registration, the knowledgebase is unconfigured: a
-      read is unavailable, a write refuses, and the report names the missing setup step. The
-      install file takes no part in this. A binding that resolves to the application repository,
-      one of its work trees or a directory inside it is refused, and a configured knowledgebase
-      that cannot be used is failed, never unavailable. A backend carries only the operations its
-      document names, and the rest refuse.
+      every checkout, save a read-only in-repo binding, which names a directory the project itself
+      commits and needs no registration. With no binding, or no registration, the knowledgebase is
+      unconfigured: a read is unavailable, a write refuses, and the report names the missing setup
+      step; a missing in-repo knowledgebase (kb.in-repo-missing) is unconfigured the same way. The
+      install file takes no part in this. A binding that can be written and resolves to the
+      application repository, one of its work trees or a directory inside it is refused; a
+      read-only binding may name a directory inside it, because it carries no publish: every
+      publish to it is skipped (kb.read-only) and nothing is written anywhere. A configured
+      knowledgebase that cannot be used is failed, never unavailable. A backend carries only the
+      operations its document names, and the rest refuse.
     discharged_in: [inputs, side-effects, outputs]
     binds:
       adapters: [knowledgebase]
