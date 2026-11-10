@@ -28,6 +28,7 @@ export interface T3TraceSlot {
 }
 
 export interface T3Evidence {
+  readonly kind: "t3-evidence-template";
   readonly host: string;
   readonly adapter: string;
   readonly traces: readonly T3TraceSlot[];
@@ -38,20 +39,7 @@ export interface T3Evidence {
 
 const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 
-export function isT3HostId(value: string): boolean {
-  if (value === "") return false;
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    const lower = code >= 97 && code <= 122;
-    const digit = code >= 48 && code <= 57;
-    const dash = code === 45;
-    if (!lower && !digit && !dash) return false;
-  }
-  return true;
-}
-
 export function isAdapterHost(host: string, repo: string = REPO): boolean {
-  if (!isT3HostId(host)) return false;
   if (!HOST_IDS.some((id) => id === host)) return false;
   try {
     return statSync(join(repo, "adapters", host)).isDirectory();
@@ -68,6 +56,7 @@ export function qualifyT3(host: string, repo: string = REPO): T3Evidence | null 
   if (!isAdapterHost(host, repo)) return null;
   const traces = T3_SLOTS.map(emptyTraceSlot);
   return {
+    kind: "t3-evidence-template",
     host,
     adapter: `adapters/${host}`,
     traces,

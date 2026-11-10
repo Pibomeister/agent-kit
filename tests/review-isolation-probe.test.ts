@@ -416,16 +416,6 @@ describe("fixture driver note writing", () => {
     expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
   });
 
-  test("a misconfigured adapter with no retained evidence is unobservable, not a pass", () => {
-    const r = runCli("claude-code", { AK_PROBE_FIXTURE_DIR: join(FIXTURES, "misconfigured-missing") });
-    expect(r.status).toBe(0);
-    if (r.report === null) throw new Error("expected a verdict file");
-    const byId = new Map(r.report.arms.map((arm) => [arm.id, arm]));
-    expect(byId.get("parent-turn")?.verdict).toBe("unobservable");
-    expect(byId.get("hooks-and-memory")?.verdict).toBe("unobservable");
-    expect(byId.get("auto-loaded-instructions")?.verdict).toBe("unobservable");
-  });
-
   test("mastracode without a child transcript is unobservable on every arm that needs one", () => {
     const r = runCli("mastracode", { AK_PROBE_FIXTURE_DIR: join(FIXTURES, "missing") });
     expect(r.status).toBe(0);

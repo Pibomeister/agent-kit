@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { isAdapterHost, qualifyT3, T3_SLOTS } from "../src/adapter-qualification/t3.ts";
 import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const T3_SCRIPT = join(REPO, "scripts/t3-qualify.sh");
@@ -41,14 +42,28 @@ describe("Cursor T3 qualification (GAP-13)", () => {
     expect(cursor.stdout).toContain('"path": null');
     expect(cursor.stdout).toContain('"sha256": null');
     expect(cursor.stdout).toContain('"recordedAt": null');
+    expect(cursor.stdout).toContain('"kind": "t3-evidence-template"');
     expect(cursor.stdout).toContain('"verdict": "not-qualified"');
     expect(cursor.stdout).toContain('"strict": false');
+    const refused = [
+      ["foo"],
+      ["adapters/cursor"],
+      ["tracker"],
+      [],
+      ["../cursor"],
+      ["CURSOR"],
+      ["cursor/"],
+      ["--help", "extra"],
+      ["--bogus"],
+    ] as const;
+    for (const args of refused) {
+      const r = runScript(T3_SCRIPT, args);
+      expect(r.status).toBe(2);
+      expect(r.stdout).toBe("");
+    }
     const unknown = runScript(T3_SCRIPT, ["foo"]);
-    expect(unknown.status).toBe(2);
     expect(unknown.stderr).toContain("adapters/");
-    expect(runScript(T3_SCRIPT, ["adapters/cursor"]).status).toBe(2);
-    expect(runScript(T3_SCRIPT, ["tracker"]).status).toBe(2);
-    expect(runScript(T3_SCRIPT, []).status).toBe(2);
+    expect(unknown.stderr).toContain(JSON.stringify("foo"));
     const help = runScript(T3_SCRIPT, ["--help"]);
     expect(help.status).toBe(0);
     expect(help.stdout).toContain("t3-qualify:");
@@ -63,6 +78,9 @@ describe("Cursor T3 qualification (GAP-13)", () => {
     expect(qualifyT3("tracker")).toBeNull();
     expect(qualifyT3("adapters/cursor")).toBeNull();
     expect(qualifyT3("cursor")).not.toBeNull();
+    const empty = processScratch("ak-t3-no-cursor-");
+    expect(isAdapterHost("cursor", empty)).toBe(false);
+    expect(qualifyT3("cursor", empty)).toBeNull();
   });
 
   test("qualifyT3 writes empty not-qualified slots for every packaging host", () => {
@@ -78,6 +96,7 @@ describe("Cursor T3 qualification (GAP-13)", () => {
         expect(slot.sha256).toBeNull();
         expect(slot.recordedAt).toBeNull();
       }
+      expect(evidence.kind).toBe("t3-evidence-template");
       expect(evidence.verdict).toBe("not-qualified");
       expect(evidence.strict).toBe(false);
     }
