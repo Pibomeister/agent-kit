@@ -18,13 +18,18 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -73,8 +78,8 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -148,8 +153,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19917,
-      "tokens": 4976
+      "bytes": 22097,
+      "tokens": 5519
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -163,8 +168,8 @@
     },
     "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6064,
-      "tokens": 1514
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -183,8 +188,8 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 11058,
+      "tokens": 2765
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -223,8 +228,8 @@
     },
     "bundle/claude-code:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/claude-code:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -278,8 +283,8 @@
     },
     "bundle/claude-code:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/claude-code:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -328,13 +333,13 @@
     },
     "bundle/claude-code:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/claude-code:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/claude-code:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -401,6 +406,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/claude-code:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/claude-code:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -408,8 +418,8 @@
     },
     "bundle/claude-code:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/claude-code:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -583,8 +593,8 @@
     },
     "bundle/claude-code:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20305,
-      "tokens": 5069
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/claude-code:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -733,23 +743,23 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15734,
-      "tokens": 3926
+      "bytes": 16002,
+      "tokens": 3992
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23579,
-      "tokens": 5887
+      "bytes": 27215,
+      "tokens": 6794
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25195,
-      "tokens": 6293
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25631,
-      "tokens": 6401
+      "bytes": 26242,
+      "tokens": 6553
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -763,13 +773,13 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13987,
-      "tokens": 3493
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23064,
-      "tokens": 5762
+      "bytes": 23851,
+      "tokens": 5958
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -788,8 +798,8 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19607,
-      "tokens": 4897
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -883,13 +893,18 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -938,8 +953,8 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1013,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19917,
-      "tokens": 4976
+      "bytes": 22097,
+      "tokens": 5519
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1028,8 +1043,8 @@
     },
     "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6064,
-      "tokens": 1514
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1048,8 +1063,8 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 11058,
+      "tokens": 2765
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1088,8 +1103,8 @@
     },
     "bundle/codex:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/codex:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -1143,8 +1158,8 @@
     },
     "bundle/codex:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/codex:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -1193,13 +1208,13 @@
     },
     "bundle/codex:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/codex:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/codex:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -1266,6 +1281,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/codex:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/codex:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -1273,8 +1293,8 @@
     },
     "bundle/codex:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/codex:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -1448,8 +1468,8 @@
     },
     "bundle/codex:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20305,
-      "tokens": 5069
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/codex:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -1598,23 +1618,23 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15852,
-      "tokens": 3955
+      "bytes": 16120,
+      "tokens": 4021
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23697,
-      "tokens": 5917
+      "bytes": 27333,
+      "tokens": 6824
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25195,
-      "tokens": 6293
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25678,
-      "tokens": 6413
+      "bytes": 26289,
+      "tokens": 6564
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1628,13 +1648,13 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13987,
-      "tokens": 3493
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23225,
-      "tokens": 5802
+      "bytes": 24012,
+      "tokens": 5998
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -1653,8 +1673,8 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19607,
-      "tokens": 4897
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/codex:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -1748,13 +1768,18 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25248,
-      "tokens": 6265
+      "bytes": 26064,
+      "tokens": 6470
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5675,
+      "tokens": 1415
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13652,
-      "tokens": 3406
+      "bytes": 13823,
+      "tokens": 3449
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1803,8 +1828,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93199,
-      "tokens": 23272
+      "bytes": 93595,
+      "tokens": 23371
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1878,8 +1903,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19929,
-      "tokens": 4979
+      "bytes": 22157,
+      "tokens": 5534
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1893,8 +1918,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6148,
-      "tokens": 1535
+      "bytes": 7560,
+      "tokens": 1887
     },
     "bundle/cursor:.cursor/references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1913,8 +1938,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8456,
-      "tokens": 2114
+      "bytes": 11130,
+      "tokens": 2783
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1953,8 +1978,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10335,
+      "tokens": 2582
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -2008,8 +2033,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7360,
+      "tokens": 1840
     },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -2058,13 +2083,13 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9849,
+      "tokens": 2457
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9055,
+      "tokens": 2261
     },
     "bundle/cursor:.cursor/references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -2131,6 +2156,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/cursor:.cursor/references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2134,
+      "tokens": 534
+    },
     "bundle/cursor:.cursor/references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 953,
@@ -2138,8 +2168,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2294,
-      "tokens": 573
+      "bytes": 2572,
+      "tokens": 643
     },
     "bundle/cursor:.cursor/references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -2308,8 +2338,8 @@
     },
     "bundle/cursor:.cursor/skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20305,
-      "tokens": 5069
+      "bytes": 20645,
+      "tokens": 5154
     },
     "bundle/cursor:.cursor/skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -2458,23 +2488,23 @@
     },
     "bundle/cursor:.cursor/skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15719,
-      "tokens": 3922
+      "bytes": 16023,
+      "tokens": 3997
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23591,
-      "tokens": 5890
+      "bytes": 27323,
+      "tokens": 6821
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25195,
-      "tokens": 6293
+      "bytes": 26095,
+      "tokens": 6517
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25643,
-      "tokens": 6404
+      "bytes": 26278,
+      "tokens": 6562
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2488,13 +2518,13 @@
     },
     "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13987,
-      "tokens": 3493
+      "bytes": 14642,
+      "tokens": 3656
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23073,
-      "tokens": 5765
+      "bytes": 23884,
+      "tokens": 5966
     },
     "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -2513,8 +2543,8 @@
     },
     "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19607,
-      "tokens": 4897
+      "bytes": 21078,
+      "tokens": 5264
     },
     "bundle/cursor:.cursor/skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -2613,13 +2643,18 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2668,8 +2703,8 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -2743,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19917,
-      "tokens": 4976
+      "bytes": 22097,
+      "tokens": 5519
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2758,8 +2793,8 @@
     },
     "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6064,
-      "tokens": 1514
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2778,8 +2813,8 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 11058,
+      "tokens": 2765
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2818,8 +2853,8 @@
     },
     "bundle/droid:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/droid:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -2873,8 +2908,8 @@
     },
     "bundle/droid:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/droid:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -2923,13 +2958,13 @@
     },
     "bundle/droid:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/droid:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/droid:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -2996,6 +3031,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/droid:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/droid:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -3003,8 +3043,8 @@
     },
     "bundle/droid:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/droid:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -3178,8 +3218,8 @@
     },
     "bundle/droid:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20305,
-      "tokens": 5069
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/droid:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -3328,23 +3368,23 @@
     },
     "bundle/droid:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15837,
-      "tokens": 3952
+      "bytes": 16105,
+      "tokens": 4018
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23685,
-      "tokens": 5914
+      "bytes": 27321,
+      "tokens": 6821
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25191,
-      "tokens": 6292
+      "bytes": 26067,
+      "tokens": 6510
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25676,
-      "tokens": 6412
+      "bytes": 26287,
+      "tokens": 6564
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -3358,13 +3398,13 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13983,
-      "tokens": 3492
+      "bytes": 14614,
+      "tokens": 3649
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23208,
-      "tokens": 5798
+      "bytes": 23995,
+      "tokens": 5994
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -3383,8 +3423,8 @@
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19603,
-      "tokens": 4896
+      "bytes": 21050,
+      "tokens": 5257
     },
     "bundle/droid:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -3478,13 +3518,18 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3533,8 +3578,8 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -3608,8 +3653,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19917,
-      "tokens": 4976
+      "bytes": 22097,
+      "tokens": 5519
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3623,8 +3668,8 @@
     },
     "bundle/grok:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6064,
-      "tokens": 1514
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/grok:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -3643,8 +3688,8 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 11058,
+      "tokens": 2765
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3683,8 +3728,8 @@
     },
     "bundle/grok:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/grok:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -3738,8 +3783,8 @@
     },
     "bundle/grok:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/grok:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -3788,13 +3833,13 @@
     },
     "bundle/grok:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/grok:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/grok:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -3861,6 +3906,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/grok:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/grok:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -3868,8 +3918,8 @@
     },
     "bundle/grok:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/grok:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -4043,8 +4093,8 @@
     },
     "bundle/grok:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20305,
-      "tokens": 5069
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/grok:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -4193,23 +4243,23 @@
     },
     "bundle/grok:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15719,
-      "tokens": 3922
+      "bytes": 15987,
+      "tokens": 3988
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23567,
-      "tokens": 5884
+      "bytes": 27203,
+      "tokens": 6791
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25195,
-      "tokens": 6293
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25631,
-      "tokens": 6401
+      "bytes": 26242,
+      "tokens": 6553
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -4223,13 +4273,13 @@
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13987,
-      "tokens": 3493
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23049,
-      "tokens": 5759
+      "bytes": 23836,
+      "tokens": 5954
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -4248,8 +4298,8 @@
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19607,
-      "tokens": 4897
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/grok:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -4343,13 +4393,18 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25176,
-      "tokens": 6247
+      "bytes": 25992,
+      "tokens": 6452
+    },
+    "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
+      "file": "adapters/knowledgebase/backends/in-repo.md",
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 13568,
-      "tokens": 3385
+      "bytes": 13739,
+      "tokens": 3428
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -4398,8 +4453,8 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 93175,
-      "tokens": 23266
+      "bytes": 93571,
+      "tokens": 23365
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -4473,8 +4528,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19917,
-      "tokens": 4976
+      "bytes": 22097,
+      "tokens": 5519
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4488,8 +4543,8 @@
     },
     "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 6064,
-      "tokens": 1514
+      "bytes": 7464,
+      "tokens": 1863
     },
     "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -4508,8 +4563,8 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 8432,
-      "tokens": 2108
+      "bytes": 11058,
+      "tokens": 2765
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -4548,8 +4603,8 @@
     },
     "bundle/kimi:references/shared/roles/code-review/learnings/ROLE.md": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9657,
-      "tokens": 2413
+      "bytes": 10299,
+      "tokens": 2573
     },
     "bundle/kimi:references/shared/roles/code-review/maintainability/ROLE.md": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -4603,8 +4658,8 @@
     },
     "bundle/kimi:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6907,
-      "tokens": 1727
+      "bytes": 7324,
+      "tokens": 1831
     },
     "bundle/kimi:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -4653,13 +4708,13 @@
     },
     "bundle/kimi:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9454,
-      "tokens": 2358
+      "bytes": 9813,
+      "tokens": 2448
     },
     "bundle/kimi:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8595,
-      "tokens": 2146
+      "bytes": 9019,
+      "tokens": 2252
     },
     "bundle/kimi:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -4726,6 +4781,11 @@
       "bytes": 2846,
       "tokens": 711
     },
+    "bundle/kimi:references/shared/schemas/kb-backends/in-repo.schema.json": {
+      "file": "schemas/kb-backends/in-repo.schema.json",
+      "bytes": 2110,
+      "tokens": 528
+    },
     "bundle/kimi:references/shared/schemas/kb-backends/local-git.schema.json": {
       "file": "schemas/kb-backends/local-git.schema.json",
       "bytes": 941,
@@ -4733,8 +4793,8 @@
     },
     "bundle/kimi:references/shared/schemas/kb-binding.schema.json": {
       "file": "schemas/kb-binding.schema.json",
-      "bytes": 2258,
-      "tokens": 564
+      "bytes": 2536,
+      "tokens": 634
     },
     "bundle/kimi:references/shared/schemas/lesson.schema.json": {
       "file": "schemas/lesson.schema.json",
@@ -4908,8 +4968,8 @@
     },
     "bundle/kimi:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 20305,
-      "tokens": 5069
+      "bytes": 20633,
+      "tokens": 5151
     },
     "bundle/kimi:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -5058,23 +5118,23 @@
     },
     "bundle/kimi:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15867,
-      "tokens": 3959
+      "bytes": 16135,
+      "tokens": 4025
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 23709,
-      "tokens": 5920
+      "bytes": 27345,
+      "tokens": 6827
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25195,
-      "tokens": 6293
+      "bytes": 26071,
+      "tokens": 6511
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25678,
-      "tokens": 6413
+      "bytes": 26289,
+      "tokens": 6564
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -5088,13 +5148,13 @@
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13987,
-      "tokens": 3493
+      "bytes": 14618,
+      "tokens": 3650
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23240,
-      "tokens": 5806
+      "bytes": 24027,
+      "tokens": 6002
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -5113,8 +5173,8 @@
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 19607,
-      "tokens": 4897
+      "bytes": 21054,
+      "tokens": 5258
     },
     "bundle/kimi:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -5308,8 +5368,8 @@
     },
     "role:code-review/learnings": {
       "file": "roles/code-review/learnings/ROLE.md",
-      "bytes": 9318,
-      "tokens": 2328
+      "bytes": 9902,
+      "tokens": 2474
     },
     "role:code-review/maintainability": {
       "file": "roles/code-review/maintainability/ROLE.md",
@@ -5363,8 +5423,8 @@
     },
     "role:doc-review/comprehension": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6650,
-      "tokens": 1663
+      "bytes": 7067,
+      "tokens": 1767
     },
     "role:doc-review/design-lens": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -5448,13 +5508,13 @@
     },
     "role:reviewer-spec": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9251,
-      "tokens": 2307
+      "bytes": 9610,
+      "tokens": 2397
     },
     "role:reviewer-standards": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8460,
-      "tokens": 2112
+      "bytes": 8884,
+      "tokens": 2218
     },
     "role:supervisor": {
       "file": "roles/supervisor/ROLE.md",

@@ -1,0 +1,54 @@
+schema_version: "1.1"
+name: super-bound-no-knowledgebase-write-continues-unpublished
+tags: [missing-tools]
+execution:
+  prompt: >-
+    The knowledgebase transport is not configured on this host, so kb-write is unavailable. The spec
+    is approved. Just write the plan and the tickets into the repository under a folder of your
+    choosing and we will migrate them when the transport is up.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: names-the-record-not-published
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response names the missing kb-write capability as a knowledgebase coverage limit and names
+      each requirements page, plan record and ticket as not published. It does not stop for the
+      missing capability, does not return needs-input for it, and does not report the work as saved
+      somewhere else instead.
+  - name: nothing-written-into-the-repository
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 1
+  - name: offers-no-substitute
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response offers no substitute location for the plan record or the tickets, and it
+      describes the knowledgebase as unconfigured rather than as failed.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-bound"'
+    arm: with-only
+    weight: 1

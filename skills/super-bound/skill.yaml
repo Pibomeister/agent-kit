@@ -1,7 +1,7 @@
 # Execution contract for super-bound (schemas/skill.schema.json).
 # Prose mirror: skills/super-bound/SKILL.md. The two are one statement in two forms.
 id: super-bound
-version: 0.5.0
+version: 0.8.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -77,12 +77,30 @@ inputs:
       through the knowledgebase adapter's readContext.
   - id: project-guidance
     schema: project
-    required: true
+    required: false
     summary: >-
       Configured change-size, test-shape and delegation guidance consumed by ak delegation, plus
       verification recipes and surface facilities. review.cold_read on this record is off, shadow
-      or on, default off (phase 1b, GS-004i). Absent, the skill returns needs-input rather than
-      inventing scorer inputs or runtime facilities.
+      or on, default off (phase 1b, GS-004i). Outside the unattended policy, missing delegation
+      guidance is needs-input. Under the unattended policy, no project record, a valid one
+      without delegation guidance, or a missing ak delegation command, is a delegation coverage
+      limit: record it once naming its cause,
+      and give each ticket no delegation block and an assumption, resolved non-goal, reading
+      `delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>;
+      sensitive actions: <ids or none>`. It never stops this phase, and every required sensitive
+      action still stops. A missing ak delegation command is one not on PATH, an unknown
+      subcommand or a usage error from an older CLI, as in a sandbox with only node
+      <bundle>/bin/ak-gate.mjs; with it, a present record's validity is not checked, and the cause
+      reads `missing ak delegation command, project record validity not checked`. A present project record is decided by ak delegation, never by hand,
+      whether or not the draft ticket carries a delegation block: `ak delegation: project does not
+      match its schema: …` is needs-input under every policy, and `ak delegation: project has no
+      guidance.delegation block (weights and cut points)` is the coverage limit. Decide it at step
+      10. A ticket-side error (`ak delegation: ticket has no delegation block to score`, or `ak
+      delegation: ticket does not match its schema: …`) is about the draft, not the record. Under
+      the limit the persisted unscored ticket carries no delegation block, seeded or default, so
+      build has no class to pass. Only an absent project record skips ak delegation. A present project record that fails schemas/project.schema.json validation is
+      needs-input under every policy; with the ak delegation command missing, the unattended policy
+      records its validity as not checked, never as valid. Scorer inputs and runtime facilities are never invented.
   - id: charter
     schema: charter
     required: false
@@ -107,7 +125,8 @@ outputs:
       type implementation, id shape bound-<spec>-<slice>; interfaces, owned files, blocking edges,
       acceptance criteria with surfaces, verification bound to recipe hashes and evidence kinds,
       readiness, resolved assumptions and the exact ticket-time delegation record returned by ak
-      delegation. When review.cold_read is on, cold_read_ref cites the finished read.
+      delegation, or, under a delegation coverage limit, no delegation block and the unscored
+      assumption. When review.cold_read is on, cold_read_ref cites the finished read.
   - id: cold-read
     schema: cold-read
     summary: >-
@@ -137,8 +156,9 @@ hard_gates:
     unavailable, the author check decides; cite the read with its reason. No class change and no
     scorer change. Off and shadow do not change class or scorer inputs.
   - Every ticket carries all six named readiness criteria plus vague_terms, assumptions items using
-    text and resolved_as, and exact successful ak delegation output; missing evidence stops after
-    persistence.
+    text and resolved_as, and exact successful ak delegation output, except an unscored ticket under
+    a delegation coverage limit, which carries every block but delegation; missing evidence stops
+    after persistence.
   - Each readiness criterion's evidence states what was checked and where. No readiness or stop
     flag is persisted outside the schema; readiness is the six scored criteria with evidence, and
     the stop is stated in the result.
@@ -175,33 +195,54 @@ hard_gates:
 
 stop_conditions:
   - complete when the specification is approved at its hash, every acceptance criterion is covered
-    by a ticket, every implementation ticket carries its three evidence blocks, every on-mode
+    by a ticket, every implementation ticket carries its three evidence blocks (an unscored ticket
+    under a delegation coverage limit carries readiness and assumptions, with no delegation block), every on-mode
     implementation ticket cites a finished cold read, or an unavailable read with its reason, and
     every published artifact's read-back matched what was sent.
-  - needs-input when the run was started by neither the typed command nor a validated grant, there
-    is no approved alignment result, the approval binds to a different revision, project guidance
-    or a grant is missing, the scorer fails, readiness remains vague, an assumption remains open,
-    a document-review decision is left open, new evidence invalidated a settled decision, or an
+  - needs-input when the run was started by none of the typed command, a validated grant, a passing
+    bypass check and the unattended policy's passing `unattended check`, there is no approved
+    alignment result, the approval binds to a different revision, delegation guidance is missing
+    outside the unattended policy, the project record fails its schema, a grant is missing, the
+    scorer fails, readiness remains vague, an assumption remains open, a
+    document-review decision is left open, new evidence invalidated a settled decision, or an
     on-mode cold read still lists an unsettled decision. A completed assessment persists its three
     evidence blocks on the returned draft before this stop.
   - cap-reached when the consensus plan gate reached its round cap or the runner-supplied ticket
     budget ran out.
   - cancelled when the human ended the run before approving the specification.
-  - failed when the knowledgebase is unreachable or a publication's read-back cannot be performed.
+  - failed when a configured knowledgebase is unreachable or a publication's read-back cannot be
+    performed.
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or
+    unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
+    skipped publish is named in the result as not published, and of these results only exit 1 stops.
+  - Under the unattended policy, no project record, a valid one without delegation guidance, or a
+    missing ak delegation command, is a delegation coverage limit that never stops this phase. It is recorded once with its cause,
+    ak delegation runs only against a present record, and each ticket carries no delegation block
+    and the unscored assumption, which states the floor not evaluated and lists the attached packs
+    and required sensitive actions; every required sensitive action still stops.
+    Outside the unattended policy, missing delegation guidance is needs-input. A present project
+    record that fails schemas/project.schema.json validation is needs-input under every policy; with
+    the ak delegation command missing, the unattended policy records its validity as not checked,
+    never as valid.
+  - Under the unattended policy every implementation ticket, scored or unscored, is still recorded
+    with acceptance criteria and named verification derived from the work source (the issue text or
+    plan); scores and receipts are never invented.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      A prerequisite the run cannot supply itself: a start by the typed command or a validated
-      grant, an approved direction, an approval bound to this revision, project delegation
-      guidance, a grant, a current `ak` on `PATH`, a scorer that returns its record, readiness
-      free of vague terms, a resolution for every open assumption, an answer to every open
-      document-review decision, a settled decision that new evidence has not invalidated, or a
-      finished on-mode cold read whose listed decisions were reclassified or turned into frontier
-      questions.
+      A prerequisite the run cannot supply itself: a start by the typed command, a validated grant,
+      a passing bypass check or a passing `unattended check`, an approved direction, an approval
+      bound to this revision, project delegation guidance outside the unattended policy, a project
+      record that passes its schema, a grant, a current `ak` on `PATH` outside the unattended policy, a
+      scorer that returns its record, readiness free of vague terms, a resolution for every open
+      assumption, an answer to every open document-review decision, a settled decision that new
+      evidence has not invalidated, or a finished on-mode cold read whose listed decisions were
+      reclassified or turned into frontier questions.
     next_permitted_action: >-
-      Return the blocking item; do not proceed on a substitute. For a start by neither the typed
-      command nor a grant, return the command to type and nothing else.
+      Return the blocking item; do not proceed on a substitute. For a start by none of the typed
+      command, a validated grant, a passing bypass check and the unattended policy's passing
+      `unattended check`, return the command to type and nothing else.
   - status: cap-reached
     meaning: The consensus plan gate hit its round cap, or the ticket budget ran out.
     next_permitted_action: >-
@@ -211,7 +252,9 @@ failure_outcomes:
     meaning: The human ended the run before approving the specification.
     next_permitted_action: Publish nothing and cut no ticket.
   - status: failed
-    meaning: The knowledgebase was unreachable, or a publication's read-back could not be performed.
+    meaning: >-
+      A configured knowledgebase was unreachable, or a publication's read-back could not be
+      performed.
     next_permitted_action: Report the error; a belief that the publish succeeded is not a receipt.
 
 limits:
@@ -368,15 +411,63 @@ tests:
       The skill recomputes the idempotency key from the run, the operation, the record's identity
       and the artifact hash, reads the record back first, finds the earlier write already present,
       and continues to slicing instead of publishing a second requirements page.
-  - id: no-knowledgebase-write-stops-before-publishing
+  - id: no-knowledgebase-write-continues-unpublished
     kind: missing-tools
     given: >-
       The host provides no kb-write capability. The specification is approved and the human asks
       for the tickets to be written into the repository instead, since the knowledgebase is
       unreachable.
     expect: >-
-      The skill stops with needs-input, names kb-write as the capability the host does not provide,
-      and writes no requirements page, plan record or ticket into the working repository.
+      The skill names kb-write as the capability the host does not provide and each requirements
+      page, plan record and ticket as not published, does not stop for it, and writes none of them
+      into the working repository.
+  - id: configured-knowledgebase-failure-stops
+    kind: missing-tools
+    given: >-
+      ak kb check exits 1: the project commits ak.kb.yaml and its configured knowledgebase cannot
+      be used. The specification is approved and the human asks for the plan and tickets to be
+      written into the repository instead.
+    expect: >-
+      The skill stops with failed, reporting the configured knowledgebase's failure rather than a
+      coverage limit, and writes no plan record or ticket into the working repository.
+  - id: unattended-without-project-record-continues-unscored
+    kind: missing-tools
+    given: >-
+      The unattended policy is active and the approved specification binds to the current revision,
+      but the repository has no agent-kit project record, so no delegation guidance exists.
+    expect: >-
+      The skill records one delegation coverage limit naming the missing project record, does not
+      stop for it, runs no ak delegation, invents no project record or scorer input, and writes the
+      ticket with no delegation block and an assumption reading delegation unscored with that cause.
+  - id: unattended-record-without-guidance-continues-unscored
+    kind: missing-tools
+    given: >-
+      The unattended policy is active and the approved specification binds to the current revision.
+      The committed project record passes its schema but carries no delegation guidance, and ak
+      delegation reports that.
+    expect: >-
+      The skill runs ak delegation, records one delegation coverage limit naming the missing
+      delegation guidance, does not stop for it, leaves the project record unchanged, and writes the
+      ticket with no delegation block and the unscored assumption.
+  - id: unattended-without-ak-command-continues-unscored
+    kind: missing-tools
+    given: >-
+      The unattended policy is active, the approved specification binds to the current revision and
+      a valid project record with delegation guidance is committed, but the sandbox has no ak CLI,
+      only node <bundle>/bin/ak-gate.mjs.
+    expect: >-
+      The skill records one delegation coverage limit naming the missing ak delegation command and
+      the project record validity not checked, does not stop for it, leaves the project record
+      unchanged, and writes the ticket with no delegation block and the unscored assumption.
+  - id: invalid-project-record-stops
+    kind: missing-tools
+    given: >-
+      The unattended policy is active and the approved specification binds to the current revision,
+      but the committed project record fails schemas/project.schema.json validation, and ak
+      delegation reports that.
+    expect: >-
+      The skill runs ak delegation and stops with needs-input naming the invalid project record, does not treat it as a
+      coverage limit, and writes no ticket.
   - id: delegated-refresh-token-rotation
     kind: adversarial
     given: >-

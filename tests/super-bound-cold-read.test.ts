@@ -97,7 +97,7 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
   });
 
   test("the execution contract names the cold-read output and keeps off as the default", () => {
-    expect(contract).toContain("version: 0.5.0");
+    expect(contract).toContain("version: 0.8.0");
     expect(contract).toContain("id: cold-read\n    schema: cold-read");
     expect(contract).toContain("Off and shadow keep the author type-check as the outcome gate");
     expect(skill).toContain("Off stores none");

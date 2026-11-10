@@ -1,0 +1,51 @@
+schema_version: "1.1"
+name: super-bound-unattended-record-without-guidance-continues-unscored
+tags: [missing-tools]
+execution:
+  prompt: >-
+    The unattended policy is active here: ak-gate unattended check --phase super-bound exited 0.
+    The spec in specs/approved.md is approved at this revision, and project.json is the project
+    record. The repository-local scorer is `ak`; put the repository root on PATH when invoking it.
+    Bound it into its implementation ticket and persist the ticket at
+    runs/retry-client-errors.ticket.json.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Skill, Write]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1
+  - name: continues-under-the-coverage-limit
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response names the record's missing delegation guidance once as a delegation coverage
+      limit, as the scorer reported it, and does not stop for it: it does not return needs-input for
+      the missing guidance.
+  - name: ticket-says-it-is-unscored
+    type: llm
+    weight: 1
+    focus: { source: file, path: runs/retry-client-errors.ticket.json }
+    criteria: >-
+      The ticket carries no delegation block and no invented class or factor scores, and one of its
+      assumptions reads delegation unscored with the missing delegation guidance as its cause
+      (coverage limit), states the floor not evaluated and lists the attached packs and required
+      sensitive actions, or none.
+  - name: project-record-unchanged
+    type: tool_used
+    tool: Write
+    input_match: 'project\.json'
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-bound"'
+    arm: with-only
+    weight: 1

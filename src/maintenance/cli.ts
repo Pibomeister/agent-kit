@@ -19,6 +19,7 @@ import {
 } from "../tracker/binding.ts";
 import { scoreDelegationFiles } from "../delegation.ts";
 import { findKbProjectRoot, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { IN_REPO_MISSING_REMEDY } from "../kb/in-repo.ts";
 import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
@@ -379,11 +380,19 @@ export function checkKnowledgebase(cwd: string, registry: string = registryPath(
     return finding(
       "PASS",
       "knowledgebase binding",
-      `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'`,
+      `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'${kb.inRepo === undefined ? "" : ", read-only: a publish is skipped"}`,
       "No action needed.",
     );
   }
   const issue = resolution.issues[0];
+  if (issue?.rule === "kb.in-repo-missing") {
+    return finding(
+      "WARN",
+      "knowledgebase binding",
+      `kb.in-repo-missing: ${issue.message}`,
+      `${IN_REPO_MISSING_REMEDY} Then run ak kb check.`,
+    );
+  }
   if (resolution.state === "unavailable") {
     return finding(
       "WARN",

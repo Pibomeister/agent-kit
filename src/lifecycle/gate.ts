@@ -1077,8 +1077,14 @@ export function recordGate(
   if (previous !== undefined && previous.run_id !== a.run)
     return refuse(`${a.gate} at this snapshot was recorded for run ${String(previous.run_id)}, not ${a.run}`);
   const recordedClass = a.delegationClass ?? DELEGATION_CLASSES.find((known) => known === previous?.class);
-  const implementer =
-    a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);
+  // An unattended verify is judged on its seat and its commands, so it names only the seat this call declares and
+  // carries earlier passing commands only from that same seat (or from no seat to no seat). A failure stays,
+  // whoever recorded it, until that command is run again and passes.
+  const exactSeat = a.gate === "verify" && a.policy !== undefined;
+  const sameSeat = a.implementer?.seat_id === previous?.implementer?.seat_id;
+  const implementer = exactSeat
+    ? a.implementer
+    : (a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined));
   if (recordedClass !== undefined) record.class = recordedClass;
   if (implementer !== undefined) record.implementer = implementer;
   // The run's use record is the one place a bypassed start lives; a typed record ends it for the phase.
@@ -1108,7 +1114,11 @@ export function recordGate(
   if (a.policy !== undefined) {
     record.policy = a.policy;
     record.commands = [
-      ...(Array.isArray(previous?.commands) ? previous.commands : []),
+      ...(!Array.isArray(previous?.commands)
+        ? []
+        : !exactSeat || sameSeat
+          ? previous.commands
+          : failingLatest(previous.commands)),
       ...(evidence === undefined ? [] : [evidence]),
     ];
   }
@@ -1286,6 +1296,11 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
 const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
+/** Whether a stored ticket declares any acceptance criteria or verification at all, well formed or not: only an absent field or an empty array declares nothing. */
+const declaresEvidence = (ticket: NonNullable<ReturnType<typeof object>>): boolean =>
+  [ticket.acceptance_criteria, ticket.verification].some(
+    (field) => field !== undefined && !(Array.isArray(field) && field.length === 0),
+  );
 
 /** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
@@ -1396,12 +1411,44 @@ function evaluateEvidence(
     for (const check of classified.binding.required_checks)
       for (const [criterion, surface] of Object.entries(check.surfaces)) surfaces.set(criterion, surface);
   }
+  const buildSeats = new Set(
+    readRecords(a.dir, a.run, "build-checks")
+      .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
+      .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
+  );
   if (criteria.length === 0 || checks.size === 0) {
+    // Under the unattended policy only a ticket that declares neither criteria nor verification at all (each
+    // field absent or an empty array, as declaresEvidence reads them) is a coverage limit: verify counts the
+    // repository checks its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
+    // passing. A verify recorded by no seat, or by the build's implementer seat, is refused: stricter than the
+    // receipt path, which needs a seat only for a surface check or once the build recorded one. Independence
+    // is checked against the build's recorded seats, so a build recorded with no seat leaves it unchecked. A
+    // half-declared or malformed ticket, and every
+    // ticket outside the policy, stays unavailable.
+    const detail = `ticket ${run.ticket.id} has no acceptance criteria or named verification`;
+    const limit = run.policy !== undefined && !declaresEvidence(ticket);
+    const selfVerified = readRecords(a.dir, a.run, "verify")
+      .filter((record) => same(record.snapshot, head))
+      .flatMap((record) => {
+        const seat = record.implementer?.seat_id;
+        if (seat === undefined) return ["verify names no verifier seat"];
+        return buildSeats.has(seat) ? [`verify was recorded by implementer seat ${seat}`] : [];
+      });
+    if (limit)
+      notes.push(
+        `note: coverage limit: ${detail}; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest`,
+      );
     return {
-      outcome: "unavailable",
-      reasons: [
-        { code: "unavailable", detail: `ticket ${run.ticket.id} has no acceptance criteria or named verification` },
-      ],
+      outcome: !limit ? "unavailable" : selfVerified.length > 0 ? "refused" : "allowed",
+      reasons: !limit
+        ? [{ code: "unavailable", detail }]
+        : [
+            { code: "coverage-limit", detail },
+            ...selfVerified.map((why) => ({
+              code: "self-verification",
+              detail: `${why}; an independent verifier seat is required`,
+            })),
+          ],
       refs: [],
     };
   }
@@ -1434,11 +1481,6 @@ function evaluateEvidence(
       requiredKinds.set(criterion, collected);
     }
   }
-  const buildSeats = new Set(
-    readRecords(a.dir, a.run, "build-checks")
-      .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
-      .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
-  );
   const grantRecord = [
     join(a.dir, safeRunId(a.run)),
     ...(run.binding_run_id !== undefined && run.binding_evidence_location !== undefined
@@ -1722,6 +1764,17 @@ function commandRefusals(a: CheckArgs, gate: Gate, head: Snapshot, fork: { base:
   return delta === undefined ? own : [...own, ...entryRefusals(a, "review-delta", delta)];
 }
 
+/** Each argv's latest entry that failed: what a verify re-recorded under another seat must still answer for. */
+function failingLatest(entries: CommandEntry[]): CommandEntry[] {
+  const latest = new Map<string, CommandEntry>();
+  for (const entry of entries) {
+    const key = JSON.stringify(entry.argv);
+    const prior = latest.get(key);
+    if (prior === undefined || prior.finished_at <= entry.finished_at) latest.set(key, entry);
+  }
+  return [...latest.values()].filter((entry) => entry.exit_status !== 0);
+}
+
 /** Why one counted record's command entries are not passing evidence. */
 function entryRefusals(a: CheckArgs, gate: Gate, record: GateRecord): string[] {
   const entries = record.commands ?? [];
@@ -1771,10 +1824,7 @@ function ticketDeclaresEvidence(dir: string, run: string, record: RunRecord | un
   } catch {
     return true;
   }
-  if (ticket === undefined) return true;
-  const criteria = Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : [];
-  const checks = Array.isArray(ticket.verification) ? ticket.verification : [];
-  return criteria.length > 0 || checks.length > 0;
+  return ticket === undefined || declaresEvidence(ticket);
 }
 
 export function checkGates(a: CheckArgs): CheckResult {
@@ -1870,7 +1920,7 @@ export function checkGates(a: CheckArgs): CheckResult {
   if (policy !== undefined) decision.policy = policy;
   const decisionPath = writeDecision(a, decision);
   const directRefusal = new Set(["surface-evidence", "self-verification", "unattested-verifier"]);
-  for (const reason of judged.reasons)
+  for (const reason of judged.reasons.filter((r) => r.code !== "coverage-limit"))
     refusals.push(
       directRefusal.has(reason.code)
         ? `refused: ${reason.detail}`
@@ -2341,7 +2391,7 @@ export const LIFECYCLE_USAGE = [
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--binding <file>] [--project-record <file>] [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--retain-only] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--retain-only] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>] | --author-kind <kind> --host <id> --seat-id <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
@@ -2477,6 +2527,8 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     for (const line of [...pre.notes, ...gate.notes.map((text) => `note: ${text}`)]) io.err(line);
     io.out(`recorded ship-preflight for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
     io.out(DISCLOSURE);
+    for (const reason of pre.decision?.reasons ?? [])
+      if (reason.code === "coverage-limit") io.out(`coverage limit: ${reason.detail}`);
     io.out("phase evidence (worker-attested, gate: command -> exit):");
     for (const line of commandSummary(dir, run)) io.out(line);
     return 0;
@@ -3021,12 +3073,15 @@ export function main(
     const host = str("host");
     const seatId = str("seat-id");
     const identityMembers = [classFlag, authorKindFlag, host].filter((value) => value !== undefined).length;
-    if (identityMembers !== 0 && identityMembers !== 3) {
-      io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
+    // An unscored ticket (no delegation class) still declares its implementer seat, so a receipt that
+    // seat wrote is refused: without --class the seat is the three of --author-kind, --host, --seat-id.
+    const seatMembers = [authorKindFlag, host, seatId].filter((value) => value !== undefined).length;
+    if (classFlag === undefined && seatMembers !== 0 && seatMembers !== 3) {
+      io.err("ak lifecycle record: without --class, --author-kind, --host and --seat-id must be supplied together");
       return 2;
     }
-    if (seatId !== undefined && identityMembers !== 3) {
-      io.err("ak lifecycle record: --seat-id requires --class, --author-kind, and --host");
+    if (classFlag !== undefined && identityMembers !== 3) {
+      io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
       return 2;
     }
     if (seatId !== undefined && !ARTIFACT_ID.test(seatId)) {
