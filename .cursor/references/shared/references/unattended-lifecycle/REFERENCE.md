@@ -52,10 +52,14 @@ never invented, and every required sensitive action still stops. The build still
 implementer seat, so self-verification is still refused.
 
 Bound still records every ticket, scored or unscored, with acceptance criteria and named verification
-derived from the work source (the issue text or plan). A ticket that still has none is a coverage
-limit for verify, never a stop: it records the cause once and verifies with the repository checks
-actually run, each recorded on the `verify` gate with its real command, exit status and output
-digest, and the gate counts those checks and nothing else. Outside the policy it is `unavailable`.
+derived from the work source (the issue text or plan). A ticket that declares neither at all is a
+coverage limit for verify, never a stop: it records the cause once and verifies with the repository
+checks actually run, the project's declared test command among them when it declares one, each
+recorded on the `verify` gate by the independent verifier seat with its real command, exit status
+and output digest. The gate counts those checks and nothing else, refuses a verify recorded by the
+build's implementer seat, and records the limit on its ship decision and in the ship disclosure. A
+ticket that declares criteria or verification the gate cannot read is judged like any other.
+Outside the policy it is `unavailable`.
 
 ## Recording each phase
 

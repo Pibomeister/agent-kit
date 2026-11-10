@@ -126,6 +126,14 @@ describe("super-bound under the unattended policy", () => {
     );
   });
 
+  test.each(BOUND)("%s records an unchecked record's validity as not checked, never as valid (AK9-2)", (file) => {
+    const text = flat(file);
+    expect(text).toContain(
+      "with the ak delegation command missing, the unattended policy records its validity as not checked, never as valid",
+    );
+    expect(text).toContain(NOT_CHECKED);
+  });
+
   test.each(BOUND)("%s keeps missing delegation guidance a needs-input stop outside the unattended policy", (file) => {
     expect(flat(file)).toContain("Outside the unattended policy, missing delegation guidance is needs-input");
   });
@@ -294,8 +302,15 @@ describe("an unscored ticket still carries criteria and named verification, and 
   test.each(["skills/super-verify/SKILL.md", "skills/super-verify/skill.yaml"])(
     "%s makes a ticket with neither a coverage limit verified by the recorded repository checks",
     (file) => {
-      expect(flat(file)).toContain(
-        "Under the unattended policy, a ticket with no acceptance criteria or named verification is a coverage limit, never needs-input: record it once naming its cause and verify with the repository checks actually run, each recorded on the verify gate with its real command, exit status and output digest; the gate counts those checks and nothing else. Outside the policy it is unavailable.",
+      const text = flat(file);
+      expect(text).toContain(
+        "Under the unattended policy, a ticket that declares no acceptance criteria and no verification at all is a coverage limit, never needs-input: record it once naming its cause and verify with the repository checks actually run, the project's declared test command among them when it declares one (its verification recipes, schemas/project.schema.json).",
+      );
+      expect(text).toContain(
+        "declaring itself with --author-kind, --host and --seat-id; the build's implementer seat is refused",
+      );
+      expect(text).toContain(
+        "The gate counts those checks and nothing else, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
       );
     },
   );
@@ -305,7 +320,10 @@ describe("an unscored ticket still carries criteria and named verification, and 
     expect(text).toContain(
       "Bound still records every ticket, scored or unscored, with acceptance criteria and named verification derived from the work source (the issue text or plan)",
     );
-    expect(text).toContain("the gate counts those checks and nothing else. Outside the policy it is unavailable.");
+    expect(text).toContain("the project's declared test command among them when it declares one");
+    expect(text).toContain(
+      "The gate counts those checks and nothing else, refuses a verify recorded by the build's implementer seat, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
+    );
     expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.4\.0$/m);
   });
 });

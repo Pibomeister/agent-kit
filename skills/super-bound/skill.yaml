@@ -99,7 +99,8 @@ inputs:
       delegation: ticket does not match its schema: …`) is about the draft, not the record. Under
       the limit the persisted unscored ticket carries no delegation block, seeded or default, so
       build has no class to pass. Only an absent project record skips ak delegation. A present project record that fails schemas/project.schema.json validation is
-      needs-input under every policy. Scorer inputs and runtime facilities are never invented.
+      needs-input under every policy; with the ak delegation command missing, the unattended policy
+      records its validity as not checked, never as valid. Scorer inputs and runtime facilities are never invented.
   - id: charter
     schema: charter
     required: false
@@ -219,11 +220,13 @@ stop_conditions:
     ak delegation runs only against a present record, and each ticket carries no delegation block
     and the unscored assumption, which states the floor not evaluated and lists the attached packs
     and required sensitive actions; every required sensitive action still stops.
+    Outside the unattended policy, missing delegation guidance is needs-input. A present project
+    record that fails schemas/project.schema.json validation is needs-input under every policy; with
+    the ak delegation command missing, the unattended policy records its validity as not checked,
+    never as valid.
   - Under the unattended policy every implementation ticket, scored or unscored, is still recorded
     with acceptance criteria and named verification derived from the work source (the issue text or
     plan); scores and receipts are never invented.
-    Outside the unattended policy, missing delegation guidance is needs-input. A present project
-    record that fails schemas/project.schema.json validation is needs-input under every policy.
 
 failure_outcomes:
   - status: needs-input

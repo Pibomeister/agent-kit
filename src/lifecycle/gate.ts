@@ -977,6 +977,10 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
 const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
+/** Whether a stored ticket declares any acceptance criteria or verification at all, well formed or not. */
+const declaresEvidence = (ticket: NonNullable<ReturnType<typeof object>>): boolean =>
+  (Array.isArray(ticket.acceptance_criteria) && ticket.acceptance_criteria.length > 0) ||
+  (Array.isArray(ticket.verification) && ticket.verification.length > 0);
 
 /** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
@@ -1060,20 +1064,38 @@ function evaluateEvidence(
     const check = object(value);
     if (check !== undefined && nonempty(check.id) && KEBAB.test(check.id)) checks.set(check.id, check);
   }
+  const buildSeats = new Set(
+    readRecords(a.dir, a.run, "build-checks")
+      .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
+      .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
+  );
   if (criteria.length === 0 || checks.size === 0) {
-    // Under the unattended policy a ticket bound could not give criteria or named verification is a
-    // coverage limit: verify counts the repository checks its records ran, whose argv, exit status and
-    // stored output digest commandRefusals already holds to passing. Outside the policy it stays unavailable.
-    const limit = run.policy !== undefined;
+    // Under the unattended policy only a ticket that declares neither criteria nor verification at all (the
+    // raw arrays, as ticketDeclaresEvidence reads them) is a coverage limit: verify counts the repository checks
+    // its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
+    // passing, and a verify recorded by the build's implementer seat is still refused. A half-declared or
+    // malformed ticket, and every ticket outside the policy, stays unavailable.
+    const detail = `ticket ${run.ticket.id} has no acceptance criteria or named verification`;
+    const limit = run.policy !== undefined && !declaresEvidence(ticket);
+    const selfSeats = readRecords(a.dir, a.run, "verify")
+      .filter((record) => same(record.snapshot, head))
+      .flatMap((record) => record.implementer?.seat_id ?? [])
+      .filter((seat) => buildSeats.has(seat));
     if (limit)
       notes.push(
-        `note: coverage limit: ticket ${run.ticket.id} has no acceptance criteria or named verification; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest`,
+        `note: coverage limit: ${detail}; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest`,
       );
     return {
-      outcome: limit ? "allowed" : "unavailable",
-      reasons: limit
-        ? []
-        : [{ code: "unavailable", detail: `ticket ${run.ticket.id} has no acceptance criteria or named verification` }],
+      outcome: !limit ? "unavailable" : selfSeats.length > 0 ? "refused" : "allowed",
+      reasons: !limit
+        ? [{ code: "unavailable", detail }]
+        : [
+            { code: "coverage-limit", detail },
+            ...selfSeats.map((seat) => ({
+              code: "self-verification",
+              detail: `verify was recorded by implementer seat ${seat}; an independent verifier seat is required`,
+            })),
+          ],
       refs: [],
     };
   }
@@ -1106,11 +1128,6 @@ function evaluateEvidence(
       requiredKinds.set(criterion, collected);
     }
   }
-  const buildSeats = new Set(
-    readRecords(a.dir, a.run, "build-checks")
-      .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
-      .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
-  );
   const grantRecord = [
     join(a.dir, safeRunId(a.run)),
     ...(run.binding_run_id !== undefined && run.binding_evidence_location !== undefined
@@ -1440,10 +1457,7 @@ function ticketDeclaresEvidence(dir: string, run: string, record: RunRecord | un
   } catch {
     return true;
   }
-  if (ticket === undefined) return true;
-  const criteria = Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : [];
-  const checks = Array.isArray(ticket.verification) ? ticket.verification : [];
-  return criteria.length > 0 || checks.length > 0;
+  return ticket === undefined || declaresEvidence(ticket);
 }
 
 export function checkGates(a: CheckArgs): CheckResult {
@@ -1539,7 +1553,7 @@ export function checkGates(a: CheckArgs): CheckResult {
   if (policy !== undefined) decision.policy = policy;
   const decisionPath = writeDecision(a, decision);
   const directRefusal = new Set(["surface-evidence", "self-verification", "unattested-verifier"]);
-  for (const reason of judged.reasons)
+  for (const reason of judged.reasons.filter((r) => r.code !== "coverage-limit"))
     refusals.push(
       directRefusal.has(reason.code)
         ? `refused: ${reason.detail}`
@@ -2145,6 +2159,8 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     for (const line of [...pre.notes, ...gate.notes.map((text) => `note: ${text}`)]) io.err(line);
     io.out(`recorded ship-preflight for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
     io.out(DISCLOSURE);
+    for (const reason of pre.decision?.reasons ?? [])
+      if (reason.code === "coverage-limit") io.out(`coverage limit: ${reason.detail}`);
     io.out("phase evidence (worker-attested, gate: command -> exit):");
     for (const line of commandSummary(dir, run)) io.out(line);
     return 0;
