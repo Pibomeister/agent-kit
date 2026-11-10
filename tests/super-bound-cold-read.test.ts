@@ -1,8 +1,9 @@
 /**
- * Super-bound R2 cold-read contract (phase 1b, GS-004i).
+ * Super-bound R2 cold-read contract (phase 1b, GS-004i and GS-004k).
  *
  * Pins what an agent following the packaged skill must do. Off and shadow must
- * not change class or score. The scorer formula is unchanged.
+ * not change class or score. When on, an unavailable read raises green to
+ * yellow-agent by the captain's Q1 decision. The scorer formula is unchanged.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,6 +36,15 @@ function packagedBody(): string {
 
 function packagedReference(): string {
   return packagedFile("references/shared/references/delegation/REFERENCE.md");
+}
+
+function subsection(text: string, name: string): string {
+  const marker = `**${name}.**`;
+  const start = text.indexOf(marker);
+  if (start < 0) return "";
+  const rest = text.slice(start);
+  const next = rest.slice(marker.length).search(/\n\*\*[A-Za-z]/);
+  return next < 0 ? rest : rest.slice(0, marker.length + next);
 }
 
 const OFF_TRIGGERS =
@@ -72,7 +82,6 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("reshape it, or reclassify it");
       expect(text).toContain("cannot be published until GS-004j");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
-      expect(text).not.toContain("green-to-yellow-agent");
     }
   });
 
@@ -84,20 +93,18 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(note).toContain("at most twice per ticket");
     expect(note).toContain("Do not reclassify the ticket");
     expect(note).toContain("Do not add the read to spec-factor or readiness evidence");
-    expect(note).not.toContain("seed `yellow-agent`");
     expect(note).toContain("The read adds evidence only and does not change factor scores or weights");
     expect(note).toContain("A completed cold read is binding");
     expect(note).toContain("is cited with its reason");
     expect(note).toContain(
       "for that ticket only, the author's empty-context check decides whether it publishes, is reshaped, or is reclassified `type: decision` and sent back",
     );
-    expect(note).toContain("Neither case changes the class");
     expect(note).toContain("Step 13 skips the independent cold read on this route");
     expect(note).toContain("(phase 1b, GS-004i)");
   });
 
   test("the execution contract names the cold-read output and keeps off as the default", () => {
-    expect(contract).toContain("version: 0.8.0");
+    expect(contract).toContain("version: 0.9.0");
     expect(contract).toContain("id: cold-read\n    schema: cold-read");
     expect(contract).toContain("Off and shadow keep the author type-check as the outcome gate");
     expect(skill).toContain("Off stores none");
@@ -158,5 +165,92 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       PROJECT,
     );
     expect(seeded.class).toBe("yellow-agent");
+  });
+});
+
+describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)", () => {
+  const projectSchema = readFileSync(join(REPO, "schemas/project.schema.json"), "utf8");
+  const coldReadSchema = readFileSync(join(REPO, "schemas/cold-read.schema.json"), "utf8");
+
+  test("on: an unavailable read seeds yellow-agent from green by the captain's Q1 decision", () => {
+    const note = reference.replace(/\s+/g, " ");
+    expect(note).toContain("four cases is a hand-derived class");
+    expect(note).not.toContain("three cases is a hand-derived class");
+    expect(note).toContain(
+      "When `review.cold_read` is on, the cited read is unavailable, and the computed class is `green`, seed `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
+    );
+    expect(note).toContain("A live lowering supersedes that raise");
+    expect(note).toContain("leave `lowered_by` unsuperseded");
+    expect(note).toContain("the raised class persists until a named human lowers it");
+    expect(note).toContain("A later completed read does not reseed `green`");
+    expect(note).toContain("Only a named human may lower the class, with the reason recorded");
+    const on = subsection(reference, "On").replace(/\s+/g, " ");
+    expect(on).toContain("If that ticket's class is `green`, seed `yellow-agent`");
+    expect(on).toContain("unless a live named-human lowering is in force");
+    expect(on).toContain("A live lowering supersedes this raise");
+    expect(on).toContain("the raised class persists until a named human lowers it");
+    expect(on).toContain("An unscored ticket has no class, so the raise is skipped");
+    expect(on).toContain("That yellow-agent seed is the captain's Q1 decision (GS-004k)");
+    expect(on).toContain("Only a named human may lower the class, with the reason recorded");
+    expect(on).toContain("ruling `delegation-class-is-authority-not-finding`");
+    expect(on).toContain("Off and shadow do not seed from the read");
+    expect(on).toContain("A later completed read does not reseed `green`");
+    expect(on).toContain(
+      "The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening).",
+    );
+    expect(on).not.toContain("Neither case changes the class");
+    const packedOn = subsection(packagedReference(), "On").replace(/\s+/g, " ");
+    expect(packedOn).toContain("If that ticket's class is `green`, seed `yellow-agent`");
+    expect(packedOn).toContain("unless a live named-human lowering is in force");
+    const skillText = skill.replace(/\s+/g, " ");
+    expect(skillText).toContain("green-to-yellow-agent");
+    expect(skillText).toContain(
+      "When on and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
+    );
+    expect(skillText).toContain(
+      "an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise",
+    );
+    expect(packagedBody().replace(/\s+/g, " ")).toContain(
+      "When on and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
+    );
+    expect(contract.replace(/\s+/g, " ")).toContain(
+      "When on and the read is unavailable, a green class rises to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
+    );
+    expect(contract.replace(/\s+/g, " ")).toContain(
+      "an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise",
+    );
+    expect(projectSchema).toContain(
+      "When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k).",
+    );
+    expect(projectSchema).toContain(
+      "The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening).",
+    );
+    expect(projectSchema).not.toContain("later phase (GS-004k)");
+    expect(projectSchema).not.toContain("Off and shadow do not raise. (phase 1b, GS-004k).");
+    expect(coldReadSchema).toContain(
+      "When review.cold_read is on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Off and shadow do not raise (phase 1b, GS-004k).",
+    );
+    expect(coldReadSchema).not.toContain("later phase (GS-004k)");
+    expect(coldReadSchema).not.toContain("Off and shadow do not raise. (phase 1b, GS-004k).");
+  });
+
+  test("shadow: the read is stored and listed, and it does not seed a class", () => {
+    const shadow = subsection(reference, "Shadow").replace(/\s+/g, " ");
+    expect(shadow).toContain("The read runs and is stored");
+    expect(shadow).toContain("Print listed decisions beside the ticket");
+    expect(shadow).toContain("Do not change the class");
+    expect(shadow).not.toContain("seed `yellow-agent`");
+    expect(subsection(packagedReference(), "Shadow").replace(/\s+/g, " ")).toContain("Do not change the class");
+    expect(skill.replace(/\s+/g, " ")).toContain("Off and shadow do not change the class or the scorer");
+  });
+
+  test("off: the author type-check stays, and nothing is stored or seeded", () => {
+    const mode = subsection(reference, "Mode").replace(/\s+/g, " ");
+    expect(mode).toContain("Off dispatches nothing, stores nothing");
+    expect(mode).toContain("leaves the author's type-check as the zero-context gate");
+    expect(mode).not.toContain("seed `yellow-agent`");
+    expect(skill.replace(/\s+/g, " ")).toContain("Off keeps the author type-check");
+    expect(skill).toContain("Off stores none");
+    expect(projectSchema).toContain("Default off");
   });
 });
