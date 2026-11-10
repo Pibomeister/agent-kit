@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
@@ -160,19 +160,72 @@ donors:
     expect(existsSync(join(dest, ".donors/donor_one/.git"))).toBe(true);
   });
 
-  test("an extract built without .donors shows the donor-paths skip", () => {
-    const dest = processScratch("ak-extract-without-donors-");
-    const sha = git(ROOT, "rev-parse", "HEAD").trim();
-    const archived = spawnSync("sh", ["-c", `git archive "${sha}" | tar -x -C "${dest}"`], {
-      cwd: ROOT,
-      encoding: "utf8",
-    });
-    expect(archived.status, archived.stderr).toBe(0);
+  test("the pin check reads the extract lock, not the working-tree lock", () => {
+    const scratch = processScratch("ak-extract-lock-disagree-");
+    mkdirSync(join(scratch, "provenance"), { recursive: true });
+    const commit = makeDonorClone(join(scratch, ".donors/donor_one"));
+    writeFileSync(
+      join(scratch, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    path: .donors/donor_one
+    commit: ${"a".repeat(40)}
+    license: MIT
+`,
+    );
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    writeFileSync(join(scratch, ".gitignore"), ".donors\n");
+    const sha = seedRepo(scratch);
+    writeFileSync(
+      join(scratch, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    path: .donors/donor_one
+    commit: ${commit}
+    license: MIT
+`,
+    );
+    const dest = processScratch("ak-extract-lock-disagree-dest-");
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
+    expect(prepared.status, prepared.stderr).toBe(0);
+    expect(prepared.stderr).toContain(
+      "pre-push: warning: pin check skipped because the local donors are not at the lock pins",
+    );
+    expect(prepared.stderr).not.toContain("pin check will run");
     expect(existsSync(join(dest, ".donors"))).toBe(false);
-    symlinkSync(join(ROOT, "node_modules"), join(dest, "node_modules"));
-    const summary = summaryOf(dest);
-    expect(summary.line).toContain("donor paths at pin");
-  }, 180_000);
+  });
+
+  test("a mixed pin set is not copied and the gate warns", () => {
+    const scratch = processScratch("ak-extract-mixed-");
+    mkdirSync(join(scratch, "provenance"), { recursive: true });
+    const commit = makeDonorClone(join(scratch, ".donors/donor_one"));
+    writeFileSync(
+      join(scratch, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    path: .donors/donor_one
+    commit: ${commit}
+    license: MIT
+  - id: donor-two
+    path: .donors/donor_two
+    commit: ${"b".repeat(40)}
+    license: MIT
+`,
+    );
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    writeFileSync(join(scratch, ".gitignore"), ".donors\n");
+    const sha = seedRepo(scratch);
+    const dest = processScratch("ak-extract-mixed-dest-");
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
+    expect(prepared.status, prepared.stderr).toBe(0);
+    expect(prepared.stderr).toContain(
+      "pre-push: warning: pin check skipped because the local donors are not at the lock pins",
+    );
+    expect(existsSync(join(dest, ".donors"))).toBe(false);
+  });
 
   test("unpinned local donors are not copied and the gate warns", () => {
     const scratch = processScratch("ak-extract-unpinned-");
@@ -264,11 +317,28 @@ describe("pre-push refusals", () => {
 
   test("a hook copied into .git/hooks refuses HEAD:main and admits a feature branch", () => {
     const scratch = processScratch("ak-hook-copied-");
+    mkdirSync(join(scratch, "node_modules"));
     writeFileSync(join(scratch, "README.md"), "scratch\n");
     const sha = seedRepo(scratch);
     const installed = join(scratch, ".git/hooks/pre-push");
     writeFileSync(installed, readFileSync(HOOK, "utf8"), { mode: 0o755 });
-    const env = gitEnv();
+    const mark = join(scratch, "ak-build.mark");
+    const bin = processScratch("ak-hook-copied-bin-");
+    writeFileSync(
+      join(bin, "bun"),
+      `#!/bin/sh
+if [ "$1" = "run" ] && [ "$2" = "ak" ]; then
+  printf 'ran\\n' > "$HOOK_MARK"
+  exit 1
+fi
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    const env = gitEnv({
+      HOOK_MARK: mark,
+      PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+    });
     const refuse = spawnSync("/bin/sh", [installed], {
       cwd: scratch,
       encoding: "utf8",
@@ -285,7 +355,83 @@ describe("pre-push refusals", () => {
     });
     expect(admit.status, admit.stderr).toBe(0);
     expect(admit.stderr).not.toContain("refusing to publish");
+    const tag = spawnSync("/bin/sh", [installed], {
+      cwd: scratch,
+      encoding: "utf8",
+      input: `refs/tags/v0 ${sha} refs/heads/main ${ZERO_SHA}\n`,
+      env,
+    });
+    expect(tag.status, tag.stderr).toBe(1);
+    expect(tag.stderr).toContain("pre-push: warning: tools/hooks/pre-push-extract.sh is missing; pin check skipped");
+    expect(readFileSync(mark, "utf8").trim()).toBe("ran");
   });
+
+  test("a linked worktree push runs the pin check without stripping GIT_*", () => {
+    const main = processScratch("ak-wt-main-");
+    mkdirSync(join(main, "provenance"), { recursive: true });
+    mkdirSync(join(main, "tools/hooks"), { recursive: true });
+    const commit = makeDonorClone(join(main, ".donors/donor_one"));
+    writeFileSync(
+      join(main, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    path: .donors/donor_one
+    commit: ${commit}
+    license: MIT
+`,
+    );
+    writeFileSync(join(main, "package.json"), '{"scripts":{"ak":"true"}}\n');
+    writeFileSync(join(main, "README.md"), "scratch\n");
+    writeFileSync(join(main, ".gitignore"), ".donors\n");
+    writeFileSync(join(main, "tools/hooks/pre-push-extract.sh"), readFileSync(EXTRACT, "utf8"));
+    const sha = seedRepo(main);
+    const wt = processScratch("ak-wt-linked-");
+    rmSync(wt, { recursive: true, force: true });
+    git(main, "worktree", "add", "--detach", wt);
+    mkdirSync(join(wt, "node_modules"));
+    spawnSync("cp", ["-R", join(main, ".donors"), join(wt, ".donors")], { encoding: "utf8" });
+    const installed = join(main, ".git/hooks/pre-push");
+    writeFileSync(installed, readFileSync(HOOK, "utf8"), { mode: 0o755 });
+    const mark = join(wt, "ak-build.mark");
+    const bunBin = process.execPath;
+    const bin = processScratch("ak-wt-bin-");
+    writeFileSync(
+      join(bin, "bun"),
+      `#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = "--eval" ]; then
+    cd "${ROOT}" || exit 1
+    exec "${bunBin}" "$@"
+  fi
+done
+if [ "$1" = "run" ] && [ "$2" = "ak" ]; then
+  printf 'GIT_DIR=%s\\n' "\${GIT_DIR-}" > "$HOOK_MARK"
+  exit 0
+fi
+exec "${bunBin}" "$@"
+`,
+      { mode: 0o755 },
+    );
+    const gitDir = git(wt, "rev-parse", "--absolute-git-dir").trim();
+    const workTree = git(wt, "rev-parse", "--show-toplevel").trim();
+    const run = spawnSync("/bin/sh", [installed], {
+      cwd: wt,
+      encoding: "utf8",
+      input: `refs/tags/v0 ${sha} refs/heads/main ${ZERO_SHA}\n`,
+      env: {
+        ...process.env,
+        GIT_DIR: gitDir,
+        GIT_WORK_TREE: workTree,
+        GIT_INDEX_FILE: join(gitDir, "index"),
+        HOOK_MARK: mark,
+        PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stderr).toContain("pre-push: pin check will run");
+    expect(readFileSync(mark, "utf8").trim()).toBe("GIT_DIR=");
+  }, 60_000);
 
   test("a failed donor copy still runs ak build", () => {
     const scratch = processScratch("ak-hook-copyfail-");
@@ -340,10 +486,24 @@ exec "${bunBin}" "$@"
     expect(run.status, run.stderr).toBe(0);
     expect(run.stderr).toContain("pre-push: warning: pin check skipped because .donors could not be copied");
     expect(readFileSync(mark, "utf8").trim()).toBe("ran");
-  });
+  }, 60_000);
 });
 
 describe("provenance pin check skip count", () => {
+  test("a raw git archive extract shows the donor-paths skip", () => {
+    const dest = processScratch("ak-extract-without-donors-");
+    const sha = git(ROOT, "rev-parse", "HEAD").trim();
+    const archived = spawnSync("sh", ["-c", `git archive "${sha}" | tar -x -C "${dest}"`], {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
+    expect(archived.status, archived.stderr).toBe(0);
+    expect(existsSync(join(dest, ".donors"))).toBe(false);
+    symlinkSync(join(ROOT, "node_modules"), join(dest, "node_modules"));
+    const summary = summaryOf(dest);
+    expect(summary.line).toContain("donor paths at pin");
+  }, 180_000);
+
   test.if(donorsPresent || donorsRequired)(
     "is 0 when every lock donor is a clone holding its pin",
     () => {

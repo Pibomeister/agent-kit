@@ -1012,6 +1012,7 @@ export function checkProvenance(ctx: CheckContext): Issue[] {
   } else if (donorsPresent) {
     for (const donor of donors.values()) {
       if (isDir(join(root, donor.path))) continue;
+      if (!donorRows.some((row) => parseDonorSource(row.source)?.donor === donor.id)) continue;
       issues.push(
         skipped(
           "provenance.donors-unavailable",

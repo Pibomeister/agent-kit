@@ -91,6 +91,7 @@ else
     _sha=$1
     _dest=$2
     _root=$3
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
     git -C "$_root" archive "$_sha" 2>/dev/null | tar -x -C "$_dest" 2>/dev/null || return 1
     rm -f "$_dest/ak.install.yaml"
   }
@@ -101,6 +102,7 @@ build_gate() {
   root=$(git rev-parse --show-toplevel) || return 0
   [ -d "$root/node_modules" ] || return 0
   tmp=$(mktemp -d) || return 0
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
   extract_for_gate "$sha" "$tmp" "$root" || { rm -rf "$tmp"; return 0; }
   ln -s "$root/node_modules" "$tmp/node_modules" 2>/dev/null || { rm -rf "$tmp"; return 0; }
   out=$(cd "$tmp" && bun run ak build 2>&1)

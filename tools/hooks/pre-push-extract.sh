@@ -1,8 +1,8 @@
 # Extract helpers for the pre-push build gate. Sourced by tools/hooks/pre-push
 # and by tests. Defines functions only.
 lock_donor_rows() {
-  _root=$1
-  _lock=$_root/provenance/upstream.lock.yaml
+  # $1 is the extract. _root is extract_for_gate's working tree and must stay that.
+  _lock=$1/provenance/upstream.lock.yaml
   [ -f "$_lock" ] || return 1
   _rows=$(
     AK_LOCK=$_lock bun --eval '
@@ -30,13 +30,14 @@ extract_for_gate() {
   _sha=$1
   _dest=$2
   _root=$3
+  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
   git -C "$_root" archive "$_sha" 2>/dev/null | tar -x -C "$_dest" 2>/dev/null || return 1
   rm -f "$_dest/ak.install.yaml"
   if [ ! -d "$_root/.donors" ]; then
     printf '%s\n' "pre-push: pin check skipped (.donors absent)" >&2
     return 0
   fi
-  if ! lock_donor_rows "$_root"; then
+  if ! lock_donor_rows "$_dest"; then
     printf '%s\n' "pre-push: warning: pin check skipped because the lock file could not be read" >&2
     return 0
   fi

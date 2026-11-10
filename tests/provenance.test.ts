@@ -321,6 +321,79 @@ describe("donor provenance", () => {
     expect(issues.some((i) => i.rule === "provenance.source-not-at-pin")).toBe(false);
   });
 
+  test("a missing clone is skipped only when a donor row cites that donor", () => {
+    const ctx = ctxFor({
+      "provenance/upstream.lock.yaml": `schema_version: 1
+donors:
+  - id: donor-one
+    repo: example/one
+    path: .donors/donor_one
+    commit: ${"a".repeat(40)}
+    license: MIT
+  - id: donor-two
+    repo: example/two
+    path: .donors/donor_two
+    commit: ${"b".repeat(40)}
+    license: MIT
+`,
+      "provenance/adaptations.d/batch-1.yaml":
+        "adaptations:\n  - path: skills/adapted/SKILL.md\n    source: donor-one@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:x.md\n",
+      "provenance/conversation-map.yaml": CONVERSATION_MAP,
+    });
+    mkdirSync(join(ctx.root, ".donors"));
+    const skips = checkProvenance(ctx).filter((i) => i.rule === "provenance.donors-unavailable");
+    expect(skips).toHaveLength(1);
+    expect(skips[0]?.file).toBe(".donors/donor_one");
+  });
+
+  test("one cloned donor is pin-checked while a missing clone is skipped", () => {
+    const root = makeTree({
+      "catalog.yaml": CATALOG.replace(
+        "  - id: invented",
+        "  - id: other\n    status: authored\n    invocation: M\n    provenance_origin: donor\n  - id: invented",
+      ),
+      "skills/adapted/SKILL.md": "---\nname: adapted\ndescription: d\n---\nbody\n",
+      "skills/other/SKILL.md": "---\nname: other\ndescription: d\n---\nbody\n",
+      "skills/invented/SKILL.md": "---\nname: invented\ndescription: d\n---\nbody\n",
+      "research/sources/grok-transcript.md": TRANSCRIPT,
+      "provenance/conversation-map.yaml": CONVERSATION_MAP,
+    });
+    const commit = makeDonorRepo(root, ".donors/donor_one", { "skills/brainstorm/SKILL.md": "# Brainstorm\n" });
+    writeFileSync(
+      join(root, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    repo: example/one
+    path: .donors/donor_one
+    commit: ${commit}
+    license: MIT
+  - id: donor-two
+    repo: example/two
+    path: .donors/donor_two
+    commit: ${"b".repeat(40)}
+    license: MIT
+`,
+    );
+    mkdirSync(join(root, "provenance/adaptations.d"), { recursive: true });
+    writeFileSync(
+      join(root, "provenance/adaptations.d/batch-1.yaml"),
+      `adaptations:
+  - path: skills/adapted/SKILL.md
+    source: donor-one@${commit}:skills/ghost/SKILL.md
+  - path: skills/other/SKILL.md
+    source: donor-two@${"b".repeat(40)}:skills/x.md
+`,
+    );
+    const { catalog } = loadCatalog(root);
+    if (catalog === null) throw new Error("fixture has no catalog");
+    const issues = checkProvenance({ root, catalog });
+    const skips = issues.filter((i) => i.rule === "provenance.donors-unavailable");
+    expect(skips).toHaveLength(1);
+    expect(skips[0]?.file).toBe(".donors/donor_two");
+    expect(issues.some((i) => i.rule === "provenance.source-not-at-pin")).toBe(true);
+  });
+
   test("every fragment under provenance/adaptations.d/ counts toward the merged view", () => {
     const ctx = ctxFor({
       "provenance/upstream.lock.yaml": lockFor("a".repeat(40)),

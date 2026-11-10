@@ -132,6 +132,33 @@ describe("tools/cursor/install.sh", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  test("the installer clones donors after bun install --frozen-lockfile", () => {
+    const runs = readFileSync(install, "utf8")
+      .split("\n")
+      .filter((line) => line === "clone_donors" || line === "bun install --frozen-lockfile");
+    expect(runs).toEqual(["bun install --frozen-lockfile", "clone_donors"]);
+  });
+
+  test("clone_donors bounds the clone with timeout 300", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-timeout-");
+    const log = join(scratch, "timeout.args");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    writeFileSync(join(scratch, "tools/donors/clone.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(
+      join(fx.home, "trap-bin", "timeout"),
+      `#!/bin/sh
+printf '%s\\n' "$1" > '${log}'
+shift
+exec "$@"
+`,
+      { mode: 0o755 },
+    );
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(log, "utf8").trim()).toBe("300");
+  });
+
   test("clone_donors runs the lock pin clone script", () => {
     const fx = scratchHome();
     const scratch = processScratch("ak-cursor-clone-ok-");
