@@ -126,13 +126,20 @@ function describe(validate: ValidateFunction): string {
     .join("; ");
 }
 
+/** `HEAD:ak.kb.yaml` when the working file is gone; null when git cannot show it. */
+function committedBindingText(projectRoot: string): string | null {
+  const shown = git(projectRoot, ["show", `HEAD:${BINDING_FILE}`]);
+  return shown.status === 0 ? shown.stdout : null;
+}
+
 /**
- * Parse and shape-check the folder's binding. An absent file is a note and not
- * an error: an unbound folder is the unconfigured case the contract defines,
+ * Parse and shape-check the folder's binding. An absent working file falls
+ * back to `HEAD:ak.kb.yaml`. A confirmed miss of both is a note, not an
+ * error: an unbound folder is the unconfigured case the contract defines,
  * not a malformed one.
  */
 export function loadKbBinding(projectRoot: string): KbBindingResult {
-  const text = readTextIfPresent(join(projectRoot, BINDING_FILE));
+  const text = readTextIfPresent(join(projectRoot, BINDING_FILE)) ?? committedBindingText(projectRoot);
   if (text === null) {
     return {
       binding: null,

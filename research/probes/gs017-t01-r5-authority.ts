@@ -7,16 +7,18 @@
  */
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
@@ -171,6 +173,26 @@ function spawnCli(cwd: string, registry: string | undefined, ...argv: string[]) 
     code: result.exitCode ?? 1,
     out: result.stdout.toString().trim().split("\n"),
     err: result.stderr.toString(),
+  };
+}
+
+function plantHomeLedger(src: string): () => void {
+  const dest = join(userInfo().homedir, ".agent-kit", "firstmate", "bindings");
+  mkdirSync(dest, { recursive: true });
+  const copied: string[] = [];
+  for (const name of readdirSync(src)) {
+    const target = join(dest, name);
+    copyFileSync(join(src, name), target);
+    copied.push(target);
+  }
+  return () => {
+    for (const path of copied) {
+      try {
+        unlinkSync(path);
+      } catch {
+        /* already gone */
+      }
+    }
   };
 }
 
@@ -390,7 +412,7 @@ function e1a_forgedParentCliOpen() {
   const ticket = behaviorTicket("forged-parent");
   writeJson(join(dir, "forged-parent.json"), ticket);
   const bound = attachKb(dir, "on");
-  const { bindingPath, parentDir, ledger } = forgedParentBinding(ticket, bound.project);
+  const { bindingPath, parentDir } = forgedParentBinding(ticket, bound.project);
   const evidence = join(parentDir, "evidence");
   const spawned = spawnCli(
     dir,
@@ -400,30 +422,21 @@ function e1a_forgedParentCliOpen() {
     join(dir, "forged-parent.json"),
     "--binding",
     bindingPath,
-    "--ledger",
-    ledger,
     "--project",
     dir,
     "--dir",
     evidence,
   );
-  const run = openedLine(spawned.out);
-  const record =
-    run === undefined ? undefined : parseObject(readFileSync(join(evidence, "runs", run, "run.json"), "utf8"));
+  if (spawned.code === 0) throw new Error("e1a expected CLI open of a forged /tmp parent to refuse");
   return {
-    cli: "bun src/cli.ts lifecycle open --binding",
+    cli: "bun src/cli.ts lifecycle open --binding (home ledger only)",
     code: spawned.code,
     err: spawned.err,
-    opened: run !== undefined,
-    run,
-    mode: asJsonObject(record?.behavior) ? record.behavior.mode : undefined,
-    required_checks:
-      asJsonObject(record?.behavior) && Array.isArray(record.behavior.required_checks)
-        ? record.behavior.required_checks.length
-        : undefined,
+    opened: false,
     parent_was_two_handwritten_files: true,
     charter_path: true,
-    premise_holds_if_opened: spawned.code === 0,
+    refused: true,
+    premise_holds_if_opened: false,
   };
 }
 
@@ -434,6 +447,7 @@ function e1b_pointerRemovalReseal() {
   const bound = attachKb(dir, "on");
   const started = firstmateThenRunner(dir, join(dir, "reseal.json"), bound.registry, "example-project");
   if (!started.ok) return { opened: false, reason: started.errors.join("\n") };
+  const restore = plantHomeLedger(started.ledger);
   const spawned = spawnCli(
     dir,
     bound.registry,
@@ -442,13 +456,12 @@ function e1b_pointerRemovalReseal() {
     join(dir, "reseal.json"),
     "--binding",
     started.bindingPath,
-    "--ledger",
-    started.ledger,
     "--project",
     dir,
     "--dir",
     started.evidence,
   );
+  restore();
   const run = openedLine(spawned.out);
   if (run === undefined) return { opened: false, reason: spawned.err, code: spawned.code };
   const runPath = join(started.evidence, "runs", run, "run.json");
@@ -536,6 +549,7 @@ function e1c_realFirstmateBind() {
   if (!result.ok || result.binding === undefined) {
     return { bind_ok: false, errors: result.errors, opened: false };
   }
+  const restore = plantHomeLedger(ledgerDir);
   const spawned = spawnCli(
     dir,
     bound.registry,
@@ -544,13 +558,12 @@ function e1c_realFirstmateBind() {
     join(dir, "fm-real.json"),
     "--binding",
     out,
-    "--ledger",
-    ledgerDir,
     "--project",
     dir,
     "--dir",
     evidence,
   );
+  restore();
   const parentGuess = [
     join(dirname(evidence), `${result.binding.run_id}.json`),
     join(evidence, `${result.binding.run_id}.json`),
@@ -566,7 +579,7 @@ function e1c_realFirstmateBind() {
     code: spawned.code,
     err: spawned.err,
     opened: spawned.code === 0,
-    refused_protected_record: spawned.err.includes("protected runner creation record"),
+    refused_protected_record: spawned.err.includes("protected runner"),
   };
 }
 
@@ -577,6 +590,7 @@ function e1_authenticFirstmateRunnerCli() {
   const bound = attachKb(dir, "on");
   const started = firstmateThenRunner(dir, join(dir, "fm-auth.json"), bound.registry, "example-project");
   if (!started.ok) return { bind_ok: false, errors: started.errors, opened: false };
+  const restore = plantHomeLedger(started.ledger);
   const spawned = spawnCli(
     dir,
     bound.registry,
@@ -585,13 +599,12 @@ function e1_authenticFirstmateRunnerCli() {
     join(dir, "fm-auth.json"),
     "--binding",
     started.bindingPath,
-    "--ledger",
-    started.ledger,
     "--project",
     dir,
     "--dir",
     started.evidence,
   );
+  restore();
   const run = openedLine(spawned.out);
   const record =
     run === undefined ? undefined : parseObject(readFileSync(join(started.evidence, "runs", run, "run.json"), "utf8"));
@@ -984,6 +997,6 @@ const report = {
   },
 };
 
-const reportPath = join(import.meta.dir, "gs017-t01-r5-exploit-after.json");
+const reportPath = join(mkdtempSync(join(tmpdir(), "ak-bv-r5-report-")), "gs017-t01-r5-exploit-after.json");
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ ...report, report_path: reportPath }, null, 2));

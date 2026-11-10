@@ -13,7 +13,7 @@ import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { ENV_FILE, type LedgerRecord } from "../../src/firstmate/constants.ts";
-import { takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { openRun, takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { FIXED_NOW, makeBundle, makeDir, makeHome, makeProject, REPO } from "./fixture.ts";
 
@@ -143,18 +143,15 @@ describe("ak firstmate grant", () => {
     };
     const ticketPath = join(makeDir(), "ticket.json");
     writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
-    const run = lifecycle(
-      "open",
-      "--ticket",
-      ticketPath,
-      "--binding",
-      bindingPath,
-      "--ledger",
+    const opened = openRun({
+      dir: store,
+      project: worktree,
+      ticket: ticketPath,
+      binding: bindingPath,
       ledger,
-      "--dir",
-      store,
-    ).out.match(/^opened run (.+)$/m)?.[1];
-    if (run === undefined) throw new Error("open did not return a run id");
+    });
+    if (!opened.ok) throw new Error(opened.reason);
+    const run = opened.run.run_id;
     for (const gate of ["build-checks", "review-full", "review-readiness"])
       expect(lifecycle("record", "--dir", store, "--gate", gate).code).toBe(0);
     const snapshot = takeSnapshot(worktree);
@@ -200,19 +197,16 @@ describe("ak firstmate grant", () => {
     expect(delegated.err).toContain(refusal);
 
     const elsewhere = makeDir();
-    const misplaced = lifecycle(
-      "open",
-      "--ticket",
-      ticketPath,
-      "--binding",
-      bindingPath,
-      "--ledger",
+    const misplaced = openRun({
+      dir: elsewhere,
+      project: worktree,
+      ticket: ticketPath,
+      binding: bindingPath,
       ledger,
-      "--dir",
-      elsewhere,
-    );
-    expect(misplaced.code).toBe(1);
-    expect(misplaced.err).toContain("evidence store the Firstmate binding names");
+    });
+    expect(misplaced.ok).toBe(false);
+    if (misplaced.ok) throw new Error("expected evidence store mismatch");
+    expect(misplaced.reason).toContain("evidence store the Firstmate binding names");
 
     for (const operation of ["review.full", "review.readiness"])
       expect(grant(ledger, bindingPath, operation, worktree).code).toBe(0);

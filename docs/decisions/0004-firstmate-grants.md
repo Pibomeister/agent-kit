@@ -85,3 +85,8 @@ table. super-ship's Authority section states the further limit the amendment bel
 **Amendment, 2026-09-30.** The grant remains the authorization record, but it no longer suffices for
 the autonomous form of `ship.prepare`. That form also requires the `trusted-evidence` capability,
 which this host does not provide.
+
+**Amendment, 2026-11-10.** A Firstmate-bound `ship.prepare` grant is not a skip of
+`lifecycle record --gate ship-preflight`. That gate is judged unless the opened run names a parent
+that passes the same protected-runner validation as `open`. The grant remains the authorization
+record; ship-preflight still refuses a host-unattested verifier on that path.
