@@ -290,7 +290,8 @@ failed replacement records no replacement for its delegate, which stays active. 
 steps in the same tick stand. No failure approves a checkpoint. When the charter
 sets `limits.delegate_replacements`, the next cadence tick retries and status stays autonomous
 while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
-spent, and `autonomy.missing` names `delegate-replacements`. The count is not reset by a later
+spent, and `autonomy.missing` names `delegate-replacements`. A cap of N allows N failed
+attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later
 success. A charter that omits the cap supplies no retry budget, so the first failure goes guided
 and names `audit-failed` until a later tick succeeds. The timer drains only when no active
 delegate remains, and it stops when that cap is spent. The adapter owns the actual process stop

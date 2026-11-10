@@ -17798,7 +17798,7 @@ var init_charter_schema = __esm(() => {
           },
           review_rounds: { type: "integer", minimum: 1, maximum: 5 },
           delegate_replacements: {
-            description: "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed probe records no progress, and a failed replacement records no replacement for its delegate. Effects of earlier steps in the same tick stand. No failed attempt approves a checkpoint.",
+            description: "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. A cap of N allows N failed attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed probe records no progress, and a failed replacement records no replacement for its delegate. Effects of earlier steps in the same tick stand. No failed attempt approves a checkpoint.",
             type: "integer",
             minimum: 0
           }

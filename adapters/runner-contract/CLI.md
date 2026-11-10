@@ -91,7 +91,8 @@ run-scoped worker socket token, never the admin token. The private loop config h
 command and timeout shape. A timed-out event consumer leaves status guided until a successful
 retry. A timed-out or failed loop command stays autonomous and retries on the charter cadence
 while `limits.delegate_replacements` is unspent and a delegate remains active. Status goes guided
-when that cap is spent and names `delegate-replacements`. A charter that omits the cap supplies no
+when that cap is spent and names `delegate-replacements`. A cap of N allows N failed attempts,
+and the Nth one halts the audit, so a cap of 1 allows no retry. A charter that omits the cap supplies no
 retry budget, so the first loop failure goes guided and names `audit-failed` until a later tick
 succeeds. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
