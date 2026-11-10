@@ -15,9 +15,10 @@ const USAGE = `tp-life: fixture oracle receipts and the G4 evidence record.
   scripts/tp-life.sh receipt check [--cwd REPO] receipt.json
   scripts/tp-life.sh evidence [--cwd REPO] [--receipts-dir DIR]
 
-evidence always prints G4 as not-run. It also prints oracle_sub_verdict,
-machine-checked from bound receipts. red-to-green needs a failed duplicate-only
-receipt and a passed receipt on the same head. Duplicate copies count once.
+evidence always prints G4 as not-run. oracle_sub_verdict is computed from
+unattested receipts. Machine-checked covers only the per-case comparison
+inside each receipt. red-to-green needs a failed duplicate-only receipt and a
+passed receipt on the same head. Duplicate copies count once.
 `;
 
 const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");

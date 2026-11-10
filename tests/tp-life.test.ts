@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { decideEvidence, TEMPLATE_REL } from "../src/tp-life/evidence.ts";
 import { parseEvidenceRecord, parseOracleReport } from "../src/tp-life/parse.ts";
-import { CASE_IDS } from "../src/tp-life/types.ts";
+import { CASE_IDS, type CaseResult, type OracleObservation } from "../src/tp-life/types.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
 
@@ -73,6 +73,34 @@ interface WrittenOracle {
   oracle: string;
   receipt: string;
   status: number;
+}
+
+function allCases(failId?: string): CaseResult[] {
+  const out: CaseResult[] = [];
+  for (const id of CASE_IDS) {
+    out.push({
+      id,
+      verdict: failId === id ? "fail" : "pass",
+      detail: "fixture",
+    });
+  }
+  return out;
+}
+
+function observation(
+  path: string,
+  digest: string,
+  status: string,
+  exitStatus: number,
+  failId?: string,
+): OracleObservation {
+  return {
+    path,
+    digest,
+    status,
+    exit_status: exitStatus,
+    cases: allCases(failId),
+  };
 }
 
 function writeOracle(base: string, dir: string, name: string): WrittenOracle {
@@ -274,6 +302,8 @@ describe("G4 evidence", () => {
     expect(printed.verdict).toBe("not-run");
     expect(printed.oracle_sub_verdict).toBe("incomplete");
     expect(printed.receipts).toEqual([]);
+    expect(printed.reason.includes("unattested receipts")).toBe(true);
+    expect(printed.reason.includes("per-case comparison inside each receipt")).toBe(true);
   });
 
   test("a forged receipt bound to this head still leaves G4 not-run", async () => {
@@ -331,11 +361,103 @@ describe("G4 evidence", () => {
     expect(printed?.verdict).toBe("not-run");
     expect(printed?.oracle_sub_verdict).toBe("red-to-green");
     expect(printed?.receipts.length).toBe(2);
-    expect(printed?.reason.includes("machine-checked")).toBe(true);
-    expect(printed?.reason.includes("operator's word")).toBe(true);
+    expect(printed?.reason.includes("unattested receipts")).toBe(true);
+    expect(printed?.reason.includes("origin")).toBe(true);
+    expect(printed?.reason.includes("the head they ran on rest on the operator's word")).toBe(true);
+    expect(printed?.reason.includes("per-case comparison inside each receipt")).toBe(true);
+    expect(printed?.reason.includes("observed on this head")).toBe(false);
     const passedRaw = readFileSync(passed.receipt, "utf8");
     expect(passedRaw.includes("host_login")).toBe(true);
     expect(passedRaw.includes("porcelain")).toBe(true);
+  });
+
+  test("a broken-success failed receipt plus a passed receipt is incomplete", async () => {
+    const failedBase = await startFixture("success");
+    const passedBase = await startFixture();
+    const dir = processScratch("ak-tp-life-success-pair-");
+    const receiptsDir = join(dir, "receipts");
+    mkdirSync(receiptsDir);
+    const failed = writeOracle(failedBase, dir, "failed");
+    expect(failed.status).toBe(1);
+    const passed = writeOracle(passedBase, dir, "passed");
+    expect(passed.status).toBe(0);
+    copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
+    copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
+    const run = evidenceAt(receiptsDir);
+    expect(run.status).toBe(0);
+    const printed = parseEvidenceRecord(run.stdout);
+    expect(printed?.verdict).toBe("not-run");
+    expect(printed?.oracle_sub_verdict).toBe("incomplete");
+  });
+
+  test("a passed receipt with a failing case is incomplete", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-pass-failcase-");
+    const receiptsDir = join(dir, "receipts");
+    mkdirSync(receiptsDir);
+    const failedBase = await startFixture("duplicate");
+    const failed = writeOracle(failedBase, dir, "failed");
+    expect(failed.status).toBe(1);
+    const passed = writeOracle(base, dir, "passed");
+    expect(passed.status).toBe(0);
+    const mutated = readFileSync(passed.receipt, "utf8").replace(
+      '\\"id\\":\\"success\\",\\"verdict\\":\\"pass\\"',
+      '\\"id\\":\\"success\\",\\"verdict\\":\\"fail\\"',
+    );
+    copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
+    writeFileSync(join(receiptsDir, "passed.json"), mutated);
+    const run = evidenceAt(receiptsDir);
+    expect(run.status).toBe(0);
+    const printed = parseEvidenceRecord(run.stdout);
+    expect(printed?.oracle_sub_verdict).toBe("incomplete");
+  });
+
+  test("a passed observation with nonzero exit_status is incomplete", () => {
+    const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
+    const template = parseEvidenceRecord(raw);
+    expect(template === null).toBe(false);
+    if (template === null) return;
+    const printed = decideEvidence(template, [
+      observation("failed.json", "sha256:a", "failed", 1, "duplicate"),
+      observation("passed.json", "sha256:b", "passed", 1),
+    ]);
+    expect(printed.verdict).toBe("not-run");
+    expect(printed.oracle_sub_verdict).toBe("incomplete");
+  });
+
+  test("a receipt of the wrong kind is not counted", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-kind-");
+    const receiptsDir = join(dir, "receipts");
+    mkdirSync(receiptsDir);
+    const written = writeOracle(base, dir, "receipt");
+    const mutated = readFileSync(written.receipt, "utf8").replace(
+      '"kind": "command"',
+      '"kind": "probe",\n  "probe": { "name": "tp-life", "target": "jobs" }',
+    );
+    writeFileSync(join(receiptsDir, "probe.json"), mutated);
+    const check = runScript(["receipt", "check", join(receiptsDir, "probe.json")]);
+    expect(check.status).toBe(0);
+    const run = evidenceAt(receiptsDir);
+    expect(run.status).toBe(0);
+    const printed = parseEvidenceRecord(run.stdout);
+    expect(printed?.oracle_sub_verdict).toBe("incomplete");
+    expect(printed?.receipts).toEqual([]);
+  });
+
+  test("a receipt with a different source_revision.repo is refused with exit 2", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-repo-");
+    const written = writeOracle(base, dir, "receipt");
+    const mutatedPath = join(dir, "other-repo.json");
+    const mutated = readFileSync(written.receipt, "utf8").replace(
+      /("source_revision": \{\s*"repo": ")([^"]+)(")/,
+      "$1https://example.invalid/other$3",
+    );
+    writeFileSync(mutatedPath, mutated);
+    const check = runScript(["receipt", "check", mutatedPath]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("different repo")).toBe(true);
   });
 
   test("an edited template verdict does not pass G4", () => {

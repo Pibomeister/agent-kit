@@ -107,6 +107,18 @@ function parseBoundRaw(text: string): BoundRaw | null {
   }
 }
 
+function missingBoundField(): string {
+  const first = boundValidator.errors?.[0];
+  if (first === undefined) return "source_revision.diff_hash";
+  const params = first.params;
+  const path = first.instancePath.replace(/^\//, "").replaceAll("/", ".");
+  if (Object.prototype.hasOwnProperty.call(params, "missingProperty")) {
+    const missing = String(params.missingProperty);
+    return path.length > 0 ? `${path}.${missing}` : missing;
+  }
+  return path.length > 0 ? path : "source_revision.diff_hash";
+}
+
 function readPackageVersion(repo: string): string {
   const raw = readFileSync(join(repo, "package.json"), "utf8");
   const match = /"version": "([^"]+)"/.exec(raw);
@@ -207,7 +219,11 @@ export function readBoundReceipt(repo: string, receiptPath: string): BoundRead {
   }
   const bound = parseBoundRaw(raw);
   if (bound === null) {
-    return { code: 2, message: "tp-life receipt check: refused, source_revision.diff_hash is missing\n", view: null };
+    return {
+      code: 2,
+      message: `tp-life receipt check: refused, ${missingBoundField()} is missing\n`,
+      view: null,
+    };
   }
   if (bound.source_revision.repo !== snap.repo) {
     return {

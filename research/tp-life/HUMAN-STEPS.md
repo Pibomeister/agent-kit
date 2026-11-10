@@ -2,7 +2,10 @@
 
 The code in this tree supplies the fixture, the oracle, and HEAD-bound receipts.
 `scripts/tp-life.sh evidence` always prints G4 as `not-run`. A human records G4.
-The command also prints `oracle_sub_verdict`, machine-checked from bound receipts.
+
+`oracle_sub_verdict` is computed from unattested receipts. Their origin and the
+head they ran on rest on the operator's word. Machine-checked covers only the
+per-case comparison inside each receipt.
 
 Do not copy or edit `research/tp-life/evidence.template.json`.
 
@@ -10,8 +13,10 @@ Do not copy or edit `research/tp-life/evidence.template.json`.
 
 Record `git rev-parse HEAD`, `git status --porcelain=v1`, bundle version, host,
 OS, and whether `claude` or `codex` is signed in. Missing host login is a
-blocker, not a pass. `receipt write` copies those fields into the receipt.
-Set `AK_TP_LIFE_HOST_LOGIN` to `claude`, `codex`, or `none` before you write.
+blocker, not a pass. `receipt write` copies those fields from this checkout
+into the receipt. It does not run the oracle and it does not talk to
+`127.0.0.1`. Set `AK_TP_LIFE_HOST_LOGIN` to `claude`, `codex`, or `none`
+before you write.
 
 ## 1. Fixture
 
@@ -41,8 +46,8 @@ document's hash.
 ## 4. Implement and oracle
 
 Keep the v1-state fixture from step 1. Run the oracle against
-`http://127.0.0.1:4173` from this checkout. The receipt binds to this HEAD.
-It must fail. Write that receipt and keep it.
+`http://127.0.0.1:4173` from this checkout. It must fail. Write a receipt from
+the saved report. The receipt binds to this HEAD at write time.
 
 ```bash
 scripts/tp-life.sh oracle --base-url http://127.0.0.1:4173 --out /tmp/tp-life-oracle-v1.json
@@ -68,14 +73,17 @@ only if check exits 0 on the candidate HEAD.
 
 ## 5. Stale evidence
 
-Open a lifecycle run. Record the green receipt in that run:
+Declare check id `tp-life-oracle` in the ticket's verification list. Open a
+lifecycle run. Record the green receipt, then confirm the record is accepted:
 
 ```bash
 ak lifecycle record --gate verify --receipt /tmp/tp-life-receipt.json
+ak lifecycle check --evidence
 ```
 
-Then change the specification or the fixture so HEAD or the working tree no
-longer matches. `ak lifecycle check --evidence` must refuse that recorded
+`ak lifecycle check --evidence` refuses a receipt whose check is not in that
+list. Then change the specification or the fixture so HEAD or the working tree
+no longer matches. `ak lifecycle check --evidence` must refuse the recorded
 receipt. Confirm with:
 
 ```bash
@@ -110,7 +118,9 @@ scripts/tp-life.sh evidence
 ```
 
 The printed G4 verdict stays `not-run`. A human records G4. `oracle_sub_verdict`
-is `red-to-green` only when this head has one bound failed receipt where only
-`duplicate` failed and one bound passed receipt. Duplicate copies count once.
-Otherwise it is `incomplete`. Oracle cases are machine-checked. Steps 2, 3, 5
-and 6 rest on the operator's word.
+is computed from unattested receipts. It is `red-to-green` only when this head
+has one bound failed receipt where only `duplicate` failed and one bound passed
+receipt. Duplicate copies count once. Otherwise it is `incomplete`. Their origin
+and the head they ran on rest on the operator's word. Machine-checked covers
+only the per-case comparison inside each receipt. Steps 2, 3, 5 and 6 also rest
+on the operator's word.

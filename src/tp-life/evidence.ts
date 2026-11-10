@@ -15,7 +15,8 @@ import {
 export { RECEIPTS_REL, TEMPLATE_REL };
 
 const NOT_RUN = "G4 stays not-run until a human records it.";
-const OPERATOR_WORD = "Oracle cases are machine-checked. Steps 2, 3, 5 and 6 rest on the operator's word.";
+const OPERATOR_WORD =
+  "oracle_sub_verdict is computed from unattested receipts. Their origin and the head they ran on rest on the operator's word. Machine-checked covers only the per-case comparison inside each receipt.";
 
 export function liveReceiptPaths(receiptsDir: string, relativePrefix: string): string[] {
   if (!existsSync(receiptsDir)) return [];
@@ -71,7 +72,7 @@ export function oracleSubVerdict(observations: readonly OracleObservation[]): Or
 function reasonFor(sub: OracleSubVerdict, bound: number): string {
   if (bound === 0) return `${NOT_RUN} ${OPERATOR_WORD}`;
   if (sub === "red-to-green") {
-    return `Oracle sub-verdict red-to-green observed on this head. ${OPERATOR_WORD}`;
+    return `Oracle sub-verdict red-to-green from unattested receipts bound to this HEAD. ${OPERATOR_WORD}`;
   }
   return `Oracle sub-verdict incomplete. Need one bound failed receipt where only duplicate failed and one bound passed receipt. ${OPERATOR_WORD}`;
 }
