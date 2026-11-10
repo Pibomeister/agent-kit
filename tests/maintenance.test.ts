@@ -526,7 +526,7 @@ describe("ak doctor semantic lint check", () => {
     expect(found[1]?.detail).toBe("key file present and owner-only; the Stop hook runs on changed files");
     expect(found[2]?.detail).toBe("AK_JEV_ENABLED is not 1; the Stop hook does not run");
     expect(found[3]?.detail).toStartWith("no key file at ");
-    expect(found[3]?.detail).toEndWith("; the Stop hook skips quietly");
+    expect(found[3]?.detail).toEndWith("; the Stop hook skips (missing-key)");
     expect(found[4]?.detail).toEndWith(" is not a private owner-only file with one key assignment");
     for (const item of found) {
       expect(item.check).toBe("semantic lint");

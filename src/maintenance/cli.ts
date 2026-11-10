@@ -522,7 +522,7 @@ export function checkSemanticLint(keyFile: string, flag: string | undefined): Fi
     : finding(
         "WARN",
         check,
-        `no key file at ${keyFile}; the Stop hook skips quietly`,
+        `no key file at ${keyFile}; the Stop hook skips (missing-key)`,
         "Place an existing key in that file, mode 0600, to turn the check on.",
       );
 }
