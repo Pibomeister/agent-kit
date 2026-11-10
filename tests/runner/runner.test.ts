@@ -391,14 +391,16 @@ function procedureKit() {
   return { ...f, kit, runner: new Runner(f.privateDir, f.worker, kit) };
 }
 
-function upgradeProcedure(kit: string) {
+function upgradeProcedure(kit: string, change: { skill?: boolean; version?: boolean } = {}) {
   const skillPath = join(kit, "skills/autopilot/SKILL.md");
   const originalSkill = readFileSync(skillPath, "utf8");
-  writeFileSync(skillPath, `${originalSkill}\n# upgraded procedure\n`);
+  if (change.skill !== false) writeFileSync(skillPath, `${originalSkill}\n# upgraded procedure\n`);
   const manifestPath = join(kit, "package.json");
   const originalManifest = readFileSync(manifestPath, "utf8");
   if (!/"version"\s*:\s*"[^"]+"/.test(originalManifest)) throw new Error("copied kit has no package version");
-  writeFileSync(manifestPath, originalManifest.replace(/("version"\s*:\s*")([^"]+)/, "$1$2-upgraded"));
+  if (change.version !== false) {
+    writeFileSync(manifestPath, originalManifest.replace(/("version"\s*:\s*")([^"]+)/, "$1$2-upgraded"));
+  }
   return { skillPath, originalSkill, manifestPath, originalManifest };
 }
 
@@ -1032,6 +1034,18 @@ describe("runner guards", () => {
     expect(before.procedure.bundle_version).toBeDefined();
     expect(before.procedure.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     upgradeProcedure(f.kit);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("an audit tick stops when only the recorded bundle version changes", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    const skillPath = join(f.kit, "skills/autopilot/SKILL.md");
+    const skillBefore = readFileSync(skillPath, "utf8");
+    upgradeProcedure(f.kit, { skill: false });
+    expect(readFileSync(skillPath, "utf8")).toBe(skillBefore);
     expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
     expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
   });

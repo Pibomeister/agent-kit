@@ -7,7 +7,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
 import { loadCatalog } from "../../src/catalog/load.ts";
@@ -2157,37 +2157,59 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "legacy-isolation");
     const run = openedRun(dir, ticketPath);
-    record(dir, "build-checks", "review-full", "review-readiness");
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+    expect(
+      ak(
+        dir,
+        "record",
+        "--gate",
+        "build-checks",
+        "--class",
+        "green",
+        "--author-kind",
+        "agent",
+        "--host",
+        "codex",
+        "--seat-id",
+        "build-1",
+      ).code,
+    ).toBe(0);
+    record(dir, "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const legacyReceipt = receipt(dir, run, ticketPath, { created_by: { role: "verifier" } });
+    const receiptBytes = readFileSync(legacyReceipt);
+    expect(receiptBytes.toString()).toContain('"schema": "verification"');
+    expect(receiptBytes.toString()).toContain('"schema_version": 1');
+    expect(receiptBytes.toString()).not.toContain("verifier_seat");
+    plant(dir, run, legacyReceipt);
+    const outputLog = readFileSync(join(dirname(legacyReceipt), "verification-output.log"));
+    writeFileSync(
+      join(defaultEvidenceDir(dir), run, "artifacts", createHash("sha256").update(outputLog).digest("hex")),
+      outputLog,
+    );
+    const gateDir = join(defaultEvidenceDir(dir), run, "verify");
+    const gateFiles = readdirSync(gateDir);
+    expect(gateFiles).toHaveLength(1);
+    const gateName = gateFiles[0];
+    if (gateName === undefined) throw new Error("expected a verify record");
+    const gatePath = join(gateDir, gateName);
+    const recordBytes = readFileSync(gatePath);
+    const hex = createHash("sha256").update(receiptBytes).digest("hex");
+    const storedReceipt = join(defaultEvidenceDir(dir), run, "artifacts", hex);
+    const storedReceiptBytes = readFileSync(storedReceipt);
     const before = readRecords(defaultEvidenceDir(dir), run, "verify");
     expect(before).toHaveLength(1);
     const legacy = before[0];
     if (legacy === undefined) throw new Error("expected a verify record");
-    expect(Object.keys(legacy).toSorted()).toEqual([
-      "evidence",
-      "gate",
-      "recorded_at",
-      "run_id",
-      "schema",
-      "schema_version",
-      "snapshot",
-    ]);
+    expect(legacy.schema_version).toBe(2);
     expect(legacy).not.toHaveProperty("policy");
-    const refs = legacy.evidence ?? [];
-    expect(refs.length).toBeGreaterThan(0);
-    for (const ref of refs) {
-      const stored = readFileSync(
-        join(defaultEvidenceDir(dir), run, "artifacts", ref.hash.replace(/^sha256:/, "")),
-        "utf8",
-      );
-      expect(stored).toContain('"schema": "verification"');
-      expect(stored).toContain('"schema_version": 1');
-      expect(stored).not.toContain("verifier_seat");
-    }
     const checked = ak(dir, "check", "--json");
-    expect(checked.code).toBe(0);
-    expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ outcome: "allowed" });
-    expect(checked.out.join("\n")).not.toContain("runner-attested");
+    expect(checked.code).toBe(1);
+    expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ outcome: "refused" });
+    expect(checked.out.join("\n")).toContain("names no verifier seat");
+    expect(checked.out.join("\n")).not.toContain('"isolation": "runner-attested"');
+    expect(readFileSync(gatePath)).toEqual(recordBytes);
+    expect(readFileSync(storedReceipt)).toEqual(storedReceiptBytes);
+    expect(readFileSync(legacyReceipt)).toEqual(receiptBytes);
     const after = readRecords(defaultEvidenceDir(dir), run, "verify");
     expect(after).toEqual(before);
     expect(JSON.stringify(after)).not.toContain("isolation");

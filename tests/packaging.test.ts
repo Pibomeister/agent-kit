@@ -15,13 +15,14 @@ import {
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
 import { entryBodyPath } from "../src/catalog/layout.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
+import { extractRelativeLinks, relativeLinkBetween, resolveFromFile } from "../src/util/links.ts";
 import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
@@ -35,6 +36,7 @@ import {
   packagedBinFile,
   packagedSkillFile,
   relocateForHost,
+  rewriteAkCommands,
   type HostId,
 } from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
@@ -47,6 +49,7 @@ import {
 } from "../src/packaging/install.ts";
 import {
   NOT_BUNDLED_HEADING,
+  SOURCE_ONLY_PREFIXES,
   fileHeader,
   heldCitedLicencePaths,
   shippingCitedLicencePaths,
@@ -55,6 +58,7 @@ import { checkContent } from "../src/validation/content.ts";
 import {
   BUILD_RECORD_FILE,
   GATE_FILE,
+  SHARED_ROOT,
   inlinedSetFromMetafile,
   isExecutable,
   planBundle,
@@ -72,6 +76,34 @@ const HEAD = (name: string) => `---\nname: ${name}\ndescription: Use when asked.
 
 /** This repository, for the tests that measure against its real schemas. */
 const REPO = join(import.meta.dir, "..");
+
+function publishedSharedPath(resolved: string, host: HostId, includedSkills: ReadonlySet<string>): string | null {
+  const skillDir = /^skills\/([^/]+)\//.exec(resolved)?.[1];
+  if (skillDir !== undefined) return includedSkills.has(skillDir) ? relocateForHost(host, resolved) : null;
+  if (SOURCE_ONLY_PREFIXES.some((prefix) => resolved.startsWith(prefix))) return null;
+  return relocateForHost(host, posix.join(SHARED_ROOT, resolved));
+}
+
+function expectedShippedReference(
+  sourcePath: string,
+  publishedPath: string,
+  text: string,
+  host: HostId,
+  includedSkills: ReadonlySet<string>,
+): string {
+  let out = text;
+  for (const link of extractRelativeLinks(text)) {
+    const resolved = resolveFromFile(sourcePath, link.target);
+    if (resolved === null) continue;
+    const targetPublished = publishedSharedPath(resolved, host, includedSkills);
+    if (targetPublished === null) continue;
+    const wanted = relativeLinkBetween(publishedPath, targetPublished);
+    if (wanted === link.target) continue;
+    const anchor = link.anchor === undefined ? "" : `#${link.anchor}`;
+    out = out.split(link.raw).join(link.raw.replace(`${link.target}${anchor}`, `${wanted}${anchor}`));
+  }
+  return rewriteAkCommands(out, host, sourcePath);
+}
 
 /**
  * Each case resolves a profile against the real schemas, several times over. Under a loaded host
@@ -1210,34 +1242,60 @@ describe("bundle planning", () => {
   test("a core-profile plan copies every authored role as source bytes and ships every authored reference", () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("repository has no catalog");
-    const plan = planBundle({ root: REPO, catalog }, "claude-code", { profile: "core" });
-    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
-    const missingRoles: string[] = [];
-    const driftedRoles: string[] = [];
-    for (const entry of catalog.bySection("roles")) {
-      if (entry.status !== "authored") continue;
-      const source = entryBodyPath("roles", entry.id);
-      const published = relocateForHost("claude-code", source);
-      const file = plan.files.get(published);
-      if (file === undefined) missingRoles.push(source);
-      else if (file.contents !== readFileSync(join(REPO, source), "utf8")) driftedRoles.push(source);
-    }
-    expect(missingRoles).toEqual([]);
-    expect(driftedRoles).toEqual([]);
-    const missingRefs: string[] = [];
-    const driftedRefs: string[] = [];
-    for (const entry of catalog.bySection("references")) {
-      if (entry.status !== "authored") continue;
-      const source = entryBodyPath("references", entry.id);
-      const expected = readFileSync(join(REPO, source), "utf8");
-      const shipped = [...plan.files.values()].filter((file) => file.source === source);
-      if (shipped.length === 0) missingRefs.push(source);
-      for (const file of shipped) {
-        if (file.verbatim === true && file.contents !== expected) driftedRefs.push(source);
+    const mentionRewrittenRefs = [
+      "delegation",
+      "domain-modeling",
+      "engineering-principles",
+      "knowledgebase-binding",
+      "prose-quality",
+      "tracker-of-record",
+      "unattended-lifecycle",
+    ];
+    for (const host of ["claude-code", "codex", "cursor"] as const) {
+      const plan = planBundle({ root: REPO, catalog }, host, { profile: "core" });
+      expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+      const includedSkills = new Set<string>();
+      for (const file of plan.files.values()) {
+        const skillDir = /^skills\/([^/]+)\//.exec(file.source)?.[1];
+        if (skillDir !== undefined) includedSkills.add(skillDir);
       }
+      const missingRoles: string[] = [];
+      const driftedRoles: string[] = [];
+      for (const entry of catalog.bySection("roles")) {
+        if (entry.status !== "authored") continue;
+        const source = entryBodyPath("roles", entry.id);
+        const published = relocateForHost(host, source);
+        const file = plan.files.get(published);
+        if (file === undefined) missingRoles.push(source);
+        else if (file.contents !== readFileSync(join(REPO, source), "utf8")) driftedRoles.push(source);
+      }
+      expect({ host, missingRoles }).toEqual({ host, missingRoles: [] });
+      expect({ host, driftedRoles }).toEqual({ host, driftedRoles: [] });
+      const missingRefs: string[] = [];
+      const byteChecked: string[] = [];
+      const presenceOnly: string[] = [];
+      for (const entry of catalog.bySection("references")) {
+        if (entry.status !== "authored") continue;
+        const source = entryBodyPath("references", entry.id);
+        const expected = readFileSync(join(REPO, source), "utf8");
+        const shipped = [...plan.files.values()].filter((file) => file.source === source);
+        if (shipped.length === 0) missingRefs.push(source);
+        for (const file of shipped) {
+          const normalised = expectedShippedReference(source, file.path, expected, host, includedSkills);
+          if (file.contents === normalised) byteChecked.push(entry.id);
+          else presenceOnly.push(entry.id);
+        }
+      }
+      expect({ host, missingRefs }).toEqual({ host, missingRefs: [] });
+      expect({ host, byteChecked: byteChecked.toSorted() }).toEqual({
+        host,
+        byteChecked: ["codebase-design-vocabulary", "read-economy", "verification-evidence"],
+      });
+      expect({ host, presenceOnly: presenceOnly.toSorted() }).toEqual({
+        host,
+        presenceOnly: mentionRewrittenRefs,
+      });
     }
-    expect(missingRefs).toEqual([]);
-    expect(driftedRefs).toEqual([]);
   });
 
   test("the policies and adapter contracts the skills name travel under the shared root", () => {
