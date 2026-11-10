@@ -955,7 +955,7 @@ references:
       read before ship and the operator setup it rests on.
 
 # ---------------------------------------------------------------------------
-# Schemas — 38. `common` holds shared $defs and validates no document itself.
+# Schemas — 39. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common

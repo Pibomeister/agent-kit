@@ -214,8 +214,8 @@ schemas:
     - ids: [behavior-contract]
       reason: >-
         Behavior verification needs a declared run-artifact shape so accepted intent stays
-        distinct from proposed, unresolved and observed notes, and so an enabled run can
-        freeze complete required-check definitions at open.
+        distinct from proposed, unresolved and observed notes, and so Runner.start can
+        freeze complete required-check definitions.
       commits: [edd98c50ee81b4f19b06eb3b90de87d0e23a10dc]
 
 profiles:

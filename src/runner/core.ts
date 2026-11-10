@@ -802,11 +802,16 @@ export class Runner {
     const looked = this.projectLookup(charter.project.id);
     const raw: unknown = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    let ticketResolution: "unresolved" | undefined;
     if (work === undefined && source !== undefined && source.kind === "ticket") {
       if (looked.lookup === "unavailable")
         throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
       if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
         throw new Error("approved ticket is absent from the runner store");
+      const ref = asJsonObject(source.ref) ? source.ref : undefined;
+      const ticketId = ref !== undefined && isJsonText(ref.id) ? ref.id : "unnamed";
+      process.stderr.write(`Runner.start: ticket ${ticketId} is unresolved\n`);
+      ticketResolution = "unresolved";
     }
     const bound = bindBehaviorPolicy({
       runId: id,
@@ -816,6 +821,7 @@ export class Runner {
       projectHash: looked.projectHash,
       lookup: looked.lookup,
       capturedAt: createdAt,
+      ticketResolution,
     });
     if (!bound.ok) throw new Error(bound.reason);
     return bound.binding;

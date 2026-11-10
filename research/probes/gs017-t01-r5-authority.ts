@@ -7,19 +7,17 @@
  */
 import { createHash } from "node:crypto";
 import {
-  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
@@ -30,7 +28,7 @@ import {
   sealBinding,
   type JsonObject,
 } from "../../src/lifecycle/behavior-policy.ts";
-import { defaultEvidenceDir, readRecords, takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { defaultEvidenceDir, openRun, readRecords, takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
 import { artifactHash, canonicalJson } from "../../src/util/hash.ts";
@@ -117,6 +115,16 @@ function repo(): string {
   return dir;
 }
 
+function boundProjectId(dir: string): string {
+  const k = basename(realpathSync(dir))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/, "");
+  return k === "" ? "project" : k;
+}
+
 function behaviorTicket(id: string, projectId = "example-project"): JsonObject {
   return {
     schema: "ticket",
@@ -173,26 +181,6 @@ function spawnCli(cwd: string, registry: string | undefined, ...argv: string[]) 
     code: result.exitCode ?? 1,
     out: result.stdout.toString().trim().split("\n"),
     err: result.stderr.toString(),
-  };
-}
-
-function plantHomeLedger(src: string): () => void {
-  const dest = join(userInfo().homedir, ".agent-kit", "firstmate", "bindings");
-  mkdirSync(dest, { recursive: true });
-  const copied: string[] = [];
-  for (const name of readdirSync(src)) {
-    const target = join(dest, name);
-    copyFileSync(join(src, name), target);
-    copied.push(target);
-  }
-  return () => {
-    for (const path of copied) {
-      try {
-        unlinkSync(path);
-      } catch {
-        /* already gone */
-      }
-    }
   };
 }
 
@@ -442,28 +430,22 @@ function e1a_forgedParentCliOpen() {
 
 function e1b_pointerRemovalReseal() {
   const dir = repo();
-  const ticket = behaviorTicket("reseal");
+  const projectId = boundProjectId(dir);
+  const ticket = behaviorTicket("reseal", projectId);
   writeJson(join(dir, "reseal.json"), ticket);
-  const bound = attachKb(dir, "on");
-  const started = firstmateThenRunner(dir, join(dir, "reseal.json"), bound.registry, "example-project");
+  const bound = attachKb(dir, "on", projectId);
+  const started = firstmateThenRunner(dir, join(dir, "reseal.json"), bound.registry, projectId);
   if (!started.ok) return { opened: false, reason: started.errors.join("\n") };
-  const restore = plantHomeLedger(started.ledger);
-  const spawned = spawnCli(
-    dir,
-    bound.registry,
-    "open",
-    "--ticket",
-    join(dir, "reseal.json"),
-    "--binding",
-    started.bindingPath,
-    "--project",
-    dir,
-    "--dir",
-    started.evidence,
-  );
-  restore();
-  const run = openedLine(spawned.out);
-  if (run === undefined) return { opened: false, reason: spawned.err, code: spawned.code };
+  const spawned = openRun({
+    dir: started.evidence,
+    project: dir,
+    ticket: join(dir, "reseal.json"),
+    binding: started.bindingPath,
+    registry: bound.registry,
+    ledger: started.ledger,
+  });
+  if (!spawned.ok) return { opened: false, reason: spawned.reason };
+  const run = spawned.run.run_id;
   const runPath = join(started.evidence, "runs", run, "run.json");
   const doc = parseObject(readFileSync(runPath, "utf8"));
   const plain = plainTicket("reseal");
@@ -526,9 +508,10 @@ function e1b_pointerRemovalReseal() {
 function e1c_realFirstmateBind() {
   const dir = repo();
   ensureMainNoMistakes(dir);
-  const ticket = behaviorTicket("fm-real");
+  const projectId = boundProjectId(dir);
+  const ticket = behaviorTicket("fm-real", projectId);
   writeJson(join(dir, "fm-real.json"), ticket);
-  const bound = attachKb(dir, "on");
+  const bound = attachKb(dir, "on", projectId);
   const { home, upstream } = makeHome({ patched: true });
   const evidence = makeDir();
   const ledgerDir = makeDir();
@@ -549,21 +532,14 @@ function e1c_realFirstmateBind() {
   if (!result.ok || result.binding === undefined) {
     return { bind_ok: false, errors: result.errors, opened: false };
   }
-  const restore = plantHomeLedger(ledgerDir);
-  const spawned = spawnCli(
-    dir,
-    bound.registry,
-    "open",
-    "--ticket",
-    join(dir, "fm-real.json"),
-    "--binding",
-    out,
-    "--project",
-    dir,
-    "--dir",
-    evidence,
-  );
-  restore();
+  const spawned = openRun({
+    dir: evidence,
+    project: dir,
+    ticket: join(dir, "fm-real.json"),
+    binding: out,
+    registry: bound.registry,
+    ledger: ledgerDir,
+  });
   const parentGuess = [
     join(dirname(evidence), `${result.binding.run_id}.json`),
     join(evidence, `${result.binding.run_id}.json`),
@@ -575,37 +551,31 @@ function e1c_realFirstmateBind() {
     parent_files_exist: parentGuess.map((path) => ({ path, exists: existsSync(path) })),
     ledger_record: existsSync(join(ledgerDir, `${result.binding.run_id}.json`)),
     runner_start: false,
-    cli: "bun src/cli.ts lifecycle open --binding <real firstmate binding, no Runner.start>",
-    code: spawned.code,
-    err: spawned.err,
-    opened: spawned.code === 0,
-    refused_protected_record: spawned.err.includes("protected runner"),
+    cli: "openRun with injected firstmate ledger, no Runner.start",
+    code: spawned.ok ? 0 : 1,
+    err: spawned.ok ? "" : spawned.reason,
+    opened: spawned.ok,
+    refused_protected_record: !spawned.ok && spawned.reason.includes("protected runner"),
   };
 }
 
 function e1_authenticFirstmateRunnerCli() {
   const dir = repo();
-  const ticket = behaviorTicket("fm-auth");
+  const projectId = boundProjectId(dir);
+  const ticket = behaviorTicket("fm-auth", projectId);
   writeJson(join(dir, "fm-auth.json"), ticket);
-  const bound = attachKb(dir, "on");
-  const started = firstmateThenRunner(dir, join(dir, "fm-auth.json"), bound.registry, "example-project");
+  const bound = attachKb(dir, "on", projectId);
+  const started = firstmateThenRunner(dir, join(dir, "fm-auth.json"), bound.registry, projectId);
   if (!started.ok) return { bind_ok: false, errors: started.errors, opened: false };
-  const restore = plantHomeLedger(started.ledger);
-  const spawned = spawnCli(
-    dir,
-    bound.registry,
-    "open",
-    "--ticket",
-    join(dir, "fm-auth.json"),
-    "--binding",
-    started.bindingPath,
-    "--project",
-    dir,
-    "--dir",
-    started.evidence,
-  );
-  restore();
-  const run = openedLine(spawned.out);
+  const spawned = openRun({
+    dir: started.evidence,
+    project: dir,
+    ticket: join(dir, "fm-auth.json"),
+    binding: started.bindingPath,
+    registry: bound.registry,
+    ledger: started.ledger,
+  });
+  const run = spawned.ok ? spawned.run.run_id : undefined;
   const record =
     run === undefined ? undefined : parseObject(readFileSync(join(started.evidence, "runs", run, "run.json"), "utf8"));
   return {
@@ -613,10 +583,10 @@ function e1_authenticFirstmateRunnerCli() {
     runner_start: true,
     firstmate_run_id: started.runId,
     parent_exists: existsSync(started.parentPath),
-    cli: "bun src/cli.ts lifecycle open --binding --dir <firstmate evidence after Runner.start>",
-    code: spawned.code,
-    err: spawned.err,
-    opened: spawned.code === 0,
+    cli: "openRun with injected firstmate ledger after Runner.start",
+    code: spawned.ok ? 0 : 1,
+    err: spawned.ok ? "" : spawned.reason,
+    opened: spawned.ok,
     run,
     mode: asJsonObject(record?.behavior) ? record.behavior.mode : undefined,
     required_checks:

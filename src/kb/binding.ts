@@ -133,13 +133,14 @@ function committedBindingText(projectRoot: string): string | null {
 }
 
 /**
- * Parse and shape-check the folder's binding. An absent working file falls
- * back to `HEAD:ak.kb.yaml`. A confirmed miss of both is a note, not an
- * error: an unbound folder is the unconfigured case the contract defines,
- * not a malformed one.
+ * Parse and shape-check the folder's binding. A committed `HEAD:ak.kb.yaml`
+ * wins over the working file so a worker cannot retarget lookup. With no
+ * committed binding, the working file is used. A confirmed miss of both is a
+ * note, not an error: an unbound folder is the unconfigured case the contract
+ * defines, not a malformed one.
  */
 export function loadKbBinding(projectRoot: string): KbBindingResult {
-  const text = readTextIfPresent(join(projectRoot, BINDING_FILE)) ?? committedBindingText(projectRoot);
+  const text = committedBindingText(projectRoot) ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
   if (text === null) {
     return {
       binding: null,
