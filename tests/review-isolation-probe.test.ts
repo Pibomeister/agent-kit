@@ -114,6 +114,15 @@ describe("verdict logic", () => {
     const empty = readEvidence(null, null);
     expect(decideArm("parent-turn", marker, empty, at).kind).toBe("unobservable");
     expect(decideArm("hooks-and-memory", marker, empty, at).kind).toBe("unobservable");
+    expect(decideArm("auto-loaded-instructions", marker, empty, at).kind).toBe("unobservable");
+  });
+
+  test("auto-loaded instructions stay recorded when the marker is in the child context", () => {
+    const leaked = readEvidence(
+      `{"type":"system","subtype":"init","memory_paths":["/work/CLAUDE.md"]}\n{"type":"user","message":{"content":"loaded ${marker}"}}\n`,
+      `{"resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+    );
+    expect(decideArm("auto-loaded-instructions", marker, leaked, at).kind).toBe("recorded");
   });
 
   test("auto-loaded instructions are recorded with the files that arrived", () => {
@@ -395,6 +404,16 @@ describe("fixture driver note writing", () => {
     expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
     expect(byId.get("transcript-on-disk")?.verdict).toBe("fail");
     expect(byId.get("role-file-denied")?.verdict).toBe("fail");
+  });
+
+  test("misconfigured-adapter label re-asserts leaked parent and memory markers fail, with no adapter configuration exercised", () => {
+    const r = runCli("claude-code", { AK_PROBE_FIXTURE_DIR: join(FIXTURES, "misconfigured-adapter") });
+    expect(r.status).toBe(0);
+    if (r.report === null) throw new Error("expected a verdict file");
+    const byId = new Map(r.report.arms.map((arm) => [arm.id, arm]));
+    expect(byId.get("parent-turn")?.verdict).toBe("fail");
+    expect(byId.get("hooks-and-memory")?.verdict).toBe("fail");
+    expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
   });
 
   test("mastracode without a child transcript is unobservable on every arm that needs one", () => {
