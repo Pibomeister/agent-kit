@@ -38,9 +38,13 @@ function project(): string {
 // timeout scheduling Bun. The assertions below still cover their exit codes and complete output.
 const maintenanceRoot = project();
 const maintenanceCli = join(import.meta.dir, "../src/maintenance/cli.ts");
+const maintenanceHome = join(maintenanceRoot, "home");
+mkdirSync(join(maintenanceHome, ".config"), { recursive: true });
 const maintenanceEnv = {
   ...process.env,
   PATH: "/usr/bin:/bin",
+  HOME: maintenanceHome,
+  XDG_CONFIG_HOME: join(maintenanceHome, ".config"),
   CLAUDE_CONFIG_DIR: join(maintenanceRoot, "claude-home"),
   CODEX_HOME: join(maintenanceRoot, "codex-home"),
   AK_PUBLISHED_ROOT: join(maintenanceRoot, "missing-published"),
@@ -112,15 +116,20 @@ fi
   const codex = join(fakeBin, "codex");
   writeFileSync(codex, "#!/bin/sh\necho '{\"installed\":[]}'\n");
   chmodSync(codex, 0o755);
+  const home = join(root, "home");
+  mkdirSync(join(home, ".config"), { recursive: true });
   const env = {
     ...process.env,
     PATH: `${fakeBin}:${process.env.PATH}`,
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
     AK_PUBLISHED_ROOT: published,
     AK_TEST_ROOT: root,
     AK_TEST_LINKED: realpathSync(linked),
     CODEX_HOME: join(root, "empty-codex"),
     AK_TEST_MARKET_SOURCE: "github",
   };
+  delete env.AK_JEV_ENABLED;
   const projectRuns = [linked, join(root, "src")].map((cwd) => {
     if (cwd.endsWith("src")) mkdirSync(cwd);
     return {
@@ -498,6 +507,7 @@ function doctorWith(value: string, mode: number, flag: string | null = "1") {
     CLAUDE_CONFIG_DIR: join(cwd, "claude-home"),
     CODEX_HOME: join(cwd, "codex-home"),
     HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
   };
   if (flag === null) delete env.AK_JEV_ENABLED;
   else env.AK_JEV_ENABLED = flag;
@@ -527,7 +537,9 @@ describe("ak doctor semantic lint check", () => {
     ];
     expect(found.map((item) => item.level)).toEqual(["WARN", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
     expect(found[0]?.detail).toBe(notOne);
-    expect(found[0]?.remedy).toBe("Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
+    expect(found[0]?.remedy).toBe(
+      "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.",
+    );
     expect(found[1]?.detail).toBe(passWhenHostHasFlag);
     expect(found[2]?.detail).toBe(notOne);
     expect(found[3]?.detail).toStartWith("no key file at ");

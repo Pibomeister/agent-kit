@@ -44500,7 +44500,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
 function checkSemanticLint(keyFile, flag3) {
   const check2 = "semantic lint";
   if (flag3 !== "1")
-    return finding("WARN", check2, "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1", "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
+    return finding("WARN", check2, "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1", "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.");
   let present;
   try {
     present = readKeyFile(keyFile) !== null;

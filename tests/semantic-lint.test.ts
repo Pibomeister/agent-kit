@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { processScratch } from "./helpers/process-tmp.ts";
 import { collectInput } from "../src/semantic-lint/input.ts";
@@ -259,6 +268,35 @@ describe("optional semantic sibling hook", () => {
       excludedOmitted: 0,
       systemMessage: "JEV lint (advisory): error (input).",
     });
+  });
+
+  test("a disabled hook in a dirty git checkout runs no git and makes no POST", () => {
+    const options = fixture();
+    writeFileSync(join(options.root, "cart.ts"), "export function cart() { return 1; }\n");
+    const bin = join(options.root, "bin");
+    mkdirSync(bin);
+    const log = join(options.root, "git-calls.log");
+    writeFileSync(join(bin, "git"), '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$GIT_CALL_LOG"\nexit 1\n');
+    chmodSync(join(bin, "git"), 0o755);
+    const run = spawnSync(process.execPath, [ENTRY, "hook"], {
+      cwd: options.root,
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: options.root,
+        GIT_CALL_LOG: log,
+      },
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual({
+      status: "skipped",
+      reason: "disabled",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
+    expect(existsSync(log)).toBe(false);
   });
 
   test("command surfaces auth errors as non-blocking host feedback", () => {

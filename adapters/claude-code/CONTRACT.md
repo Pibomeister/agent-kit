@@ -264,7 +264,7 @@ a hook, every skill behaves the same with them absent, and `ak learn setup unins
 
 The bundle's one hook is not a learning hook. `hooks/hooks.json` runs
 `"${CLAUDE_PLUGIN_ROOT}/bin/ak" semantic-lint hook` on `Stop` with a 30-second timeout. It is the
-advisory semantic lint: off unless `AK_JEV_ENABLED=1` in the hook process, quiet until then, and
+advisory semantic lint: off unless `AK_JEV_ENABLED=1` in the hook process, quiet while off, and
 never a blocking decision. The bundle holds no key and sets no switch. `docs/semantic-lint.md` is its
 contract, and no skill requires it. The runtime is a host adapter, not a phase, and its ledgers live under the host's
 configuration directory, never inside a project repository (ruling

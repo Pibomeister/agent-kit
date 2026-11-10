@@ -504,7 +504,7 @@ export function checkSemanticLint(keyFile: string, flag: string | undefined): Fi
       "WARN",
       check,
       "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1",
-      "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.",
+      "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.",
     );
   let present: boolean;
   try {

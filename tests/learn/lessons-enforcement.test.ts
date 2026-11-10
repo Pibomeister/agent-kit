@@ -142,13 +142,17 @@ describe("ak doctor lessons coverage", () => {
     const worktree = join(scratch("ak-doctor-wt-"), "wt");
     git(main, "worktree", "add", "-q", worktree);
     const home = scratch("ak-doctor-home-");
+    mkdirSync(join(home, ".config"), { recursive: true });
     const env = {
       ...process.env,
       PATH: "/usr/bin:/bin",
+      HOME: home,
+      XDG_CONFIG_HOME: join(home, ".config"),
       CLAUDE_CONFIG_DIR: join(home, "claude-home"),
       CODEX_HOME: join(home, "codex-home"),
       AK_PUBLISHED_ROOT: join(home, "missing-published"),
     };
+    delete env.AK_JEV_ENABLED;
     const root = sessionRoot(worktree);
     if (root === null) throw new Error("worktree has no session root");
     lessonPage(loopDir(loadConfig(env), root, "memory"), "ls-001", {
@@ -170,21 +174,22 @@ describe("ak doctor lessons coverage", () => {
   test("doctor --json reports enforced and prose-only lessons from --lessons", () => {
     const root = scratch("ak-doctor-lessons-");
     spawnSync("git", ["init", "-q", root]);
+    mkdirSync(join(root, ".config"), { recursive: true });
+    const env = {
+      ...process.env,
+      PATH: "/usr/bin:/bin",
+      HOME: root,
+      XDG_CONFIG_HOME: join(root, ".config"),
+      CLAUDE_CONFIG_DIR: join(root, "claude-home"),
+      CODEX_HOME: join(root, "codex-home"),
+      AK_PUBLISHED_ROOT: join(root, "missing-published"),
+    };
+    delete env.AK_JEV_ENABLED;
     const lessons = fixtureLedger();
     const run = spawnSync(
       process.execPath,
       [join(import.meta.dir, "../../src/maintenance/cli.ts"), "doctor", "--json", "--lessons", lessons],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          PATH: "/usr/bin:/bin",
-          CLAUDE_CONFIG_DIR: join(root, "claude-home"),
-          CODEX_HOME: join(root, "codex-home"),
-          AK_PUBLISHED_ROOT: join(root, "missing-published"),
-        },
-        encoding: "utf8",
-      },
+      { cwd: root, env, encoding: "utf8" },
     );
     const parsed: unknown = JSON.parse(run.stdout);
     if (!validDoctorJson(parsed)) throw new Error("doctor --json did not match its schema");

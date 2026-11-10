@@ -91,16 +91,21 @@ function recordingInstalled(log: DoctorProbeHost[]) {
 function runDoctor(root: string, path: string) {
   mkdirSync(join(root, "claude-home"), { recursive: true });
   mkdirSync(join(root, "codex-home"), { recursive: true });
+  mkdirSync(join(root, ".config"), { recursive: true });
+  const env = {
+    ...process.env,
+    PATH: path,
+    HOME: root,
+    XDG_CONFIG_HOME: join(root, ".config"),
+    CLAUDE_CONFIG_DIR: join(root, "claude-home"),
+    CODEX_HOME: join(root, "codex-home"),
+    AK_PUBLISHED_ROOT: join(root, "missing-published"),
+  };
+  delete env.AK_JEV_ENABLED;
   const result = spawnSync(process.execPath, [join(import.meta.dir, "../src/maintenance/cli.ts"), "doctor"], {
     cwd: root,
     encoding: "utf8",
-    env: {
-      ...process.env,
-      PATH: path,
-      CLAUDE_CONFIG_DIR: join(root, "claude-home"),
-      CODEX_HOME: join(root, "codex-home"),
-      AK_PUBLISHED_ROOT: join(root, "missing-published"),
-    },
+    env,
   });
   return { status: result.status, stdout: result.stdout };
 }

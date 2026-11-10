@@ -27,7 +27,9 @@ bun tools/hooks/semantic-lint.ts hook
 | unset, empty, `0`, or any other value | Off. Quiet `skipped/disabled` before it reads the key file or the repository |
 
 From 0.1.114, a present key file is not enough. Export `AK_JEV_ENABLED=1` into the host process that
-runs the Stop hook. A shell profile that the host does not inherit does not turn the hook on.
+runs the Stop hook. For a Firstmate worker, that is the supervisor's environment. Codex passing its
+environment through to hook commands is not yet receipted. A shell profile that the host does not
+inherit does not turn the hook on.
 `AK_JEV_ENABLED=1` is explicit, so every skip (no-input, duplicate, in-progress, missing-key) prints
 a host message. A keyed user on the old default never saw those.
 
@@ -41,10 +43,12 @@ When the hook is off, a skip prints its structured result with no `systemMessage
 results always carry the message. With `AK_JEV_ENABLED=1`, every skip also carries a message. The
 claims below stay active whenever the hook runs.
 
-`ak doctor` reports one `semantic lint` finding from the same reader: `PASS` when `AK_JEV_ENABLED=1`
-and the key file is present, owner-only and parseable, `WARN` when the variable is not `1` or the key
-file is absent, and `FAIL` when `AK_JEV_ENABLED=1` and the file is unsafe or malformed. The disabled
-check returns before reading the file. Findings never include the key value.
+`ak doctor` reports one `semantic lint` finding from the same reader. It reads `AK_JEV_ENABLED` from
+its own shell, not from the hook's host. `PASS` when `AK_JEV_ENABLED=1` and the key file is present,
+owner-only and parseable, `WARN` when the variable is not `1` or the key file is absent, and `FAIL`
+when `AK_JEV_ENABLED=1` and the file is unsafe or malformed. The disabled check returns before
+reading the file. Findings never include the key value. If the hook's host already has
+`AK_JEV_ENABLED=1`, re-run doctor with it set to check the key.
 
 ## One check per input
 
