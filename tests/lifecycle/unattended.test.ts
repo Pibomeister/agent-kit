@@ -1161,6 +1161,21 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     expect(verifyArgv(cwd, run)).toEqual([mine, ok]);
   });
 
+  test("a failing verify command stays on the record when another seat re-records, until that command passes", () => {
+    const fails = ["sh", "-c", "exit 1"];
+    const other = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "verifier-2"];
+    for (const first of [VERIFIER_SEAT, []]) {
+      const cwd = repo();
+      const { run, code } = bareTicketRun(cwd, fails, BARE, { build: UNSCORED_SEAT, verify: first });
+      expect(code).toBe(1);
+      expect(ak(cwd, "record", "--gate", "verify", ...other, "--", ...ok).code).toBe(0);
+      expect(verifyArgv(cwd, run)).toEqual([fails, ok]);
+      const laundered = ak(cwd, "check");
+      expect(laundered.code).toBe(1);
+      expect(laundered.err).toContain(`failed evidence: ${JSON.stringify(fails)} exited 1`);
+    }
+  });
+
   test("the fallback's coverage limit is recorded on the ship decision and printed in the ship disclosure", () => {
     const cwd = repo();
     const { run, code } = bareTicketRun(cwd, ok);

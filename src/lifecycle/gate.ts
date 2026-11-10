@@ -769,7 +769,8 @@ export function recordGate(
     return refuse(`${a.gate} at this snapshot was recorded for run ${String(previous.run_id)}, not ${a.run}`);
   const recordedClass = a.delegationClass ?? DELEGATION_CLASSES.find((known) => known === previous?.class);
   // An unattended verify is judged on its seat and its commands, so it names only the seat this call declares and
-  // carries earlier commands only from that same seat (or from no seat to no seat).
+  // carries earlier passing commands only from that same seat (or from no seat to no seat). A failure stays,
+  // whoever recorded it, until that command is run again and passes.
   const exactSeat = a.gate === "verify" && a.policy !== undefined;
   const sameSeat = a.implementer?.seat_id === previous?.implementer?.seat_id;
   const implementer = exactSeat
@@ -804,7 +805,11 @@ export function recordGate(
   if (a.policy !== undefined) {
     record.policy = a.policy;
     record.commands = [
-      ...(Array.isArray(previous?.commands) && (!exactSeat || sameSeat) ? previous.commands : []),
+      ...(!Array.isArray(previous?.commands)
+        ? []
+        : !exactSeat || sameSeat
+          ? previous.commands
+          : failingLatest(previous.commands)),
       ...(evidence === undefined ? [] : [evidence]),
     ];
   }
@@ -1418,6 +1423,17 @@ function commandRefusals(a: CheckArgs, gate: Gate, head: Snapshot, fork: { base:
     .toSorted((x, y) => x.recorded_at.localeCompare(y.recorded_at))
     .at(-1);
   return delta === undefined ? own : [...own, ...entryRefusals(a, "review-delta", delta)];
+}
+
+/** Each argv's latest entry that failed: what a verify re-recorded under another seat must still answer for. */
+function failingLatest(entries: CommandEntry[]): CommandEntry[] {
+  const latest = new Map<string, CommandEntry>();
+  for (const entry of entries) {
+    const key = JSON.stringify(entry.argv);
+    const prior = latest.get(key);
+    if (prior === undefined || prior.finished_at <= entry.finished_at) latest.set(key, entry);
+  }
+  return [...latest.values()].filter((entry) => entry.exit_status !== 0);
 }
 
 /** Why one counted record's command entries are not passing evidence. */
