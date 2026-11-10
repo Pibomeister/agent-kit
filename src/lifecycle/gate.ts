@@ -1074,8 +1074,8 @@ function evaluateEvidence(
     // Under the unattended policy only a ticket that declares neither criteria nor verification at all (each
     // field absent or an empty array, as declaresEvidence reads them) is a coverage limit: verify counts the
     // repository checks its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
-    // passing. Once the build recorded an implementer seat, a verify recorded by that seat or by no seat is
-    // still refused, as a receipt naming no verifier seat is. A half-declared or malformed ticket, and every
+    // passing. A verify recorded by no seat, or by the build's implementer seat, is refused, as a receipt
+    // naming no verifier seat or the implementer's is. A half-declared or malformed ticket, and every
     // ticket outside the policy, stays unavailable.
     const detail = `ticket ${run.ticket.id} has no acceptance criteria or named verification`;
     const limit = run.policy !== undefined && !declaresEvidence(ticket);
@@ -1083,7 +1083,7 @@ function evaluateEvidence(
       .filter((record) => same(record.snapshot, head))
       .flatMap((record) => {
         const seat = record.implementer?.seat_id;
-        if (seat === undefined) return buildSeats.size > 0 ? ["verify names no verifier seat"] : [];
+        if (seat === undefined) return ["verify names no verifier seat"];
         return buildSeats.has(seat) ? [`verify was recorded by implementer seat ${seat}`] : [];
       });
     if (limit)

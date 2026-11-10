@@ -825,9 +825,12 @@ function bareTicketFile(cwd: string, fields: JsonObject = BARE): string {
   return path;
 }
 
+/** An independent verifier seat, the seat a fallback verify declares unless a test names another. */
+const VERIFIER_SEAT = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "verifier-1"];
+
 /**
  * An unattended run on a ticket of `fields` whose verify gate records `verify` as its only evidence command,
- * build-checks and verify each declaring the given seat flags, then check.
+ * build-checks and verify each declaring the given seat flags (verify defaults to VERIFIER_SEAT), then check.
  */
 function bareTicketRun(
   cwd: string,
@@ -840,7 +843,7 @@ function bareTicketRun(
   const run = runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd, fields)).out);
   expect(ak(cwd, "record", "--gate", "build-checks", ...(seats.build ?? []), "--", ...ok).code).toBe(0);
   for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
-  if (verify !== undefined) ak(cwd, "record", "--gate", "verify", ...(seats.verify ?? []), "--", ...verify);
+  if (verify !== undefined) ak(cwd, "record", "--gate", "verify", ...(seats.verify ?? VERIFIER_SEAT), "--", ...verify);
   return { ...ak(cwd, "check"), run };
 }
 
@@ -1118,16 +1121,15 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     expect(self.err).toContain(
       "verify was recorded by implementer seat impl-1; an independent verifier seat is required",
     );
-    const other = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "verifier-1"];
-    expect(bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT, verify: other }).code).toBe(0);
+    expect(bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT, verify: VERIFIER_SEAT }).code).toBe(0);
   });
 
-  test("once the build recorded an implementer seat, the fallback refuses a verify that declares no seat", () => {
-    const unseated = bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT });
-    expect(unseated.code).toBe(1);
-    expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
-    // With no build seat recorded at all, an unseated verify is counted as before.
-    expect(bareTicketRun(repo(), ok).code).toBe(0);
+  test("the fallback refuses a verify that declares no seat, whether or not the build recorded one", () => {
+    for (const build of [UNSCORED_SEAT, []]) {
+      const unseated = bareTicketRun(repo(), ok, BARE, { build, verify: [] });
+      expect(unseated.code).toBe(1);
+      expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
+    }
   });
 
   test("the fallback's coverage limit is recorded on the ship decision and printed in the ship disclosure", () => {
