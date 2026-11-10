@@ -9,6 +9,8 @@
 # Never replaces an existing ~/.bun/bin/bun that is not the pin. Cloud Agent
 # tool shells are not login shells; they run .cursor/bin/ak, which finds the
 # pin at ~/.bun/bin/bun without bun on PATH.
+# After bun install --frozen-lockfile, clone_donors runs tools/donors/clone.sh
+# under timeout 300. A clone failure warns and continues so the pin check skips.
 set -euo pipefail
 PIN=1.3.14
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

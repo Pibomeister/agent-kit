@@ -9,11 +9,11 @@ lock_donor_rows() {
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 for (const d of parse(readFileSync(process.env.AK_LOCK, "utf8")).donors ?? []) {
-  if (typeof d.path === "string" && typeof d.commit === "string") console.log(d.path, d.commit);
+  if (typeof d.path !== "string" || typeof d.commit !== "string") process.exit(1);
+  console.log(d.path, d.commit);
 }
 '
   ) || return 1
-  [ -n "$_rows" ] || return 1
 }
 
 donors_at_pins() {
@@ -23,7 +23,7 @@ donors_at_pins() {
     [ -d "$_root/$_path/.git" ] || return 1
     (
       unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
-      git -C "$_root/$_path" cat-file -e "$_commit^{commit}"
+      GIT_NO_LAZY_FETCH=1 GIT_TERMINAL_PROMPT=0 git -C "$_root/$_path" cat-file -e "$_commit^{commit}"
     ) 2>/dev/null || return 1
   done <<EOF
 $_rows
