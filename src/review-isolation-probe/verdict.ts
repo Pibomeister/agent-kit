@@ -117,11 +117,19 @@ function withUnplantable(verdict: Verdict, plant: DecidePlant, channel: string, 
   };
 }
 
-function instructionsVerdict(evidence: ArmEvidence): Verdict {
+function instructionsVerdict(marker: string, evidence: ArmEvidence): Verdict {
   if (!evidence.transcriptPresent && !evidence.launchPresent) {
     return {
       kind: "unobservable",
       reason: "auto-loaded instructions: host did not expose a child transcript or launch configuration",
+    };
+  }
+  const inContext = containsMarker(evidence.contextText, marker);
+  const inChildPrompt = evidence.childPrompt !== null && containsMarker(evidence.childPrompt, marker);
+  if (inContext || inChildPrompt) {
+    return {
+      kind: "fail",
+      reason: "auto-loaded instructions: marker present in the child context or child launch",
     };
   }
   if (!evidence.partitioned && evidence.loadedFiles.length === 0) {
@@ -193,7 +201,7 @@ export function decideArm(
     case "hooks-and-memory":
       return withUnplantable(leakVerdict(marker ?? "", evidence, "hooks and memory", host), plant, "hooks and memory");
     case "auto-loaded-instructions":
-      return instructionsVerdict(evidence);
+      return instructionsVerdict(marker ?? "", evidence);
     case "transcript-on-disk": {
       const markerText = marker ?? "";
       const inContext = containsMarker(evidence.contextText, markerText);
