@@ -54,9 +54,8 @@ project reads its own committed tree, so `.cursor/bin/ak kb register` has no par
   computed as local-git computes it, and `revision` is the last commit at the revision read that
   changed the file. The ref is `doc:project/<kind>/<id>`. A header that is not closed or is not a
   mapping reads as absent, and so does a `title` or `status` that is not a scalar. A header that does
-  not parse as YAML (an unquoted colon in a title is common) still gives a top-level `title:` or
-  `status:` line whose value is plain text, read as written; a value that opens a list, a map, a
-  block, an anchor or an alias reads as absent.
+  not parse as YAML (an unquoted colon in a title is common) still gives its top-level `title:` line,
+  read as written, but no status: a status is read only from a header that parses.
 - **Status** is the first declaration among front matter `status`, an inline `**Status:** …` and
   the first line of a `## Status` section, as its first word lowercased. It is kept when it is
   `accepted`, `superseded`, `deprecated`, `rejected` or `proposed`; anything else, or nothing, reads

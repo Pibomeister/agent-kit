@@ -261,13 +261,14 @@ describe("readContext on an in-repo binding", () => {
     expect(byId(result.documents, "use-postgres")).toBeUndefined();
   });
 
-  test("a header that is not strict YAML gives only plain-text title and status lines, never a list, block or alias", () => {
+  test("a header that is not strict YAML gives its plain-text title line and never a status", () => {
     const fx = fixture({
       pages: {
         "decisions/list-status.md": "---\nstatus: [accepted]\nbroken: [\n---\n\n# List status\n",
         "decisions/block-status.md": "---\nstatus: |\n  accepted\nbroken: [\n---\n\n# Block status\n",
         "decisions/alias-status.md": "---\nstatus: *ok\nbroken: [\n---\n\n# Alias status\n",
         "decisions/plain-status.md": "---\ntitle: Plain: one\nstatus: Accepted\n---\n\n# Plain\n",
+        "decisions/open-quote.md": '---\nstatus: "accepted\nbroken: [\n---\n\n# Open quote\n',
       },
     });
     const docs = read(fx, "adr").result.documents;
@@ -275,7 +276,8 @@ describe("readContext on an in-repo binding", () => {
     expect(status("list-status")).toEqual(["unreviewed", null]);
     expect(status("block-status")).toEqual(["unreviewed", null]);
     expect(status("alias-status")).toEqual(["unreviewed", null]);
-    expect(status("plain-status")).toEqual(["accepted", "accepted"]);
+    expect(status("plain-status")).toEqual(["unreviewed", null]);
+    expect(status("open-quote")).toEqual(["unreviewed", null]);
     expect(byId(docs, "plain-status")?.title).toBe("Plain: one");
   });
 
@@ -287,7 +289,8 @@ describe("readContext on an in-repo binding", () => {
         "concepts/list-title.md": "---\ntitle: [a, b]\n---\n\nBody.\n",
         "concepts/map-status.md": "---\nstatus:\n  value: accepted\n---\n\nBody.\n",
         "concepts/number-title.md": "---\ntitle: 42\n---\n\nBody.\n",
-        "concepts/colon-title.md": "---\ntitle: System: Chat\nstatus: Proposed\n---\n\n# Chat\n",
+        "concepts/colon-title.md":
+          "---\ntitle: System: Chat\nstatus: Proposed\n---\n\n# Chat\n\n## Status\n\nProposed\n",
       },
     });
     const { result } = read(fx, "concept");

@@ -232,7 +232,9 @@ function splitFrontMatter(text: string): Page {
 /**
  * The title and status a header gives, each absent unless it is a scalar. A header
  * that is not strict YAML (an unquoted colon in a title is common in hand-written
- * wikis) still gives a top-level `title:` or `status:` line, read as written.
+ * wikis) still gives its top-level `title:` line, read as written, but never a
+ * status: a status decides whether a page reads as settled, so it is read only from
+ * a header YAML parses.
  */
 function headerMeta(yaml: string): PageMeta {
   try {
@@ -242,20 +244,19 @@ function headerMeta(yaml: string): PageMeta {
       status: hasScalarStatus(parsed) ? String(parsed.status) : null,
     };
   } catch {
-    return { title: headerLine(yaml, "title"), status: headerLine(yaml, "status") };
+    return { title: headerLine(yaml, "title"), status: null };
   }
 }
 
-/**
- * A top-level `key: value` line of a header, unquoted, when its value is plain text. A value that
- * opens a flow collection, a block, an anchor, an alias, a tag or a directive is not a scalar, as
- * strict YAML would not read it as one, so it reads as absent; null too when there is no line.
- */
+/** A top-level `key: value` line of a header, read as written with matching quotes removed; null when absent or empty. */
 function headerLine(yaml: string, key: string): string | null {
   const line = yaml.split("\n").find((text) => text.startsWith(`${key}:`));
-  const raw = line?.slice(key.length + 1).trim() ?? "";
-  if (raw === "" || /^[[\]{}|>&*!%@`#-]/.test(raw)) return null;
-  return raw.replace(/^(["'])(.*)\1$/, "$2");
+  const value =
+    line
+      ?.slice(key.length + 1)
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2") ?? "";
+  return value === "" ? null : value;
 }
 
 /** The first word of a declaration, lowercased, without markdown emphasis or punctuation. */

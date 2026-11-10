@@ -22955,16 +22955,14 @@ function headerMeta(yaml) {
       status: hasScalarStatus(parsed) ? String(parsed.status) : null
     };
   } catch {
-    return { title: headerLine(yaml, "title"), status: headerLine(yaml, "status") };
+    return { title: headerLine(yaml, "title"), status: null };
   }
 }
 function headerLine(yaml, key) {
   const line = yaml.split(`
 `).find((text) => text.startsWith(`${key}:`));
-  const raw = line?.slice(key.length + 1).trim() ?? "";
-  if (raw === "" || /^[[\]{}|>&*!%@`#-]/.test(raw))
-    return null;
-  return raw.replace(/^(["'])(.*)\1$/, "$2");
+  const value = line?.slice(key.length + 1).trim().replace(/^(["'])(.*)\1$/, "$2") ?? "";
+  return value === "" ? null : value;
 }
 function firstWord(text) {
   const word = text.replaceAll(/[*_`[\]]/g, " ").trim().split(/\s+/)[0] ?? "";

@@ -23,8 +23,8 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5660,
-      "tokens": 1412
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -898,8 +898,8 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5660,
-      "tokens": 1412
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -1773,8 +1773,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5732,
-      "tokens": 1430
+      "bytes": 5675,
+      "tokens": 1415
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -2648,8 +2648,8 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5660,
-      "tokens": 1412
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -3523,8 +3523,8 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5660,
-      "tokens": 1412
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
@@ -4398,8 +4398,8 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
-      "bytes": 5660,
-      "tokens": 1412
+      "bytes": 5603,
+      "tokens": 1397
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
