@@ -18,35 +18,34 @@ const ORACLE_TIMEOUT = 25_000;
 const children: ChildProcess[] = [];
 
 function stopFixture(child: ChildProcess): void {
-  if (child.pid === undefined) return;
+  const pid = child.pid;
+  if (pid === undefined) return;
   try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch {
-    try {
-      child.kill("SIGTERM");
-    } catch {
-      // already gone
-    }
+    process.kill(-pid, "SIGTERM");
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ESRCH") return;
   }
 }
 
-function liveFixtureLines(): string {
-  const listed = spawnSync("pgrep", ["-af", "tp-life/service/server.mjs"], { encoding: "utf8" });
-  const lines: string[] = [];
-  for (const line of (listed.stdout ?? "").split("\n")) {
-    if (line.includes("tp-life/service/server.mjs") && !line.includes("pgrep")) lines.push(line);
-  }
-  return lines.join("\n");
-}
-
-afterAll(() => {
-  for (const child of children) stopFixture(child);
+async function waitGroupGone(pid: number): Promise<void> {
   const deadline = Date.now() + 2000;
-  while (Date.now() < deadline && liveFixtureLines() !== "") {
-    spawnSync("sleep", ["0.05"]);
+  for (;;) {
+    try {
+      process.kill(-pid, 0);
+    } catch (err) {
+      if (err instanceof Error && "code" in err && err.code === "ESRCH") return;
+      throw err;
+    }
+    if (Date.now() >= deadline) throw new Error(`fixture process group ${pid} still running`);
+    await new Promise((settle) => setTimeout(settle, 50));
   }
-  const left = liveFixtureLines();
-  if (left !== "") throw new Error(`fixture still running:\n${left}`);
+}
+
+afterAll(async () => {
+  for (const child of children) stopFixture(child);
+  for (const child of children) {
+    if (child.pid !== undefined) await waitGroupGone(child.pid);
+  }
 });
 
 function runScript(args: string[], extra: { cwd?: string; timeout?: number } = {}) {
@@ -60,8 +59,8 @@ function runScript(args: string[], extra: { cwd?: string; timeout?: number } = {
 }
 
 function startFixture(broken?: string): Promise<string> {
-  const args = broken === undefined ? ["fixture"] : ["fixture", "--broken", broken];
-  const child = spawn("bash", [SCRIPT, ...args], {
+  const args = broken === undefined ? [SERVICE] : [SERVICE, "--broken", broken];
+  const child = spawn(process.execPath, args, {
     cwd: REPO,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -282,6 +281,21 @@ describe("bound receipts", () => {
     expect(check.status).toBe(2);
     expect(check.stderr.includes("diff_hash is invalid")).toBe(true);
     expect(check.stderr.includes("is missing")).toBe(false);
+  });
+
+  test("a receipt with a 40-character non-hex revision is refused as invalid", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-badrev-");
+    const written = writeOracle(base, dir, "receipt");
+    const mutatedPath = join(dir, "invalid-rev.json");
+    const mutated = readFileSync(written.receipt, "utf8").replace(
+      /"revision": "[0-9a-f]{40}"/,
+      `"revision": "${"z".repeat(40)}"`,
+    );
+    writeFileSync(mutatedPath, mutated);
+    const check = runScript(["receipt", "check", mutatedPath]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("revision is invalid")).toBe(true);
   });
 
   test("a receipt with a different diff_hash is refused with exit 2", async () => {

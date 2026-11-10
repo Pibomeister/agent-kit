@@ -46,7 +46,7 @@ const boundValidator: ValidateFunction<BoundRaw> = new Ajv2020({ strict: false }
       required: ["repo", "revision", "diff_hash"],
       properties: {
         repo: { type: "string", minLength: 1 },
-        revision: { type: "string", minLength: 40 },
+        revision: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
         diff_hash: { type: "string", minLength: 1, pattern: "^sha256:[0-9a-f]{64}$" },
       },
     },
