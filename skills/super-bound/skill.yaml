@@ -153,8 +153,8 @@ hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context
     check is reclassified, not shipped. When review.cold_read is on, that check is the independent
     cold read. Off and shadow keep the author type-check as the outcome gate. When that read is
-    unavailable, the author check decides; cite the read with its reason. No class change and no
-    scorer change. Off and shadow do not change class or scorer inputs.
+    unavailable, the author check decides; cite the read with its reason. On raises a green class
+    to yellow-agent through project guidance. Off and shadow do not change class or scorer inputs.
   - Every ticket carries all six named readiness criteria plus vague_terms, assumptions items using
     text and resolved_as, and exact successful ak delegation output, except an unscored ticket under
     a delegation coverage limit, which carries every block but delegation; missing evidence stops
@@ -342,7 +342,8 @@ provenance:
       adaptation: >-
         The zero-decision rule becomes an independent cold read of each implementation ticket.
         Off keeps the author type-check. Shadow stores the read without changing outcome or score.
-        On reclassifies listed decisions (phase 1b, GS-004i).
+        On reclassifies listed decisions (phase 1b, GS-004i). When on, an unavailable read raises
+        green to yellow-agent (phase 1b, GS-004k).
     - donor: egm
       commit: 403d8881d62022490637d740657b33f01e321ea8
       path: agents/codebase_details.md

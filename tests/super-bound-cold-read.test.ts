@@ -1,8 +1,9 @@
 /**
- * Super-bound R2 cold-read contract (phase 1b, GS-004i).
+ * Super-bound R2 cold-read contract (phase 1b, GS-004i and GS-004k).
  *
  * Pins what an agent following the packaged skill must do. Off and shadow must
- * not change class or score. The scorer formula is unchanged.
+ * not change class or score. When on, an unavailable read raises green to
+ * yellow-agent through the existing seed. The scorer formula is unchanged.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,6 +36,15 @@ function packagedBody(): string {
 
 function packagedReference(): string {
   return packagedFile("references/shared/references/delegation/REFERENCE.md");
+}
+
+function subsection(text: string, name: string): string {
+  const marker = `**${name}.**`;
+  const start = text.indexOf(marker);
+  if (start < 0) return "";
+  const rest = text.slice(start);
+  const next = rest.slice(marker.length).search(/\n\*\*[A-Za-z]/);
+  return next < 0 ? rest : rest.slice(0, marker.length + next);
 }
 
 const OFF_TRIGGERS =
@@ -72,7 +82,6 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("reshape it, or reclassify it");
       expect(text).toContain("cannot be published until GS-004j");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
-      expect(text).not.toContain("green-to-yellow-agent");
     }
   });
 
@@ -84,14 +93,12 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(note).toContain("at most twice per ticket");
     expect(note).toContain("Do not reclassify the ticket");
     expect(note).toContain("Do not add the read to spec-factor or readiness evidence");
-    expect(note).not.toContain("seed `yellow-agent`");
     expect(note).toContain("The read adds evidence only and does not change factor scores or weights");
     expect(note).toContain("A completed cold read is binding");
     expect(note).toContain("is cited with its reason");
     expect(note).toContain(
       "for that ticket only, the author's empty-context check decides whether it publishes, is reshaped, or is reclassified `type: decision` and sent back",
     );
-    expect(note).toContain("Neither case changes the class");
     expect(note).toContain("Step 13 skips the independent cold read on this route");
     expect(note).toContain("(phase 1b, GS-004i)");
   });
@@ -158,5 +165,52 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       PROJECT,
     );
     expect(seeded.class).toBe("yellow-agent");
+  });
+});
+
+describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)", () => {
+  const projectSchema = readFileSync(join(REPO, "schemas/project.schema.json"), "utf8");
+  const coldReadSchema = readFileSync(join(REPO, "schemas/cold-read.schema.json"), "utf8");
+
+  test("on: an unavailable read seeds yellow-agent from green through project guidance", () => {
+    const on = subsection(reference, "On").replace(/\s+/g, " ");
+    expect(on).toContain("If that ticket's class is `green`, seed `yellow-agent`");
+    expect(on).toContain("That seed is project guidance raising the class");
+    expect(on).toContain("ruling `delegation-class-is-authority-not-finding`");
+    expect(on).toContain("Off and shadow do not seed from the read");
+    expect(on).not.toContain("Neither case changes the class");
+    const packedOn = subsection(packagedReference(), "On").replace(/\s+/g, " ");
+    expect(packedOn).toContain("If that ticket's class is `green`, seed `yellow-agent`");
+    const skillText = skill.replace(/\s+/g, " ");
+    expect(skillText).toContain("green-to-yellow-agent");
+    expect(skillText).toContain("On raises a green class to `yellow-agent` through project guidance");
+    expect(packagedBody().replace(/\s+/g, " ")).toContain(
+      "On raises a green class to `yellow-agent` through project guidance",
+    );
+    expect(contract.replace(/\s+/g, " ")).toContain("On raises a green class to yellow-agent through project guidance");
+    expect(projectSchema).toContain("raises a green class to yellow-agent through project guidance");
+    expect(projectSchema).not.toContain("later phase (GS-004k)");
+    expect(coldReadSchema).toContain("raises a green class to yellow-agent through project guidance");
+    expect(coldReadSchema).not.toContain("later phase (GS-004k)");
+  });
+
+  test("shadow: the read is stored and listed, and it does not seed a class", () => {
+    const shadow = subsection(reference, "Shadow").replace(/\s+/g, " ");
+    expect(shadow).toContain("The read runs and is stored");
+    expect(shadow).toContain("Print listed decisions beside the ticket");
+    expect(shadow).toContain("Do not change the class");
+    expect(shadow).not.toContain("seed `yellow-agent`");
+    expect(subsection(packagedReference(), "Shadow").replace(/\s+/g, " ")).toContain("Do not change the class");
+    expect(skill.replace(/\s+/g, " ")).toContain("Off and shadow do not change the class or the scorer");
+  });
+
+  test("off: the author type-check stays, and nothing is stored or seeded", () => {
+    const mode = subsection(reference, "Mode").replace(/\s+/g, " ");
+    expect(mode).toContain("Off dispatches nothing, stores nothing");
+    expect(mode).toContain("leaves the author's type-check as the zero-context gate");
+    expect(mode).not.toContain("seed `yellow-agent`");
+    expect(skill.replace(/\s+/g, " ")).toContain("Off keeps the author type-check");
+    expect(skill).toContain("Off stores none");
+    expect(projectSchema).toContain("Default off");
   });
 });

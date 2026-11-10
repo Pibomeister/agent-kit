@@ -306,5 +306,7 @@ the class. Keep the author's type-check as the zero-context gate.
 readiness criteria, then re-run the scorer command from step 10. The read adds evidence only
 and does not change factor scores or weights. A completed cold read is binding. An unavailable
 read is cited with its reason; for that ticket only, the author's empty-context check decides
-whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. Neither
-case changes the class.
+whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. If that
+ticket's class is `green`, seed `yellow-agent` and re-run the scorer. That seed is project
+guidance raising the class, not a hand-derived class (ruling
+`delegation-class-is-authority-not-finding`). Off and shadow do not seed from the read.

@@ -150,7 +150,7 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/shared/references/delegation/REFERENCE.md) under "Independent cold
     read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,
-    citation and unavailable handling.
+    citation, unavailable handling and the green-to-yellow-agent raise.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
     ticket, no ticket carries an unfinished-content marker or a "same as the earlier ticket"
     instruction, and each ticket's produced names and types match the next one's consumed names
@@ -162,9 +162,9 @@ a ticket whose class makes a human the author keeps that class, and a delegation
 Gate: a decision ticket is never emitted as executable work. A ticket that fails the zero-context
 check is reclassified, never shipped as an implementation ticket because the deadline is close.
 When `review.cold_read` is on, that check is the independent cold read, not the author's reread.
-When that read is unavailable, the author check decides; cite the read with its reason. No class
-change and no scorer change. Off and shadow keep the author type-check as the outcome gate. Off
-and shadow do not change the class or the scorer inputs.
+When that read is unavailable, the author check decides; cite the read with its reason. On raises
+a green class to `yellow-agent` through project guidance. Off and shadow keep the author
+type-check as the outcome gate. Off and shadow do not change the class or the scorer inputs.
 
 Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
 `vague_terms`, and `assumptions` items using `text` and `resolved_as`, except an unscored ticket under a delegation coverage limit, which carries every block but `delegation`. Vagueness, an open assumption
