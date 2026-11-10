@@ -422,7 +422,7 @@
           "default": "off"
         },
         "behavior": {
-          "description": "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the snapshot bound at run open. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
+          "description": "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the Runner.start freeze; open refuses. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
           "enum": ["off", "shadow", "on"],
           "default": "off"
         }

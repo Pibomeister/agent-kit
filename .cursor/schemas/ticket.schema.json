@@ -100,7 +100,7 @@
             "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
           },
           "behavior": {
-            "description": "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. The run snapshots the complete definition at open, so later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
+            "description": "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. Runner.start freezes the complete definition; open refuses. Later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
             "type": "object",
             "additionalProperties": false,
             "required": ["evidence_layer", "property_ids"],
@@ -266,7 +266,7 @@
       }
     },
     "behavior_contracts": {
-      "description": "Selected behavior-contract artifacts this ticket applies. Optional. The run snapshots complete required-check definitions at open; these references alone are not the obligation.",
+      "description": "Selected behavior-contract artifacts this ticket applies. Optional. Runner.start freezes complete required-check definitions; open refuses. These references alone are not the obligation.",
       "type": "array",
       "items": {
         "allOf": [

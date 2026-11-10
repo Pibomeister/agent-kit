@@ -643,8 +643,8 @@ function registeredFirstmateBinding(
   const location = object(binding?.evidence)?.location;
   if (binding?.schema !== "firstmate-binding" || !nonempty(binding.run_id) || !nonempty(location))
     return { ok: false, reason: `${bindingPath} is not a Firstmate binding` };
-  if (inside(resolve(bindingPath), resolve(project)))
-    return { ok: false, reason: `binding ${bindingPath} is inside the project, which the worker can write` };
+  if (workerWritable(resolve(bindingPath), project))
+    return { ok: false, reason: `binding ${bindingPath} is in a worker-writable location` };
   const entry = join(ledgerDir, `${binding.run_id}.json`);
   if (!existsSync(entry))
     return {
@@ -762,7 +762,11 @@ export interface OpenArgs {
   projectRecord?: string;
   /** Operator registry path; defaults to `AK_KB_REGISTRY` / the account registry. */
   registry?: string;
-  /** Firstmate binding ledger; defaults to the account ledger `ak firstmate bind` writes. */
+  /**
+   * Firstmate binding ledger. Defaults to the account ledger `ak firstmate bind`
+   * writes. CLI `open` never sets this: a worker cannot point the lookup at a
+   * ledger they control. Tests may pass it.
+   */
   ledger?: string;
   /** Stamped on the run; pre-ticket phase records at the opening revision are imported into it. */
   policy?: Policy;
@@ -876,14 +880,16 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   let bound: { binding_run_id: string; binding_evidence_location: string } | undefined;
   let bindingProjectId: string | undefined;
   if (a.binding !== undefined) {
-    if (inside(resolve(a.binding), resolve(a.project)))
-      return { ok: false, reason: `binding ${a.binding} is inside the project, which the worker can write` };
+    if (workerWritable(resolve(a.binding), a.project))
+      return { ok: false, reason: `binding ${a.binding} is in a worker-writable location` };
     const binding = readObject(a.binding);
     const location = object(binding?.evidence)?.location;
     if (binding?.schema !== "firstmate-binding" || !nonempty(binding.run_id) || !nonempty(location))
       return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
     const registered = registeredFirstmateBinding(a.binding, a.ledger ?? bindingLedgerDir(), a.project);
     if (!registered.ok) return { ok: false, reason: registered.reason };
+    if (workerWritable(resolve(location), a.project) || workerWritable(resolve(a.dir), a.project))
+      return { ok: false, reason: `evidence store ${location} is in a worker-writable location` };
     if (resolve(a.dir) !== resolve(location))
       return {
         ok: false,
@@ -921,6 +927,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const kb = authoritative.lookup === "resolved" || authoritative.lookup === "absent" ? authoritative.kb : undefined;
   if (kb !== undefined) {
     const committed = lookupCommittedArtifact(kb, id, { schema: "ticket" });
+    if (committed.status === "unavailable") return { ok: false, reason: committed.reason };
     if (committed.status === "found") ticketDoc = committed.artifact;
   }
   const openedAt = new Date().toISOString();
@@ -965,7 +972,8 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   )
     return {
       ok: false,
-      reason: "enabled mandatory behavior checks need the protected runner creation record",
+      reason:
+        "lifecycle open cannot start enabled mandatory behavior checks; only the protected runner can freeze them",
     };
   run.behavior = parent === undefined ? boundPolicy.binding : rebindSnapshot(parent, runId);
   atomicJson(runRecordPath(a.dir, runId), run);
@@ -2498,7 +2506,7 @@ export const LIFECYCLE_USAGE = [
   "From an installed bundle run each command as `node <bundle>/bin/ak-gate.mjs <subcommand> …`; `ak lifecycle`",
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
-  "  ak lifecycle open --ticket <file> [--binding <file>] [--ledger <dir>] [--project-record <file>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle open --ticket <file> [--binding <file>] [--project-record <file>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--retain-only] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>] | --author-kind <kind> --host <id> --seat-id <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
@@ -2541,7 +2549,7 @@ export const LIFECYCLE_USAGE = [
 ];
 
 const FLAGS: Record<string, readonly string[]> = {
-  open: ["ticket", "binding", "ledger", "project-record", "dir", "project"],
+  open: ["ticket", "binding", "project-record", "dir", "project"],
   record: [
     "gate",
     "receipt",
@@ -2993,8 +3001,6 @@ export function main(
     const binding = str("binding");
     const openArgs: OpenArgs = { dir, project, ticket: resolve(cwd, ticket) };
     if (binding !== undefined) openArgs.binding = resolve(cwd, binding);
-    const ledger = str("ledger");
-    if (ledger !== undefined) openArgs.ledger = resolve(cwd, ledger);
     const projectRecord = str("project-record");
     if (projectRecord !== undefined) openArgs.projectRecord = resolve(cwd, projectRecord);
     if (policy !== undefined) openArgs.policy = policy;

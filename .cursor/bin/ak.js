@@ -17005,7 +17005,7 @@ var init_project_schema = __esm(() => {
             default: "off"
           },
           behavior: {
-            description: "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the snapshot bound at run open. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
+            description: "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the Runner.start freeze; open refuses. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
             enum: ["off", "shadow", "on"],
             default: "off"
           }
@@ -17122,7 +17122,7 @@ var init_ticket_schema = __esm(() => {
               items: { type: "string", pattern: "^AC-[0-9]+$" }
             },
             behavior: {
-              description: "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. The run snapshots the complete definition at open, so later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
+              description: "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. Runner.start freezes the complete definition; open refuses. Later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
               type: "object",
               additionalProperties: false,
               required: ["evidence_layer", "property_ids"],
@@ -17288,7 +17288,7 @@ var init_ticket_schema = __esm(() => {
         }
       },
       behavior_contracts: {
-        description: "Selected behavior-contract artifacts this ticket applies. Optional. The run snapshots complete required-check definitions at open; these references alone are not the obligation.",
+        description: "Selected behavior-contract artifacts this ticket applies. Optional. Runner.start freezes complete required-check definitions; open refuses. These references alone are not the obligation.",
         type: "array",
         items: {
           allOf: [
@@ -24003,8 +24003,12 @@ import { dirname as dirname3, isAbsolute as isAbsolute3, join as join7, relative
 function describe2(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
+function committedBindingText(projectRoot) {
+  const shown = git2(projectRoot, ["show", `HEAD:${BINDING_FILE2}`]);
+  return shown.status === 0 ? shown.stdout : null;
+}
 function loadKbBinding(projectRoot) {
-  const text = readTextIfPresent(join7(projectRoot, BINDING_FILE2));
+  const text = readTextIfPresent(join7(projectRoot, BINDING_FILE2)) ?? committedBindingText(projectRoot);
   if (text === null) {
     return {
       binding: null,
@@ -42667,12 +42671,6 @@ class Runner {
     if (!asJsonObject(source) || source.kind !== "ticket")
       return;
     return this.loadTicket(charter);
-  }
-  workTicket(charter) {
-    const loaded = this.loadTicket(charter);
-    if (loaded === undefined)
-      throw new Error("approved ticket is absent from the runner store");
-    return loaded;
   }
   loadTicket(charter) {
     if (!asJsonObject(charter))

@@ -724,12 +724,6 @@ export class Runner {
     return this.loadTicket(charter);
   }
 
-  private workTicket(charter: Charter) {
-    const loaded = this.loadTicket(charter);
-    if (loaded === undefined) throw new Error("approved ticket is absent from the runner store");
-    return loaded;
-  }
-
   private loadTicket(charter: Charter) {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;

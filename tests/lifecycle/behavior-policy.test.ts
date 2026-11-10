@@ -609,7 +609,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     });
     expect(refused.ok).toBe(false);
     if (refused.ok) throw new Error("expected mandatory open refusal");
-    expect(refused.reason).toContain("protected runner creation record");
+    expect(refused.reason).toContain("only the protected runner can freeze them");
   });
 
   test("resume uses the snapshot after the project file is removed", () => {
@@ -739,6 +739,23 @@ describe("BV-T01 policy binding at open, resume and check", () => {
       /new enabled run|behavior snapshot is for ticket/,
     );
     expect(original.schema).toBe("ticket");
+    recordPhases(dir, "strip-replace");
+    expect(
+      ak(
+        dir,
+        "record",
+        "--gate",
+        "verify",
+        "--run",
+        "strip-replace",
+        "--receipt",
+        receipt(dir, "strip-replace", original),
+      ).code,
+    ).toBe(0);
+    const checked = ak(dir, "check", "--run", "strip-replace");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toMatch(/refused:/);
+    expect(checked.err).not.toContain("legacy");
   });
 
   test("resealing a weakened binding and replacing the ticket is incomplete", () => {
@@ -986,7 +1003,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     behaviorTicket(dir, "src-on");
     const sourceOpen = sourceCli(dir, bound.registry, "open", "--ticket", ticketPath(dir, "src-on"));
     expect(sourceOpen.code).toBe(1);
-    expect(sourceOpen.err).toContain("protected runner creation record");
+    expect(sourceOpen.err).toContain("only the protected runner can freeze them");
     plainTicket(dir, "src-on-plain");
     const sourcePlain = sourceCli(dir, bound.registry, "open", "--ticket", ticketPath(dir, "src-on-plain"));
     expect(sourcePlain.code, sourcePlain.err).toBe(0);
@@ -1001,7 +1018,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     behaviorTicket(dir, "bundled-on");
     const bundledOpen = nodeGate(script, dir, bound.registry, "open", "--ticket", ticketPath(dir, "bundled-on"));
     expect(bundledOpen.code).toBe(1);
-    expect(bundledOpen.err).toContain("protected runner creation record");
+    expect(bundledOpen.err).toContain("only the protected runner can freeze them");
     plainTicket(dir, "bundled-on-plain");
     const bundledPlain = nodeGate(script, dir, bound.registry, "open", "--ticket", ticketPath(dir, "bundled-on-plain"));
     expect(bundledPlain.code, bundledPlain.err).toBe(0);
@@ -1124,7 +1141,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     });
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("expected standalone refusal");
-    expect(r.reason).toContain("protected runner creation record");
+    expect(r.reason).toContain("only the protected runner can freeze them");
   });
 
   test("deleting the original ticket and substituting a plain one is incomplete, not legacy", () => {
@@ -1270,7 +1287,68 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     });
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("expected forged parent refusal");
-    expect(r.reason).toMatch(/protected runner creation record|never registered/);
+    expect(r.reason).toMatch(/only the protected runner|never registered/);
+  });
+
+  test("CLI open of a /tmp forged parent without a home ledger refuses", () => {
+    const dir = repo();
+    behaviorTicket(dir, "tmp-forge");
+    const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-tmp-forge-"));
+    const evidence = join(parentDir, "evidence");
+    mkdirSync(evidence);
+    writeFileSync(
+      join(parentDir, "parent-run.json"),
+      `${JSON.stringify({
+        id: "parent-run",
+        charter_path: join(parentDir, "charter.json"),
+        charter_hash: HASH,
+        charter: { run_id: "parent-run" },
+        start_authority: { covers: "autopilot.start" },
+        implementer: "forged",
+        excluded_actors: [],
+        revision: "deadbeef",
+        diff_hash: HASH,
+        created_at: "2026-10-01T00:00:00Z",
+        run_state: "building",
+        cards: {},
+        evidence: {},
+        decisions: [],
+        budget_consumption: {},
+        effects: {},
+        events: {},
+        open_escalation: null,
+        behavior: { mode: "on", required_checks: [] },
+      })}\n`,
+    );
+    writeJson(join(parentDir, "charter.json"), { schema: "charter", run_id: "parent-run" });
+    const bindingPath = join(parentDir, "binding.json");
+    writeJson(bindingPath, { schema: "firstmate-binding", run_id: "parent-run", evidence: { location: evidence } });
+    const forgedOpen = ak(
+      dir,
+      "open",
+      "--ticket",
+      ticketPath(dir, "tmp-forge"),
+      "--binding",
+      bindingPath,
+      "--dir",
+      evidence,
+    );
+    expect(forgedOpen.code).not.toBe(0);
+    expect(forgedOpen.err).toMatch(/never registered|worker-writable|only the protected runner/);
+    const withLedger = ak(
+      dir,
+      "open",
+      "--ticket",
+      ticketPath(dir, "tmp-forge"),
+      "--binding",
+      bindingPath,
+      "--ledger",
+      parentDir,
+      "--dir",
+      evidence,
+    );
+    expect(withLedger.code).toBe(2);
+    expect(withLedger.err).toContain("unexpected --ledger");
   });
 
   test("an unregistered Firstmate binding cannot open", () => {

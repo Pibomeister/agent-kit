@@ -716,13 +716,7 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
   return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
 
-/**
- * `publishArtifact` with a `run-artifact` placement: one schema-bound record,
- * appended as one line to the project's artifacts file and linked from the
- * records in `links`. It is validated against its own schema before anything
- * is written, and a link that names no committed record is refused rather
- * than stored dangling.
- */
+/** Latest committed artifact this run-artifact publish may link, by id. */
 function committedIntentLookup(kb: ResolvedKb): IntentLookup {
   return (id) => {
     const doc = readCommittedArtifact(kb, id);
@@ -734,6 +728,13 @@ function committedIntentLookup(kb: ResolvedKb): IntentLookup {
   };
 }
 
+/**
+ * `publishArtifact` with a `run-artifact` placement: one schema-bound record,
+ * appended as one line to the project's artifacts file and linked from the
+ * records in `links`. It is validated against its own schema before anything
+ * is written, and a link that names no committed record is refused rather
+ * than stored dangling.
+ */
 export function publishRunArtifact(
   kb: ResolvedKb,
   text: string,
