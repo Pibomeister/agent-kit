@@ -9,4 +9,7 @@ To keep the check, export `AK_JEV_ENABLED=1` into the host process that runs the
 (Claude Code, Codex, or a Firstmate worker). Unset, empty, `0`, and any other value skip
 quietly before the hook reads the key file or the repository.
 
+`AK_JEV_ENABLED=1` is explicit. Every skip then prints a host message (no-input, duplicate,
+in-progress, and missing-key). A keyed user on the old default never saw those.
+
 See `docs/semantic-lint.md`.

@@ -217,6 +217,31 @@ describe("optional semantic sibling hook", () => {
     }
   });
 
+  test("unset enable variable skips quietly even with a valid key file", () => {
+    const home = processScratch("semantic-keyed-unset-");
+    mkdirSync(join(home, ".config/agent-kit"), { recursive: true });
+    writeFileSync(join(home, pin.key_file), 'TYPESAFE_API_KEY="fixture-private-key"\n', { mode: 0o600 });
+    chmodSync(join(home, pin.key_file), 0o600);
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: home };
+    delete env.AK_JEV_ENABLED;
+    const run = spawnSync(process.execPath, [ENTRY, "hook"], {
+      cwd: processScratch("semantic-keyed-unset-cwd-"),
+      env,
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(run.stderr).toBe("");
+    expect(JSON.parse(run.stdout)).toEqual({
+      status: "skipped",
+      reason: "disabled",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
+    expect(JSON.parse(run.stdout)).not.toHaveProperty("systemMessage");
+  });
+
   test("command surfaces auth errors as non-blocking host feedback", () => {
     const root = processScratch("semantic-auth-output-");
     const keyFile = join(root, pin.key_file);
@@ -856,7 +881,7 @@ describe("opt-in enablement and one check per input", () => {
     expect(hookOutput(off, { explicit: false })).not.toHaveProperty("systemMessage");
   });
 
-  test("default mode skips are quiet while errors and reviewed results keep their message", () => {
+  test("disabled skips are quiet while errors, reviewed results and explicit skips keep their message", () => {
     const base = { advisory: true as const, excluded: [], excludedOmitted: 0, findings: noFindings };
     const skips = [
       { ...base, status: "skipped" as const, reason: "missing-key" },
@@ -903,7 +928,7 @@ describe("opt-in enablement and one check per input", () => {
     }
   });
 
-  test("a completed check makes an identical later Stop a duplicate in both modes, with no call", async () => {
+  test("a completed check makes an identical later Stop a duplicate, with no call", async () => {
     const options = fixture();
     const first = await runHook({
       ...options,

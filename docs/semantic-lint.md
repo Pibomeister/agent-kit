@@ -28,6 +28,8 @@ bun tools/hooks/semantic-lint.ts hook
 
 From 0.1.114, a present key file is not enough. Export `AK_JEV_ENABLED=1` into the host process that
 runs the Stop hook. A shell profile that the host does not inherit does not turn the hook on.
+`AK_JEV_ENABLED=1` is explicit, so every skip (no-input, duplicate, in-progress, missing-key) prints
+a host message. A keyed user on the old default never saw those.
 
 The key file is named by `key_file` in the pin, relative to the user's home. It must be a regular file, not a symlink, owned by the current user,
 with mode `0600`. The hook reads the first valid `TYPESAFE_API_KEY` or `TYPESAFEAI_API_KEY` assignment as data
@@ -36,8 +38,8 @@ exports the key, or changes a Firstmate environment file. A missing file reports
 `skipped/missing-key`. Unsafe permissions or malformed credentials report `error/auth`.
 
 When the hook is off, a skip prints its structured result with no `systemMessage`. Errors and reviewed
-results always carry the message. Explicit mode (`AK_JEV_ENABLED=1`) keeps every message, and the
-claims below stay active in both modes.
+results always carry the message. With `AK_JEV_ENABLED=1`, every skip also carries a message. The
+claims below stay active whenever the hook runs.
 
 `ak doctor` reports one `semantic lint` finding from the same reader: `PASS` when `AK_JEV_ENABLED=1`
 and the key file is present, owner-only and parseable, `WARN` when the variable is not `1` or the key
@@ -124,8 +126,8 @@ Git discovery has a 1.5-second limit per command. Each HTTP attempt has a 10-sec
 through reading the response body. SIGINT and SIGTERM cancel
 the request or retry wait. Redirects are refused. Auth, network, timeout, cancellation, HTTP,
 unusable-response, input and receipt errors have separate JSON reasons. All hook results exit 0.
-Results other than a default-mode skip include a non-blocking `systemMessage` with status, findings
-and exclusions for the host.
+A disabled skip has no `systemMessage`. With `AK_JEV_ENABLED=1`, every result, skips included, has a
+non-blocking `systemMessage` with status, findings and exclusions for the host.
 The structured result retains error and skip reasons. The hook never emits a host blocking decision.
 Scores 0–1 describe no visible mismatch; scores 2–3 call for manual inspection because the API
 does not identify the exact claim.

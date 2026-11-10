@@ -94,7 +94,7 @@ export async function runHook(options: HookOptions): Promise<HookResult> {
 /** What the host reads on stdout: the structured result, or for Codex only the message. */
 export type HostOutput = (HookResult & { systemMessage?: string }) | { systemMessage?: string };
 
-/** Default mode keeps skips quiet; errors and reviewed results always carry the message. */
+/** Disabled skips stay quiet. With AK_JEV_ENABLED=1, every result including skips carries the message. */
 export function hookOutput(result: HookResult, options: OutputOptions = {}): HostOutput {
   if (options.explicit === false && result.status === "skipped") return options.host === "codex" ? {} : { ...result };
   const details = result.findings.map((finding) => {
