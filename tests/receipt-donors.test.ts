@@ -442,7 +442,6 @@ exec "${bunBin}" "$@"
     const installed = join(gitDir, "hooks/pre-push");
     writeFileSync(installed, readFileSync(HOOK, "utf8"), { mode: 0o755 });
     const mark = join(scratch, "ak-build.mark");
-    const bunBin = process.execPath;
     const bin = processScratch("ak-sep-bin-");
     writeFileSync(
       join(bin, "bun"),
