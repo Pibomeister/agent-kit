@@ -4100,7 +4100,7 @@ describe("semantic lint Stop hook in the plugin bundles", () => {
     });
   }, 60_000);
 
-  test("the bundled bin/ak runs the Stop hook from a home with no key and stays quiet", () => {
+  test("the bundled bin/ak runs the Stop hook disabled and stays quiet", () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("repo catalog did not load");
     const script = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get("bin/ak")?.contents ?? "";
@@ -4117,7 +4117,7 @@ describe("semantic lint Stop hook in the plugin bundles", () => {
     expect(claude.stderr).toBe("");
     expect(JSON.parse(claude.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],
