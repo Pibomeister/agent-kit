@@ -21,6 +21,9 @@ The `id` must match.
 The frontend polls `GET /jobs/{id}` until a terminal status. An aborted poll,
 then a later GET of the same id, still returns that job.
 
+`GET /jobs/{id}?slow=1` is the fixture's test hook. It writes a 200 and delays
+the body so a client can abort mid-poll. Production clients do not send `slow`.
+
 ## Oracle
 
 An independent process that only uses HTTP must observe:

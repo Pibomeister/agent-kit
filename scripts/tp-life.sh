@@ -8,9 +8,9 @@
 #   scripts/tp-life.sh evidence
 #
 # The fixture and the oracle are separate programs. The oracle speaks HTTP only.
-# evidence prints G4. The verdict is computed from receipts under
-# research/tp-life/receipts/ that bind to HEAD. The template verdict is ignored.
-# Local fixture runs do not write that directory.
+# evidence always prints G4 as not-run. oracle_sub_verdict is machine-checked
+# from bound receipts under research/tp-life/receipts/. Local fixture runs do
+# not write that directory.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cmd="${1:-}"

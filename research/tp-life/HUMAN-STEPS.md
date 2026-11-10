@@ -1,20 +1,17 @@
 # How to run TP-LIFE on a host
 
 The code in this tree supplies the fixture, the oracle, and HEAD-bound receipts.
-G4 stays `not-run` until you record live receipts under `research/tp-life/receipts/`
-that `scripts/tp-life.sh receipt check` accepts for the candidate HEAD.
+`scripts/tp-life.sh evidence` always prints G4 as `not-run`. A human records G4.
+The command also prints `oracle_sub_verdict`, machine-checked from bound receipts.
 
-Do not copy a local fixture report into that directory and call G4 passed. G4
-needs the operator run below on a named host tuple.
-
-`scripts/tp-life.sh evidence` computes the verdict from those bound receipts.
 Do not copy or edit `research/tp-life/evidence.template.json`.
 
 ## 0. Candidate
 
 Record `git rev-parse HEAD`, `git status --porcelain=v1`, bundle version, host,
 OS, and whether `claude` or `codex` is signed in. Missing host login is a
-blocker, not a pass.
+blocker, not a pass. `receipt write` copies those fields into the receipt.
+Set `AK_TP_LIFE_HOST_LOGIN` to `claude`, `codex`, or `none` before you write.
 
 ## 1. Fixture
 
@@ -43,9 +40,9 @@ document's hash.
 
 ## 4. Implement and oracle
 
-Keep the v1-state fixture from step 1. From a second environment that does not
-import the fixture sources, run the oracle against it. It must fail. Write that
-receipt and keep it.
+Keep the v1-state fixture from step 1. Run the oracle against
+`http://127.0.0.1:4173` from this checkout. The receipt binds to this HEAD.
+It must fail. Write that receipt and keep it.
 
 ```bash
 scripts/tp-life.sh oracle --base-url http://127.0.0.1:4173 --out /tmp/tp-life-oracle-v1.json
@@ -53,10 +50,11 @@ scripts/tp-life.sh receipt write --oracle-json /tmp/tp-life-oracle-v1.json --out
 ```
 
 The oracle must exit 1. The duplicate case fails. Keep
-`/tmp/tp-life-receipt-v1.json`.
+`/tmp/tp-life-receipt-v1.json`. Receipts written from a saved report are
+marked unattested. The write command does not re-run the oracle.
 
-A separate implementer then executes the tickets against the fixture contract.
-Restart the fixture without `--broken`:
+The clean fixture stands in for the implemented service. Red-to-green is
+restarting the fixture without `--broken`. Stop the v1 process, then:
 
 ```bash
 scripts/tp-life.sh fixture --port 4173
@@ -70,14 +68,22 @@ only if check exits 0 on the candidate HEAD.
 
 ## 5. Stale evidence
 
-Change the specification or the fixture after that receipt. Run
-`ak lifecycle check --evidence`. It must refuse the old receipt. Confirm with:
+Open a lifecycle run. Record the green receipt in that run:
+
+```bash
+ak lifecycle record --gate verify --receipt /tmp/tp-life-receipt.json
+```
+
+Then change the specification or the fixture so HEAD or the working tree no
+longer matches. `ak lifecycle check --evidence` must refuse that recorded
+receipt. Confirm with:
 
 ```bash
 scripts/tp-life.sh receipt check /tmp/tp-life-receipt.json
 ```
 
-Expect exit 2 once HEAD or the working tree no longer matches.
+Expect exit 2 once HEAD or the working tree no longer matches. Revert the
+spec and fixture edit before step 7 so the receipts still bind.
 
 ## 6. Negative paths
 
@@ -103,8 +109,8 @@ Then run:
 scripts/tp-life.sh evidence
 ```
 
-The printed verdict is computed from receipts that bind to HEAD, pass
-`schemas/verification.schema.json`, carry the TP-LIFE oracle id and kind,
-status `passed`, exit 0, and a `diff_hash`. The failed v1 receipt does not
-count. G4 stays `not-run` when no such receipt is bound. Editing the template
-verdict does not pass G4.
+The printed G4 verdict stays `not-run`. A human records G4. `oracle_sub_verdict`
+is `red-to-green` only when this head has one bound failed receipt where only
+`duplicate` failed and one bound passed receipt. Duplicate copies count once.
+Otherwise it is `incomplete`. Oracle cases are machine-checked. Steps 2, 3, 5
+and 6 rest on the operator's word.

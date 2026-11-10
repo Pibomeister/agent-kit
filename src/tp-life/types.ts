@@ -14,6 +14,20 @@ export interface CaseResult {
   detail: string;
 }
 
+export interface HostDetails {
+  revision: string;
+  porcelain: string;
+  version: string;
+  hostname: string;
+  os: string;
+  host_login: string;
+}
+
+export interface ReceiptPayload {
+  cases: CaseResult[];
+  host: HostDetails;
+}
+
 export interface OracleReport {
   base_url: string;
   started_at: string;
@@ -24,6 +38,15 @@ export interface OracleReport {
 }
 
 export type GateVerdict = "not-run" | "passed" | "failed";
+export type OracleSubVerdict = "incomplete" | "red-to-green";
+
+export interface OracleObservation {
+  path: string;
+  digest: string;
+  status: string;
+  exit_status?: number;
+  cases: CaseResult[];
+}
 
 export interface EvidenceRecord {
   procedure: "TP-LIFE";
@@ -31,6 +54,7 @@ export interface EvidenceRecord {
   suite: "T5";
   covers?: string[];
   verdict: GateVerdict;
+  oracle_sub_verdict?: OracleSubVerdict;
   reason: string;
   receipts: string[];
   human_steps: string;
