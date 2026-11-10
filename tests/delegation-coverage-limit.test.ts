@@ -307,7 +307,7 @@ describe("an unscored ticket still carries criteria and named verification, and 
         "Under the unattended policy, a ticket that declares no acceptance criteria and no verification at all is a coverage limit, never needs-input: record it once naming its cause and verify with the repository checks actually run, the project's declared test command among them when it declares one (its verification recipes, schemas/project.schema.json).",
       );
       expect(text).toContain(
-        "declaring itself with --author-kind, --host and --seat-id; the build's implementer seat is refused",
+        "declaring itself with --author-kind, --host and --seat-id; a verify must declare an independent seat when the build recorded one, so the build's implementer seat, or no seat, is refused",
       );
       expect(text).toContain(
         "The gate counts those checks and nothing else, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
@@ -321,8 +321,9 @@ describe("an unscored ticket still carries criteria and named verification, and 
       "Bound still records every ticket, scored or unscored, with acceptance criteria and named verification derived from the work source (the issue text or plan)",
     );
     expect(text).toContain("the project's declared test command among them when it declares one");
+    expect(text).toContain("A verify must declare an independent seat when the build recorded one.");
     expect(text).toContain(
-      "The gate counts those checks and nothing else, refuses a verify recorded by the build's implementer seat, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
+      "The gate counts those checks and nothing else, refuses a verify recorded by the build's implementer seat or by no seat once the build recorded one, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
     );
     expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.4\.0$/m);
   });

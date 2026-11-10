@@ -1119,6 +1119,14 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     expect(bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT, verify: other }).code).toBe(0);
   });
 
+  test("once the build recorded an implementer seat, the fallback refuses a verify that declares no seat", () => {
+    const unseated = bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT });
+    expect(unseated.code).toBe(1);
+    expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
+    // With no build seat recorded at all, an unseated verify is counted as before.
+    expect(bareTicketRun(repo(), ok).code).toBe(0);
+  });
+
   test("the fallback's coverage limit is recorded on the ship decision and printed in the ship disclosure", () => {
     const cwd = repo();
     const { run, code } = bareTicketRun(cwd, ok);

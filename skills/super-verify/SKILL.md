@@ -242,7 +242,8 @@ all is a coverage limit, never `needs-input`: record it once naming its cause an
 repository checks actually run, the project's declared test command among them when it declares one
 (its verification recipes, `schemas/project.schema.json`). The independent verifier seat records
 each on the `verify` gate with its real command, exit status and output digest, declaring itself
-with `--author-kind`, `--host` and `--seat-id`; the build's implementer seat is refused. The gate
+with `--author-kind`, `--host` and `--seat-id`; a verify must declare an independent seat when the
+build recorded one, so the build's implementer seat, or no seat, is refused. The gate
 counts those checks and nothing else, and records the limit on its ship decision and in the ship
 disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any
 other. Outside the policy it is `unavailable`.

@@ -1073,27 +1073,31 @@ function evaluateEvidence(
     // Under the unattended policy only a ticket that declares neither criteria nor verification at all (the
     // raw arrays, as ticketDeclaresEvidence reads them) is a coverage limit: verify counts the repository checks
     // its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
-    // passing, and a verify recorded by the build's implementer seat is still refused. A half-declared or
-    // malformed ticket, and every ticket outside the policy, stays unavailable.
+    // passing. Once the build recorded an implementer seat, a verify recorded by that seat or by no seat is
+    // still refused, as a receipt naming no verifier seat is. A half-declared or malformed ticket, and every
+    // ticket outside the policy, stays unavailable.
     const detail = `ticket ${run.ticket.id} has no acceptance criteria or named verification`;
     const limit = run.policy !== undefined && !declaresEvidence(ticket);
-    const selfSeats = readRecords(a.dir, a.run, "verify")
+    const selfVerified = readRecords(a.dir, a.run, "verify")
       .filter((record) => same(record.snapshot, head))
-      .flatMap((record) => record.implementer?.seat_id ?? [])
-      .filter((seat) => buildSeats.has(seat));
+      .flatMap((record) => {
+        const seat = record.implementer?.seat_id;
+        if (seat === undefined) return buildSeats.size > 0 ? ["verify names no verifier seat"] : [];
+        return buildSeats.has(seat) ? [`verify was recorded by implementer seat ${seat}`] : [];
+      });
     if (limit)
       notes.push(
         `note: coverage limit: ${detail}; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest`,
       );
     return {
-      outcome: !limit ? "unavailable" : selfSeats.length > 0 ? "refused" : "allowed",
+      outcome: !limit ? "unavailable" : selfVerified.length > 0 ? "refused" : "allowed",
       reasons: !limit
         ? [{ code: "unavailable", detail }]
         : [
             { code: "coverage-limit", detail },
-            ...selfSeats.map((seat) => ({
+            ...selfVerified.map((why) => ({
               code: "self-verification",
-              detail: `verify was recorded by implementer seat ${seat}; an independent verifier seat is required`,
+              detail: `${why}; an independent verifier seat is required`,
             })),
           ],
       refs: [],
