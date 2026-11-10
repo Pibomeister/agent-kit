@@ -2139,39 +2139,59 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     const ticketPath = ticket(dir, "schema-v2");
     const run = openedRun(dir, ticketPath);
     record(dir, "build-checks", "review-full", "review-readiness");
-    const receiptPath = receipt(dir, run, ticketPath, { schema_version: 2 });
-    expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toMatchObject({
-      schema_version: 2,
-      status: "passed",
-      exit_status: 0,
-    });
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
-    const storedDir = join(defaultEvidenceDir(dir), run, "artifacts");
-    const storedVerificationVersions = (): unknown[] => {
-      const versions: unknown[] = [];
-      for (const name of readdirSync(storedDir)) {
-        try {
-          const doc: unknown = JSON.parse(readFileSync(join(storedDir, name), "utf8"));
-          if (
-            doc instanceof Object &&
-            !Array.isArray(doc) &&
-            "schema" in doc &&
-            doc.schema === "verification" &&
-            "schema_version" in doc
-          )
-            versions.push(doc.schema_version);
-        } catch {
-          continue;
-        }
-      }
-      return versions;
-    };
-    expect(storedVerificationVersions()).toEqual([2]);
-    const checked = ak(dir, "check");
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+    const allowed = ak(dir, "check", "--json");
+    expect(allowed.code).toBe(0);
+    expect(JSON.parse(allowed.out.join("\n"))).toMatchObject({ outcome: "allowed" });
+
+    const v2Path = receipt(dir, run, ticketPath, { schema_version: 2 });
+    expect(JSON.parse(readFileSync(v2Path, "utf8"))).toMatchObject({ schema_version: 2, status: "passed" });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", v2Path).code).toBe(0);
+    const checked = ak(dir, "check", "--json");
     expect(checked.code).toBe(1);
-    expect(checked.err).toContain("refused: evidence unsupported-version");
-    expect(checked.err).not.toContain("allowed");
-    expect(storedVerificationVersions()).toEqual([2]);
+    expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ outcome: "refused" });
+    expect(checked.out.join("\n")).toContain('"code": "unsupported-version"');
+  });
+
+  test("reading a legacy verify record does not fabricate an isolation attestation", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "legacy-isolation");
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+    const before = readRecords(defaultEvidenceDir(dir), run, "verify");
+    expect(before).toHaveLength(1);
+    const legacy = before[0];
+    if (legacy === undefined) throw new Error("expected a verify record");
+    expect(Object.keys(legacy).toSorted()).toEqual([
+      "evidence",
+      "gate",
+      "recorded_at",
+      "run_id",
+      "schema",
+      "schema_version",
+      "snapshot",
+    ]);
+    expect(legacy).not.toHaveProperty("policy");
+    const refs = legacy.evidence ?? [];
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      const stored = readFileSync(
+        join(defaultEvidenceDir(dir), run, "artifacts", ref.hash.replace(/^sha256:/, "")),
+        "utf8",
+      );
+      expect(stored).toContain('"schema": "verification"');
+      expect(stored).toContain('"schema_version": 1');
+      expect(stored).not.toContain("verifier_seat");
+    }
+    const checked = ak(dir, "check", "--json");
+    expect(checked.code).toBe(0);
+    expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ outcome: "allowed" });
+    expect(checked.out.join("\n")).not.toContain("runner-attested");
+    const after = readRecords(defaultEvidenceDir(dir), run, "verify");
+    expect(after).toEqual(before);
+    expect(JSON.stringify(after)).not.toContain("isolation");
+    expect(JSON.stringify(after)).not.toContain("attestation");
   });
 
   test("a ship decision that skipped a required gate is refused by name", () => {

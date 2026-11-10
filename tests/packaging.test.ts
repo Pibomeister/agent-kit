@@ -20,6 +20,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
+import { entryBodyPath } from "../src/catalog/layout.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
 import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
@@ -1204,6 +1205,39 @@ describe("bundle planning", () => {
     expect(plan.files.has("schemas/verification-recipe.schema.json")).toBe(true);
     const absent = planBundle(ctxFor({}, [path]), "claude-code", {});
     expect(absent.files.has(path)).toBe(false);
+  });
+
+  test("a core-profile plan copies every authored role as source bytes and ships every authored reference", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    const plan = planBundle({ root: REPO, catalog }, "claude-code", { profile: "core" });
+    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const missingRoles: string[] = [];
+    const driftedRoles: string[] = [];
+    for (const entry of catalog.bySection("roles")) {
+      if (entry.status !== "authored") continue;
+      const source = entryBodyPath("roles", entry.id);
+      const published = relocateForHost("claude-code", source);
+      const file = plan.files.get(published);
+      if (file === undefined) missingRoles.push(source);
+      else if (file.contents !== readFileSync(join(REPO, source), "utf8")) driftedRoles.push(source);
+    }
+    expect(missingRoles).toEqual([]);
+    expect(driftedRoles).toEqual([]);
+    const missingRefs: string[] = [];
+    const driftedRefs: string[] = [];
+    for (const entry of catalog.bySection("references")) {
+      if (entry.status !== "authored") continue;
+      const source = entryBodyPath("references", entry.id);
+      const expected = readFileSync(join(REPO, source), "utf8");
+      const shipped = [...plan.files.values()].filter((file) => file.source === source);
+      if (shipped.length === 0) missingRefs.push(source);
+      for (const file of shipped) {
+        if (file.verbatim === true && file.contents !== expected) driftedRefs.push(source);
+      }
+    }
+    expect(missingRefs).toEqual([]);
+    expect(driftedRefs).toEqual([]);
   });
 
   test("the policies and adapter contracts the skills name travel under the shared root", () => {
@@ -3441,9 +3475,34 @@ describe("ak build and --check", () => {
     expect(readFileSync(target, "utf8")).toBe("tampered\n");
   });
 
+  test("--check reports an altered host manifest and writes nothing", () => {
+    const ctx = ctxFor();
+    writeBundles(ctx, {});
+    const target = join(ctx.root, "dist/claude-code/.claude-plugin/plugin.json");
+    const original = readFileSync(target, "utf8");
+    if (!/"version"\s*:\s*"[^"]+"/.test(original)) throw new Error("plugin manifest has no version");
+    writeFileSync(target, original.replace(/"version"\s*:\s*"[^"]+"/, '"version": "9.9.9"'));
+    const issues = checkBundles(ctx, {});
+    expect(expectError(issues, "packaging.dist-stale", "Content differs").file).toBe(
+      "dist/claude-code/.claude-plugin/plugin.json",
+    );
+    expect(JSON.parse(readFileSync(target, "utf8"))).toMatchObject({ version: "9.9.9" });
+  });
+
   test("--check reports a missing generated file", () => {
     const ctx = ctxFor();
     expectError(checkBundles(ctx, {}), "packaging.dist-missing", "absent from dist/");
+  });
+
+  test("--check reports a deleted role and writes nothing", () => {
+    const ctx = ctxFor();
+    writeBundles(ctx, {});
+    const target = join(ctx.root, "dist/claude-code/roles/implementer/ROLE.md");
+    rmSync(target);
+    expect(expectError(checkBundles(ctx, {}), "packaging.dist-missing", "absent from dist/").file).toBe(
+      "dist/claude-code/roles/implementer/ROLE.md",
+    );
+    expect(existsSync(target)).toBe(false);
   });
 
   test("a missing skill body is one problem, not one per bundle that wanted it", () => {

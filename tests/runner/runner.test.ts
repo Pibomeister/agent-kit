@@ -392,10 +392,14 @@ function procedureKit() {
 }
 
 function upgradeProcedure(kit: string) {
-  const path = join(kit, "skills/autopilot/SKILL.md");
-  const original = readFileSync(path, "utf8");
-  writeFileSync(path, `${original}\n# upgraded procedure\n`);
-  return { path, original };
+  const skillPath = join(kit, "skills/autopilot/SKILL.md");
+  const originalSkill = readFileSync(skillPath, "utf8");
+  writeFileSync(skillPath, `${originalSkill}\n# upgraded procedure\n`);
+  const manifestPath = join(kit, "package.json");
+  const originalManifest = readFileSync(manifestPath, "utf8");
+  if (!/"version"\s*:\s*"[^"]+"/.test(originalManifest)) throw new Error("copied kit has no package version");
+  writeFileSync(manifestPath, originalManifest.replace(/("version"\s*:\s*")([^"]+)/, "$1$2-upgraded"));
+  return { skillPath, originalSkill, manifestPath, originalManifest };
 }
 
 function card(
@@ -1032,7 +1036,7 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
   });
 
-  test("rolling the bundle procedure back keeps blocked decisions and evidence", () => {
+  test("an audit stop for a changed procedure does not rewrite blocked decisions or evidence", () => {
     const f = procedureKit();
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
     const log = join(f.privateDir, "log.txt");
@@ -1047,11 +1051,15 @@ describe("runner guards", () => {
     expect(evidence?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
     const recorded = f.runner.status("toy-run").procedure;
     if (recorded === undefined) throw new Error("run recorded no procedure");
-    const { path, original } = upgradeProcedure(f.kit);
+    const upgraded = upgradeProcedure(f.kit);
     expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
-    writeFileSync(path, original);
-    const restored = f.runner.auditTick("toy-run");
-    expect(restored.procedure).toEqual(recorded);
+    expect(f.runner.status("toy-run").run_state).toBe("needs-input");
+    expect(f.runner.status("toy-run").evidence["e1"]).toEqual(evidence);
+    expect(JSON.parse(readFileSync(decisionFile, "utf8"))).toMatchObject({ status: "blocked" });
+    writeFileSync(upgraded.skillPath, upgraded.originalSkill);
+    writeFileSync(upgraded.manifestPath, upgraded.originalManifest);
+    const resumed = f.runner.auditTick("toy-run");
+    expect(resumed.procedure).toEqual(recorded);
     expect(f.runner.status("toy-run").run_state).toBe("needs-input");
     expect(f.runner.status("toy-run").evidence["e1"]).toEqual(evidence);
     expect(JSON.parse(readFileSync(decisionFile, "utf8"))).toMatchObject({ status: "blocked" });
