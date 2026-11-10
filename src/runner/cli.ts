@@ -631,7 +631,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   };
   const applyPersistedCap = () => {
     const { cap, spent } = recoveryBudget();
-    if (cap !== undefined && spent >= cap) haltAudit("cap");
+    if (cap !== undefined && spent > 0 && spent >= cap) haltAudit("cap");
   };
   const runAudit = async () => {
     if (loopCommand === null || auditRunning || auditHalted) return;
@@ -666,9 +666,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         const observed: unknown = JSON.parse(probe.stdout.toString());
         if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
           throw new Error("audit probe did not cover every active delegate");
-        for (const progress of observed.progress) {
-          runner.recordProgress(runId, progress.delegate, progress.kind, progress.ref);
-        }
+        runner.recordProgressBatch(runId, observed.progress);
         const tick = runner.auditTick(runId);
         for (const delegate of tick.replace) {
           const key = sha256Hex(`${runId}\0replace\0${delegate}`);

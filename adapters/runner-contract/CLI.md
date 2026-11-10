@@ -97,9 +97,9 @@ succeeds. On a charter cadence the loop receives a `probe` request listing every
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
 whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
 effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
-`stood_down:true`, a replacement id and its expected runtime after read-back. A failed probe or
-replacement leaves the delegate active, records neither progress nor a replacement, and approves
-no checkpoint. Both config files must be outside the worker root and shared
+`stood_down:true`, a replacement id and its expected runtime after read-back. A failed probe
+records no progress, and a failed replacement records no replacement for its delegate, which stays
+active. Effects of earlier steps in the same tick stand. No failure approves a checkpoint. Both config files must be outside the worker root and shared
 Git directory. Restarting the service replays unacknowledged events and resumes the audit timer
 for active delegates.
 

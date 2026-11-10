@@ -1408,16 +1408,26 @@ export class Runner {
   }
 
   recordProgress(id: string, delegateId: string, kind: string, ref: string, now = Date.now()): void {
+    this.recordProgressBatch(id, [{ delegate: delegateId, kind, ref }], now);
+  }
+
+  recordProgressBatch(
+    id: string,
+    entries: readonly { delegate: string; kind: string; ref: string }[],
+    now = Date.now(),
+  ): void {
     const run = this.load(id);
-    const delegate = run.delegates?.[delegateId];
-    if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
-      throw new Error("progress must identify an active delegate and a side effect");
-    if (kind === "commit") {
-      const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
-      if (observed.code !== 0 || observed.text !== "commit") throw new Error("commit side effect was not observed");
+    for (const { delegate: delegateId, kind, ref } of entries) {
+      const delegate = run.delegates?.[delegateId];
+      if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
+        throw new Error("progress must identify an active delegate and a side effect");
+      if (kind === "commit") {
+        const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
+        if (observed.code !== 0 || observed.text !== "commit") throw new Error("commit side effect was not observed");
+      }
+      if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
+        delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     }
-    if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
-      delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     this.save(run);
   }
 

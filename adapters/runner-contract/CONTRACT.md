@@ -285,8 +285,9 @@ start; drift refuses the tick. The adapter probes every active owner and child a
 observed side effects: commit, push, PR change, check change, or stored report. Narration is not
 progress. A delegate with no side effect within its expected runtime is sent to the adapter
 with a stable replacement key; only a matching stand-down and replacement read-back records the
-new delegate. The next tick audits the replacement too. A failed probe or replacement leaves the
-work active, records no progress and no replacement, and approves no checkpoint. When the charter
+new delegate. The next tick audits the replacement too. A failed probe records no progress, and a
+failed replacement records no replacement for its delegate, which stays active. Effects of earlier
+steps in the same tick stand. No failure approves a checkpoint. When the charter
 sets `limits.delegate_replacements`, the next cadence tick retries and status stays autonomous
 while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
 spent, and `autonomy.missing` names `delegate-replacements`. The count is not reset by a later

@@ -1183,6 +1183,58 @@ describe("runner guards", () => {
     }
   });
 
+  test("a probe reply with one unobserved side effect records none of its progress", async () => {
+    const f = fixture();
+    withAuditCadence(f, 20);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[",
+      "{delegate:'owner-1',kind:'store-report',ref:'r1'},",
+      "{delegate:'owner-1',kind:'commit',ref:'0000000000000000000000000000000000000000'}]}));",
+    ].join("");
+    const { socket, service } = serveLoop(f, script, join(f.privateDir, "unused"));
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the partly invalid probe to be spent",
+        () => (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1,
+      );
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a zero replacement cap still probes until the first failure", async () => {
+    const f = fixture();
+    withAuditCadence(f, 0);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'seen'}]}));",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, join(f.privateDir, "unused"));
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the probe to record progress",
+        () => (f.runner.status("toy-run").delegates?.["owner-1"]?.progress.length ?? 0) > 0,
+      );
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
   test("exhausting delegate-replacements leaves a guided stop that names the cap", async () => {
     const f = fixture();
     withAuditCadence(f, 1);
