@@ -137,7 +137,7 @@ the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 `agent-kit/worker-settings.json`, whose `PreToolUse` hook command carries `'__AK_FIRSTMATE_BINDING__'`, in
 single quotes, for the patch to replace with the task's bare binding path, and whose `Stop` hook runs
 `bun '<ak root>/tools/hooks/semantic-lint.ts' hook` with a 30-second timeout, the advisory semantic
-lint of `docs/semantic-lint.md`, holding no key and setting no switch; and, when an evidence store is given,
+lint of `docs/semantic-lint.md`, off unless `AK_JEV_ENABLED=1` in the hook process, holding no key and setting no switch; and, when an evidence store is given,
 `agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `ak firstmate remove` deletes
 exactly those.
 
