@@ -184,7 +184,8 @@ pass_1:
       with `required_when_activated` stays required.
     absent_class_evidence: >-
       The depth is `full` when there is no ticket delegation block, no project
-      `guidance.delegation`, or no successful scorer run. The review records the reason.
+      `guidance.delegation`, no successful scorer run, a failed depth command, or no class in
+      the run's build record. The review records the reason.
     direction: >-
       A run may move to a deeper depth and never to a shallower one. The merge-stage class is
       never below the ticket-stage class without a named human's lowering.
