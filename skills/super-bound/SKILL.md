@@ -61,7 +61,7 @@ Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin
 check --phase super-bound` exiting 0 is the start, with no command or grant (an exception to ruling
 `entrypoint-phase-operation-split`). The approved-alignment input, open document-review decisions, the capability-map review, the specification approval and the ticket approvals then
 proceed with your own recommended answers, recorded as unattended advances and never as approvals;
-a ticket whose class makes a human the author keeps that class, and a delegation coverage limit (Inputs) never stops this phase. Record the `bound` gate as
+a ticket whose class makes a human the author keeps that class, and a delegation coverage limit (Inputs) never stops this phase. Every implementation ticket, scored or unscored, is still recorded with acceptance criteria and named verification derived from the work source (the issue text or plan); scores and receipts are never invented. Record the `bound` gate as
 [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
 
 ## Inputs
@@ -76,8 +76,8 @@ a ticket whose class makes a human the author keeps that class, and a delegation
   [the knowledgebase-binding reference pack](../../references/knowledgebase-binding/REFERENCE.md).
 - The project record's configured guidance (`schemas/project.schema.json`) for change size and test
   shape. Absent: the starting points below are advisory and nothing enforces them.
-- Delegation guidance on that same project record. Outside the unattended policy, missing delegation guidance is `needs-input`. Under the unattended policy, no project record, or a valid one without delegation guidance, is a delegation coverage limit: record it once naming its cause, and give each ticket no `delegation` block and an assumption, resolved `non-goal`, reading `delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>`. It never stops this phase, and every required sensitive action still stops.
-  A present project record is decided by `ak delegation`, never by hand: `project does not match its schema` is `needs-input` under every policy, and `project has no guidance.delegation block` is the coverage limit. Only an absent project record skips `ak delegation`. A present project record that fails `schemas/project.schema.json` validation is `needs-input` under every policy. Scorer inputs are never invented.
+- Delegation guidance on that same project record. Outside the unattended policy, missing delegation guidance is `needs-input`. Under the unattended policy, no project record, a valid one without delegation guidance, or a missing `ak delegation` command, is a delegation coverage limit: record it once naming its cause, and give each ticket no `delegation` block and an assumption, resolved `non-goal`, reading `delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>`. It never stops this phase, and every required sensitive action still stops. A missing `ak delegation` command is one not on `PATH`, an unknown subcommand or a usage error from an older CLI, as in a sandbox with only `node <bundle>/bin/ak-gate.mjs`; with it, a present record's validity is not checked, and the cause reads `missing ak delegation command, project record validity not checked`.
+  A present project record is decided by `ak delegation`, never by hand, whether or not the draft ticket carries a `delegation` block: `ak delegation: project does not match its schema: …` is `needs-input` under every policy, and `ak delegation: project has no guidance.delegation block (weights and cut points)` is the coverage limit. Decide it at step 10. A ticket-side error (`ak delegation: ticket has no delegation block to score`, or `ak delegation: ticket does not match its schema: …`) is about the draft, not the record. Under the limit the persisted unscored ticket carries no `delegation` block, seeded or default, so build has no class to pass. Only an absent project record skips `ak delegation`. A present project record that fails `schemas/project.schema.json` validation is `needs-input` under every policy. Scorer inputs are never invented.
 - The project's verification recipes and surface declarations (`schemas/project.schema.json`).
   Absent or empty: record the gap; never assume a browser, running service, trace collector or
   command the project did not declare.
@@ -114,8 +114,8 @@ a ticket whose class makes a human the author keeps that class, and a delegation
    renaming the same things here.
 6. When the caller supplies a draft ticket or scorer input, load the delegation reference and run
    `ak delegation <ticket> --project <project-record>` now. A current agent-kit CLI is a
-   prerequisite: a missing command, or a usage error from an older CLI, is reported as
-   `needs-input` naming that prerequisite, not as a scoring failure. Persist the scorer output,
+   prerequisite: outside the unattended policy a missing command, or a usage error from an older CLI, is reported as
+   `needs-input` naming that prerequisite, not as a scoring failure; under the unattended policy it is a delegation coverage limit (Inputs). Persist the scorer output,
    readiness and assumptions on the evidence-bearing draft before document review; the draft is not
    an approved implementation ticket. Under a delegation coverage limit no scorer output is persisted; readiness and assumptions are still persisted.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a

@@ -1061,11 +1061,19 @@ function evaluateEvidence(
     if (check !== undefined && nonempty(check.id) && KEBAB.test(check.id)) checks.set(check.id, check);
   }
   if (criteria.length === 0 || checks.size === 0) {
+    // Under the unattended policy a ticket bound could not give criteria or named verification is a
+    // coverage limit: verify counts the repository checks its records ran, whose argv, exit status and
+    // stored output digest commandRefusals already holds to passing. Outside the policy it stays unavailable.
+    const limit = run.policy !== undefined;
+    if (limit)
+      notes.push(
+        `note: coverage limit: ticket ${run.ticket.id} has no acceptance criteria or named verification; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest`,
+      );
     return {
-      outcome: "unavailable",
-      reasons: [
-        { code: "unavailable", detail: `ticket ${run.ticket.id} has no acceptance criteria or named verification` },
-      ],
+      outcome: limit ? "allowed" : "unavailable",
+      reasons: limit
+        ? []
+        : [{ code: "unavailable", detail: `ticket ${run.ticket.id} has no acceptance criteria or named verification` }],
       refs: [],
     };
   }

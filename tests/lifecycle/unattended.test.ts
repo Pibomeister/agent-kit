@@ -815,6 +815,27 @@ describe("selection and start (command seam)", () => {
   });
 });
 
+/** A ticket bound could not give criteria or named verification. */
+function bareTicketFile(cwd: string): string {
+  const path = join(cwd, "bare-ticket.json");
+  writeFileSync(
+    path,
+    `${JSON.stringify({ schema: "ticket", schema_version: 1, id: "demo-bare", acceptance_criteria: [], verification: [] })}\n`,
+  );
+  return path;
+}
+
+/** An unattended run on the bare ticket whose verify gate records `verify` as its only evidence command, then check. */
+function bareTicketRun(cwd: string, verify: string[] | undefined) {
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd)).out);
+  for (const g of ["build-checks", "review-full", "review-readiness"])
+    expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  if (verify !== undefined) ak(cwd, "record", "--gate", "verify", "--", ...verify);
+  return ak(cwd, "check");
+}
+
 /** An unscored ticket's run: build-checks recorded with `seat` flags and no class, then verify with `receipt`. */
 function unscoredRun(cwd: string, seat: string[], receipt: JsonObject) {
   setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
@@ -1019,6 +1040,48 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     const cwd = repo();
     unscoredRun(cwd, [], IMPLEMENTER_RECEIPT);
     expect(ak(cwd, "check").code).toBe(0);
+  });
+
+  test("an unscored ticket whose criteria and verification bound derived from the work source verifies like any other", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const stored: unknown = JSON.parse(readFileSync(join(cwd, "ticket.json"), "utf8"));
+    expect(stored).not.toHaveProperty("delegation");
+    const r = ak(cwd, "check");
+    expect(r.err).not.toContain("has no acceptance criteria or named verification");
+    expect(r.code).toBe(0);
+    expect(recordsOf(cwd, run, "verify")).toHaveLength(1);
+  });
+
+  test("with no criteria or named verification, verify falls back to the recorded repository checks as a coverage limit", () => {
+    const cwd = repo();
+    const r = bareTicketRun(cwd, ["sh", "-c", "echo 3 pass"]);
+    expect(r.code).toBe(0);
+    expect(r.err).toContain(
+      "note: coverage limit: ticket demo-bare has no acceptance criteria or named verification; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest",
+    );
+  });
+
+  test("the fallback counts nothing but the recorded checks: a failing one refuses, and none at all refuses", () => {
+    const failing = repo();
+    const r = bareTicketRun(failing, ["sh", "-c", "echo 1 fail; exit 1"]);
+    expect(r.code).toBe(1);
+    expect(r.err).not.toContain("note: coverage limit");
+    const none = repo();
+    const n = bareTicketRun(none, undefined);
+    expect(n.code).toBe(1);
+  });
+
+  test("outside the unattended policy a ticket with no criteria or named verification is still unavailable", () => {
+    const cwd = repo();
+    runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd)).out);
+    for (const g of ["build-checks", "review-full", "review-readiness", "verify"])
+      expect(ak(cwd, "record", "--gate", g).code).toBe(0);
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("ticket demo-bare has no acceptance criteria or named verification");
+    expect(r.err).not.toContain("note: coverage limit");
   });
 
   test("the classless seat form takes --author-kind, --host and --seat-id together, and the class form is unchanged", () => {

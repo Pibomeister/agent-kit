@@ -82,15 +82,23 @@ inputs:
       Configured change-size, test-shape and delegation guidance consumed by ak delegation, plus
       verification recipes and surface facilities. review.cold_read on this record is off, shadow
       or on, default off (phase 1b, GS-004i). Outside the unattended policy, missing delegation
-      guidance is needs-input. Under the unattended policy, no project record, or a valid one
-      without delegation guidance, is a delegation coverage limit: record it once naming its cause,
+      guidance is needs-input. Under the unattended policy, no project record, a valid one
+      without delegation guidance, or a missing ak delegation command, is a delegation coverage
+      limit: record it once naming its cause,
       and give each ticket no delegation block and an assumption, resolved non-goal, reading
       `delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>;
       sensitive actions: <ids or none>`. It never stops this phase, and every required sensitive
-      action still stops. A present project record is decided by ak delegation, never by hand:
-      `project does not match its schema` is needs-input under every policy, and `project has no
-      guidance.delegation block` is the coverage limit. Only an absent project record skips ak
-      delegation. A present project record that fails schemas/project.schema.json validation is
+      action still stops. A missing ak delegation command is one not on PATH, an unknown
+      subcommand or a usage error from an older CLI, as in a sandbox with only node
+      <bundle>/bin/ak-gate.mjs; with it, a present record's validity is not checked, and the cause
+      reads `missing ak delegation command, project record validity not checked`. A present project record is decided by ak delegation, never by hand,
+      whether or not the draft ticket carries a delegation block: `ak delegation: project does not
+      match its schema: …` is needs-input under every policy, and `ak delegation: project has no
+      guidance.delegation block (weights and cut points)` is the coverage limit. Decide it at step
+      10. A ticket-side error (`ak delegation: ticket has no delegation block to score`, or `ak
+      delegation: ticket does not match its schema: …`) is about the draft, not the record. Under
+      the limit the persisted unscored ticket carries no delegation block, seeded or default, so
+      build has no class to pass. Only an absent project record skips ak delegation. A present project record that fails schemas/project.schema.json validation is
       needs-input under every policy. Scorer inputs and runtime facilities are never invented.
   - id: charter
     schema: charter
@@ -206,11 +214,14 @@ stop_conditions:
   - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped publish is named in the result as not published, and of these results only exit 1 stops.
-  - Under the unattended policy, no project record, or a valid one without delegation guidance, is
-    a delegation coverage limit that never stops this phase. It is recorded once with its cause,
+  - Under the unattended policy, no project record, a valid one without delegation guidance, or a
+    missing ak delegation command, is a delegation coverage limit that never stops this phase. It is recorded once with its cause,
     ak delegation runs only against a present record, and each ticket carries no delegation block
     and the unscored assumption, which states the floor not evaluated and lists the attached packs
     and required sensitive actions; every required sensitive action still stops.
+  - Under the unattended policy every implementation ticket, scored or unscored, is still recorded
+    with acceptance criteria and named verification derived from the work source (the issue text or
+    plan); scores and receipts are never invented.
     Outside the unattended policy, missing delegation guidance is needs-input. A present project
     record that fails schemas/project.schema.json validation is needs-input under every policy.
 
@@ -220,7 +231,7 @@ failure_outcomes:
       A prerequisite the run cannot supply itself: a start by the typed command, a validated grant,
       a passing bypass check or a passing `unattended check`, an approved direction, an approval
       bound to this revision, project delegation guidance outside the unattended policy, a project
-      record that passes its schema, a grant, a current `ak` on `PATH`, a
+      record that passes its schema, a grant, a current `ak` on `PATH` outside the unattended policy, a
       scorer that returns its record, readiness free of vague terms, a resolution for every open
       assumption, an answer to every open document-review decision, a settled decision that new
       evidence has not invalidated, or a finished on-mode cold read whose listed decisions were
@@ -435,6 +446,16 @@ tests:
       The skill runs ak delegation, records one delegation coverage limit naming the missing
       delegation guidance, does not stop for it, leaves the project record unchanged, and writes the
       ticket with no delegation block and the unscored assumption.
+  - id: unattended-without-ak-command-continues-unscored
+    kind: missing-tools
+    given: >-
+      The unattended policy is active, the approved specification binds to the current revision and
+      a valid project record with delegation guidance is committed, but the sandbox has no ak CLI,
+      only node <bundle>/bin/ak-gate.mjs.
+    expect: >-
+      The skill records one delegation coverage limit naming the missing ak delegation command and
+      the project record validity not checked, does not stop for it, leaves the project record
+      unchanged, and writes the ticket with no delegation block and the unscored assumption.
   - id: invalid-project-record-stops
     kind: missing-tools
     given: >-

@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-verify/SKILL.md (AUTHORING.md §4.1).
 
 id: super-verify
-version: 0.3.0
+version: 0.4.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -167,6 +167,12 @@ stop_conditions:
     not published.
   - A run whose checks all failed is complete; the failures are the result, not a reason to withhold
     one.
+  - >-
+    Under the unattended policy, a ticket with no acceptance criteria or named verification is a
+    coverage limit, never needs-input: record it once naming its cause and verify with the
+    repository checks actually run, each recorded on the verify gate with its real command, exit
+    status and output digest; the gate counts those checks and nothing else. Outside the policy it
+    is unavailable.
   - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped publish is named in the result as not published, and of these results only exit 1 stops.

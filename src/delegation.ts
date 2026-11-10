@@ -77,10 +77,12 @@ function floorClass(floor: DelegationRecord["floor"]): DelegationClass {
 }
 
 export function scoreDelegation(ticket: DelegationTicket, project: DelegationProject): DelegationRecord {
-  const source = ticket.delegation;
-  if (source === undefined) throw new Error("ticket has no delegation block to score");
+  // The project's missing guidance is reported before the ticket's missing block: under the unattended
+  // policy that error is a coverage limit an unscored draft (no block) must be able to read.
   const guidance = project.guidance.delegation;
   if (guidance === undefined) throw new Error("project has no guidance.delegation block (weights and cut points)");
+  const source = ticket.delegation;
+  if (source === undefined) throw new Error("ticket has no delegation block to score");
   const { yellow_agent: yellowAgent, yellow_owner: yellowOwner, red } = guidance.cut_points;
   if (!(yellowAgent < yellowOwner && yellowOwner < red)) {
     throw new Error("project.guidance.delegation cut points must be strictly ascending");

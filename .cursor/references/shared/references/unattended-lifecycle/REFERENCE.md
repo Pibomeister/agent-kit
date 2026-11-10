@@ -41,7 +41,8 @@ blocking review finding, a prototype that needs a person, unprovable or failed e
 sensitive action, including production writes, deploys, releases, destructive external operations
 and credential or protection changes. Merge is never the run's.
 
-A delegation coverage limit is no project record, or a valid one without delegation guidance. Bound
+A delegation coverage limit is no project record, a valid one without delegation guidance, or a
+missing `.cursor/bin/ak delegation` command. A missing `.cursor/bin/ak delegation` command is one not on `PATH`, an unknown subcommand or a usage error from an older CLI, as in a sandbox with only `node <bundle>/bin/ak-gate.mjs`. With it, a present record's validity is not checked, and the cause reads `missing .cursor/bin/ak delegation command, project record validity not checked`. Bound
 records it once naming its cause and never stops a phase for it: `.cursor/bin/ak delegation` decides a present
 record and is not run without one, and each ticket carries no `delegation` block and an assumption reading
 `delegation unscored: <cause> (coverage limit)` that states the floor not evaluated and lists the
@@ -49,6 +50,12 @@ attached packs and required sensitive actions, as the delegation reference says.
 review and ship take that ticket as it is: no class is recorded or derived for it, scorer inputs are
 never invented, and every required sensitive action still stops. The build still declares the
 implementer seat, so self-verification is still refused.
+
+Bound still records every ticket, scored or unscored, with acceptance criteria and named verification
+derived from the work source (the issue text or plan). A ticket that still has none is a coverage
+limit for verify, never a stop: it records the cause once and verifies with the repository checks
+actually run, each recorded on the `verify` gate with its real command, exit status and output
+digest, and the gate counts those checks and nothing else. Outside the policy it is `unavailable`.
 
 ## Recording each phase
 

@@ -21,7 +21,6 @@ import { describe, expect, test } from "bun:test";
 
 import project from "./fixtures/delegation/valid.project.json" with { type: "json" };
 import ticket from "./fixtures/delegation/valid.ticket.json" with { type: "json" };
-import { scoreDelegationFiles } from "../src/delegation.ts";
 import { resolvePolicy } from "../src/lifecycle/unattended.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 
@@ -38,15 +37,46 @@ const UNSCORED = "delegation unscored: <cause> (coverage limit)";
 const UNSCORED_FULL =
   "delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>";
 /** The two ak delegation errors that decide a present record (src/delegation.ts). */
-const SCHEMA_ERROR = "project does not match its schema";
-const GUIDANCE_ERROR = "project has no guidance.delegation block";
+const SCHEMA_ERROR = "ak delegation: project does not match its schema";
+const GUIDANCE_ERROR = "ak delegation: project has no guidance.delegation block (weights and cut points)";
+
+/** What a missing ak delegation command is: the T6 shape for a missing ak kb command. */
+const MISSING_COMMAND =
+  "A missing ak delegation command is one not on PATH, an unknown subcommand or a usage error from an older CLI, as in a sandbox with only node <bundle>/bin/ak-gate.mjs";
+/** With the command missing, a present record's validity is recorded as not checked, never a stop. */
+const NOT_CHECKED = "missing ak delegation command, project record validity not checked";
+
+/** The persisted unscored ticket keeps no delegation block, so build never finds a class to pass. */
+const NO_SEED =
+  "the persisted unscored ticket carries no delegation block, seeded or default, so build has no class to pass";
+/** The ticket-side errors, which are about the draft and never decide the record. */
+const TICKET_SIDE =
+  "A ticket-side error (ak delegation: ticket has no delegation block to score, or ak delegation: ticket does not match its schema: …) is about the draft, not the record";
+
+/** The draft an unscored ticket is when the decision runs: the valid fixture with no delegation block. */
+const { delegation: _scored, ...unscoredTicket } = ticket;
+
+/** The real `ak delegation` (src/cli.ts) on a ticket and a project record, in `cwd`: its exit and stderr. */
+function realAk(cwd: string, ticketPath: string, projectPath: string) {
+  const r = spawnSync(
+    process.execPath,
+    [join(REPO, "src/cli.ts"), "delegation", ticketPath, "--project", projectPath],
+    {
+      cwd,
+      encoding: "utf8",
+    },
+  );
+  return { code: r.status, err: (r.stderr ?? "").trim() };
+}
 
 describe("super-bound under the unattended policy", () => {
   test.each(BOUND)("%s waives a missing project record or delegation guidance as a coverage limit", (file) => {
     const text = flat(file);
     expect(text).toContain(
-      "Under the unattended policy, no project record, or a valid one without delegation guidance, is a delegation coverage limit",
+      "Under the unattended policy, no project record, a valid one without delegation guidance, or a missing ak delegation command, is a delegation coverage limit",
     );
+    expect(text).toContain(MISSING_COMMAND);
+    expect(text).toContain(NOT_CHECKED);
     expect(text).toContain("record it once naming its cause");
     expect(text).toContain(UNSCORED_FULL);
     expect(text).toContain("never stops this phase");
@@ -56,32 +86,34 @@ describe("super-bound under the unattended policy", () => {
   test.each(BOUND)("%s decides a present record with ak delegation, and only an absent record skips it", (file) => {
     const text = flat(file);
     expect(text).not.toContain("run no ak delegation");
-    expect(text).toContain("A present project record is decided by ak delegation, never by hand");
-    expect(text).toContain(`${SCHEMA_ERROR} is needs-input under every policy`);
+    expect(text).toContain(
+      "A present project record is decided by ak delegation, never by hand, whether or not the draft ticket carries a delegation block",
+    );
+    expect(text).toContain(`${SCHEMA_ERROR}: … is needs-input under every policy`);
     expect(text).toContain(`${GUIDANCE_ERROR} is the coverage limit`);
     expect(text).toContain("Only an absent project record skips ak delegation");
+    expect(text).toContain("Decide it at step 10");
+    expect(text).toContain(NO_SEED);
+    expect(text).toContain(TICKET_SIDE);
   });
 
-  test("those two errors are what ak delegation reports for an invalid record and a record without guidance", () => {
+  test("the real ak delegation decides a present record before it reads the ticket's missing block", () => {
     const dir = mkdtempSync(join(tmpdir(), "delegation-errors-"));
     try {
-      const ticketPath = join(dir, "ticket.json");
-      writeFileSync(ticketPath, JSON.stringify(ticket));
+      writeFileSync(join(dir, "unscored.json"), JSON.stringify(unscoredTicket));
+      writeFileSync(join(dir, "seeded.json"), JSON.stringify(ticket));
       const { delegation: _guidance, ...guidance } = project.guidance;
-      const cases = [
-        [{ ...project, guidance }, GUIDANCE_ERROR],
-        [
-          {
-            ...project,
-            guidance: { ...project.guidance, pr_size: { target_changed_lines: 100, enforcement: "blocking" } },
-          },
-          SCHEMA_ERROR,
-        ],
-      ] as const;
-      for (const [record, error] of cases) {
-        const projectPath = join(dir, "project.json");
-        writeFileSync(projectPath, JSON.stringify(record));
-        expect(() => scoreDelegationFiles(ticketPath, projectPath)).toThrow(error);
+      writeFileSync(join(dir, "no-guidance.json"), JSON.stringify({ ...project, guidance }));
+      const blocking = { target_changed_lines: 100, enforcement: "blocking" };
+      writeFileSync(
+        join(dir, "invalid.json"),
+        JSON.stringify({ ...project, guidance: { ...project.guidance, pr_size: blocking } }),
+      );
+      for (const draft of ["unscored.json", "seeded.json"]) {
+        expect(realAk(dir, draft, "no-guidance.json")).toEqual({ code: 1, err: GUIDANCE_ERROR });
+        const invalid = realAk(dir, draft, "invalid.json");
+        expect(invalid.code).toBe(1);
+        expect(invalid.err.startsWith(`${SCHEMA_ERROR}: `)).toBe(true);
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -96,6 +128,19 @@ describe("super-bound under the unattended policy", () => {
 
   test.each(BOUND)("%s keeps missing delegation guidance a needs-input stop outside the unattended policy", (file) => {
     expect(flat(file)).toContain("Outside the unattended policy, missing delegation guidance is needs-input");
+  });
+
+  test("step 6 keeps the CLI prerequisite outside the unattended policy and makes a missing command the limit under it", () => {
+    const text = flat("skills/super-bound/SKILL.md");
+    expect(text).toContain("A current agent-kit CLI is a prerequisite");
+    expect(text).toContain(
+      "outside the unattended policy a missing command, or a usage error from an older CLI, is reported as needs-input naming that prerequisite",
+    );
+    expect(text).toContain("under the unattended policy it is a delegation coverage limit (Inputs)");
+    expect(text).not.toContain(
+      "prerequisite: a missing command, or a usage error from an older CLI, is reported as needs-input",
+    );
+    expect(flat("skills/super-bound/skill.yaml")).toContain("a current ak on PATH outside the unattended policy");
   });
 
   test("SKILL.md never invents scorer inputs and skips the scorer steps under the limit", () => {
@@ -115,6 +160,7 @@ describe("super-bound under the unattended policy", () => {
     expect(ids).toContain("unattended-without-project-record-continues-unscored");
     expect(ids).toContain("invalid-project-record-stops");
     expect(ids).toContain("unattended-record-without-guidance-continues-unscored");
+    expect(ids).toContain("unattended-without-ak-command-continues-unscored");
   });
 });
 
@@ -126,7 +172,11 @@ describe("the references agree", () => {
     expect(text).toContain(
       "a delegation coverage limit is not one, and a knowledgebase coverage limit is not one either",
     );
-    expect(text).toContain("no project record, or a valid one without delegation guidance");
+    expect(text).toContain(
+      "no project record, a valid one without delegation guidance, or a missing ak delegation command",
+    );
+    expect(text).toContain(MISSING_COMMAND);
+    expect(text).toContain(NOT_CHECKED);
     expect(text).toContain("never stops a phase");
     expect(text).toContain(UNSCORED);
     expect(text).toContain("a project record that fails schemas/project.schema.json validation");
@@ -136,7 +186,11 @@ describe("the references agree", () => {
   test("the delegation reference treats an unscored ticket as a coverage limit, not a missing scorer run", () => {
     const text = flat("references/delegation/REFERENCE.md");
     expect(text).toContain("Under the unattended policy only, a delegation coverage limit");
-    expect(text).toContain("no project record, or a valid one without delegation guidance");
+    expect(text).toContain(
+      "no project record, a valid one without delegation guidance, or a missing ak delegation command",
+    );
+    expect(text).toContain(MISSING_COMMAND);
+    expect(text).toContain(NOT_CHECKED);
     expect(text).toContain("is not a missing scorer run and never stops a phase");
     expect(text).toContain(UNSCORED);
     expect(text).toContain(
@@ -144,8 +198,12 @@ describe("the references agree", () => {
     );
     expect(text).toContain(UNSCORED_FULL);
     expect(text).toContain("every required sensitive action still stops");
-    expect(text).toContain("A present project record is decided by ak delegation, never by hand");
+    expect(text).toContain(
+      "A present project record is decided by ak delegation, never by hand, whether or not the draft ticket carries a delegation block",
+    );
     expect(text).toContain("build records no class but still declares the implementer seat");
+    expect(text).toContain(NO_SEED);
+    expect(text).toContain(TICKET_SIDE);
   });
 });
 
@@ -195,6 +253,8 @@ describe("downstream readers accept an unscored ticket under the unattended poli
     expect(text).toContain(
       "An unscored ticket has no class to pass: declare the seat with --author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat> and no --class",
     );
+    expect(text).toContain("never a derived one or a seeded default");
+    expect(readFileSync(join(REPO, "skills/super-build/skill.yaml"), "utf8")).toMatch(/^version: 0\.4\.0$/m);
   });
 
   test("super-ship states the class as unscored instead of deriving one", () => {
@@ -210,9 +270,8 @@ describe("downstream readers accept an unscored ticket under the unattended poli
     const validateTicket = schemas.validatorFor("ticket");
     const validateProject = schemas.validatorFor("project");
     if (validateTicket === undefined || validateProject === undefined) throw new Error("schemas did not compile");
-    const { delegation: _scored, ...rest } = ticket;
     const unscored = {
-      ...rest,
+      ...unscoredTicket,
       assumptions: [
         ...ticket.assumptions,
         { text: "delegation unscored: no project record (coverage limit)", resolved_as: "non-goal" },
@@ -225,9 +284,35 @@ describe("downstream readers accept an unscored ticket under the unattended poli
   });
 });
 
+describe("an unscored ticket still carries criteria and named verification, and verify falls back without them", () => {
+  test.each(BOUND)("%s records the ticket with criteria and verification derived from the work source", (file) => {
+    expect(flat(file).toLowerCase()).toContain(
+      "every implementation ticket, scored or unscored, is still recorded with acceptance criteria and named verification derived from the work source (the issue text or plan); scores and receipts are never invented",
+    );
+  });
+
+  test.each(["skills/super-verify/SKILL.md", "skills/super-verify/skill.yaml"])(
+    "%s makes a ticket with neither a coverage limit verified by the recorded repository checks",
+    (file) => {
+      expect(flat(file)).toContain(
+        "Under the unattended policy, a ticket with no acceptance criteria or named verification is a coverage limit, never needs-input: record it once naming its cause and verify with the repository checks actually run, each recorded on the verify gate with its real command, exit status and output digest; the gate counts those checks and nothing else. Outside the policy it is unavailable.",
+      );
+    },
+  );
+
+  test("the unattended reference agrees, and super-verify's contract version moves with it", () => {
+    const text = flat("references/unattended-lifecycle/REFERENCE.md");
+    expect(text).toContain(
+      "Bound still records every ticket, scored or unscored, with acceptance criteria and named verification derived from the work source (the issue text or plan)",
+    );
+    expect(text).toContain("the gate counts those checks and nothing else. Outside the policy it is unavailable.");
+    expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.4\.0$/m);
+  });
+});
+
 /** A sentence naming the cause: no project record, missing delegation or project guidance, or an unscored ticket. */
 const CAUSE =
-  /no project record|(?:absent|missing|without a) project record|project record is (?:absent|missing)|(?:no|without a) delegation (?:class|block)|(?:missing|without) (?:project|delegation) guidance|delegation guidance (?:is )?missing|project (?:delegation )?guidance(?: or a grant)? is missing|delegation coverage limit|delegation unscored|unscored ticket/i;
+  /no project record|(?:absent|missing|without a) project record|project record is (?:absent|missing)|(?:no|without a) delegation (?:class|block)|(?:missing|without) (?:project|delegation) guidance|delegation guidance (?:is )?missing|project (?:delegation )?guidance(?: or a grant)? is missing|missing (?:or unknown )?ak delegation command|ak delegation command (?:is )?(?:missing|absent|unavailable)|(?:no|without an?) ak delegation command|delegation coverage limit|delegation unscored|unscored ticket/i;
 /** The phrasings that say the limit does not stop, and "block" as a noun, removed before a stop is looked for. */
 const NOT_A_STOP =
   /never stops?|does not stop|do not stop|not stop(?:ping)?(?: for it)?|without stopping|stops nothing|(?:never|rather than) a stop|is not one(?: either)?|## stop conditions|(?:delegation|every|evidence) blocks?|blocking edges?/gi;
@@ -286,6 +371,8 @@ describe("no lifecycle instruction ties a stop to the delegation coverage limit"
       stopsOnDelegationLimit("A delegation coverage limit never stops review, but no project record stops ship."),
     ).toHaveLength(1);
     expect(stopsOnDelegationLimit("Without a project record, super-ship refuses.")).toHaveLength(1);
+    expect(stopsOnDelegationLimit("A missing ak delegation command is needs-input.")).toHaveLength(1);
+    expect(stopsOnDelegationLimit("With no ak delegation command, bound stops.")).toHaveLength(1);
     expect(stopsOnDelegationLimit("A missing project record is needs-input.")).toHaveLength(1);
     expect(stopsOnDelegationLimit("When the ticket has no delegation class, verify stops.")).toHaveLength(1);
     expect(stopsOnDelegationLimit("A ticket without a delegation block stops at build.")).toHaveLength(1);
@@ -317,24 +404,10 @@ function load(id: string) {
   };
 }
 
-/** What ak delegation reports for a project record: the real scorer's error, or "scored". */
-function scorerError(projectPath: string): string {
-  const ticketPath = join(mkdtempSync(join(tmpdir(), "delegation-ticket-")), "ticket.json");
-  writeFileSync(ticketPath, JSON.stringify(ticket));
-  try {
-    scoreDelegationFiles(ticketPath, projectPath);
-    return "scored";
-  } catch (cause) {
-    return cause instanceof Error ? cause.message : String(cause);
-  } finally {
-    rmSync(join(ticketPath, ".."), { recursive: true, force: true });
-  }
-}
-
 /**
  * The scaffolded workspace's premise, with no policy in the environment: its resolved policy, whether
- * project.json is absent, valid or invalid, what the real scorer reports for it, and what the
- * scaffold's repository-local `ak delegation` stub prints, which must carry the same error.
+ * project.json is absent, valid or invalid, and what the real `ak delegation` and the scaffold's
+ * repository-local `ak` stub each report for it on an unscored draft ticket. The two must agree.
  */
 function premise(id: string) {
   const tmp = mkdtempSync(join(tmpdir(), "delegation-case-"));
@@ -351,6 +424,7 @@ function premise(id: string) {
     if (!existsSync(path)) return { policy, record: "absent" as const, stub };
     const validateProject = compileSchemas(REPO).validatorFor("project");
     const valid = validateProject?.(JSON.parse(readFileSync(path, "utf8"))) === true;
+    writeFileSync(join(tmp, "ticket.json"), JSON.stringify(unscoredTicket));
     const run = spawnSync("./ak", ["delegation", "ticket.json", "--project", "project.json"], {
       cwd: tmp,
       encoding: "utf8",
@@ -359,9 +433,8 @@ function premise(id: string) {
       policy,
       record: valid ? ("valid" as const) : ("invalid" as const),
       stub,
-      scorer: scorerError(path),
-      stubExit: run.status,
-      stubErr: run.stderr ?? "",
+      real: realAk(tmp, "ticket.json", "project.json"),
+      fake: { code: run.status, err: (run.stderr ?? "").trim() },
     };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -393,9 +466,24 @@ describe("super-bound delegation evals", () => {
     expect(c.graders).toContain("runs-the-scorer");
     expect(c.graders).toContain("project-record-unchanged");
     const p = premise("unattended-record-without-guidance-continues-unscored");
-    expect(p).toMatchObject({ policy: "unattended", record: "valid", stub: true, stubExit: 1 });
-    expect(p.scorer).toContain(GUIDANCE_ERROR);
-    expect(p.stubErr).toContain(GUIDANCE_ERROR);
+    expect(p).toMatchObject({ policy: "unattended", record: "valid", stub: true });
+    expect(p.real).toEqual({ code: 1, err: GUIDANCE_ERROR });
+    expect(p.fake).toEqual(p.real);
+  });
+
+  test("an unattended run with no ak delegation command continues unscored and records validity not checked", () => {
+    const c = load("unattended-without-ak-command-continues-unscored");
+    expect(c.text).toContain("does not stop");
+    expect(c.text).not.toMatch(/stops with needs-input/);
+    expect(c.text).toContain("validity not checked");
+    expect(c.text).toContain("only node <bundle>/bin/ak-gate.mjs");
+    expect(c.graders).toContain("project-record-unchanged");
+    expect(c.graders).toContain("ticket-says-it-is-unscored");
+    expect(premise("unattended-without-ak-command-continues-unscored")).toMatchObject({
+      policy: "unattended",
+      record: "valid",
+      stub: false,
+    });
   });
 
   test("an unattended run with an invalid project record stops", () => {
@@ -405,8 +493,9 @@ describe("super-bound delegation evals", () => {
     expect(c.graders).toContain("no-ticket-written");
     expect(c.graders).toContain("runs-the-scorer");
     const p = premise("invalid-project-record-stops");
-    expect(p).toMatchObject({ policy: "unattended", record: "invalid", stub: true, stubExit: 1 });
-    expect(p.scorer).toContain(SCHEMA_ERROR);
-    expect(p.stubErr).toContain(SCHEMA_ERROR);
+    expect(p).toMatchObject({ policy: "unattended", record: "invalid", stub: true });
+    expect(p.real?.code).toBe(1);
+    expect(p.real?.err.startsWith(`${SCHEMA_ERROR}: `)).toBe(true);
+    expect(p.fake).toEqual(p.real);
   });
 });

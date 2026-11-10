@@ -147,7 +147,7 @@ absence is recorded (`policies/limits.yaml`).
     When a runner assigned the implementer seat, declare it by appending
     `--class <delegation class> --author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>`;
     the seat is recorded on this gate, not on a receipt, and stays declared for commits descended
-    from the recorded one. After an amend or rebase, pass the flags again. An unscored ticket has no class to pass: declare the seat with `--author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>` and no `--class`, never a derived one, so a receipt that seat wrote is still refused.
+    from the recorded one. After an amend or rebase, pass the flags again. An unscored ticket has no class to pass: declare the seat with `--author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>` and no `--class`, never a derived one or a seeded default, so a receipt that seat wrote is still refused.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
     A binding's brief supplies `--dir` for the run opened with it.

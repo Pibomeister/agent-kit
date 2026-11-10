@@ -237,6 +237,11 @@ A run whose checks all failed is complete; the failures are the result.
 `needs-input`: the claim resolves to no acceptance criterion, or no revision was named. Returns the
 criterion or the revision it would need, and no partial matrix presented as a verdict.
 
+Under the unattended policy, a ticket with no acceptance criteria or named verification is a
+coverage limit, never `needs-input`: record it once naming its cause and verify with the repository
+checks actually run, each recorded on the `verify` gate with its real command, exit status and
+output digest; the gate counts those checks and nothing else. Outside the policy it is `unavailable`.
+
 `failed`: the repository is unreadable at the named revision, the environment cannot be identified,
 or a configured knowledgebase refuses the write. The receipts are returned unpublished with the
 refusal rather than written to a path in the repository.

@@ -2,7 +2,9 @@
 #
 # The same unattended premise, with a committed project record that passes
 # schemas/project.schema.json but carries no guidance.delegation block. The repository-local `ak`
-# reports what `ak delegation` reports for this record (src/delegation.ts): the missing guidance.
+# reports what the real `ak delegation` reports for this record on an unscored draft ticket (no
+# delegation block): the missing guidance. tests/delegation-coverage-limit.test.ts runs both on
+# this scaffold and requires the same exit and stderr.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../unattended-without-project-record-continues-unscored/scaffold.sh"
