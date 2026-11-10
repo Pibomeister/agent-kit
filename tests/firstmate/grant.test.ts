@@ -143,9 +143,17 @@ describe("ak firstmate grant", () => {
     };
     const ticketPath = join(makeDir(), "ticket.json");
     writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
-    const run = lifecycle("open", "--ticket", ticketPath, "--binding", bindingPath, "--dir", store).out.match(
-      /^opened run (.+)$/m,
-    )?.[1];
+    const run = lifecycle(
+      "open",
+      "--ticket",
+      ticketPath,
+      "--binding",
+      bindingPath,
+      "--ledger",
+      ledger,
+      "--dir",
+      store,
+    ).out.match(/^opened run (.+)$/m)?.[1];
     if (run === undefined) throw new Error("open did not return a run id");
     for (const gate of ["build-checks", "review-full", "review-readiness"])
       expect(lifecycle("record", "--dir", store, "--gate", gate).code).toBe(0);
@@ -192,23 +200,28 @@ describe("ak firstmate grant", () => {
     expect(delegated.err).toContain(refusal);
 
     const elsewhere = makeDir();
-    expect(lifecycle("open", "--ticket", ticketPath, "--binding", bindingPath, "--dir", elsewhere).code).toBe(0);
-    for (const gate of ["build-checks", "review-full", "review-readiness"])
-      expect(lifecycle("record", "--dir", elsewhere, "--gate", gate).code).toBe(0);
-    expect(lifecycle("record", "--dir", elsewhere, "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
-    const otherStore = lifecycle("check", "--dir", elsewhere);
-    expect(otherStore.code).toBe(1);
-    expect(otherStore.err).toContain(refusal);
+    const misplaced = lifecycle(
+      "open",
+      "--ticket",
+      ticketPath,
+      "--binding",
+      bindingPath,
+      "--ledger",
+      ledger,
+      "--dir",
+      elsewhere,
+    );
+    expect(misplaced.code).toBe(1);
+    expect(misplaced.err).toContain("evidence store the Firstmate binding names");
 
     for (const operation of ["review.full", "review.readiness"])
       expect(grant(ledger, bindingPath, operation, worktree).code).toBe(0);
-    expect(lifecycle("record", "--dir", store, "--gate", "ship-preflight").code).toBe(0);
+    const shipped = lifecycle("record", "--dir", store, "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("host-unattested");
     const audited = audit(ledger, bindingPath, worktree);
     expect(audited.code).toBe(1);
-    expect(audited.err.join("\n")).toContain(
-      `refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation (the run holds grant record ${join(store, binding.run_id, "grants", "review.full.json")})`,
-    );
-    expect(audited.err.join("\n")).not.toContain("has no current evidence");
+    expect(audited.err.join("\n")).toContain("gate ship-preflight has no current evidence");
   }, 120_000);
 
   test("grants a binding bind wrote under a data-dir override, outside the home", () => {

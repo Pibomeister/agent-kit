@@ -51,7 +51,17 @@ function statusOf(doc: JsonObject): string | undefined {
   return textField(doc.status);
 }
 
+function humanApproved(doc: JsonObject, expectedHash: string): boolean {
+  for (const row of rows(doc.approvals)) {
+    if (!asJsonObject(row)) continue;
+    const who = textField(row.role) ?? textField(row.by);
+    if (who === "human" && textField(row.artifact_hash) === expectedHash) return true;
+  }
+  return false;
+}
+
 function sourceIsAccepted(kind: string, artifact: IntentSourceArtifact): boolean {
+  if (!humanApproved(artifact.doc, artifactHash(artifact.doc))) return false;
   const status = statusOf(artifact.doc);
   if (kind === "ticket") return artifact.schema === "ticket" && status === "approved";
   if (kind === "decision" || kind === "recorded-decision") {

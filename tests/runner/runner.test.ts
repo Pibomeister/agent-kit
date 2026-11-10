@@ -18,14 +18,13 @@ import { dirname, join } from "node:path";
 
 import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
 
-import { runCli } from "../../src/cli.ts";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { openRun, takeSnapshot } from "../../src/lifecycle/gate.ts";
-import { asJsonObject, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
+import { asJsonObject, classifyRun, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 import { parseJson } from "../helpers/json.ts";
@@ -763,30 +762,20 @@ describe("runner guards", () => {
       const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
       expect(resumed.behavior?.binding_hash).toBe(started.behavior?.binding_hash);
       expect(resumed.behavior?.required_checks).toEqual(started.behavior?.required_checks);
-      const evidence = join(f.privateDir, "evidence");
-      for (const gate of ["build-checks", "review-full", "review-readiness"] as const) {
-        const out: string[] = [];
-        const err: string[] = [];
-        const code = runCli(["lifecycle", "record", "--gate", gate, "--run", "toy-run", "--dir", evidence], {
-          cwd: f.worker,
-          io: { out: (line) => out.push(line), err: (line) => err.push(line) },
-        });
-        expect(code, err.join("\n")).toBe(0);
-      }
-      const runPath = join(evidence, "runs", "toy-run", "run.json");
-      const recordedValue: unknown = JSON.parse(readFileSync(runPath, "utf8"));
-      if (!asJsonObject(recordedValue)) throw new Error("lifecycle run record is not an object");
-      delete recordedValue.behavior;
-      delete recordedValue.schema_version;
-      writeFileSync(runPath, `${JSON.stringify(recordedValue, null, 2)}\n`);
-      const err: string[] = [];
-      const code = runCli(["lifecycle", "check", "--run", "toy-run", "--dir", evidence], {
-        cwd: f.worker,
-        io: { out: () => undefined, err: (line) => err.push(line) },
-      });
-      expect(code, err.join("\n")).toBe(1);
-      expect(err.join("\n")).not.toContain("legacy");
-      expect(err.join("\n")).toMatch(/no passed evidence|verify/);
+      const classified = classifyRun(
+        {
+          run_id: "toy-run",
+          ticket: { id: "toy-ticket", hash: artifactHash(ticket) },
+          opened_at: "2026-09-29T00:00:00Z",
+          branch: "feature",
+          base: f.revision,
+        },
+        "toy-run",
+        ticket,
+      );
+      expect(classified.kind).toBe("incomplete");
+      expect(classified.kind === "incomplete" ? classified.reason : "").toContain("new enabled run");
+      expect(classified.kind === "incomplete" ? classified.reason : "").not.toContain("legacy");
     } finally {
       if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
       else process.env.AK_KB_REGISTRY = previousRegistry;
@@ -815,7 +804,42 @@ describe("runner guards", () => {
     expect(started.behavior?.required_checks).toEqual([]);
   });
 
-  test("verify refuses when a mandatory freeze is missing, and keeps the freeze on the run", () => {
+  test("verify of a pre-feature run does not fail closed on a missing knowledgebase", () => {
+    const f = fixture();
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const source = join(f.privateDir, "source.txt");
+    writeFileSync(source, "approved source");
+    f.runner.collect("toy-run", "e1", source, f.revision, "source");
+    for (const [id, operation, covers] of [
+      ["align", "align.run", "align-answer"],
+      ["bound", "bound.run", "spec-approval"],
+      ["build", "build.dispatch", "build-go"],
+    ] as const) {
+      card(f, id, operation, covers);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    const verification = join(f.privateDir, "verification.txt");
+    writeFileSync(verification, "tests passed at current revision");
+    f.runner.collect("toy-run", "verify", verification, f.revision, "verify");
+    const path = join(f.privateDir, "toy-run.json");
+    const stored: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!asJsonObject(stored)) throw new Error("runner state is not an object");
+    delete stored.behavior;
+    writeFileSync(path, `${JSON.stringify(stored)}\n`);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), "this is not: [valid\n");
+    expect(() => new Runner(f.privateDir, f.worker, root).verify("toy-run", "verify")).not.toThrow();
+  });
+
+  test("verify keeps a frozen on-mode binding when the worker-writable project file is gone", () => {
     const f = fixture();
     const HASH = `sha256:${"a".repeat(64)}`;
     const ticket = {
@@ -907,16 +931,7 @@ describe("runner guards", () => {
       const verification = join(f.privateDir, "verification.txt");
       writeFileSync(verification, "tests passed at current revision");
       f.runner.collect("toy-run", "verify", verification, f.revision, "verify");
-      const path = join(f.privateDir, "toy-run.json");
-      const intact = readFileSync(path, "utf8");
-      const stored: unknown = JSON.parse(intact);
-      if (!asJsonObject(stored)) throw new Error("runner state is not an object");
-      delete stored.behavior;
-      writeFileSync(path, `${JSON.stringify(stored)}\n`);
-      expect(() => new Runner(f.privateDir, f.worker, root).verify("toy-run", "verify")).toThrow(
-        "frozen behavior obligations are unavailable",
-      );
-      writeFileSync(path, intact);
+      writeFileSync(join(f.worker, "ak.kb.yaml"), "");
       const verified = new Runner(f.privateDir, f.worker, root).verify("toy-run", "verify");
       expect(verified.run_state).toBe("verifying");
       expect(verified.behavior?.required_checks.map((check) => check.id)).toEqual(["project-check"]);
@@ -926,7 +941,7 @@ describe("runner guards", () => {
     }
   });
 
-  test("open --binding copies a Runner.start freeze and ignores a later live KB off", () => {
+  test("lifecycle open refuses a Runner.start mandatory freeze; the freeze stays after live KB off", () => {
     const f = fixture();
     const HASH = `sha256:${"a".repeat(64)}`;
     const ticket = {
@@ -1027,30 +1042,19 @@ describe("runner guards", () => {
         "-qm",
         "weaken",
       ]);
-      const evidence = join(f.privateDir, "evidence");
-      const bindingPath = join(f.privateDir, "binding.json");
-      writeFileSync(
-        bindingPath,
-        `${JSON.stringify({
-          schema: "firstmate-binding",
-          run_id: "toy-run",
-          evidence: { location: evidence },
-          project: { id: "toy" },
-        })}\n`,
-      );
       writeFileSync(join(f.worker, "delegated.json"), JSON.stringify(ticket));
       const opened = openRun({
-        dir: evidence,
+        dir: join(f.privateDir, "evidence"),
         project: f.worker,
         ticket: join(f.worker, "delegated.json"),
-        binding: bindingPath,
         registry,
       });
-      expect(opened.ok, opened.ok ? "" : opened.reason).toBe(true);
-      if (!opened.ok) throw new Error(opened.reason);
-      expect(opened.run.behavior?.mode).toBe("on");
-      expect(opened.run.behavior?.required_checks).toHaveLength(1);
-      expect(opened.run.run_id).not.toBe("toy-run");
+      expect(opened.ok).toBe(false);
+      if (opened.ok) throw new Error("expected mandatory open refusal");
+      expect(opened.reason).toMatch(/protected runner creation record|cannot cancel those checks/);
+      const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
+      expect(resumed.behavior?.mode).toBe("on");
+      expect(resumed.behavior?.required_checks).toHaveLength(1);
     } finally {
       if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
       else process.env.AK_KB_REGISTRY = previousRegistry;

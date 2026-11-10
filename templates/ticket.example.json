@@ -19,6 +19,14 @@
   },
   "created_at": "2026-09-19T09:00:00Z",
   "status": "approved",
+  "approvals": [
+    {
+      "artifact_hash": "sha256:646eb0babf4e538eb1ee00d96773aa44668230f5842a7bcd57de4464483ffe23",
+      "by": "human",
+      "authority": "explicit",
+      "at": "2026-09-19T09:00:00Z"
+    }
+  ],
   "type": "implementation",
   "title": "Load example artifacts from every configured artifact directory",
   "work_source": {

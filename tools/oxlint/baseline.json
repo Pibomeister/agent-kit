@@ -288,10 +288,10 @@
     "anti-slop(no-runtime-typeof)": 27,
     "anti-slop(no-shape-in-symbol-names)": 5,
     "anti-slop(no-unknown-parameters)": 5,
-    "anti-slop(no-unsafe-dictionary-type)": 14,
-    "anti-slop(require-safety-comment-for-type-assertion)": 22,
+    "anti-slop(no-unsafe-dictionary-type)": 13,
+    "anti-slop(require-safety-comment-for-type-assertion)": 21,
     "typescript(no-non-null-assertion)": 7,
-    "typescript(no-unsafe-type-assertion)": 18,
+    "typescript(no-unsafe-type-assertion)": 17,
     "unicorn(no-array-sort)": 3
   },
   "src/packaging/build.ts": {

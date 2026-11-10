@@ -276,6 +276,7 @@ function headCommit(root: string): string | null {
 
 /** The committed bytes at `path`, absent when not listed, or a failure when git cannot read them. */
 function committed(root: string, path: string): CommittedContent {
+  if (headCommit(root) === null) return failed("kb.unreadable", "the knowledgebase has no commits");
   const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
   if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
   if (listed.stdout === "") return { status: "absent" };
@@ -864,8 +865,12 @@ export function readPublishedProject(kb: ResolvedKb, projectId: string): JsonObj
   return looked.status === "found" ? looked.project : undefined;
 }
 
-/** Latest committed run artifact whose envelope id is `id`. */
-export function lookupCommittedArtifact(kb: ResolvedKb, id: string): ArtifactLookup {
+/** Latest committed run artifact whose envelope id is `id`, optionally pinned to schema and hash. */
+export function lookupCommittedArtifact(
+  kb: ResolvedKb,
+  id: string,
+  match?: { schema?: string; hash?: string },
+): ArtifactLookup {
   const file = lookupArtifactsFile(kb);
   if (file.status !== "found") return file.status === "absent" ? { status: "absent" } : file;
   let found: JsonObject | undefined;
@@ -873,6 +878,8 @@ export function lookupCommittedArtifact(kb: ResolvedKb, id: string): ArtifactLoo
     const stored = parseStored(line);
     if (stored === null || stored.artifact.id !== id) continue;
     if (!asJsonObject(stored.artifact)) continue;
+    if (match?.schema !== undefined && stored.artifact.schema !== match.schema) continue;
+    if (match?.hash !== undefined && artifactHash(stored.artifact) !== match.hash) continue;
     found = stored.artifact;
   }
   if (found === undefined) return { status: "absent" };

@@ -146,6 +146,14 @@ describe("behavior-contract schema", () => {
     ).toBe("");
   });
 
+  test("an approved ticket without a human approval bound to its hash cannot back accepted intent", () => {
+    const unsigned = { ...asObject(ticket), approvals: [] };
+    const citing = withRequirement(0, {
+      sources: [{ kind: "ticket", ref: "example-ticket-1", hash: artifactHash(unsigned) }],
+    });
+    expect(issuesOf(citing, [unsigned]).some((line) => line.includes("is not an accepted source"))).toBe(true);
+  });
+
   test("accepted intent needs a source of accepted kind", () => {
     const mutated = withRequirement(0, { sources: [{ kind: "observation", ref: "src/loader.ts" }] });
     expect(

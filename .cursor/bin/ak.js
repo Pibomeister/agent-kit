@@ -8431,6 +8431,7 @@ var init_common_schema = __esm(() => {
           "finding",
           "review",
           "cold-read",
+          "behavior-contract",
           "verification",
           "verification-recipe",
           "charter",
@@ -16989,7 +16990,7 @@ var init_project_schema = __esm(() => {
         }
       },
       review: {
-        description: "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. review.behavior is bound onto an enabled task run at open; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
         type: "object",
         additionalProperties: false,
         properties: {
@@ -17000,6 +17001,11 @@ var init_project_schema = __esm(() => {
           },
           cold_read: {
             description: "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            enum: ["off", "shadow", "on"],
+            default: "off"
+          },
+          behavior: {
+            description: "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the snapshot bound at run open. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
             enum: ["off", "shadow", "on"],
             default: "off"
           }
@@ -17114,6 +17120,35 @@ var init_ticket_schema = __esm(() => {
               type: "array",
               minItems: 1,
               items: { type: "string", pattern: "^AC-[0-9]+$" }
+            },
+            behavior: {
+              description: "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. The run snapshots the complete definition at open, so later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
+              type: "object",
+              additionalProperties: false,
+              required: ["evidence_layer", "property_ids"],
+              properties: {
+                evidence_layer: { enum: ["model", "implementation"] },
+                property_ids: {
+                  type: "array",
+                  minItems: 1,
+                  uniqueItems: true,
+                  items: { $ref: "common.schema.json#/$defs/kebab_id" }
+                },
+                property_types: {
+                  type: "object",
+                  additionalProperties: { enum: ["safety", "liveness"] }
+                },
+                contract: {
+                  allOf: [
+                    { $ref: "common.schema.json#/$defs/artifact_ref" },
+                    {
+                      required: ["schema"],
+                      properties: { schema: { const: "behavior-contract" } }
+                    }
+                  ]
+                },
+                input_manifest: { $ref: "common.schema.json#/$defs/artifact_ref" }
+              }
             }
           },
           dependentRequired: {
@@ -17251,6 +17286,23 @@ var init_ticket_schema = __esm(() => {
             resolved_as: { enum: ["criterion", "non-goal", "open"] }
           }
         }
+      },
+      behavior_contracts: {
+        description: "Selected behavior-contract artifacts this ticket applies. Optional. The run snapshots complete required-check definitions at open; these references alone are not the obligation.",
+        type: "array",
+        items: {
+          allOf: [
+            { $ref: "common.schema.json#/$defs/artifact_ref" },
+            {
+              required: ["schema"],
+              properties: { schema: { const: "behavior-contract" } }
+            }
+          ]
+        }
+      },
+      behavior_applicability: {
+        description: "Whether this ticket selected stateful behavior work. Optional. eligible records that the behavior workflow applies; ordinary records that it does not. Omitted is not a policy mode and cannot turn an enabled run off.",
+        enum: ["eligible", "ordinary"]
       },
       cold_read_ref: {
         description: "Hash-bound pointer to the independent cold-read artifact for this implementation ticket. Required when the project record's review.cold_read is on and the ticket type is implementation. Off, shadow, a missing review object, and a decision ticket do not require it. A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Not yet backed by live probe evidence (phase 1b, GS-004g).",
@@ -17576,6 +17628,318 @@ function artifactHash(artifact) {
 }
 var init_hash = () => {};
 
+// src/lifecycle/behavior-policy.ts
+function asJson(value) {
+  return JSON_KINDS.has(Object.prototype.toString.call(value));
+}
+function asJsonObject(value) {
+  return Object.prototype.toString.call(value) === "[object Object]";
+}
+function nonempty(value) {
+  return isText(value) && /\S/.test(value);
+}
+function strings(value) {
+  return Array.isArray(value) && value.every(isText) ? value : undefined;
+}
+function asMode(value) {
+  if (!isText(value))
+    return;
+  if (value === "off" || value === "shadow" || value === "on")
+    return value;
+  return;
+}
+function asLayer(value) {
+  if (!isText(value))
+    return;
+  if (value === "model" || value === "implementation")
+    return value;
+  return;
+}
+function asPropertyKind(value) {
+  if (!isText(value))
+    return;
+  if (value === "safety" || value === "liveness")
+    return value;
+  return;
+}
+function asCheckKind(value) {
+  if (!isText(value))
+    return;
+  if (value === "command" || value === "probe" || value === "manual")
+    return value;
+  return;
+}
+function ticketProjectId(ticket) {
+  const field = ticket.project;
+  if (nonempty(field))
+    return field.trim();
+  return isObject(field) && nonempty(field.id) ? field.id : undefined;
+}
+function reviewMode(project) {
+  if (project === undefined)
+    return "off";
+  const review = isObject(project.review) ? project.review : undefined;
+  if (review === undefined || review.behavior === undefined || review.behavior === null)
+    return "off";
+  return asMode(review.behavior) ?? "invalid";
+}
+function freezeCheck(check, surfaces) {
+  if (!nonempty(check.id) || !KEBAB.test(check.id))
+    return { reason: `behavior check is missing a kebab id` };
+  if (!nonempty(check.check))
+    return { reason: `behavior check ${check.id} is missing its check text` };
+  const behavior = isObject(check.behavior) ? check.behavior : undefined;
+  if (behavior === undefined)
+    return { reason: `check ${check.id} has no behavior binding` };
+  const layer = asLayer(behavior.evidence_layer);
+  if (layer === undefined)
+    return { reason: `check ${check.id} evidence_layer is not model or implementation` };
+  const propertyIds = strings(behavior.property_ids);
+  if (propertyIds === undefined || propertyIds.length === 0)
+    return { reason: `check ${check.id} has no property_ids` };
+  if (propertyIds.some((id) => !KEBAB.test(id)))
+    return { reason: `check ${check.id} has a property id that is not kebab-case` };
+  const types = isObject(behavior.property_types) ? behavior.property_types : {};
+  const property_types = {};
+  for (const id of propertyIds) {
+    const propertyKind = asPropertyKind(types[id]);
+    if (propertyKind === undefined)
+      return { reason: `check ${check.id} property ${id} has no safety or liveness type` };
+    property_types[id] = propertyKind;
+  }
+  const supports = strings(check.supports) ?? [];
+  const frozen = {
+    id: check.id,
+    check: check.check,
+    supports,
+    evidence_layer: layer,
+    property_ids: propertyIds,
+    property_types,
+    surfaces: Object.fromEntries(supports.filter((id) => AC.test(id)).map((id) => [id, surfaces.get(id) ?? "none"]))
+  };
+  const checkKind = asCheckKind(check.kind);
+  if (checkKind !== undefined)
+    frozen.kind = checkKind;
+  const required = strings(check.evidence_required);
+  if (required !== undefined)
+    frozen.evidence_required = required;
+  const recipe = isObject(check.recipe) ? check.recipe : undefined;
+  if (recipe !== undefined && nonempty(recipe.id) && nonempty(recipe.hash))
+    frozen.recipe = { id: recipe.id, hash: recipe.hash };
+  const contract = isObject(behavior.contract) ? behavior.contract : undefined;
+  if (contract !== undefined) {
+    if (contract.schema !== "behavior-contract" || !nonempty(contract.id) || !nonempty(contract.hash))
+      return { reason: `check ${check.id} contract is not a behavior-contract artifact ref` };
+    frozen.contract = { id: contract.id, schema: "behavior-contract", hash: contract.hash };
+  }
+  const manifest = isObject(behavior.input_manifest) ? behavior.input_manifest : undefined;
+  if (manifest !== undefined) {
+    if (!nonempty(manifest.id) || !nonempty(manifest.hash))
+      return { reason: `check ${check.id} input_manifest is not an artifact ref` };
+    frozen.input_manifest = { id: manifest.id, hash: manifest.hash };
+  }
+  return frozen;
+}
+function behaviorChecks(ticket, surfaces) {
+  const frozen = [];
+  for (const value of Array.isArray(ticket.verification) ? ticket.verification : []) {
+    if (!isObject(value) || !isObject(value.behavior))
+      continue;
+    const next = freezeCheck(value, surfaces);
+    if ("reason" in next)
+      return next;
+    frozen.push(next);
+  }
+  return frozen;
+}
+function ticketSurfaces(ticket) {
+  const surfaces = new Map;
+  for (const value of Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : []) {
+    if (isObject(value) && nonempty(value.id) && AC.test(value.id))
+      surfaces.set(value.id, nonempty(value.surface) ? value.surface : "none");
+  }
+  return surfaces;
+}
+function bindingHash(binding) {
+  return `sha256:${sha256Hex(canonicalJson(binding))}`;
+}
+function sealBinding(unsigned) {
+  return { ...unsigned, binding_hash: bindingHash(unsigned) };
+}
+function bindBehaviorPolicy(args) {
+  const checks = behaviorChecks(args.ticket, ticketSurfaces(args.ticket));
+  if ("reason" in checks)
+    return { ok: false, reason: checks.reason };
+  const ticketWantsBehavior = checks.length > 0;
+  if (args.lookup === "unavailable")
+    return {
+      ok: false,
+      reason: "the authoritative project record is unavailable; missing project cannot turn this run off"
+    };
+  if (args.lookup === "absent" && ticketWantsBehavior)
+    return {
+      ok: false,
+      reason: "enabled behavior checks need an authoritative project record; missing project cannot turn this run off"
+    };
+  if (args.lookup === "unbound" && args.callerProjectHash !== undefined)
+    return {
+      ok: false,
+      reason: "caller-supplied project record is not the authoritative KB or runner binding"
+    };
+  if (args.lookup === "resolved" && args.project === undefined)
+    return {
+      ok: false,
+      reason: "the authoritative project record is missing; missing project cannot turn this run off"
+    };
+  if (args.lookup === "resolved" && args.callerProjectHash !== undefined && args.callerProjectHash !== args.projectHash)
+    return { ok: false, reason: "caller-supplied project record does not match the authoritative binding" };
+  if (args.project !== undefined) {
+    if (args.project.schema !== "project")
+      return { ok: false, reason: "the project record is not schema project" };
+    const identity3 = isObject(args.project.identity) ? args.project.identity : undefined;
+    if (identity3 === undefined || !nonempty(identity3.id))
+      return { ok: false, reason: "the project record has no identity.id" };
+    const wanted = ticketProjectId(args.ticket);
+    if (wanted !== undefined && wanted !== identity3.id)
+      return { ok: false, reason: `ticket project ${wanted} does not match project identity ${identity3.id}` };
+    const review = isObject(args.project.review) ? args.project.review : undefined;
+    if (review !== undefined && review.behavior !== undefined && review.behavior !== null && asMode(review.behavior) === undefined)
+      return { ok: false, reason: "review.behavior is not off, shadow or on" };
+  }
+  const mode = args.lookup === "absent" ? "off" : reviewMode(args.project);
+  if (mode === "invalid")
+    return { ok: false, reason: "review.behavior is not off, shadow or on" };
+  if (args.lookup === "unbound" && ticketWantsBehavior)
+    return {
+      ok: false,
+      reason: "enabled behavior checks need an authoritative project record; missing project cannot turn this run off"
+    };
+  if (mode === "off" && ticketWantsBehavior)
+    return {
+      ok: false,
+      reason: "review.behavior is off while the ticket names mandatory behavior checks; modes cannot cancel those checks"
+    };
+  if (mode === "shadow" && ticketWantsBehavior)
+    return {
+      ok: false,
+      reason: "review.behavior is shadow while the ticket names mandatory behavior checks; that conflict needs the authorized resolution path"
+    };
+  const identity2 = args.project !== undefined && isObject(args.project.identity) ? args.project.identity : undefined;
+  const policyId = identity2 !== undefined && nonempty(identity2.id) ? identity2.id : ticketProjectId(args.ticket) ?? null;
+  const unsigned = {
+    run_id: args.runId,
+    ticket_hash: args.ticketHash,
+    mode,
+    policy_id: policyId,
+    policy_hash: args.projectHash ?? null,
+    required_checks: mode === "on" ? checks : [],
+    captured_at: args.capturedAt
+  };
+  return { ok: true, binding: sealBinding(unsigned) };
+}
+function parseCheck(value) {
+  if (!isObject(value) || !nonempty(value.id) || !nonempty(value.check))
+    return;
+  const layer = asLayer(value.evidence_layer);
+  if (layer === undefined)
+    return;
+  const propertyIds = strings(value.property_ids);
+  if (propertyIds === undefined || propertyIds.length === 0)
+    return;
+  const types = isObject(value.property_types) ? value.property_types : undefined;
+  if (types === undefined)
+    return;
+  const property_types = {};
+  for (const id of propertyIds) {
+    const propertyKind = asPropertyKind(types[id]);
+    if (propertyKind === undefined)
+      return;
+    property_types[id] = propertyKind;
+  }
+  const supports = strings(value.supports);
+  const surfacesValue = isObject(value.surfaces) ? value.surfaces : undefined;
+  if (supports === undefined || surfacesValue === undefined)
+    return;
+  const frozen = {
+    id: value.id,
+    check: value.check,
+    supports,
+    evidence_layer: layer,
+    property_ids: propertyIds,
+    property_types,
+    surfaces: Object.fromEntries(Object.entries(surfacesValue).flatMap(([id, surface]) => isText(surface) ? [[id, surface]] : []))
+  };
+  const checkKind = asCheckKind(value.kind);
+  if (checkKind !== undefined)
+    frozen.kind = checkKind;
+  const required = strings(value.evidence_required);
+  if (required !== undefined)
+    frozen.evidence_required = required;
+  const recipe = isObject(value.recipe) ? value.recipe : undefined;
+  if (recipe !== undefined && nonempty(recipe.id) && nonempty(recipe.hash))
+    frozen.recipe = { id: recipe.id, hash: recipe.hash };
+  const contract = isObject(value.contract) ? value.contract : undefined;
+  if (contract !== undefined) {
+    if (contract.schema !== "behavior-contract" || !nonempty(contract.id) || !nonempty(contract.hash))
+      return;
+    frozen.contract = { id: contract.id, schema: "behavior-contract", hash: contract.hash };
+  }
+  const manifest = isObject(value.input_manifest) ? value.input_manifest : undefined;
+  if (manifest !== undefined) {
+    if (!nonempty(manifest.id) || !nonempty(manifest.hash))
+      return;
+    frozen.input_manifest = { id: manifest.id, hash: manifest.hash };
+  }
+  return frozen;
+}
+function parseBehaviorBinding(value) {
+  if (value === undefined || !isObject(value))
+    return;
+  if (!nonempty(value.run_id) || !nonempty(value.ticket_hash) || !nonempty(value.captured_at))
+    return;
+  const mode = asMode(value.mode);
+  if (mode === undefined)
+    return;
+  if (value.policy_id !== null && !nonempty(value.policy_id))
+    return;
+  if (value.policy_hash !== null && !nonempty(value.policy_hash))
+    return;
+  if (!Array.isArray(value.required_checks))
+    return;
+  const required_checks = [];
+  for (const entry of value.required_checks) {
+    const check = parseCheck(entry);
+    if (check === undefined)
+      return;
+    required_checks.push(check);
+  }
+  if (!nonempty(value.binding_hash))
+    return;
+  const unsigned = {
+    run_id: value.run_id,
+    ticket_hash: value.ticket_hash,
+    mode,
+    policy_id: value.policy_id === null ? null : value.policy_id,
+    policy_hash: value.policy_hash === null ? null : value.policy_hash,
+    required_checks,
+    captured_at: value.captured_at
+  };
+  const expected = bindingHash(unsigned);
+  if (value.binding_hash !== expected)
+    return;
+  return { ...unsigned, binding_hash: value.binding_hash };
+}
+function projectHashOf(project) {
+  return artifactHash(project);
+}
+var RUN_SCHEMA_VERSION = 2, KEBAB, AC, kindOf = (value) => Object.prototype.toString.call(value), isText = (value) => kindOf(value) === "[object String]", isObject = (value) => kindOf(value) === "[object Object]", JSON_KINDS;
+var init_behavior_policy = __esm(() => {
+  init_hash();
+  KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  AC = /^AC-[0-9]+$/;
+  JSON_KINDS = new Set(["Null", "Boolean", "Number", "String", "Array", "Object"].map((name) => `[object ${name}]`));
+});
+
 // src/util/suggest.ts
 function distance(a, b) {
   let twoBack = [];
@@ -17627,6 +17991,431 @@ function unknownSelector(kind, input, candidates) {
   return `unknown ${kind} '${input}'; ${candidatesClause(input, candidates)}`;
 }
 var LIST_WHOLE = 6;
+
+// src/validation/behavior-contract-intent.ts
+function rows(value) {
+  return Array.isArray(value) ? value : [];
+}
+function isText2(value) {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+function textField(value) {
+  return isText2(value) && value !== "" ? value : undefined;
+}
+function sourceKindSchema(kind) {
+  if (kind === "ticket")
+    return "ticket";
+  if (kind === "decision" || kind === "recorded-decision")
+    return "decision";
+  if (kind === "requirements")
+    return "behavior-contract";
+  if (kind === "user-instruction")
+    return;
+  return;
+}
+function statusOf(doc) {
+  return textField(doc.status);
+}
+function humanApproved(doc, expectedHash) {
+  for (const row of rows(doc.approvals)) {
+    if (!asJsonObject(row))
+      continue;
+    const who = textField(row.role) ?? textField(row.by);
+    if (who === "human" && textField(row.artifact_hash) === expectedHash)
+      return true;
+  }
+  return false;
+}
+function sourceIsAccepted(kind, artifact) {
+  if (!humanApproved(artifact.doc, artifactHash(artifact.doc)))
+    return false;
+  const status = statusOf(artifact.doc);
+  if (kind === "ticket")
+    return artifact.schema === "ticket" && status === "approved";
+  if (kind === "decision" || kind === "recorded-decision") {
+    if (artifact.schema !== "decision" || status !== "ruled")
+      return false;
+    const ruling = artifact.doc.ruling;
+    return asJsonObject(ruling) && ruling.outcome === "decided";
+  }
+  if (kind === "user-instruction") {
+    if (artifact.schema === "ticket")
+      return status === "approved";
+    if (artifact.schema === "decision") {
+      if (status !== "ruled")
+        return false;
+      const ruling = artifact.doc.ruling;
+      return asJsonObject(ruling) && ruling.outcome === "decided";
+    }
+    return false;
+  }
+  return false;
+}
+function requirementRow(doc, requirementId) {
+  for (const value of rows(doc.requirements)) {
+    if (!asJsonObject(value))
+      continue;
+    if (textField(value.id) === requirementId)
+      return value;
+  }
+  return;
+}
+function requirementsSourceProblem(requirementId, source, lookup, originId, seen) {
+  const ref = textField(source.ref);
+  const expectedHash = textField(source.hash);
+  if (ref === undefined || expectedHash === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source needs an immutable hash`;
+  }
+  if (ref === originId || seen.has(ref)) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  const artifact = lookup(ref);
+  if (artifact === undefined || artifact.schema !== "behavior-contract") {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  if (artifactHash(artifact.doc) !== expectedHash) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} does not match ${expectedHash}`;
+  }
+  const cited = requirementRow(artifact.doc, requirementId);
+  if (cited === undefined || textField(cited.intent) !== "accepted") {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  const nested = rows(cited.sources).filter(asJsonObject);
+  if (nested.length === 0) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  const next = new Set(seen);
+  next.add(originId);
+  next.add(ref);
+  const nestedProblems = nested.map((entry) => acceptedSourceProblem(requirementId, entry, lookup, originId, next));
+  if (nestedProblems.every((problem) => problem !== undefined))
+    return nestedProblems[0] ?? `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  return;
+}
+function acceptedSourceProblem(requirementId, source, lookup, originId, seen = new Set) {
+  const kind = textField(source.kind);
+  const ref = textField(source.ref);
+  if (kind === undefined || !ACCEPTED_INTENT_SOURCE_KINDS.has(kind) || ref === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} is accepted without a source of accepted intent`;
+  }
+  if (lookup === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not resolved at admission`;
+  }
+  if (kind === "requirements")
+    return requirementsSourceProblem(requirementId, source, lookup, originId, seen);
+  const artifact = lookup(ref);
+  if (artifact === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  const expectedSchema = sourceKindSchema(kind);
+  if (expectedSchema !== undefined && artifact.schema !== expectedSchema) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
+  }
+  const expectedHash = textField(source.hash);
+  if (expectedHash === undefined) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} needs an immutable hash`;
+  }
+  if (artifactHash(artifact.doc) !== expectedHash) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} does not match ${expectedHash}`;
+  }
+  if (!sourceIsAccepted(kind, artifact)) {
+    return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
+  }
+  return;
+}
+function behaviorContractIntentProblems(doc, lookup) {
+  const problems = [];
+  const requirements = new Map;
+  for (const value of rows(doc.requirements)) {
+    if (!asJsonObject(value))
+      continue;
+    const id = textField(value.id);
+    const intent = textField(value.intent);
+    if (id === undefined || intent === undefined)
+      continue;
+    requirements.set(id, intent);
+    if (intent !== "accepted")
+      continue;
+    const sources = rows(value.sources).filter(asJsonObject);
+    if (sources.length === 0) {
+      problems.push(`${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without an intent source`);
+      continue;
+    }
+    const originId = textField(doc.id) ?? "";
+    const sourceProblems = sources.map((source) => acceptedSourceProblem(id, source, lookup, originId));
+    if (sourceProblems.every((problem) => problem !== undefined))
+      problems.push(sourceProblems[0] ?? `${RULE_ACCEPTED_INTENT}: requirement ${id} is accepted without a source of accepted intent`);
+  }
+  for (const value of rows(doc.properties)) {
+    if (!asJsonObject(value))
+      continue;
+    const id = textField(value.id) ?? "unnamed";
+    const cited = rows(value.requirement_ids).flatMap((entry) => {
+      const requirementId = textField(entry);
+      return requirementId === undefined ? [] : [requirementId];
+    });
+    if (cited.length === 0)
+      continue;
+    const intents = cited.map((requirementId) => requirements.get(requirementId));
+    if (intents.some((intent) => intent === undefined)) {
+      problems.push(`${RULE_PROPOSED_INTENT}: property ${id} cites a requirement that is not on this contract`);
+      continue;
+    }
+    if (intents.every((intent) => intent !== "accepted")) {
+      problems.push(`${RULE_PROPOSED_INTENT}: property ${id} is discharged only by proposed or unresolved intent; proposed intent cannot discharge an accepted requirement`);
+    }
+  }
+  return problems;
+}
+var ACCEPTED_INTENT_SOURCE_KINDS, RULE_ACCEPTED_INTENT = "behavior-contract.accepted-intent-requires-accepted-source", RULE_PROPOSED_INTENT = "behavior-contract.proposed-intent-cannot-discharge-accepted";
+var init_behavior_contract_intent = __esm(() => {
+  init_behavior_policy();
+  init_hash();
+  ACCEPTED_INTENT_SOURCE_KINDS = new Set([
+    "ticket",
+    "requirements",
+    "decision",
+    "recorded-decision",
+    "user-instruction"
+  ]);
+});
+
+// schemas/behavior-contract.schema.json
+var behavior_contract_schema_default;
+var init_behavior_contract_schema = __esm(() => {
+  behavior_contract_schema_default = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://agent-kit.local/schemas/behavior-contract.schema.json",
+    title: "Behavior contract",
+    description: "Intent-backed behavior for one selected subsystem. Requirements carry a stable property id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
+    type: "object",
+    required: ["identity", "requirements", "structure", "properties", "assumptions", "correspondence", "limits"],
+    properties: {
+      schema: { const: "behavior-contract" },
+      status: {
+        description: "draft while the contract is being written; active once it is the selected contract for a run; superseded when a later contract replaces it.",
+        enum: ["draft", "active", "superseded"]
+      },
+      identity: {
+        type: "object",
+        additionalProperties: false,
+        required: ["subsystem", "surfaces", "exclusions"],
+        properties: {
+          subsystem: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          surfaces: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "common.schema.json#/$defs/surface" }
+          },
+          exclusions: { $ref: "common.schema.json#/$defs/string_list" },
+          source_refs: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/evidence_ref" }
+          }
+        }
+      },
+      requirements: {
+        description: "Required behavior grounded in accepted intent, plus proposed or unresolved items that must not be labelled accepted. An accepted item needs at least one accepted source.",
+        type: "array",
+        items: { $ref: "#/$defs/requirement" },
+        "x-validator-rule": "behavior-contract.accepted-intent-requires-accepted-source"
+      },
+      observed_behavior: {
+        description: "Implementation-derived notes. They explain what the code does. They cannot establish that the behavior is wanted and cannot discharge an accepted requirement.",
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "statement"],
+          properties: {
+            id: { $ref: "common.schema.json#/$defs/kebab_id" },
+            statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+            code_refs: {
+              type: "array",
+              items: { $ref: "common.schema.json#/$defs/code_location" }
+            }
+          }
+        }
+      },
+      structure: {
+        description: "Flat states, events, guards, effects and transitions sufficient to understand the selected properties. Not a hierarchical or parallel chart.",
+        type: "object",
+        additionalProperties: false,
+        required: ["states", "events", "transitions"],
+        properties: {
+          states: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/$defs/named_element" }
+          },
+          events: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/$defs/named_element" }
+          },
+          transitions: {
+            type: "array",
+            items: { $ref: "#/$defs/transition" }
+          }
+        }
+      },
+      properties: {
+        type: "array",
+        minItems: 1,
+        items: { $ref: "#/$defs/property" },
+        "x-validator-rule": "behavior-contract.proposed-intent-cannot-discharge-accepted"
+      },
+      assumptions: {
+        type: "array",
+        items: { $ref: "#/$defs/assumption" }
+      },
+      correspondence: {
+        description: "Versioned mappings to implementation entry points and declared model or test assets. A copied transition function is model evidence, not production behavior.",
+        type: "object",
+        additionalProperties: false,
+        required: ["mappings"],
+        properties: {
+          mappings: {
+            type: "array",
+            items: { $ref: "#/$defs/mapping" }
+          },
+          atomicity_notes: { $ref: "common.schema.json#/$defs/string_list" }
+        }
+      },
+      limits: {
+        type: "object",
+        additionalProperties: false,
+        required: ["omits", "checks_establish"],
+        properties: {
+          omits: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          checks_establish: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    $defs: {
+      named_element: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "label"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          label: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      transition: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "from", "event", "to"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          from: { $ref: "common.schema.json#/$defs/kebab_id" },
+          event: { $ref: "common.schema.json#/$defs/kebab_id" },
+          to: { $ref: "common.schema.json#/$defs/kebab_id" },
+          guard: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          effect: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      intent_source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "ref"],
+        properties: {
+          kind: {
+            enum: ["ticket", "requirements", "decision", "recorded-decision", "user-instruction"]
+          },
+          ref: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          hash: { $ref: "common.schema.json#/$defs/hash" },
+          note: { type: "string" }
+        }
+      },
+      requirement: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "statement", "intent"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          intent: { enum: ["accepted", "proposed", "unresolved"] },
+          acceptance_criteria: {
+            type: "array",
+            items: { type: "string", pattern: "^AC-[0-9]+$" }
+          },
+          sources: {
+            type: "array",
+            items: { $ref: "#/$defs/intent_source" }
+          }
+        },
+        if: { properties: { intent: { const: "accepted" } } },
+        then: {
+          required: ["sources"],
+          properties: {
+            sources: { minItems: 1 }
+          }
+        }
+      },
+      property: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "statement", "kind", "requirement_ids"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          kind: { enum: ["safety", "liveness"] },
+          requirement_ids: {
+            type: "array",
+            minItems: 1,
+            uniqueItems: true,
+            items: { $ref: "common.schema.json#/$defs/kebab_id" }
+          },
+          acceptance_criteria: {
+            type: "array",
+            items: { type: "string", pattern: "^AC-[0-9]+$" }
+          }
+        }
+      },
+      assumption: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "statement", "basis", "affects"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          statement: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          basis: { enum: ["enforced", "observed", "assumed"] },
+          affects: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "common.schema.json#/$defs/kebab_id" }
+          },
+          evidence: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/evidence_ref" }
+          }
+        }
+      },
+      mapping: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "layer", "entry"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          layer: { enum: ["model", "implementation"] },
+          entry: { $ref: "common.schema.json#/$defs/nonempty_string" },
+          property_ids: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/kebab_id" }
+          },
+          assets: {
+            type: "array",
+            items: { $ref: "common.schema.json#/$defs/artifact_ref" }
+          },
+          atomicity: { $ref: "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    unevaluatedProperties: false,
+    allOf: [{ $ref: "common.schema.json#/$defs/envelope" }]
+  };
+});
 
 // schemas/charter.schema.json
 var charter_schema_default;
@@ -22151,7 +22940,7 @@ function instance() {
 function describe(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
-function checkRunArtifact(text) {
+function checkRunArtifact(text, lookup) {
   let value;
   try {
     value = JSON.parse(text);
@@ -22177,10 +22966,20 @@ function checkRunArtifact(text) {
   if (!validate(value)) {
     return { artifact: null, problem: `does not match schemas/${value.schema}.schema.json: ${describe(validate)}` };
   }
+  if (value.schema === "behavior-contract") {
+    if (!asJsonObject(value))
+      return { artifact: null, problem: "behavior-contract is not an object" };
+    const problems = behaviorContractIntentProblems(value, lookup);
+    if (problems.length > 0)
+      return { artifact: null, problem: problems.join("; ") };
+  }
   return { artifact: value, problem: "" };
 }
 var import__20204, import_ajv_formats3, ARTIFACT_SCHEMAS, ARTIFACT_SCHEMA_IDS, compiled = null, validHeader;
 var init_artifacts = __esm(() => {
+  init_behavior_policy();
+  init_behavior_contract_intent();
+  init_behavior_contract_schema();
   init_charter_schema();
   init_cold_read_schema();
   init_common_schema();
@@ -22206,6 +23005,7 @@ var init_artifacts = __esm(() => {
   import__20204 = __toESM(require_2020(), 1);
   import_ajv_formats3 = __toESM(require_dist(), 1);
   ARTIFACT_SCHEMAS = {
+    "behavior-contract": behavior_contract_schema_default,
     charter: charter_schema_default,
     "cold-read": cold_read_schema_default,
     decision: decision_schema_default,
@@ -22296,7 +23096,7 @@ function scopeSegments(scope) {
   const segments = scope.split("/");
   if (segments.length > MAX_SCOPE_DEPTH)
     return null;
-  return segments.every((segment) => KEBAB.test(segment) && !RESERVED_SEGMENTS.has(segment)) ? segments : null;
+  return segments.every((segment) => KEBAB2.test(segment) && !RESERVED_SEGMENTS.has(segment)) ? segments : null;
 }
 function scopeProblem(scope) {
   return refused("kb.scope-is-a-path", `'${scope}' is not a scope. Pass the component as kebab-case words joined by '/', or '${PROJECT_SCOPE}' for the whole project; the knowledgebase resolves it to a location, and a path the caller computed is refused (ADR-0001 \xA77).`);
@@ -22333,7 +23133,7 @@ function refCommitted(root, project, ref) {
     const id = parts.at(-1) ?? "";
     const kind = parts.at(-2) ?? "";
     const segments = scopeSegments(parts.slice(0, -2).join("/"));
-    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) {
+    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB2.test(id)) {
       return { status: "absent" };
     }
     const content = committed(root, documentPath(project, segments, kind, id));
@@ -22373,6 +23173,8 @@ function headCommit(root) {
   return head.status === 0 ? head.stdout.trim() : null;
 }
 function committed(root, path) {
+  if (headCommit(root) === null)
+    return failed("kb.unreadable", "the knowledgebase has no commits");
   const listed = git2(root, ["ls-tree", "-z", "HEAD", "--", path]);
   if (listed.status !== 0)
     return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
@@ -22664,7 +23466,7 @@ function publishDocument(kb, request) {
   const segments = scopeSegments(request.scope);
   if (segments === null)
     return scopeProblem(request.scope);
-  if (!KEBAB.test(request.id) || request.id.length > 64) {
+  if (!KEBAB2.test(request.id) || request.id.length > 64) {
     return refused("kb.id-invalid", `'${request.id}' is not a record id: lowercase words joined by single hyphens.`);
   }
   if (request.title.trim() === "" || request.title.includes(`
@@ -22716,10 +23518,22 @@ function publishDocument(kb, request) {
   };
   return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
+function committedIntentLookup(kb) {
+  return (id) => {
+    const doc = readCommittedArtifact(kb, id);
+    if (doc === undefined)
+      return;
+    const schema = isText3(doc.schema) ? doc.schema : undefined;
+    const artifactId = isText3(doc.id) ? doc.id : undefined;
+    if (schema === undefined || artifactId === undefined)
+      return;
+    return { schema, id: artifactId, doc };
+  };
+}
 function publishRunArtifact(kb, text, run, links, trailAttempts) {
   if (!ARTIFACT_ID.test(run))
     return refused("kb.run-invalid", `'${run}' is not a run id.`);
-  const checked = checkRunArtifact(text);
+  const checked = checkRunArtifact(text, committedIntentLookup(kb));
   if (checked.artifact === null) {
     return refused("kb.artifact-invalid", `The artifact is refused before any write: ${checked.problem}.`);
   }
@@ -22788,16 +23602,78 @@ function publishRunArtifact(kb, text, run, links, trailAttempts) {
   }
   return commitRecord(kb, store, identity2);
 }
-var import__20205, KB_KINDS, PROJECT_SCOPE = "project", ARTIFACTS_FILE = "artifacts.jsonl", KEBAB, ARTIFACT_ID, RESERVED_SEGMENTS, MAX_SCOPE_DEPTH = 8, LOCK_ATTEMPTS = 50, LOCK_WAIT_MS = 100, LOCK_STALE_MS = 120000, ajv, validMeta, validStored;
+function isText3(value) {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+function projectIdentityId(artifact) {
+  if (!asJsonObject(artifact.identity))
+    return;
+  const id = artifact.identity.id;
+  return isText3(id) && id !== "" ? id : undefined;
+}
+function lookupArtifactsFile(kb) {
+  const content = committed(kb.root, artifactsPath(kb.binding.project));
+  if ("message" in content)
+    return { status: "unavailable", reason: content.message };
+  if (content.status === "absent")
+    return { status: "absent" };
+  return { status: "found", artifact: {}, text: content.text };
+}
+function lookupPublishedProject(kb, projectId) {
+  const file = lookupArtifactsFile(kb);
+  if (file.status !== "found")
+    return file.status === "absent" ? { status: "absent" } : file;
+  let found;
+  for (const line of (file.text ?? "").split(`
+`)) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.schema !== "project")
+      continue;
+    if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId)
+      continue;
+    found = stored.artifact;
+  }
+  if (found === undefined)
+    return { status: "absent" };
+  return { status: "found", project: found };
+}
+function lookupCommittedArtifact(kb, id, match) {
+  const file = lookupArtifactsFile(kb);
+  if (file.status !== "found")
+    return file.status === "absent" ? { status: "absent" } : file;
+  let found;
+  for (const line of (file.text ?? "").split(`
+`)) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.id !== id)
+      continue;
+    if (!asJsonObject(stored.artifact))
+      continue;
+    if (match?.schema !== undefined && stored.artifact.schema !== match.schema)
+      continue;
+    if (match?.hash !== undefined && artifactHash(stored.artifact) !== match.hash)
+      continue;
+    found = stored.artifact;
+  }
+  if (found === undefined)
+    return { status: "absent" };
+  return { status: "found", artifact: found };
+}
+function readCommittedArtifact(kb, id) {
+  const looked = lookupCommittedArtifact(kb, id);
+  return looked.status === "found" ? looked.artifact : undefined;
+}
+var import__20205, KB_KINDS, PROJECT_SCOPE = "project", ARTIFACTS_FILE = "artifacts.jsonl", KEBAB2, ARTIFACT_ID, RESERVED_SEGMENTS, MAX_SCOPE_DEPTH = 8, LOCK_ATTEMPTS = 50, LOCK_WAIT_MS = 100, LOCK_STALE_MS = 120000, ajv, validMeta, validStored;
 var init_local_git = __esm(() => {
   init_dist();
+  init_behavior_policy();
   init_hash();
   init_artifacts();
   init_git();
   init_trail_publish();
   import__20205 = __toESM(require_2020(), 1);
   KB_KINDS = ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"];
-  KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  KEBAB2 = /^[a-z0-9]+(-[a-z0-9]+)*$/;
   ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   RESERVED_SEGMENTS = new Set([...KB_KINDS, PROJECT_SCOPE, "projects", "documents", "runs"]);
   ajv = new import__20205.default({ strict: false });
@@ -23063,7 +23939,7 @@ function readInRepoContext(kb, location, kinds, scope) {
     return changes;
   for (const page of listed) {
     const id = basename2(page.path, ".md");
-    if (!KEBAB.test(id) || (stems.get(`${page.kind}/${id}`) ?? 0) > 1) {
+    if (!KEBAB2.test(id) || (stems.get(`${page.kind}/${id}`) ?? 0) > 1) {
       outcome.coverage.unreadable.push(shown(page.path));
       continue;
     }
@@ -23738,11 +24614,11 @@ function readJsonl(path) {
   }
   return out;
 }
-function appendJsonl(path, rows, gate) {
-  if (rows.length === 0)
+function appendJsonl(path, rows2, gate) {
+  if (rows2.length === 0)
     return;
   mkdirSync4(dirname4(path), { recursive: true });
-  const lines = rows.map((row) => `${JSON.stringify(row)}
+  const lines = rows2.map((row) => `${JSON.stringify(row)}
 `).join("");
   appendFileSync(path, gate === undefined ? lines : gateJsonText(gate, path, lines));
 }
@@ -24114,18 +24990,18 @@ function rowsIn(path) {
   } catch {
     return [];
   }
-  const rows = [];
+  const rows2 = [];
   for (const line of text.split(`
 `)) {
     try {
       const parsed = JSON.parse(line);
       if (spanValidator()(parsed))
-        rows.push(parsed);
+        rows2.push(parsed);
     } catch {
       continue;
     }
   }
-  return rows;
+  return rows2;
 }
 function spanRows(config) {
   const current = join11(config.runtimeDir, SPAN_FILE);
@@ -24279,14 +25155,14 @@ function traceRows(path) {
   } catch {
     return [];
   }
-  const rows = [];
+  const rows2 = [];
   for (const line of text.split(`
 `)) {
     const row = traceSummaryRow(line);
     if (row !== null)
-      rows.push(row);
+      rows2.push(row);
   }
-  return rows;
+  return rows2;
 }
 function openBodies(config) {
   const db = new Database(join12(config.runtimeDir, JUDGE_BODIES_FILE), { create: true });
@@ -24896,14 +25772,14 @@ function logRegistryWarnings(config, warnings) {
   appendGated(config.runtimeDir, path, warnings.map((warning2) => `${nowIso()} ${warning2}
 `).join(""));
 }
-function discoverProjects(config, rows, warn = () => {
+function discoverProjects(config, rows2, warn = () => {
   return;
 }, allow = () => true) {
   const current = readRegistry2(config);
   const cleaned = clean(current);
   const { held, warnings } = cleaned;
   const found = {};
-  for (const row of rows) {
+  for (const row of rows2) {
     if (SKIP_CWD.some((skip) => `${row.cwd}/`.includes(skip)))
       continue;
     if (ineligible(resolve5(row.cwd)) !== null)
@@ -25192,17 +26068,17 @@ function str(value) {
   return value === null || value === undefined ? "" : String(value);
 }
 function lessonsIndexText(ledger) {
-  const rows = [...loadLessons(ledger).values()].map(({ meta }) => `${str(meta.id)} [${str(meta.status)}] ${str(meta.statement)}`);
-  return rows.length > 0 ? rows.join(`
+  const rows2 = [...loadLessons(ledger).values()].map(({ meta }) => `${str(meta.id)} [${str(meta.status)}] ${str(meta.statement)}`);
+  return rows2.length > 0 ? rows2.join(`
 `) : "(none)";
 }
 function rewriteIndex(ledger) {
-  const rows = [...loadLessons(ledger).values()].map(({ meta }) => {
+  const rows2 = [...loadLessons(ledger).values()].map(({ meta }) => {
     const cells = [meta.id, meta.status, meta.scope, meta.confidence, meta.last_seen].map(str);
     return `| ${cells.join(" | ")} | ${str(meta.statement).replaceAll("|", "/")} |`;
   });
-  writeGated(ledger.dir, ledger.path("lessons.md"), LESSONS_INDEX_HEAD + rows.join(`
-`) + (rows.length > 0 ? `
+  writeGated(ledger.dir, ledger.path("lessons.md"), LESSONS_INDEX_HEAD + rows2.join(`
+`) + (rows2.length > 0 ? `
 ` : ""));
 }
 function proposeConfirmed(ctx, ledger, root, page, options) {
@@ -25319,8 +26195,8 @@ class ClaudeMemSource {
     return [project, `${project}/%`];
   }
   listProjects() {
-    const rows = this.db.query("select substr(project, 1, instr(project || '/', '/') - 1) as name, max(created_at_epoch) as seen from observations group by name order by seen desc").all();
-    return rows.map((row) => row.name);
+    const rows2 = this.db.query("select substr(project, 1, instr(project || '/', '/') - 1) as name, max(created_at_epoch) as seen from observations group by name order by seen desc").all();
+    return rows2.map((row) => row.name);
   }
   lastActivityMs(project) {
     const row = this.db.query("select max(created_at_epoch) as last from observations where (project = ? or project like ?)").get(...this.args(project));
@@ -25352,8 +26228,8 @@ class ClaudeMemSource {
     const out = new Map;
     for (let i = 0;i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
-      const rows = this.db.query(`select id, memory_session_id from observations where id in (${chunk.map(() => "?").join(", ")})`).all(...chunk);
-      for (const row of rows)
+      const rows2 = this.db.query(`select id, memory_session_id from observations where id in (${chunk.map(() => "?").join(", ")})`).all(...chunk);
+      for (const row of rows2)
         out.set(row.id, row.memory_session_id);
     }
     return out;
@@ -25395,9 +26271,9 @@ class ClaudeMemSource {
   }
   editedFiles(memorySessionId) {
     const marks = EDIT_TOOLS.map(() => "?").join(", ");
-    const rows = this.db.query(`select tool_input from tool_uses where memory_session_id = ? and tool_name in (${marks})`).all(memorySessionId, ...EDIT_TOOLS);
+    const rows2 = this.db.query(`select tool_input from tool_uses where memory_session_id = ? and tool_name in (${marks})`).all(memorySessionId, ...EDIT_TOOLS);
     const out = new Set;
-    for (const row of rows) {
+    for (const row of rows2) {
       try {
         const input = JSON.parse(row.tool_input ?? "{}");
         if (typeof input.file_path === "string" && input.file_path !== "")
@@ -25794,11 +26670,11 @@ function eventsFromClaudeMem(ctx, ledger, project, sinceMs, memory, options = {}
     let maxId = minId;
     const events = [];
     const deferred = [];
-    const rows = [
+    const rows2 = [
       ...source.observationsById(waiting),
       ...source.observationsSince(project, minId, { sinceEpochMs: sinceMs })
     ];
-    for (const row of rows) {
+    for (const row of rows2) {
       maxId = Math.max(maxId, row.id);
       const event = observationEvent(row, project);
       if (event === null || quarantined.has(`obs:${row.id}`))
@@ -26891,17 +27767,17 @@ function runRows(ledger) {
 `).filter((line) => /^\| \d{4}-/.test(line));
 }
 function lastRate(ledger) {
-  const rows = runRows(ledger);
-  const last = rows[rows.length - 1];
+  const rows2 = runRows(ledger);
+  const last = rows2[rows2.length - 1];
   if (last === undefined)
     return "n/a";
   const cells = last.split("|");
   return (cells[cells.length - 2] ?? "").trim() || "n/a";
 }
 function rebuildIndex(ledger, patterns, runRow) {
-  const rows = runRows(ledger);
+  const rows2 = runRows(ledger);
   if (runRow !== undefined)
-    rows.push(runRow);
+    rows2.push(runRow);
   const patternRows = [...patterns.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map((p) => {
     const problem = firstLine(p.body, "Problem").slice(0, 80);
     const fix = firstLine(p.body, "Fix").slice(0, 80);
@@ -26914,7 +27790,7 @@ function rebuildIndex(ledger, patterns, runRow) {
 
 ## Runs
 
-${RUNS_HEADER}${block(rows)}
+${RUNS_HEADER}${block(rows2)}
 ## Patterns
 
 ${PATTERNS_HEADER}${block(patternRows)}`);
@@ -26991,7 +27867,7 @@ function text(value) {
 function records(value) {
   return Array.isArray(value) ? value.filter((item) => item !== null && typeof item === "object" && !Array.isArray(item)) : [];
 }
-function strings(value) {
+function strings2(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 }
 function teamTarget(value) {
@@ -27019,7 +27895,7 @@ function applyReply(ctx, ledger, events, reply, state) {
       state.rejected.push(`create ${text(spec.tmp_id) || "?"}: missing title, problem, root_cause or fix`);
       continue;
     }
-    const cited = strings(spec.event_hashes);
+    const cited = strings2(spec.event_hashes);
     const foreign = cited.filter((hash) => !byHash.has(hash));
     if (cited.length === 0 || foreign.length > 0) {
       state.rejected.push(`create ${text(spec.tmp_id) || "?"}: cites ${cited.length === 0 ? "no event" : `hashes not in the input (${foreign.join(", ")})`}`);
@@ -27082,7 +27958,7 @@ ${patternContent(fields)}`, pool);
         state.rejected.push(`match ${hash}: not an input event`);
       continue;
     }
-    const ids = strings(match.pattern_ids);
+    const ids = strings2(match.pattern_ids);
     if (ids.length === 0 && typeof match.pattern_id === "string")
       ids.push(match.pattern_id);
     matches.set(hash, ids.map((id) => tmpMap.get(id) ?? id));
@@ -27091,7 +27967,7 @@ ${patternContent(fields)}`, pool);
     const id = tmpMap.get(text(spec.tmp_id));
     if (id === undefined)
       continue;
-    for (const hash of strings(spec.event_hashes)) {
+    for (const hash of strings2(spec.event_hashes)) {
       const list3 = matches.get(hash) ?? [];
       if (!list3.includes(id))
         list3.push(id);
@@ -27937,10 +28813,10 @@ function decode(body, isBody) {
 function version(db) {
   return db.query("PRAGMA user_version").get()?.user_version ?? 0;
 }
-function gated(gate, label, rows) {
-  if (rows.length === 0)
+function gated(gate, label, rows2) {
+  if (rows2.length === 0)
     return [];
-  return gateJsonText(gate, label, rows.map((row) => JSON.stringify(row)).join(`
+  return gateJsonText(gate, label, rows2.map((row) => JSON.stringify(row)).join(`
 `)).split(`
 `);
 }
@@ -27963,14 +28839,14 @@ class RawStore {
       marks: decode(row.marks, isMarks)
     })), () => this.legacyEpisodes());
   }
-  putEpisodes(rows, gate) {
-    if (rows.length === 0)
+  putEpisodes(rows2, gate) {
+    if (rows2.length === 0)
       return;
-    const bodies = gated(gate, this.label("episodes"), rows);
+    const bodies = gated(gate, this.label("episodes"), rows2);
     this.write((db) => {
       const upsert = db.query(`INSERT INTO episodes (sid, revisions, marks, body) VALUES (?1, 1, '[]', ?2)
          ON CONFLICT (sid) DO UPDATE SET body = excluded.body, revisions = revisions + 1`);
-      rows.forEach((row, index) => upsert.run(row.sid, bodies[index] ?? ""));
+      rows2.forEach((row, index) => upsert.run(row.sid, bodies[index] ?? ""));
     });
   }
   workers() {
@@ -28524,20 +29400,20 @@ function lessonsBlock(ledger) {
   confirmed.sort((a, b) => Number(b.confidence ?? 0) - Number(a.confidence ?? 0) || str(b.last_seen).localeCompare(str(a.last_seen)));
   if (confirmed.length === 0)
     return { text: "", confirmed: 0, total: lessons.length };
-  const rows = confirmed.slice(0, MAX_LESSONS).map((meta) => `- ${str(meta.statement)} [${str(meta.id)}]`);
+  const rows2 = confirmed.slice(0, MAX_LESSONS).map((meta) => `- ${str(meta.statement)} [${str(meta.id)}]`);
   return { text: `## Lessons
-${rows.join(`
+${rows2.join(`
 `)}
 `, confirmed: confirmed.length, total: lessons.length };
 }
 function lessonsWithin(text3, cap) {
-  const [header = "", ...rows] = splitLines(text3.trimEnd());
-  const section2 = () => `${[header, ...rows].join(`
+  const [header = "", ...rows2] = splitLines(text3.trimEnd());
+  const section2 = () => `${[header, ...rows2].join(`
 `)}
 `;
-  while (rows.length > 0 && tokens(section2()) > cap)
-    rows.pop();
-  return rows.length === 0 ? "" : section2();
+  while (rows2.length > 0 && tokens(section2()) > cap)
+    rows2.pop();
+  return rows2.length === 0 ? "" : section2();
 }
 function memoryWithLessons(memory, lessons, cap) {
   const whole = `${`${memory}
@@ -29451,8 +30327,8 @@ function kimiNativeId(dir, state) {
   return string(state?.id) ?? basename12(dir);
 }
 function parseCodexSession(path, now = Date.now()) {
-  const rows = readJsonLines(path);
-  const meta = rows[0];
+  const rows2 = readJsonLines(path);
+  const meta = rows2[0];
   const payload = codexMeta(meta);
   const cwd = string(payload?.cwd);
   const nativeId = codexNativeId(payload);
@@ -29463,13 +30339,13 @@ function parseCodexSession(path, now = Date.now()) {
   let ended = null;
   const log = turnLog();
   const agentPath = string(payload?.agent_path);
-  let briefed = rows.some((row) => {
+  let briefed = rows2.some((row) => {
     const event = object(row.payload);
     return event?.type === "message" && event.role === "user" && publicText(codexUserContent(event.content)) !== "";
   });
   let offset = 0;
   let codexTotal = { tokensIn: 0, tokensOut: 0 };
-  for (const row of rows) {
+  for (const row of rows2) {
     const event = object(row.payload);
     if (event === null)
       continue;
@@ -29530,18 +30406,18 @@ function parseCodexSession(path, now = Date.now()) {
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
 }
 function parseDroidSession(path, now = Date.now()) {
-  const rows = readJsonLines(path);
-  const start = droidStart(rows[0]);
+  const rows2 = readJsonLines(path);
+  const start = droidStart(rows2[0]);
   const cwd = string(start?.cwd);
   const nativeId = string(start?.id);
   if (cwd === null || nativeId === null)
     return null;
   const { mtimeMs: modified, size: bytes } = statSync12(path);
-  const started = epoch(rows.find((row) => row.timestamp !== undefined)?.timestamp, modified);
+  const started = epoch(rows2.find((row) => row.timestamp !== undefined)?.timestamp, modified);
   let ended = null;
   let at = started;
   const log = turnLog();
-  for (const row of rows) {
+  for (const row of rows2) {
     at = epoch(row.timestamp, at);
     if (row.type === "agent_turn_outcome" || row.type === "session_end") {
       ended = Math.max(ended ?? 0, at);
@@ -29668,9 +30544,9 @@ function parseKimiSession(dir, now = Date.now()) {
   let ended = null;
   const log = turnLog();
   let kimiTotal = null;
-  const rows = readJsonLines(path);
-  const recordedUsage = rows.some((row) => row.type === "usage.record" && kimiUsage(row.usage) !== null);
-  for (const row of rows) {
+  const rows2 = readJsonLines(path);
+  const recordedUsage = rows2.some((row) => row.type === "usage.record" && kimiUsage(row.usage) !== null);
+  for (const row of rows2) {
     const at = epoch(row.time, started);
     if (row.type === "turn.prompt" || row.type === "agent.turn.started" || row.type === "turn.steer")
       ended = null;
@@ -29986,8 +30862,8 @@ function scanWorkerSessions(homes, rootFor2, options = {}) {
     if (options.wanted?.(root, place.newest) !== false)
       for (const read2 of place.read)
         read2();
-  for (const rows of scan.sessions.values())
-    rows.sort((a, b) => a.started_at_epoch - b.started_at_epoch || a.memory_session_id.localeCompare(b.memory_session_id));
+  for (const rows2 of scan.sessions.values())
+    rows2.sort((a, b) => a.started_at_epoch - b.started_at_epoch || a.memory_session_id.localeCompare(b.memory_session_id));
   return scan;
 }
 function rowKey(row) {
@@ -30079,11 +30955,11 @@ class WorkerSessionSource {
     this.sessionRows = new Map(sessions.map((row) => [row.memory_session_id, row]));
     this.bySession.clear();
     for (const row of this.observations) {
-      const rows = this.bySession.get(row.memory_session_id);
-      if (rows === undefined)
+      const rows2 = this.bySession.get(row.memory_session_id);
+      if (rows2 === undefined)
         this.bySession.set(row.memory_session_id, [row]);
       else
-        rows.push(row);
+        rows2.push(row);
     }
   }
   capture(sessions, options = {}) {
@@ -30166,8 +31042,8 @@ class WorkerSessionSource {
         if (row.usage_basis === "raw_total" || row.type === "truncated")
           aggregates.push(current);
       }
-      const rows = pending.map((entry) => entry.row);
-      const rewritten = pending.length > 0 && options.rewrite !== undefined ? options.rewrite(item, rows) : rows;
+      const rows2 = pending.map((entry) => entry.row);
+      const rewritten = pending.length > 0 && options.rewrite !== undefined ? options.rewrite(item, rows2) : rows2;
       const appended = pending.map((entry, index) => storedObservation(item, entry.row, ++nextId2, entry.key, rewritten[index]));
       aggregates.push(...appended.filter((row) => row.usage_basis === "raw_total" || row.type === "truncated"));
       const aggregateIds = new Set(aggregates.map((row) => row.id));
@@ -30222,13 +31098,13 @@ class WorkerSessionSource {
     return this.observations.reduce((latest, row) => Math.max(latest, row.created_at_epoch), 0);
   }
   newTokensSince(_project, afterId) {
-    const rows = this.observations.filter((row) => row.id > afterId);
-    const tokens2 = rows.reduce((sum, row) => sum + (row.usage_basis === "estimated" ? 0 : (row.tokens_in ?? 0) + (row.tokens_out ?? 0)), 0);
-    return { tokens: tokens2, count: rows.length };
+    const rows2 = this.observations.filter((row) => row.id > afterId);
+    const tokens2 = rows2.reduce((sum, row) => sum + (row.usage_basis === "estimated" ? 0 : (row.tokens_in ?? 0) + (row.tokens_out ?? 0)), 0);
+    return { tokens: tokens2, count: rows2.length };
   }
   observationsSince(_project, afterId, options = {}) {
-    const rows = this.observations.filter((row) => row.id > afterId && row.created_at_epoch >= (options.sinceEpochMs ?? 0));
-    return rows.toSorted((a, b) => options.newestFirst === true ? b.id - a.id : a.id - b.id);
+    const rows2 = this.observations.filter((row) => row.id > afterId && row.created_at_epoch >= (options.sinceEpochMs ?? 0));
+    return rows2.toSorted((a, b) => options.newestFirst === true ? b.id - a.id : a.id - b.id);
   }
   observationsById(ids) {
     const wanted = new Set(ids);
@@ -30498,16 +31374,16 @@ function toolDistiller(config, distill, options) {
     });
   };
   return {
-    rewrite: (item, rows) => {
-      const slots = rows.map((row) => (row.detail?.calls ?? []).map((call) => ({ call: scrubbed(call), line: null })));
+    rewrite: (item, rows2) => {
+      const slots = rows2.map((row) => (row.detail?.calls ?? []).map((call) => ({ call: scrubbed(call), line: null })));
       const all = slots.flat();
       if (all.length === 0)
-        return [...rows];
+        return [...rows2];
       const tally = tallyOf(item.platform);
       const command = config.distillCommands[item.platform];
       if (command === undefined) {
         tally.unbound += all.length;
-        return [...rows];
+        return [...rows2];
       }
       const batches = requests(all);
       if (options.dryRun === true) {
@@ -30518,11 +31394,11 @@ function toolDistiller(config, distill, options) {
         tally.would += calls.length;
         tally.wouldChars += calls.reduce((chars, slot) => chars + slot.call.input.length + slot.call.output.length, 0);
         tally.kept.capped += all.length - calls.length;
-        return [...rows];
+        return [...rows2];
       }
       for (const batch of batches)
         send(item.platform, command, batch, tally);
-      return rows.map((row, index) => {
+      return rows2.map((row, index) => {
         const mine = slots[index] ?? [];
         const worded = mine.filter((slot) => slot.line !== null).length;
         if (row.detail === undefined || worded === 0)
@@ -30624,16 +31500,16 @@ function pairFailures(failures, all) {
   }
   return pairs;
 }
-function rankObs(rows, quarantined = new Set, cap = OBS_PER_EPISODE) {
+function rankObs(rows2, quarantined = new Set, cap = OBS_PER_EPISODE) {
   const rank = (row) => isFailureObservation(row) ? 0 : row.type === "decision" ? 1 : 2;
-  return rows.filter((row) => !quarantined.has(`obs:${row.id}`)).sort((a, b) => rank(a) - rank(b) || a.id - b.id).slice(0, cap);
+  return rows2.filter((row) => !quarantined.has(`obs:${row.id}`)).sort((a, b) => rank(a) - rank(b) || a.id - b.id).slice(0, cap);
 }
-function formatEpisode(episode, rows) {
+function formatEpisode(episode, rows2) {
   const head = `${sid8(episode.sid)} ${episode.platform} start=${episode.started} completed=${episode.completed ? "True" : "False"} ` + `failure_signals=${episode.failure_signals} corrections=${episode.corrections} priority=${episode.priority}
 ` + `  request: ${(episode.request ?? "").slice(0, 300)}
 ` + `  files: ${episode.files_modified.slice(0, 12).join(", ")}
 `;
-  const body = rows.map((row) => `  obs:${row.id} [${row.type}] ${row.title ?? ""} \u2014 ${(row.subtitle ?? "").slice(0, 160)}` + (row.facts ? ` | ${row.facts.slice(0, 300)}` : "") + `
+  const body = rows2.map((row) => `  obs:${row.id} [${row.type}] ${row.title ?? ""} \u2014 ${(row.subtitle ?? "").slice(0, 160)}` + (row.facts ? ` | ${row.facts.slice(0, 300)}` : "") + `
 `).join("");
   return head + body;
 }
@@ -30712,7 +31588,7 @@ function countRepeat(page, evidence, tags, sessionOf, today) {
   writeLesson(page.path, page.meta, page.body);
   return before === "hypothesis" && meta.status === "confirmed";
 }
-function strings2(value) {
+function strings3(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 }
 function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
@@ -30733,7 +31609,7 @@ function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
   for (const lesson of lessons) {
     if (lesson === null || typeof lesson !== "object")
       continue;
-    const cited = strings2(lesson.evidence).filter((id2) => valid.has(id2));
+    const cited = strings3(lesson.evidence).filter((id2) => valid.has(id2));
     const evidence = [
       ...new Set([
         ...cited,
@@ -30777,7 +31653,7 @@ function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
     };
     const confirmed = meta.status === "confirmed";
     const supersedes = [];
-    for (const old of strings2(lesson.supersedes)) {
+    for (const old of strings3(lesson.supersedes)) {
       const page = existing.get(old);
       if (old === id || page === undefined)
         continue;
@@ -30819,7 +31695,7 @@ function buildReviewEvents(project, events, valid, runId, sessions) {
     if (event === null || typeof event !== "object")
       continue;
     const text3 = oneLine2(event.text);
-    const evidence = strings2(event.evidence).filter((id) => valid.has(id));
+    const evidence = strings3(event.evidence).filter((id) => valid.has(id));
     if (text3 === "" || evidence.length === 0)
       continue;
     const witnesses = new Map;
@@ -30829,7 +31705,7 @@ function buildReviewEvents(project, events, valid, runId, sessions) {
       ids.push(id);
       witnesses.set(session2, ids);
     }
-    const files = strings2(event.files).map((file) => oneLine2(file, 500)).filter((file) => file !== "");
+    const files = strings3(event.files).map((file) => oneLine2(file, 500)).filter((file) => file !== "");
     for (const [session2, ids] of witnesses) {
       const kind = event.kind === "correction" ? "correction" : "finding";
       const forwarded = makeEvent({
@@ -30903,10 +31779,10 @@ function readyEpisodes(source, ledger, pending) {
     if (allRows.some((row) => row.id <= (isCapturedObservation(row) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, row.id)))
       continue;
     const after = consumed.get(episode.sid) ?? 0;
-    const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
-    const last = rows.at(-1);
+    const rows2 = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
+    const last = rows2.at(-1);
     if (last !== undefined)
-      ready.set(episode.sid, { rows, obs: allRows.filter((row) => row.id <= last.id).length, obs_id: last.id });
+      ready.set(episode.sid, { rows: rows2, obs: allRows.filter((row) => row.id <= last.id).length, obs_id: last.id });
   }
   return ready;
 }
@@ -30933,8 +31809,8 @@ function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
   const obsSessionAll = new Map;
   for (const episode of chosen)
     obsBySid.set(episode.sid, rankObs(unseen.get(episode.sid)?.rows ?? [], quarantined));
-  for (const [sid, rows] of obsBySid)
-    for (const row of rows)
+  for (const [sid, rows2] of obsBySid)
+    for (const row of rows2)
       obsSessionAll.set(`obs:${row.id}`, sid8(sid).slice(1));
   const { prompt, included } = consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid);
   if (ctx.config.dryRun) {
@@ -31377,10 +32253,10 @@ function formatObservation(row) {
 `)}
 `;
 }
-function fit(rows, inputChars) {
+function fit(rows2, inputChars) {
   const out = [];
   let used = 0;
-  for (const row of rows) {
+  for (const row of rows2) {
     const line = formatObservation(row);
     if (used + line.length > inputChars && out.length > 0)
       break;
@@ -31392,12 +32268,12 @@ function fit(rows, inputChars) {
 function fetchNew(source, memProject2, watermark, inputChars = INPUT_CHARS3 - SUMMARY_CHARS, capturedWatermark = 0) {
   const native = source.observationsSince(memProject2, watermark, { newestFirst: watermark === 0 });
   const captured = source.capturedObservationsSince?.(memProject2, capturedWatermark) ?? [];
-  const rows = [];
+  const rows2 = [];
   for (let index = 0;index < Math.max(native.length, captured.length); index++)
     for (const row of [native[index], captured[index]])
       if (row !== undefined)
-        rows.push(row);
-  return fit(rows, inputChars);
+        rows2.push(row);
+  return fit(rows2, inputChars);
 }
 function unscreenedIds(source, ledger, deferred) {
   const ranges = screenedObservationRanges(ledger);
@@ -31410,10 +32286,10 @@ function unscreenedIds(source, ledger, deferred) {
       ids.add(row.id);
   return [...ids].filter((id) => id <= (isCapturedObservation({ id }) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, id)).toSorted((a, b) => a - b);
 }
-function formatSummaries(rows, cap = SUMMARY_CHARS) {
+function formatSummaries(rows2, cap = SUMMARY_CHARS) {
   const out = [];
   let used = 0;
-  for (const row of rows.toReversed()) {
+  for (const row of rows2.toReversed()) {
     const text3 = `${sid8(row.memory_session_id)}
   request: ${field(row.request)}
   completed: ${field(row.completed)}
@@ -31758,7 +32634,7 @@ function validateRunRow(row) {
   return runRowValidator(row);
 }
 function runLog(ledger) {
-  const rows = [];
+  const rows2 = [];
   for (const line of readText(ledger.path("runs.jsonl")).split(`
 `)) {
     if (line.trim() === "")
@@ -31766,12 +32642,12 @@ function runLog(ledger) {
     try {
       const row = JSON.parse(line);
       if (validateRunRow(row))
-        rows.push(row);
+        rows2.push(row);
     } catch {
       continue;
     }
   }
-  return rows;
+  return rows2;
 }
 function lastScreenTime(ledger) {
   const last = runLog(ledger).findLast((row) => row.job === "reflect" || row.job === "backfill");
@@ -32532,7 +33408,7 @@ function existingSkills(ctx, root, packageRoot2) {
       byName.set(skill.name, skill.description);
   return [...byName.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, description]) => ({ name, description }));
 }
-function strings3(value) {
+function strings4(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item.trim() !== "") : [];
 }
 function parseCandidates(reply) {
@@ -32554,8 +33430,8 @@ function parseCandidates(reply) {
       description: c.description,
       scope: typeof c.scope === "string" ? c.scope : "global",
       intent: typeof c.intent === "string" ? c.intent : "",
-      steps: strings3(c.steps),
-      guardrails: strings3(c.guardrails),
+      steps: strings4(c.steps),
+      guardrails: strings4(c.guardrails),
       evidence,
       confidence: typeof c.confidence === "string" ? c.confidence : "low"
     });
@@ -32957,11 +33833,11 @@ var init_cli3 = __esm(() => {
           if (root === null)
             return 2;
           const registry = loadRegistry(new Ledger(loopDir(ctx.config, root, "skills")));
-          const rows = Object.entries(registry.candidates).sort((a, b) => a[0].localeCompare(b[0]));
-          for (const [id, info] of rows) {
+          const rows2 = Object.entries(registry.candidates).sort((a, b) => a[0].localeCompare(b[0]));
+          for (const [id, info] of rows2) {
             ctx.io.out(`${id}  ${info.status.padEnd(9)} ${info.name.padEnd(32)} scope=${info.scope} uses=${info.uses} evidence=${info.evidence} ${info.confidence}`);
           }
-          ctx.io.out(`${rows.length} candidates, ${registry.rejected.length} rejected names, ${Object.keys(registry.seen_sessions).length} sessions seen`);
+          ctx.io.out(`${rows2.length} candidates, ${registry.rejected.length} rejected names, ${Object.keys(registry.seen_sessions).length} sessions seen`);
           return 0;
         }
       },
@@ -34084,9 +34960,9 @@ __export(exports_stats, {
 function percentile(sorted, p) {
   return sorted[Math.max(0, Math.ceil(p / 100 * sorted.length) - 1)] ?? 0;
 }
-function groups(rows, key) {
+function groups(rows2, key) {
   const out = new Map;
-  for (const row of rows) {
+  for (const row of rows2) {
     const group = out.get(key(row));
     if (group === undefined)
       out.set(key(row), [row]);
@@ -34126,15 +35002,15 @@ function learnStats(config, options) {
   const spans = allSpans.filter((row) => inWindow(row.start) && (options.projectKey === null || keyOf(row, byId) === options.projectKey));
   const runIds = new Set(spans.map((row) => row.span_id));
   const judge = allJudge.filter((row) => inWindow(row.at) && (options.projectKey === null || row.run_id !== null && runIds.has(row.run_id)));
-  const cost = groups(judge, (row) => `${row.loop}\x00${row.role}`).map(([, rows]) => {
-    const known = rows.filter((row) => row.total_cost_usd !== null);
-    const [first] = rows;
+  const cost = groups(judge, (row) => `${row.loop}\x00${row.role}`).map(([, rows2]) => {
+    const known = rows2.filter((row) => row.total_cost_usd !== null);
+    const [first] = rows2;
     return {
       loop: first.loop,
       role: first.role,
-      calls: rows.length,
+      calls: rows2.length,
       cost_usd: Number(known.reduce((sum, row) => sum + (row.total_cost_usd ?? 0), 0).toFixed(6)),
-      unknown_cost: rows.length - known.length
+      unknown_cost: rows2.length - known.length
     };
   });
   return {
@@ -34145,13 +35021,13 @@ function learnStats(config, options) {
     },
     cost,
     latency: {
-      spans: groups(spans, (row) => row.name).map(([name, rows]) => ({
+      spans: groups(spans, (row) => row.name).map(([name, rows2]) => ({
         name,
-        ...latency(rows.map((row) => row.duration_ms))
+        ...latency(rows2.map((row) => row.duration_ms))
       })),
-      judge: groups(judge, (row) => row.role).map(([role, rows]) => ({
+      judge: groups(judge, (row) => row.role).map(([role, rows2]) => ({
         role,
-        ...latency(rows.map((row) => row.duration_ms))
+        ...latency(rows2.map((row) => row.duration_ms))
       }))
     },
     failures: groups(judge.filter((row) => row.outcome !== "ok"), (row) => `${row.role}\x00${row.outcome}`).map(([, [first, ...rest]]) => ({
@@ -34167,21 +35043,21 @@ function learnStats(config, options) {
   };
 }
 function runsLine(config, now = Date.now()) {
-  const rows = spanRows(config).filter((row) => {
+  const rows2 = spanRows(config).filter((row) => {
     const t = Date.parse(row.start);
     return t >= now - DAY_MS2 && t <= now;
   });
-  const label = `  ${"runs (24h)".padEnd(17)}  ${rows.length} ${rows.length === 1 ? "span" : "spans"}`;
-  if (rows.length === 0)
+  const label = `  ${"runs (24h)".padEnd(17)}  ${rows2.length} ${rows2.length === 1 ? "span" : "spans"}`;
+  if (rows2.length === 0)
     return label;
-  const loops = groups(rows, (row) => row.loop).map(([loop, loopRows]) => `${loop} ${groups(loopRows, (row) => row.status).map(([status2, n]) => `${status2} ${n.length}`).join(", ")}`);
+  const loops = groups(rows2, (row) => row.loop).map(([loop, loopRows]) => `${loop} ${groups(loopRows, (row) => row.status).map(([status2, n]) => `${status2} ${n.length}`).join(", ")}`);
   return `${label}: ${loops.join("; ")}`;
 }
-function table(title, header, rows) {
-  const cells = [header, ...rows.map((row) => row.map(String))];
+function table(title, header, rows2) {
+  const cells = [header, ...rows2.map((row) => row.map(String))];
   const widths = header.map((_, i) => Math.max(...cells.map((row) => (row[i] ?? "").length)));
   const line = (row) => row.map((cell, i) => cell.padEnd(widths[i] ?? 0)).join("  ").trimEnd();
-  return [title, line(header), ...rows.length === 0 ? ["(none)"] : cells.slice(1).map(line), ""];
+  return [title, line(header), ...rows2.length === 0 ? ["(none)"] : cells.slice(1).map(line), ""];
 }
 function bound(name, r) {
   return `${name} from ${r.oldest ?? "-"}${r.reaches_past ? " (the window reaches past the oldest retained row)" : ""}`;
@@ -35619,8 +36495,8 @@ function parseClaudeSession(path) {
     id = basename18(path, ".jsonl");
   return { id, cwd, started_at: started, log };
 }
-function codexMeta2(rows) {
-  const first = rows[0];
+function codexMeta2(rows2) {
+  const first = rows2[0];
   return first?.type === "session_meta" ? object2(first.payload) : null;
 }
 function codexSubagent(meta) {
@@ -35632,12 +36508,12 @@ function codexSubagent(meta) {
   return source !== null && "subagent" in source;
 }
 function parseCodexSession2(path) {
-  const rows = readRows(path);
-  const meta = codexMeta2(rows);
+  const rows2 = readRows(path);
+  const meta = codexMeta2(rows2);
   if (meta === null || codexSubagent(meta))
     return null;
   const log = new SessionLog;
-  for (const row of rows) {
+  for (const row of rows2) {
     const payload = object2(row.payload);
     if (payload === null)
       continue;
@@ -35671,7 +36547,7 @@ function parseCodexSession2(path) {
   return {
     id: text3(meta.id) ?? basename18(path, ".jsonl"),
     cwd: text3(meta.cwd),
-    started_at: text3(meta.timestamp) ?? text3(rows[0]?.timestamp),
+    started_at: text3(meta.timestamp) ?? text3(rows2[0]?.timestamp),
     log
   };
 }
@@ -35744,8 +36620,8 @@ function mtime(path) {
     return 0;
   }
 }
-function firstCwd(rows) {
-  return text3(rows.find((row) => text3(row.cwd) !== null)?.cwd);
+function firstCwd(rows2) {
+  return text3(rows2.find((row) => text3(row.cwd) !== null)?.cwd);
 }
 function locate(options) {
   const since = options.now - options.days * 86400000;
@@ -36209,13 +37085,13 @@ function suggestions(advice, decideRepo) {
   }).join("");
 }
 function screened(advice) {
-  const rows = [
+  const rows2 = [
     ...advice.dropped.map((d) => `<tr><td>${e(d.skill)}</td><td>${e(d.change)}</td><td>Dropped: ${e(d.gate)}</td></tr>`),
     ...advice.deferred.map((d) => `<tr><td>\u2014</td><td>${e(d.finding)}</td><td>Deferred: ${e(d.why)}</td></tr>`)
   ];
-  if (rows.length === 0)
+  if (rows2.length === 0)
     return "";
-  return `<section><h2>Screened out</h2><p class="muted">Proposals a gate refused, and patterns the doctor saw but chose not to turn into an edit.</p><div class="table"><table><thead><tr><th scope="col">Skill</th><th scope="col">Proposal or pattern</th><th scope="col">Outcome</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></section>`;
+  return `<section><h2>Screened out</h2><p class="muted">Proposals a gate refused, and patterns the doctor saw but chose not to turn into an edit.</p><div class="table"><table><thead><tr><th scope="col">Skill</th><th scope="col">Proposal or pattern</th><th scope="col">Outcome</th></tr></thead><tbody>${rows2.join("")}</tbody></table></div></section>`;
 }
 function sessionRows(scores) {
   return scores.map((score2) => {
@@ -36789,7 +37665,7 @@ function recordRun(ledger, run2, scores, aggregate2, advice) {
   if (release === null)
     return null;
   try {
-    const rows = scores.map((score2) => ({
+    const rows2 = scores.map((score2) => ({
       key: score2.key,
       host: score2.host,
       skills_used: score2.skills_used,
@@ -36798,7 +37674,7 @@ function recordRun(ledger, run2, scores, aggregate2, advice) {
       labels: Object.fromEntries(SCORERS.map((scorer) => [scorer, score2.results[scorer]?.label ?? null]))
     }));
     const impact = loadImpact(ledger.dir);
-    writeJson(ledger.path(RUNS_DIR, `${run2}.json`), { run: run2, at: nowIso(), aggregate: aggregate2, sessions: rows }, ledger.dir);
+    writeJson(ledger.path(RUNS_DIR, `${run2}.json`), { run: run2, at: nowIso(), aggregate: aggregate2, sessions: rows2 }, ledger.dir);
     for (const suggestion of advice.suggestions) {
       impact.push({
         id: suggestion.id,
@@ -37763,9 +38639,9 @@ init_common_schema();
 var import_ajv17 = __toESM(require_ajv(), 1);
 var import__202014 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync6 } from "child_process";
-import { existsSync as existsSync41, readFileSync as readFileSync41, realpathSync as realpathSync18 } from "fs";
+import { existsSync as existsSync42, readFileSync as readFileSync42, realpathSync as realpathSync18 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename23, isAbsolute as isAbsolute18, join as join53, relative as relative16 } from "path";
+import { basename as basename23, isAbsolute as isAbsolute18, join as join54, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -40628,16 +41504,16 @@ function resolveLink(absolute) {
 // src/runner/cli.ts
 init_hash();
 import { timingSafeEqual } from "crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync40, readFileSync as readFileSync35, realpathSync as realpathSync16, unlinkSync } from "fs";
+import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync36, realpathSync as realpathSync16, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname23, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
+import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
 
 // src/runner/core.ts
 init_dist();
 init_hash();
-import { createHash as createHash11 } from "crypto";
-import { existsSync as existsSync39, mkdirSync as mkdirSync24, readFileSync as readFileSync32, realpathSync as realpathSync12, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
-import { basename as basename20, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative12, resolve as resolve16 } from "path";
+import { createHash as createHash12 } from "crypto";
+import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync12, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
+import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -40647,23 +41523,55 @@ function isDesignReport(value) {
   return isNonArrayObject(value) && "schema" in value && value.schema === "review";
 }
 
+// src/lifecycle/persist-run.ts
+import { createHash as createHash10 } from "crypto";
+import { existsSync as existsSync38, mkdirSync as mkdirSync23, readFileSync as readFileSync30, renameSync as renameSync5, writeFileSync as writeFileSync14 } from "fs";
+import { dirname as dirname20, join as join43 } from "path";
+var safeRunId = (id) => id.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
+var atomicJson = (path, value) => {
+  mkdirSync23(dirname20(path), { recursive: true });
+  const staging = `${path}.partial-${process.pid}`;
+  writeFileSync14(staging, `${JSON.stringify(value, null, 2)}
+`);
+  renameSync5(staging, path);
+};
+var atomicBytes = (path, value) => {
+  mkdirSync23(dirname20(path), { recursive: true });
+  const staging = `${path}.partial-${process.pid}`;
+  writeFileSync14(staging, value);
+  renameSync5(staging, path);
+};
+var sha256 = (value) => `sha256:${createHash10("sha256").update(value).digest("hex")}`;
+function persistFrozenRun(dir, record, ticketBytes) {
+  atomicJson(join43(dir, "runs", safeRunId(record.run_id), "run.json"), record);
+  const hash = sha256(ticketBytes);
+  const path = join43(dir, safeRunId(record.run_id), "artifacts", hash.slice("sha256:".length));
+  if (!existsSync38(path) || sha256(readFileSync30(path)) !== hash)
+    atomicBytes(path, ticketBytes);
+}
+
+// src/runner/core.ts
+init_binding();
+init_local_git();
+init_behavior_policy();
+
 // src/runner/evidence.ts
-import { mkdirSync as mkdirSync23, readFileSync as readFileSync30, realpathSync as realpathSync9, writeFileSync as writeFileSync14 } from "fs";
-import { isAbsolute as isAbsolute11, join as join43, relative as relative9 } from "path";
+import { mkdirSync as mkdirSync24, readFileSync as readFileSync31, realpathSync as realpathSync9, writeFileSync as writeFileSync15 } from "fs";
+import { isAbsolute as isAbsolute11, join as join44, relative as relative9 } from "path";
 
 class PrivateFileEvidenceStore {
   root;
   constructor(stateDir) {
-    this.root = join43(stateDir, "evidence");
-    mkdirSync23(this.root, { recursive: true, mode: 448 });
+    this.root = join44(stateDir, "evidence");
+    mkdirSync24(this.root, { recursive: true, mode: 448 });
     const resolved = realpathSync9(this.root);
     const rel = relative9(stateDir, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence store escapes runner state directory");
   }
   put(runId, evidenceId, bytes) {
-    const ref = join43(this.root, `${runId}-${evidenceId}.evidence`);
-    writeFileSync14(ref, bytes, { flag: "wx", mode: 384 });
+    const ref = join44(this.root, `${runId}-${evidenceId}.evidence`);
+    writeFileSync15(ref, bytes, { flag: "wx", mode: 384 });
     return ref;
   }
   read(ref) {
@@ -40671,7 +41579,7 @@ class PrivateFileEvidenceStore {
     const rel = relative9(this.root, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence ref escapes runner store");
-    return readFileSync30(resolved);
+    return readFileSync31(resolved);
   }
 }
 
@@ -40917,13 +41825,13 @@ var isEffectConfig = ajv6.compile({
 
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync4 } from "child_process";
-import { createHash as createHash10 } from "crypto";
-import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync5, readFileSync as readFileSync31, readlinkSync as readlinkSync3, realpathSync as realpathSync11 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15 } from "path";
+import { createHash as createHash11 } from "crypto";
+import { accessSync, constants, existsSync as existsSync39, lstatSync as lstatSync5, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync11 } from "fs";
+import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
 
 // src/runner/path.ts
 import { lstatSync as lstatSync4, realpathSync as realpathSync10 } from "fs";
-import { delimiter as delimiter4, dirname as dirname20, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
+import { delimiter as delimiter4, dirname as dirname21, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
 function workerControlledPath(path, workerRoot) {
   if (!isAbsolute12(path))
     return true;
@@ -40935,7 +41843,7 @@ function workerControlledPath(path, workerRoot) {
     } catch (cause) {
       if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
         return true;
-      const parent = dirname20(existing);
+      const parent = dirname21(existing);
       if (parent === existing)
         return true;
       existing = parent;
@@ -40957,7 +41865,7 @@ function workerFreePath(path, workerRoot) {
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
   for (const directory of path.split(delimiter5)) {
-    const candidate = join44(directory, "git");
+    const candidate = join45(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync11(candidate);
@@ -41006,18 +41914,18 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
   };
 }
 function checkGitControls(context, project) {
-  const entryPath = join44(project, ".git");
+  const entryPath = join45(project, ".git");
   let paths2;
   try {
     const entry = lstatSync5(entryPath);
     if (entry.isDirectory())
-      paths2 = [join44(entryPath, "index"), join44(entryPath, "HEAD")];
+      paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
     else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = /^gitdir: (.+)$/.exec(readFileSync31(entryPath, "utf8").trim())?.[1];
+      const pointer = /^gitdir: (.+)$/.exec(readFileSync32(entryPath, "utf8").trim())?.[1];
       if (pointer === undefined)
         return failedGit("runner git directory pointer is invalid");
       const gitDir = isAbsolute13(pointer) ? pointer : resolve15(project, pointer);
-      paths2 = [join44(gitDir, "index"), join44(gitDir, "HEAD")];
+      paths2 = [join45(gitDir, "index"), join45(gitDir, "HEAD")];
     } else
       return failedGit("runner git directory entry is not regular");
   } catch (cause) {
@@ -41095,14 +42003,14 @@ function resolvedRevision(context, project, ref) {
 }
 function rawFile(context, project, path) {
   try {
-    const at = join44(project, path);
+    const at = join45(project, path);
     const stat = lstatSync5(at);
     if (stat.isSymbolicLink())
       return `link:${readlinkSync3(at)}`;
     if (stat.isFile())
-      return `file:${stat.mode & 73}:${createHash10("sha256").update(readFileSync31(at)).digest("hex")}`;
+      return `file:${stat.mode & 73}:${createHash11("sha256").update(readFileSync32(at)).digest("hex")}`;
     if (stat.isDirectory()) {
-      if (!existsSync38(join44(at, ".git")))
+      if (!existsSync39(join45(at, ".git")))
         return "dir";
       const tree = treeHash(context, at, []);
       if (!(tree instanceof Object))
@@ -41155,7 +42063,7 @@ function treeHash(context, project, ignoreUntrackedDirs) {
       continue;
     paths2.set(path, ["untracked"]);
   }
-  const digest = createHash10("sha256");
+  const digest = createHash11("sha256");
   const root = realpathSync11(project);
   for (const path of [...paths2.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve15(project, path);
@@ -41192,10 +42100,13 @@ var LIMIT_NAME = new Map([
 var RUNNER_SCHEMA_IDS = ["common", "charter", "decision", "run-ledger"];
 var HASH = /^sha256:[a-f0-9]{64}$/;
 var REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
-var ID = /^[a-z0-9][a-z0-9-]*$/;
+var ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 var EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 var HUMAN_REFUSAL = "no";
 var HUMAN_RETRY = "retry";
+function isJsonText(value) {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
 function isDesignReportBytes(bytes) {
   try {
     return isDesignReport(JSON.parse(bytes.toString()));
@@ -41243,14 +42154,14 @@ function inside(path, root) {
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
   const missing2 = [];
-  while (!existsSync39(existing)) {
+  while (!existsSync40(existing)) {
     missing2.unshift(basename20(existing));
-    existing = dirname21(existing);
+    existing = dirname22(existing);
   }
-  return join45(realpathSync12(existing), ...missing2);
+  return join46(realpathSync12(existing), ...missing2);
 }
 function digest(bytes) {
-  return `sha256:${createHash11("sha256").update(bytes).digest("hex")}`;
+  return `sha256:${createHash12("sha256").update(bytes).digest("hex")}`;
 }
 function verdictBase(run2) {
   const baseRef = run2.charter.repos[0]?.base_branch;
@@ -41309,12 +42220,12 @@ class Runner {
       throw new Error("runner state is worker-writable");
     const gitContext = resolveRunnerGit(this.workerRoot);
     const commonDir2 = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
-    this.sharedGitDir = commonDir2.code === 0 ? realpathSync12(isAbsolute14(commonDir2.text) ? commonDir2.text : join45(this.workerRoot, commonDir2.text)) : null;
+    this.sharedGitDir = commonDir2.code === 0 ? realpathSync12(isAbsolute14(commonDir2.text) ? commonDir2.text : join46(this.workerRoot, commonDir2.text)) : null;
     if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
       throw new Error("runner bundle cannot use the shared git common directory");
     if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
       throw new Error("runner state cannot use the shared git common directory");
-    mkdirSync24(requestedStateDir, { recursive: true, mode: 448 });
+    mkdirSync25(requestedStateDir, { recursive: true, mode: 448 });
     this.stateDir = realpathSync12(requestedStateDir);
     if (inside(this.stateDir, this.workerRoot))
       throw new Error("runner state resolves into worker root");
@@ -41384,7 +42295,8 @@ class Runner {
           type: "object",
           required: ["by", "rationale", "at"],
           properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } }
-        }
+        },
+        behavior: { type: "object" }
       }
     });
     const policySchema = schemas.ajv.compile({
@@ -41405,7 +42317,7 @@ class Runner {
         }
       }
     });
-    const policyValue = $parse(readFileSync32(join45(kitRoot, "policies", "invocation.yaml"), "utf8"));
+    const policyValue = $parse(readFileSync33(join46(kitRoot, "policies", "invocation.yaml"), "utf8"));
     if (!policySchema(policyValue))
       throw new Error("runner cannot parse invocation policy");
     this.covers = new Map;
@@ -41419,7 +42331,7 @@ class Runner {
   path(id) {
     if (!ID.test(id))
       throw new Error("invalid run id");
-    return join45(this.stateDir, `${id}.json`);
+    return join46(this.stateDir, `${id}.json`);
   }
   assertPrivatePath(path) {
     const canonical = canonicalFuturePath(path);
@@ -41447,24 +42359,32 @@ class Runner {
       ".claude-plugin/plugin.json",
       ".kimi-plugin/plugin.json",
       ".factory-plugin/plugin.json"
-    ].map((path) => join45(this.kitRoot, path)).find((path) => existsSync39(path));
+    ].map((path) => join46(this.kitRoot, path)).find((path) => existsSync40(path));
     if (manifestPath === undefined)
       throw new Error("recorded bundle version is unavailable");
-    const manifest = JSON.parse(readFileSync32(manifestPath, "utf8"));
+    const manifest = JSON.parse(readFileSync33(manifestPath, "utf8"));
     if (!isVersionManifest(manifest))
       throw new Error("recorded bundle version is invalid");
     const files2 = ["skills/autopilot/SKILL.md", "skills/autopilot/references/checkpoints.md"];
-    const bytes = files2.map((file) => `${file}\x00${readFileSync32(join45(this.kitRoot, file), "utf8")}`).join("\x00");
+    const bytes = files2.map((file) => `${file}\x00${readFileSync33(join46(this.kitRoot, file), "utf8")}`).join("\x00");
     return { bundle_version: manifest.version, hash: `sha256:${sha256Hex(bytes)}` };
   }
   load(id) {
-    const runValue = JSON.parse(readFileSync32(this.path(id), "utf8"));
+    const runValue = JSON.parse(readFileSync33(this.path(id), "utf8"));
     if (!this.runSchema(runValue))
       throw new Error(`runner state is invalid: ${JSON.stringify(this.runSchema.errors)}`);
     const run2 = runValue;
+    if (run2.behavior !== undefined) {
+      const raw = run2.behavior;
+      const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+      if (binding === undefined)
+        throw new Error("behavior policy snapshot is incomplete");
+      if (binding.run_id !== run2.id)
+        throw new Error("behavior policy snapshot is for a different run");
+    }
     if (run2.run_state === "cancelled")
       return run2;
-    const charterValue = JSON.parse(readFileSync32(run2.charter_path, "utf8"));
+    const charterValue = JSON.parse(readFileSync33(run2.charter_path, "utf8"));
     if (!this.validateCharter(charterValue))
       throw new Error("charter no longer validates");
     const charter = charterValue;
@@ -41477,7 +42397,7 @@ class Runner {
       const doc = this.decisionArtifact(run2, decision);
       if (!this.decisionSchema(doc))
         throw new Error(`runner decision artifact invalid: ${JSON.stringify(this.decisionSchema.errors)}`);
-      this.atomic(join45(this.stateDir, `${run2.id}-${decision.card.id}.decision.json`), doc);
+      this.atomic(join46(this.stateDir, `${run2.id}-${decision.card.id}.decision.json`), doc);
       const outcome = (decision.answer?.refusal ?? decision.result).status === "complete" ? "ruling" : "escalation";
       const entry = {
         checkpoint: this.covers.get(decision.card.operation)?.covers ?? "align-answer",
@@ -41524,15 +42444,15 @@ class Runner {
     };
     if (!this.ledgerSchema(ledger))
       throw new Error(`runner ledger invalid: ${JSON.stringify(this.ledgerSchema.errors)}`);
-    this.atomic(join45(this.stateDir, `${run2.id}.ledger.json`), ledger);
+    this.atomic(join46(this.stateDir, `${run2.id}.ledger.json`), ledger);
     const target = this.path(run2.id);
     this.atomic(target, run2);
   }
   atomic(target, value) {
     const partial = `${target}.partial-${process.pid}`;
-    writeFileSync15(partial, `${JSON.stringify(value, null, 2)}
+    writeFileSync16(partial, `${JSON.stringify(value, null, 2)}
 `, { mode: 384 });
-    renameSync5(partial, target);
+    renameSync6(partial, target);
   }
   seatsIndependent(run2, card) {
     const seats = run2.charter.supervisors.seats.map((s) => s.id);
@@ -41629,7 +42549,7 @@ class Runner {
   }
   ledger(id) {
     this.save(this.load(id));
-    const value = JSON.parse(readFileSync32(join45(this.stateDir, `${id}.ledger.json`), "utf8"));
+    const value = JSON.parse(readFileSync33(join46(this.stateDir, `${id}.ledger.json`), "utf8"));
     if (!this.ledgerSchema(value))
       throw new Error("runner ledger no longer validates");
     return value;
@@ -41663,7 +42583,7 @@ class Runner {
       throw new Error("start revision differs from worker checkout");
     const source = realpathSync12(charterPath);
     this.assertPrivatePath(source);
-    const charterValue = JSON.parse(readFileSync32(source, "utf8"));
+    const charterValue = JSON.parse(readFileSync33(source, "utf8"));
     if (!this.validateCharter(charterValue))
       throw new Error(`invalid charter: ${JSON.stringify(this.validateCharter.errors)}`);
     const charter = charterValue;
@@ -41691,6 +42611,7 @@ class Runner {
       if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT"))
         throw cause;
     }
+    const createdAt = new Date().toISOString();
     const run2 = {
       id,
       charter_path: source,
@@ -41701,7 +42622,7 @@ class Runner {
       excluded_actors: [...new Set([implementer, ...excludedActors])],
       revision,
       diff_hash: observed?.diff_hash ?? `sha256:${sha256Hex("")}`,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
       run_state: "created",
       next_permitted_action: "align.run",
       cards: {},
@@ -41712,10 +42633,148 @@ class Runner {
       events: {},
       delegates: {},
       procedure: this.governingProcedure(),
-      open_escalation: null
+      open_escalation: null,
+      behavior: this.bindBehavior(id, charter, hash, createdAt)
     };
     this.save(run2);
+    this.persistBehaviorEvidence(run2);
     return run2;
+  }
+  persistBehaviorEvidence(run2) {
+    if (run2.behavior === undefined)
+      return;
+    const work = this.tryWorkTicket(run2.charter);
+    if (work === undefined)
+      return;
+    const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
+    if (ticketId === undefined)
+      throw new Error("approved ticket is unnamed");
+    const ticketBytes = new TextEncoder().encode(canonicalJson(Object.fromEntries(Object.entries(work.ticket).filter(([key]) => key !== "approvals"))));
+    persistFrozenRun(join46(this.stateDir, "evidence"), {
+      run_id: run2.id,
+      ticket: { id: ticketId, hash: work.hash },
+      opened_at: run2.created_at,
+      branch: run2.id,
+      base: run2.revision,
+      schema_version: RUN_SCHEMA_VERSION,
+      behavior: run2.behavior
+    }, ticketBytes);
+  }
+  tryWorkTicket(charter) {
+    if (!asJsonObject(charter))
+      throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket")
+      return;
+    return this.loadTicket(charter);
+  }
+  workTicket(charter) {
+    const loaded = this.loadTicket(charter);
+    if (loaded === undefined)
+      throw new Error("approved ticket is absent from the runner store");
+    return loaded;
+  }
+  loadTicket(charter) {
+    if (!asJsonObject(charter))
+      throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket")
+      throw new Error("run work source is not an approved ticket");
+    const ref = source.ref;
+    if (!asJsonObject(ref))
+      throw new Error("approved ticket is unnamed");
+    const ticketId = isJsonText(ref.id) ? ref.id : undefined;
+    const expected = isJsonText(ref.hash) ? ref.hash : undefined;
+    if (ticketId === undefined)
+      throw new Error("approved ticket is unnamed");
+    const path = join46(this.stateDir, `${ticketId}.json`);
+    if (existsSync40(path)) {
+      this.assertPrivatePath(path);
+      let parsed;
+      try {
+        parsed = JSON.parse(readFileSync33(path, "utf8"));
+      } catch {
+        throw new Error("approved ticket is malformed");
+      }
+      if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId)
+        throw new Error("approved ticket is malformed");
+      const hash = artifactHash(parsed);
+      if (expected !== undefined && expected !== hash)
+        throw new Error("approved ticket does not match the charter work source");
+      return { ticket: parsed, hash };
+    }
+    return this.loadCommittedTicket(ticketId, expected);
+  }
+  loadCommittedTicket(ticketId, expected) {
+    const projectRoot = findKbProjectRoot(this.workerRoot);
+    const loaded = loadKbBinding(projectRoot);
+    if (loaded.binding === null)
+      return;
+    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    if (resolved.resolved === null || resolved.state !== "available")
+      throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
+    const looked = expected === undefined ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket" }) : lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", hash: expected });
+    if (looked.status === "unavailable")
+      throw new Error(looked.reason);
+    if (looked.status === "absent")
+      return;
+    if (looked.artifact.schema !== "ticket" || looked.artifact.id !== ticketId)
+      throw new Error("approved ticket is malformed");
+    const hash = artifactHash(looked.artifact);
+    if (expected !== undefined && expected !== hash)
+      throw new Error("approved ticket does not match the charter work source");
+    return { ticket: looked.artifact, hash };
+  }
+  projectLookup(projectId) {
+    const projectRoot = findKbProjectRoot(this.workerRoot);
+    const loaded = loadKbBinding(projectRoot);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined)
+      throw new Error(bindingError.message);
+    if (loaded.binding === null) {
+      const unbound = loaded.issues.length === 0 || loaded.issues.every((issue) => issue.rule === "kb.unbound");
+      if (unbound)
+        return { lookup: "unbound" };
+      const first = loaded.issues[0];
+      throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
+    }
+    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    if (resolved.resolved === null || resolved.state !== "available")
+      return { lookup: "unavailable" };
+    const published = lookupPublishedProject(resolved.resolved, projectId);
+    if (published.status === "unavailable")
+      return { lookup: "unavailable" };
+    if (published.status === "absent")
+      return { lookup: "absent" };
+    return {
+      lookup: "resolved",
+      project: published.project,
+      projectHash: projectHashOf(published.project)
+    };
+  }
+  bindBehavior(id, charter, charterHash, createdAt) {
+    const work = this.tryWorkTicket(charter);
+    const looked = this.projectLookup(charter.project.id);
+    const raw = charter;
+    const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    if (work === undefined && source !== undefined && source.kind === "ticket") {
+      if (looked.lookup === "unavailable")
+        throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
+      if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
+        throw new Error("approved ticket is absent from the runner store");
+    }
+    const bound2 = bindBehaviorPolicy({
+      runId: id,
+      ticket: work?.ticket ?? {},
+      ticketHash: work?.hash ?? charterHash,
+      project: looked.project,
+      projectHash: looked.projectHash,
+      lookup: looked.lookup,
+      capturedAt: createdAt
+    });
+    if (!bound2.ok)
+      throw new Error(bound2.reason);
+    return bound2.binding;
   }
   status(id) {
     return this.load(id);
@@ -41734,7 +42793,7 @@ class Runner {
     }
     if (revision !== run2.revision || !this.current(run2))
       throw new Error("evidence is stale for current revision");
-    const bytes = readFileSync32(source);
+    const bytes = readFileSync33(source);
     const ref = this.evidenceStore.put(id, evidenceId, bytes);
     const hash = digest(bytes);
     if (digest(this.evidenceStore.read(ref)) !== hash)
@@ -42131,7 +43190,7 @@ class Runner {
   cancel(id, by, rationale) {
     if (!ID.test(by) || !rationale.trim())
       throw new Error("cancel needs a supervisor actor and rationale");
-    const runValue = JSON.parse(readFileSync32(this.path(id), "utf8"));
+    const runValue = JSON.parse(readFileSync33(this.path(id), "utf8"));
     if (!this.runSchema(runValue))
       throw new Error("runner state is invalid and cannot be cancelled");
     const run2 = runValue;
@@ -42213,6 +43272,16 @@ class Runner {
     const evidence = run2.evidence[evidenceId];
     if (!["building", "repairing"].includes(run2.run_state) || run2.next_permitted_action !== "verify.record" || evidence?.kind !== "verify" || evidence.revision !== run2.revision || evidence.diff_hash !== run2.diff_hash || !this.current(run2) || digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash)
       throw new Error("current runner-collected verification receipt required");
+    const raw = run2.behavior;
+    const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+    if (run2.behavior !== undefined && binding === undefined)
+      throw new Error("frozen behavior obligations are unavailable");
+    if (binding !== undefined && binding.mode === "on") {
+      for (const check2 of binding.required_checks) {
+        if (check2.property_ids.length === 0)
+          throw new Error(`required behavior check ${check2.id} is missing its frozen definition`);
+      }
+    }
     const baseRef = run2.charter.repos[0]?.base_branch;
     const base2 = baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
     if (base2?.code === 0)
@@ -42441,7 +43510,7 @@ class Runner {
 
 // src/council/config.ts
 var import__202012 = __toESM(require_2020(), 1);
-import { readFileSync as readFileSync33, realpathSync as realpathSync13, statSync as statSync18 } from "fs";
+import { readFileSync as readFileSync34, realpathSync as realpathSync13, statSync as statSync18 } from "fs";
 var DEFAULT_TIMEOUT_MS = 900000;
 var ajv7 = new import__202012.default({ strict: false });
 var nonEmpty = { type: "string", minLength: 1 };
@@ -42507,7 +43576,7 @@ function readCouncilConfig(path) {
   const uid = process.getuid?.();
   if (uid !== undefined && stat.uid !== uid)
     throw new Error("council configuration must be owned by the operator running the council");
-  const value = JSON.parse(readFileSync33(real, "utf8"));
+  const value = JSON.parse(readFileSync34(real, "utf8"));
   if (!isCouncilConfig(value))
     throw new Error(`invalid council configuration: ${JSON.stringify(isCouncilConfig.errors)}`);
   return value;
@@ -42668,14 +43737,14 @@ function chainFailures(seat2, attempts) {
 }
 
 // src/runner/token.ts
-import { readFileSync as readFileSync34, realpathSync as realpathSync15, statSync as statSync19 } from "fs";
-import { dirname as dirname22, isAbsolute as isAbsolute15, relative as relative13 } from "path";
+import { readFileSync as readFileSync35, realpathSync as realpathSync15, statSync as statSync19 } from "fs";
+import { dirname as dirname23, isAbsolute as isAbsolute15, relative as relative13 } from "path";
 function readAdminToken(path, forbiddenRoot) {
   const at = realpathSync15(path);
   const root = realpathSync15(forbiddenRoot);
   const rel = relative13(root, at);
   const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
-  const probe = gitProcess(resolveRunnerGit(root), dirname22(at), [
+  const probe = gitProcess(resolveRunnerGit(root), dirname23(at), [
     "rev-parse",
     "--is-inside-work-tree",
     "--is-inside-git-dir"
@@ -42684,7 +43753,7 @@ function readAdminToken(path, forbiddenRoot) {
     throw new Error("runner admin token file must live outside the Firstmate home, the worker root and any git checkout");
   if ((statSync19(at).mode & 63) !== 0)
     throw new Error("runner admin token file must be mode 0600");
-  const token = readFileSync34(at, "utf8").trim();
+  const token = readFileSync35(at, "utf8").trim();
   if (token.length < 32)
     throw new Error("runner admin token must be at least 32 characters");
   return token;
@@ -42720,7 +43789,7 @@ function str4(args, name) {
     throw new Error(`${name} must be a nonempty string`);
   return value;
 }
-function strings4(args, name) {
+function strings5(args, name) {
   const value = args[name];
   if (value === undefined)
     throw new Error(`${name} must be a string array`);
@@ -42880,7 +43949,7 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
     case "revision":
       return runner.revision(str4(a, "run"), str4(a, "revision"));
     case "judge":
-      return runner.judge(str4(a, "run"), str4(a, "card_id"), str4(a, "seat"), str4(a, "actor"), str4(a, "dispatch"), str4(a, "choice"), strings4(a, "input_dispatches"), strings4(a, "lineage"), str4(a, "rationale"));
+      return runner.judge(str4(a, "run"), str4(a, "card_id"), str4(a, "seat"), str4(a, "actor"), str4(a, "dispatch"), str4(a, "choice"), strings5(a, "input_dispatches"), strings5(a, "lineage"), str4(a, "rationale"));
     case "answer":
       return runner.answer(str4(a, "run"), str4(a, "card_id"), str4(a, "choice"), str4(a, "actor"), str4(a, "rationale"));
     case "verify":
@@ -42989,7 +44058,7 @@ async function serve(argv, io) {
   const relativeSocket = relative14(workerRoot, socketPath);
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
     throw new Error("runner socket is inside worker root");
-  if (existsSync40(socketPath)) {
+  if (existsSync41(socketPath)) {
     const live = await new Promise((done, fail2) => {
       const probe = createConnection(socketPath);
       probe.once("connect", () => {
@@ -43005,10 +44074,10 @@ async function serve(argv, io) {
     });
     if (live)
       throw new Error("runner socket already has a live service");
-    if (existsSync40(socketPath))
+    if (existsSync41(socketPath))
       unlinkSync(socketPath);
   }
-  const socketParent = realpathSync16(dirname23(socketPath));
+  const socketParent = realpathSync16(dirname24(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
   if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
@@ -43024,7 +44093,7 @@ async function serve(argv, io) {
   if (seatConfigPath !== undefined) {
     const configPath = realpathSync16(seatConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isSeatConfig(configValue))
       throw new Error(`invalid seat configuration: ${JSON.stringify(isSeatConfig.errors)}`);
     launchers = configValue.launchers;
@@ -43048,7 +44117,7 @@ async function serve(argv, io) {
   if (verifyConfigPath !== undefined) {
     const configPath = realpathSync16(verifyConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isVerifyConfig(configValue))
       throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
     verifyCommand = configValue.command;
@@ -43058,7 +44127,7 @@ async function serve(argv, io) {
   if (eventConfigPath !== undefined) {
     const configPath = realpathSync16(eventConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isEventConfig(configValue))
       throw new Error(`invalid event configuration: ${JSON.stringify(isEventConfig.errors)}`);
     eventCommand = configValue.command;
@@ -43069,7 +44138,7 @@ async function serve(argv, io) {
   if (loopConfigPath !== undefined) {
     const configPath = realpathSync16(loopConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isEventConfig(configValue))
       throw new Error(`invalid loop configuration: ${JSON.stringify(isEventConfig.errors)}`);
     loopCommand = configValue.command;
@@ -43079,7 +44148,7 @@ async function serve(argv, io) {
   if (effectConfigPath !== undefined) {
     const configPath = realpathSync16(effectConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isEffectConfig(configValue))
       throw new Error(`invalid effect configuration: ${JSON.stringify(isEffectConfig.errors)}`);
     for (const adapter of configValue.adapters) {
@@ -43248,7 +44317,7 @@ async function serve(argv, io) {
       clearInterval(auditTimer);
     for (const pid of activeChildren)
       killGroup(pid);
-    if (existsSync40(socketPath))
+    if (existsSync41(socketPath))
       unlinkSync(socketPath);
     process.exit(0);
   };
@@ -43325,10 +44394,10 @@ async function runRunner(argv, io) {
 
 // src/council/cli.ts
 var import__202013 = __toESM(require_2020(), 1);
-import { createHash as createHash12 } from "crypto";
-import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync36, rmSync as rmSync14, writeFileSync as writeFileSync16 } from "fs";
+import { createHash as createHash13 } from "crypto";
+import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync37, rmSync as rmSync14, writeFileSync as writeFileSync17 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { basename as basename22, join as join46 } from "path";
+import { basename as basename22, join as join47 } from "path";
 var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
 var isCouncilCard = new import__202013.default({ strict: false }).compile({
   type: "object",
@@ -43341,8 +44410,8 @@ var isCouncilCard = new import__202013.default({ strict: false }).compile({
     approve: { type: "string", minLength: 1 }
   }
 });
-function sha256(text4) {
-  return `sha256:${createHash12("sha256").update(text4).digest("hex")}`;
+function sha2562(text4) {
+  return `sha256:${createHash13("sha256").update(text4).digest("hex")}`;
 }
 function seatEntry(role, seat2, result2) {
   if (!result2.ok)
@@ -43418,13 +44487,13 @@ async function run2(args, io) {
   const problems = rosterProblems([...pair, config.veto]);
   if (problems.length > 0)
     throw new Error(`invalid council configuration: ${problems.join("; ")}`);
-  const cardValue = JSON.parse(readFileSync36(args.card, "utf8"));
+  const cardValue = JSON.parse(readFileSync37(args.card, "utf8"));
   if (!isCouncilCard(cardValue))
     throw new Error(`invalid card: ${JSON.stringify(isCouncilCard.errors)}`);
   const card = cardValue;
   if (!card.options.includes(card.approve))
     throw new Error("the card's approving option is not one of its options");
-  const context = args.context.map((path) => ({ path, name: basename22(path), text: readFileSync36(path, "utf8") }));
+  const context = args.context.map((path) => ({ path, name: basename22(path), text: readFileSync37(path, "utf8") }));
   const items2 = [
     { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}
@@ -43433,13 +44502,13 @@ ${entry.text}` }))
   const payload = JSON.stringify({
     council: "blind",
     card,
-    context: context.map((entry) => ({ name: entry.name, sha256: sha256(entry.text), text: entry.text }))
+    context: context.map((entry) => ({ name: entry.name, sha256: sha2562(entry.text), text: entry.text }))
   });
   const refusals = checkOutbound(items2, payload);
   const seats = [];
   let decided = null;
   if (refusals.length === 0) {
-    const scratch = mkdtempSync3(join46(tmpdir3(), "ak-council-"));
+    const scratch = mkdtempSync3(join47(tmpdir3(), "ak-council-"));
     const live = new Set;
     const stopOn = (code) => () => {
       for (const pid of live)
@@ -43476,11 +44545,11 @@ ${entry.text}` }))
   const disclosed = decided === null ? { card: { id: card.id } } : {
     card,
     payload: {
-      sha256: sha256(payload),
+      sha256: sha2562(payload),
       bytes: Buffer.byteLength(payload, "utf8"),
       context: context.map((entry) => ({
         name: entry.name,
-        sha256: sha256(entry.text),
+        sha256: sha2562(entry.text),
         bytes: Buffer.byteLength(entry.text, "utf8")
       }))
     }
@@ -43502,7 +44571,7 @@ ${entry.text}` }))
   if (args.out === undefined)
     io.out(text4.trimEnd());
   else {
-    writeFileSync16(args.out, text4, { mode: 384 });
+    writeFileSync17(args.out, text4, { mode: 384 });
     io.out(`council ${record.outcome}: ${args.out}`);
   }
   return record.outcome === "approve" || record.outcome === "decline" ? 0 : 1;
@@ -43527,14 +44596,14 @@ async function runCouncil(argv, io) {
 }
 
 // src/semantic-lint/key.ts
-import { lstatSync as lstatSync6, readFileSync as readFileSync37 } from "fs";
+import { lstatSync as lstatSync6, readFileSync as readFileSync38 } from "fs";
 function readKeyFile(path) {
   const stat = lstatSync6(path, { throwIfNoEntry: false });
   if (stat === undefined)
     return null;
   if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 511) !== 384 || process.getuid !== undefined && stat.uid !== process.getuid())
     throw new Error("auth");
-  const lines = readFileSync37(path, "utf8").split(`
+  const lines = readFileSync38(path, "utf8").split(`
 `);
   for (const line of lines) {
     const match = /^(?:TYPESAFE_API_KEY|TYPESAFEAI_API_KEY)\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#'"`$]+))\s*$/.exec(line.trim());
@@ -43563,13 +44632,13 @@ var semantic_lint_default = {
 var import_ajv16 = __toESM(require_ajv(), 1);
 import { randomBytes as randomBytes5 } from "crypto";
 import { homedir as homedir5 } from "os";
-import { join as join50, resolve as resolve19 } from "path";
+import { join as join51, resolve as resolve19 } from "path";
 
 // src/semantic-lint/client.ts
 var import_ajv14 = __toESM(require_ajv(), 1);
 import { randomUUID as randomUUID2 } from "crypto";
-import { mkdirSync as mkdirSync25, writeFileSync as writeFileSync17 } from "fs";
-import { join as join47 } from "path";
+import { mkdirSync as mkdirSync26, writeFileSync as writeFileSync18 } from "fs";
+import { join as join48 } from "path";
 import { setTimeout as delay } from "timers/promises";
 // provenance/semantic-lint-response.schema.json
 var semantic_lint_response_schema_default = {
@@ -43640,7 +44709,7 @@ async function askBatch(input, options) {
   for (let attempt = 1;attempt <= 2; attempt += 1) {
     if (options.signal?.aborted)
       return { status: "error", reason: "cancelled", findings: [] };
-    const path = join47(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
+    const path = join48(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
     const receipt = {
       request,
       requested_model: semantic_lint_default.model,
@@ -43654,8 +44723,8 @@ async function askBatch(input, options) {
       http_status: null
     };
     const save2 = () => {
-      mkdirSync25(options.receipts, { recursive: true, mode: 448 });
-      writeFileSync17(path, `${JSON.stringify(receipt)}
+      mkdirSync26(options.receipts, { recursive: true, mode: 448 });
+      writeFileSync18(path, `${JSON.stringify(receipt)}
 `, { mode: 384 });
     };
     try {
@@ -43738,9 +44807,9 @@ async function askBatch(input, options) {
 // src/semantic-lint/claim.ts
 init_trace();
 var import_ajv15 = __toESM(require_ajv(), 1);
-import { createHash as createHash13, randomBytes as randomBytes4 } from "crypto";
-import { mkdirSync as mkdirSync26, readdirSync as readdirSync13, readFileSync as readFileSync38, renameSync as renameSync6, statSync as statSync20, writeFileSync as writeFileSync18 } from "fs";
-import { join as join48 } from "path";
+import { createHash as createHash14, randomBytes as randomBytes4 } from "crypto";
+import { mkdirSync as mkdirSync27, readdirSync as readdirSync13, readFileSync as readFileSync39, renameSync as renameSync7, statSync as statSync20, writeFileSync as writeFileSync19 } from "fs";
+import { join as join49 } from "path";
 var CLAIM_VERSION = 1;
 var STALE_MS = 120000;
 var ajv9 = new import_ajv15.default({ strict: false });
@@ -43756,7 +44825,7 @@ var isRecord = ajv9.compile({
 });
 var GENERATION = /^[1-9][0-9]*$/;
 function claimKey(body) {
-  return createHash13("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
+  return createHash14("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
 }
 function line(record) {
   return `${JSON.stringify(record)}
@@ -43766,7 +44835,7 @@ function taken(cause) {
   return cause instanceof Error && "code" in cause && cause.code === "EEXIST";
 }
 function current(path) {
-  const text4 = readFileSync38(path, "utf8");
+  const text4 = readFileSync39(path, "utf8");
   try {
     const raw = JSON.parse(text4);
     if (isRecord(raw))
@@ -43775,9 +44844,9 @@ function current(path) {
   return { state: "in-progress", trace: "", started_at: statSync20(path).mtimeMs, ended_at: null };
 }
 function acquireClaim(receipts, key, trace2, now = Date.now) {
-  const dir = join48(receipts, "claims", key);
+  const dir = join49(receipts, "claims", key);
   try {
-    mkdirSync26(dir, { recursive: true, mode: 448 });
+    mkdirSync27(dir, { recursive: true, mode: 448 });
   } catch {
     return { kind: "error" };
   }
@@ -43786,7 +44855,7 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     try {
       const highest2 = Math.max(0, ...readdirSync13(dir).filter((name) => GENERATION.test(name)).map(Number));
       if (highest2 > 0) {
-        const record = current(join48(dir, String(highest2)));
+        const record = current(join49(dir, String(highest2)));
         if (record.state === "complete")
           return { kind: "duplicate", trace: parseTraceparent(record.trace) === null ? null : record.trace };
         if (record.state === "in-progress" && now() - record.started_at < STALE_MS)
@@ -43796,9 +44865,9 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     } catch {
       return { kind: "error" };
     }
-    const path = join48(dir, String(next));
+    const path = join49(dir, String(next));
     try {
-      writeFileSync18(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
+      writeFileSync19(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
         flag: "wx",
         mode: 384
       });
@@ -43814,8 +44883,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
   try {
     const { started_at } = current(claim3.path);
     const temp = `${claim3.path}.${randomBytes4(8).toString("hex")}.tmp`;
-    writeFileSync18(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
-    renameSync6(temp, claim3.path);
+    writeFileSync19(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
+    renameSync7(temp, claim3.path);
     return true;
   } catch {
     return false;
@@ -43824,8 +44893,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync39, realpathSync as realpathSync17 } from "fs";
-import { isAbsolute as isAbsolute17, join as join49, relative as relative15, resolve as resolve18 } from "path";
+import { lstatSync as lstatSync7, readFileSync as readFileSync40, realpathSync as realpathSync17 } from "fs";
+import { isAbsolute as isAbsolute17, join as join50, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -43869,7 +44938,7 @@ function collectInput(cwd) {
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
         else {
-          const content = readFileSync39(join49(root, path), "utf8");
+          const content = readFileSync40(join50(root, path), "utf8");
           if (binary(content))
             reason2 = "binary";
           else if (SECRET_CONTENT.test(content))
@@ -43977,8 +45046,8 @@ async function hookMain(argv) {
   const result2 = await runHook({
     root: process.cwd(),
     enabled,
-    keyFile: join50(homedir5(), semantic_lint_default.key_file),
-    receipts: join50(process.env.XDG_STATE_HOME ?? join50(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
+    keyFile: join51(homedir5(), semantic_lint_default.key_file),
+    receipts: join51(process.env.XDG_STATE_HOME ?? join51(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal
   });
@@ -44007,13 +45076,13 @@ var isCommand = ajv10.compile({ type: "string" });
 if (false) {}
 
 // src/maintenance/host-probe-version.ts
-import { readdirSync as readdirSync14, readFileSync as readFileSync40 } from "fs";
-import { join as join52 } from "path";
+import { readdirSync as readdirSync14, readFileSync as readFileSync41 } from "fs";
+import { join as join53 } from "path";
 
 // src/review-isolation-probe/host-cli.ts
 import { spawnSync as spawnSync5 } from "child_process";
 import { accessSync as accessSync2, constants as constants2 } from "fs";
-import { join as join51 } from "path";
+import { join as join52 } from "path";
 var VERSION_TIMEOUT_MS = 5000;
 var HOST_VERSION_NOT_ON_PATH = "not on PATH";
 var HOST_VERSION_FIXTURE = "fixture (host CLI not invoked)";
@@ -44043,7 +45112,7 @@ function which(names, pathEnv) {
     for (const dir of path.split(":")) {
       if (dir === "")
         continue;
-      const candidate = join51(dir, name);
+      const candidate = join52(dir, name);
       if (isExecutable(candidate))
         return candidate;
     }
@@ -44164,9 +45233,9 @@ function readLatestProbedHostVersion(factsRoot, host) {
     return null;
   }
   for (const date of dates.toSorted().toReversed()) {
-    const path = join52(factsRoot, date, `review-isolation-${host}.md`);
+    const path = join53(factsRoot, date, `review-isolation-${host}.md`);
     try {
-      const version2 = parseProbedHostVersion(readFileSync40(path, "utf8"));
+      const version2 = parseProbedHostVersion(readFileSync41(path, "utf8"));
       if (version2 !== null)
         return { date, version: version2, path };
     } catch {
@@ -44337,8 +45406,8 @@ function inProject(row, root) {
 }
 function claudeRecords(root) {
   const output = jsonCommand("claude", ["plugin", "list", "--json"], root);
-  const rows = output ? parseJson3(output, validPluginList) ?? [] : [];
-  return rows.filter((row) => inProject(row, root));
+  const rows2 = output ? parseJson3(output, validPluginList) ?? [] : [];
+  return rows2.filter((row) => inProject(row, root));
 }
 function isClaudeSource(marketplace) {
   if (marketplace.name !== "agent-kit")
@@ -44355,9 +45424,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join53(process.env.CODEX_HOME ?? join53(homedir6(), ".codex"), "config.toml");
+  const file = join54(process.env.CODEX_HOME ?? join54(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync41(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync42(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -44396,10 +45465,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join53(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join54(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson3(readFileSync41(file, "utf8"), validSettings);
+    settings = parseJson3(readFileSync42(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -44410,7 +45479,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync41(join53(root, BINDING_FILE)) ? root : null;
+  return existsSync42(join54(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -44422,7 +45491,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join53(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join54(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -44468,11 +45537,11 @@ function checkLinearis(root, backend) {
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync18(topResult.output) : realpathSync18(root);
   for (const base2 of new Set([root, top])) {
-    const binary2 = join53(base2, "node_modules", ".bin", "linearis");
-    if (!existsSync41(binary2))
+    const binary2 = join54(base2, "node_modules", ".bin", "linearis");
+    if (!existsSync42(binary2))
       continue;
     const target = realpathSync18(binary2);
-    if ([root, top].every((folder) => relative16(join53(realpathSync18(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative16(join54(realpathSync18(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -44485,7 +45554,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute18(root)) {
-      const value = parseJson3(readFileSync41(join53(root, suffix), "utf8"), validManifest);
+      const value = parseJson3(readFileSync42(join54(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -44559,13 +45628,13 @@ async function doctor2(json = false, lessonsDir) {
     hasCodex || codexConfigured ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure) : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
-    ...probedHostVersionFindings(join53(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
+    ...probedHostVersionFindings(join54(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
-    checkSemanticLint(join53(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
+    checkSemanticLint(join54(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
   ];
   items2.push(...doctorLessonsFindings(lessonsDir, items2));
   if (!hasClaude && !hasCodex) {
@@ -44583,8 +45652,8 @@ async function maintenanceCommandNotice() {
   if (!path || basename23(path) !== "ak")
     return null;
   try {
-    const current2 = readFileSync41(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync41(join53(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current2 = readFileSync42(path, "utf8");
+    const published = isAbsolute18(ROOT) ? readFileSync42(join54(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });

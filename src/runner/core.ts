@@ -20,7 +20,6 @@ import {
   projectHashOf,
   reviewMode,
   RUN_SCHEMA_VERSION,
-  ticketCarriesBehaviorChecks,
 } from "../lifecycle/behavior-policy.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
@@ -766,7 +765,10 @@ export class Runner {
     const resolved = resolveKnowledgebase(projectRoot, registryPath());
     if (resolved.resolved === null || resolved.state !== "available")
       throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
-    const looked = lookupCommittedArtifact(resolved.resolved, ticketId);
+    const looked =
+      expected === undefined
+        ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket" })
+        : lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", hash: expected });
     if (looked.status === "unavailable") throw new Error(looked.reason);
     if (looked.status === "absent") return undefined;
     if (looked.artifact.schema !== "ticket" || looked.artifact.id !== ticketId)
@@ -1479,16 +1481,15 @@ export class Runner {
       digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash
     )
       throw new Error("current runner-collected verification receipt required");
-    const work = this.tryWorkTicket(run.charter);
     const raw: unknown = run.behavior;
     const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
     if (run.behavior !== undefined && binding === undefined)
       throw new Error("frozen behavior obligations are unavailable");
-    // Presence of a freeze is not consumption of named checks (GS-017 T03). This
-    // gate only refuses a missing freeze when the ticket names mandatory checks.
-    if (work !== undefined && ticketCarriesBehaviorChecks(work.ticket)) {
-      if (binding === undefined || binding.mode !== "on" || binding.required_checks.length === 0)
-        throw new Error("frozen behavior obligations are unavailable");
+    // Presence of a freeze is not consumption of named checks (GS-017 T03).
+    // Pre-feature and off runs do not look the ticket up; a frozen on-mode
+    // binding is the obligation, including when the worker-writable project
+    // file is gone.
+    if (binding !== undefined && binding.mode === "on") {
       for (const check of binding.required_checks) {
         if (check.property_ids.length === 0)
           throw new Error(`required behavior check ${check.id} is missing its frozen definition`);

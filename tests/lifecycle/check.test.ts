@@ -22,6 +22,7 @@ import {
 } from "../../src/lifecycle/gate.ts";
 import * as lifecycle from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
+import { asJsonObject } from "../../src/lifecycle/behavior-policy.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 import { verificationPopulations } from "../helpers/verification-cases.ts";
@@ -866,6 +867,30 @@ describe("ak lifecycle check, standalone", () => {
     expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
     record(dir, "verify");
     expect(ak(dir, "record", "--gate", "ship-preflight").code).toBe(0);
+  });
+
+  test("a forged binding_run_id does not skip the ship-preflight re-check", () => {
+    // Skip used to be `opened?.binding_run_id === undefined`. Restoring that
+    // records ship-preflight here (code 0) because the forged id is set.
+    const source = readFileSync(join(REPO, "src/lifecycle/gate.ts"), "utf8");
+    expect(source).toContain("!validatedBoundParent(opened, dir, project)");
+    expect(source).not.toContain("opened?.binding_run_id === undefined &&");
+    const dir = repo();
+    const run = open(dir, "ship-forged-parent");
+    const runPath = join(defaultEvidenceDir(dir), "runs", run, "run.json");
+    const parsed: unknown = JSON.parse(readFileSync(runPath, "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("run.json is not an object");
+    parsed.binding_run_id = "forged-parent";
+    parsed.binding_evidence_location = defaultEvidenceDir(dir);
+    writeFileSync(runPath, `${JSON.stringify(parsed, null, 2)}\n`);
+    writeFileSync(
+      join(defaultEvidenceDir(dir), "..", "forged-parent.json"),
+      `${JSON.stringify({ id: "forged-parent", behavior: { mode: "on", required_checks: [] } })}\n`,
+    );
+    const shipped = ak(dir, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toMatch(/refused:/);
+    expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
   });
 
   test("ship-preflight is refused when the only receipt is bound to another head", () => {
