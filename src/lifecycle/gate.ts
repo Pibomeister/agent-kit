@@ -977,10 +977,11 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
 const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
-/** Whether a stored ticket declares any acceptance criteria or verification at all, well formed or not. */
+/** Whether a stored ticket declares any acceptance criteria or verification at all, well formed or not: only an absent field or an empty array declares nothing. */
 const declaresEvidence = (ticket: NonNullable<ReturnType<typeof object>>): boolean =>
-  (Array.isArray(ticket.acceptance_criteria) && ticket.acceptance_criteria.length > 0) ||
-  (Array.isArray(ticket.verification) && ticket.verification.length > 0);
+  [ticket.acceptance_criteria, ticket.verification].some(
+    (field) => field !== undefined && !(Array.isArray(field) && field.length === 0),
+  );
 
 /** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
@@ -1070,9 +1071,9 @@ function evaluateEvidence(
       .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
   );
   if (criteria.length === 0 || checks.size === 0) {
-    // Under the unattended policy only a ticket that declares neither criteria nor verification at all (the
-    // raw arrays, as ticketDeclaresEvidence reads them) is a coverage limit: verify counts the repository checks
-    // its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
+    // Under the unattended policy only a ticket that declares neither criteria nor verification at all (each
+    // field absent or an empty array, as declaresEvidence reads them) is a coverage limit: verify counts the
+    // repository checks its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
     // passing. Once the build recorded an implementer seat, a verify recorded by that seat or by no seat is
     // still refused, as a receipt naming no verifier seat is. A half-declared or malformed ticket, and every
     // ticket outside the policy, stays unavailable.

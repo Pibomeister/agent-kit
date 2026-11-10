@@ -864,6 +864,9 @@ const HALF_DECLARED: [string, JsonObject][] = [
       verification: [{ id: "Unit Tests", kind: "command", check: "bun test", supports: ["AC-1"] }],
     },
   ],
+  ["criteria given as a string", { acceptance_criteria: "AC-1", verification: [] }],
+  ["verification given as an object", { acceptance_criteria: [], verification: { id: "unit", check: "bun test" } }],
+  ["criteria given as null", { acceptance_criteria: null, verification: [] }],
 ];
 
 /** An unscored ticket's run: build-checks recorded with `seat` flags and no class, then verify with `receipt`. */
