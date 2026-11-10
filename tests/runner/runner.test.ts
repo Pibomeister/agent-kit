@@ -25,7 +25,7 @@ import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { openRun, takeSnapshot } from "../../src/lifecycle/gate.ts";
-import { asJsonObject, classifyRun, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
+import { asJsonObject, classifyRun, RUN_SCHEMA_VERSION, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 import { parseJson } from "../helpers/json.ts";
@@ -1178,9 +1178,51 @@ describe("runner guards", () => {
   test("ordinary ticket-kind start proceeds without a private ticket file when no project is bound", () => {
     const f = fixture();
     unlinkSync(join(f.privateDir, "toy-ticket.json"));
-    const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const writes: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((
+      chunk: string | Uint8Array,
+      encoding?: BufferEncoding | ((err?: Error) => void),
+      cb?: (err?: Error) => void,
+    ) => {
+      writes.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      if (typeof encoding === "function") return write(chunk, encoding);
+      return write(chunk, encoding, cb);
+    }) as typeof process.stderr.write;
+    let started;
+    try {
+      started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    } finally {
+      process.stderr.write = write;
+    }
+    expect(writes.join("")).toContain("Runner.start: ticket toy-ticket is unresolved");
     expect(started.behavior?.mode).toBe("off");
     expect(started.behavior?.required_checks).toEqual([]);
+    expect(started.behavior?.ticket_resolution).toBe("unresolved");
+    const later = {
+      schema: "ticket",
+      id: "toy-ticket",
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+          },
+        },
+      ],
+    };
+    const classified = classifyRun(
+      { schema_version: RUN_SCHEMA_VERSION, behavior: started.behavior },
+      "toy-run",
+      later,
+    );
+    expect(classified.kind).toBe("incomplete");
+    expect(classified.kind === "incomplete" ? classified.reason : "").toContain("not frozen-clean");
   });
 
   test("ticket-kind start reads a committed KB ticket when the private file is absent", () => {

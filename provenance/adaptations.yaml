@@ -1393,7 +1393,7 @@ adaptations:
     rationale: "extractUserMessages ports extract_user_messages, with should_include_message's filter: user turns of a JSONL transcript, meta turns and non-text parts dropped. The messages feed the skill scout's repetition count; the donor's in-command skill writing is not ported."
   - path: src/lifecycle/behavior-policy.ts
     source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
-    rationale: Off/shadow/on freeze at open; missing project cannot reset a required run to off.
+    rationale: Off/shadow/on. Runner.start freezes; missing project cannot reset a required run to off.
   - path: src/lifecycle/gate.ts
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L298-311
     rationale: The class join key for later outcome calibration became optional revision-bound gate evidence.

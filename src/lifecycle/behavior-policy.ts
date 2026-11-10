@@ -42,6 +42,8 @@ export interface BehaviorBinding {
   policy_hash: string | null;
   required_checks: FrozenBehaviorCheck[];
   captured_at: string;
+  /** Set when Runner.start named a ticket it could not load. Mode may still be off. */
+  ticket_resolution?: "unresolved";
   binding_hash: string;
 }
 
@@ -211,6 +213,7 @@ export function rebindSnapshot(binding: BehaviorBinding, runId: string): Behavio
     policy_hash: binding.policy_hash,
     required_checks: binding.required_checks,
     captured_at: binding.captured_at,
+    ticket_resolution: binding.ticket_resolution,
   });
 }
 
@@ -223,6 +226,7 @@ export function bindBehaviorPolicy(args: {
   lookup: ProjectLookup;
   callerProjectHash?: string;
   capturedAt: string;
+  ticketResolution?: "unresolved";
 }): BindResult {
   const checks = behaviorChecks(args.ticket, ticketSurfaces(args.ticket));
   if ("reason" in checks) return { ok: false, reason: checks.reason };
@@ -296,6 +300,7 @@ export function bindBehaviorPolicy(args: {
     policy_hash: args.projectHash ?? null,
     required_checks: mode === "on" ? checks : [],
     captured_at: args.capturedAt,
+    ticket_resolution: args.ticketResolution,
   };
   return { ok: true, binding: sealBinding(unsigned) };
 }
@@ -363,6 +368,7 @@ export function parseBehaviorBinding(value: Json | undefined): BehaviorBinding |
     required_checks.push(check);
   }
   if (!nonempty(value.binding_hash)) return undefined;
+  if (value.ticket_resolution !== undefined && value.ticket_resolution !== "unresolved") return undefined;
   const unsigned: Omit<BehaviorBinding, "binding_hash"> = {
     run_id: value.run_id,
     ticket_hash: value.ticket_hash,
@@ -371,6 +377,7 @@ export function parseBehaviorBinding(value: Json | undefined): BehaviorBinding |
     policy_hash: value.policy_hash === null ? null : value.policy_hash,
     required_checks,
     captured_at: value.captured_at,
+    ticket_resolution: value.ticket_resolution === "unresolved" ? "unresolved" : undefined,
   };
   const expected = bindingHash(unsigned);
   if (value.binding_hash !== expected) return undefined;
@@ -409,6 +416,11 @@ export function classifyRun(record: JsonObject, runId: string, ticket?: JsonObje
       reason: `behavior snapshot is for ticket ${binding.ticket_hash}, not ${namedTicket.hash}`,
     };
   if (frozen !== undefined && "reason" in frozen) return { kind: "incomplete", reason: frozen.reason };
+  if (binding.ticket_resolution === "unresolved" && ticketWants)
+    return {
+      kind: "incomplete",
+      reason: `run ${runId} ticket was unresolved at Runner.start; snapshot is not frozen-clean`,
+    };
   if (ticketWants && binding.mode !== "on")
     return {
       kind: "incomplete",

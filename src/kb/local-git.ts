@@ -824,10 +824,6 @@ function projectIdentityId(artifact: JsonObject): string | undefined {
   return isText(id) && id !== "" ? id : undefined;
 }
 
-/**
- * The latest committed project record whose identity.id is `projectId`.
- * Reads the artifacts file from HEAD, the same store publishRunArtifact writes.
- */
 export type ArtifactLookup =
   | { status: "found"; artifact: JsonObject }
   | { status: "absent" }

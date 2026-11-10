@@ -16990,7 +16990,7 @@ var init_project_schema = __esm(() => {
         }
       },
       review: {
-        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. review.behavior is bound onto an enabled task run at open; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
+        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
         type: "object",
         additionalProperties: false,
         properties: {
@@ -17833,7 +17833,8 @@ function bindBehaviorPolicy(args) {
     policy_id: policyId,
     policy_hash: args.projectHash ?? null,
     required_checks: mode === "on" ? checks : [],
-    captured_at: args.capturedAt
+    captured_at: args.capturedAt,
+    ticket_resolution: args.ticketResolution
   };
   return { ok: true, binding: sealBinding(unsigned) };
 }
@@ -17915,6 +17916,8 @@ function parseBehaviorBinding(value) {
   }
   if (!nonempty(value.binding_hash))
     return;
+  if (value.ticket_resolution !== undefined && value.ticket_resolution !== "unresolved")
+    return;
   const unsigned = {
     run_id: value.run_id,
     ticket_hash: value.ticket_hash,
@@ -17922,7 +17925,8 @@ function parseBehaviorBinding(value) {
     policy_id: value.policy_id === null ? null : value.policy_id,
     policy_hash: value.policy_hash === null ? null : value.policy_hash,
     required_checks,
-    captured_at: value.captured_at
+    captured_at: value.captured_at,
+    ticket_resolution: value.ticket_resolution === "unresolved" ? "unresolved" : undefined
   };
   const expected = bindingHash(unsigned);
   if (value.binding_hash !== expected)
@@ -24008,7 +24012,7 @@ function committedBindingText(projectRoot) {
   return shown.status === 0 ? shown.stdout : null;
 }
 function loadKbBinding(projectRoot) {
-  const text = readTextIfPresent(join7(projectRoot, BINDING_FILE2)) ?? committedBindingText(projectRoot);
+  const text = committedBindingText(projectRoot) ?? readTextIfPresent(join7(projectRoot, BINDING_FILE2));
   if (text === null) {
     return {
       binding: null,
@@ -42755,11 +42759,17 @@ class Runner {
     const looked = this.projectLookup(charter.project.id);
     const raw = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    let ticketResolution;
     if (work === undefined && source !== undefined && source.kind === "ticket") {
       if (looked.lookup === "unavailable")
         throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
       if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
         throw new Error("approved ticket is absent from the runner store");
+      const ref = asJsonObject(source.ref) ? source.ref : undefined;
+      const ticketId = ref !== undefined && isJsonText(ref.id) ? ref.id : "unnamed";
+      process.stderr.write(`Runner.start: ticket ${ticketId} is unresolved
+`);
+      ticketResolution = "unresolved";
     }
     const bound2 = bindBehaviorPolicy({
       runId: id,
@@ -42768,7 +42778,8 @@ class Runner {
       project: looked.project,
       projectHash: looked.projectHash,
       lookup: looked.lookup,
-      capturedAt: createdAt
+      capturedAt: createdAt,
+      ticketResolution
     });
     if (!bound2.ok)
       throw new Error(bound2.reason);

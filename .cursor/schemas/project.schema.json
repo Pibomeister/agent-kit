@@ -407,7 +407,7 @@
       }
     },
     "review": {
-      "description": "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. review.behavior is bound onto an enabled task run at open; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
+      "description": "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
