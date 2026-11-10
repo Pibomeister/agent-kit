@@ -25,17 +25,12 @@ export interface HookOptions extends Omit<BatchOptions, "key" | "traceparent"> {
   traceparent?: string;
 }
 
-export type Enablement = { enabled: boolean; explicit: boolean };
-
-/** "0" and "1" are explicit; unset or any other value runs by default, with quiet skips. */
-export function enablement(flag: string | undefined): Enablement {
-  if (flag === "0") return { enabled: false, explicit: true };
-  if (flag === "1") return { enabled: true, explicit: true };
-  return { enabled: true, explicit: false };
+/** Only "1" turns the hook on. Unset, empty, or any other value is off, with quiet skips. */
+export function enablement(flag: string | undefined): boolean {
+  return flag === "1";
 }
 
 export interface OutputOptions {
-  explicit?: boolean;
   host?: "claude-code" | "codex";
 }
 
@@ -95,9 +90,9 @@ export async function runHook(options: HookOptions): Promise<HookResult> {
 /** What the host reads on stdout: the structured result, or for Codex only the message. */
 export type HostOutput = (HookResult & { systemMessage?: string }) | { systemMessage?: string };
 
-/** Default mode keeps skips quiet; errors and reviewed results always carry the message. */
+/** Disabled skips stay quiet. With AK_JEV_ENABLED=1, every result including skips carries the message. */
 export function hookOutput(result: HookResult, options: OutputOptions = {}): HostOutput {
-  if (options.explicit === false && result.status === "skipped") return options.host === "codex" ? {} : { ...result };
+  if (result.status === "skipped" && result.reason === "disabled") return options.host === "codex" ? {} : { ...result };
   const details = result.findings.map((finding) => {
     const label = scoreCriteria[Math.floor(finding.score)] ?? "unknown";
     return `${JSON.stringify(finding.file)} (${finding.rule}): score ${finding.score}/3 (${label}); confidence ${finding.confidence ?? "unknown"}`;
@@ -120,7 +115,7 @@ export function hookOutput(result: HookResult, options: OutputOptions = {}): Hos
 export async function hookMain(argv: string[]): Promise<number> {
   const codex = argv.length === 2 && argv[0] === "--host" && argv[1] === "codex";
   if (argv.length > 0 && !codex) return 2;
-  const { enabled, explicit } = enablement(process.env.AK_JEV_ENABLED);
+  const enabled = enablement(process.env.AK_JEV_ENABLED);
   const controller = new AbortController();
   const cancel = () => controller.abort();
   process.once("SIGTERM", cancel);
@@ -133,7 +128,7 @@ export async function hookMain(argv: string[]): Promise<number> {
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal,
   });
-  console.log(JSON.stringify(hookOutput(result, { explicit, host: codex ? "codex" : "claude-code" })));
+  console.log(JSON.stringify(hookOutput(result, { host: codex ? "codex" : "claude-code" })));
   return 0;
 }
 

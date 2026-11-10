@@ -44977,11 +44977,7 @@ function collectInput(cwd) {
 init_trace();
 init_wire();
 function enablement(flag3) {
-  if (flag3 === "0")
-    return { enabled: false, explicit: true };
-  if (flag3 === "1")
-    return { enabled: true, explicit: true };
-  return { enabled: true, explicit: false };
+  return flag3 === "1";
 }
 async function runHook(options) {
   const base2 = { advisory: true, excluded: [], excludedOmitted: 0 };
@@ -45025,7 +45021,7 @@ async function runHook(options) {
   }
 }
 function hookOutput(result2, options = {}) {
-  if (options.explicit === false && result2.status === "skipped")
+  if (result2.status === "skipped" && result2.reason === "disabled")
     return options.host === "codex" ? {} : { ...result2 };
   const details = result2.findings.map((finding) => {
     const label = scoreCriteria[Math.floor(finding.score)] ?? "unknown";
@@ -45047,7 +45043,7 @@ async function hookMain(argv) {
   const codex = argv.length === 2 && argv[0] === "--host" && argv[1] === "codex";
   if (argv.length > 0 && !codex)
     return 2;
-  const { enabled, explicit } = enablement(process.env.AK_JEV_ENABLED);
+  const enabled = enablement(process.env.AK_JEV_ENABLED);
   const controller = new AbortController;
   const cancel = () => controller.abort();
   process.once("SIGTERM", cancel);
@@ -45060,7 +45056,7 @@ async function hookMain(argv) {
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal
   });
-  console.log(JSON.stringify(hookOutput(result2, { explicit, host: codex ? "codex" : "claude-code" })));
+  console.log(JSON.stringify(hookOutput(result2, { host: codex ? "codex" : "claude-code" })));
   return 0;
 }
 var ajv10 = new import_ajv16.default({ strict: false });
@@ -45581,15 +45577,15 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
 }
 function checkSemanticLint(keyFile, flag3) {
   const check2 = "semantic lint";
-  if (flag3 === "0")
-    return finding("WARN", check2, "disabled by AK_JEV_ENABLED=0", "Unset AK_JEV_ENABLED to run the Stop hook.");
+  if (flag3 !== "1")
+    return finding("WARN", check2, "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1", "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.");
   let present;
   try {
     present = readKeyFile(keyFile) !== null;
   } catch {
     return finding("FAIL", check2, `${keyFile} is not a private owner-only file with one key assignment`, "Make it a regular file you own, mode 0600, holding one TYPESAFE_API_KEY= line.");
   }
-  return present ? finding("PASS", check2, "key file present and owner-only; the Stop hook runs on changed files", "None.") : finding("WARN", check2, `no key file at ${keyFile}; the Stop hook skips quietly`, "Place an existing key in that file, mode 0600, to turn the check on.");
+  return present ? finding("PASS", check2, "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1", "None.") : finding("WARN", check2, `no key file at ${keyFile}; the Stop hook skips (missing-key)`, "Place an existing key in that file, mode 0600, to turn the check on.");
 }
 function print(items2, json = false) {
   if (json)

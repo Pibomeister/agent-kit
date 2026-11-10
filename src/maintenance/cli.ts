@@ -499,8 +499,13 @@ export async function manifest(
 /** Reads the key through the hook's own strict reader and keeps only whether it holds one. */
 export function checkSemanticLint(keyFile: string, flag: string | undefined): Finding {
   const check = "semantic lint";
-  if (flag === "0")
-    return finding("WARN", check, "disabled by AK_JEV_ENABLED=0", "Unset AK_JEV_ENABLED to run the Stop hook.");
+  if (flag !== "1")
+    return finding(
+      "WARN",
+      check,
+      "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1",
+      "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.",
+    );
   let present: boolean;
   try {
     present = readKeyFile(keyFile) !== null;
@@ -513,11 +518,16 @@ export function checkSemanticLint(keyFile: string, flag: string | undefined): Fi
     );
   }
   return present
-    ? finding("PASS", check, "key file present and owner-only; the Stop hook runs on changed files", "None.")
+    ? finding(
+        "PASS",
+        check,
+        "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1",
+        "None.",
+      )
     : finding(
         "WARN",
         check,
-        `no key file at ${keyFile}; the Stop hook skips quietly`,
+        `no key file at ${keyFile}; the Stop hook skips (missing-key)`,
         "Place an existing key in that file, mode 0600, to turn the check on.",
       );
 }

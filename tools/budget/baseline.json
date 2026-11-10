@@ -3,18 +3,18 @@
   "surfaces": {
     "bundle/claude-code:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21388,
+      "tokens": 5319
     },
     "bundle/claude-code:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22568,
+      "tokens": 5618
     },
     "bundle/claude-code:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21161,
-      "tokens": 5286
+      "bytes": 21212,
+      "tokens": 5299
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -878,18 +878,18 @@
     },
     "bundle/codex:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21388,
+      "tokens": 5319
     },
     "bundle/codex:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22568,
+      "tokens": 5618
     },
     "bundle/codex:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21161,
-      "tokens": 5286
+      "bytes": 21212,
+      "tokens": 5299
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1753,18 +1753,18 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21388,
+      "tokens": 5319
     },
     "bundle/cursor:.cursor/references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22568,
+      "tokens": 5618
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21221,
-      "tokens": 5301
+      "bytes": 21272,
+      "tokens": 5314
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -2628,18 +2628,18 @@
     },
     "bundle/droid:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21388,
+      "tokens": 5319
     },
     "bundle/droid:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22568,
+      "tokens": 5618
     },
     "bundle/droid:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21161,
-      "tokens": 5286
+      "bytes": 21212,
+      "tokens": 5299
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -3503,18 +3503,18 @@
     },
     "bundle/grok:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21388,
+      "tokens": 5319
     },
     "bundle/grok:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22568,
+      "tokens": 5618
     },
     "bundle/grok:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21161,
-      "tokens": 5286
+      "bytes": 21212,
+      "tokens": 5299
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -4378,18 +4378,18 @@
     },
     "bundle/kimi:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21387,
-      "tokens": 5318
+      "bytes": 21388,
+      "tokens": 5319
     },
     "bundle/kimi:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 22511,
-      "tokens": 5603
+      "bytes": 22568,
+      "tokens": 5618
     },
     "bundle/kimi:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21161,
-      "tokens": 5286
+      "bytes": 21212,
+      "tokens": 5299
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
