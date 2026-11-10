@@ -162,9 +162,9 @@ a ticket whose class makes a human the author keeps that class, and a delegation
 Gate: a decision ticket is never emitted as executable work. A ticket that fails the zero-context
 check is reclassified, never shipped as an implementation ticket because the deadline is close.
 When `review.cold_read` is on, that check is the independent cold read, not the author's reread.
-When that read is unavailable, the author check decides; cite the read with its reason. On raises
-a green class to `yellow-agent` through project guidance. Off and shadow keep the author
-type-check as the outcome gate. Off and shadow do not change the class or the scorer inputs.
+When that read is unavailable, the author check decides; cite the read with its reason. When on
+and the read is unavailable, a green class rises to `yellow-agent` through project guidance. Off
+and shadow keep the author type-check as the outcome gate. Off and shadow do not change the class or the scorer inputs.
 
 Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
 `vague_terms`, and `assumptions` items using `text` and `resolved_as`, except an unscored ticket under a delegation coverage limit, which carries every block but `delegation`. Vagueness, an open assumption

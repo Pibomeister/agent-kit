@@ -104,7 +104,7 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
   });
 
   test("the execution contract names the cold-read output and keeps off as the default", () => {
-    expect(contract).toContain("version: 0.8.0");
+    expect(contract).toContain("version: 0.9.0");
     expect(contract).toContain("id: cold-read\n    schema: cold-read");
     expect(contract).toContain("Off and shadow keep the author type-check as the outcome gate");
     expect(skill).toContain("Off stores none");
@@ -173,21 +173,39 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
   const coldReadSchema = readFileSync(join(REPO, "schemas/cold-read.schema.json"), "utf8");
 
   test("on: an unavailable read seeds yellow-agent from green through project guidance", () => {
+    const note = reference.replace(/\s+/g, " ");
+    expect(note).toContain("four cases is a hand-derived class");
+    expect(note).not.toContain("three cases is a hand-derived class");
+    expect(note).toContain(
+      "When `review.cold_read` is on, the cited read is unavailable, and the computed class is `green`, seed `yellow-agent`",
+    );
+    expect(note).toContain("A live lowering supersedes that raise");
+    expect(note).toContain("leave `lowered_by` unsuperseded");
+    expect(note).toContain("the raised class persists until a named human lowers it");
     const on = subsection(reference, "On").replace(/\s+/g, " ");
     expect(on).toContain("If that ticket's class is `green`, seed `yellow-agent`");
-    expect(on).toContain("That seed is project guidance raising the class");
+    expect(on).toContain("unless a live named-human lowering is in force");
+    expect(on).toContain("A live lowering supersedes this raise");
+    expect(on).toContain("the raised class persists until a named human lowers it");
+    expect(on).toContain("An unscored ticket has no class, so the raise is skipped");
+    expect(on).toContain("That yellow-agent seed is project guidance raising the class");
     expect(on).toContain("ruling `delegation-class-is-authority-not-finding`");
     expect(on).toContain("Off and shadow do not seed from the read");
     expect(on).not.toContain("Neither case changes the class");
     const packedOn = subsection(packagedReference(), "On").replace(/\s+/g, " ");
     expect(packedOn).toContain("If that ticket's class is `green`, seed `yellow-agent`");
+    expect(packedOn).toContain("unless a live named-human lowering is in force");
     const skillText = skill.replace(/\s+/g, " ");
     expect(skillText).toContain("green-to-yellow-agent");
-    expect(skillText).toContain("On raises a green class to `yellow-agent` through project guidance");
-    expect(packagedBody().replace(/\s+/g, " ")).toContain(
-      "On raises a green class to `yellow-agent` through project guidance",
+    expect(skillText).toContain(
+      "When on and the read is unavailable, a green class rises to `yellow-agent` through project guidance",
     );
-    expect(contract.replace(/\s+/g, " ")).toContain("On raises a green class to yellow-agent through project guidance");
+    expect(packagedBody().replace(/\s+/g, " ")).toContain(
+      "When on and the read is unavailable, a green class rises to `yellow-agent` through project guidance",
+    );
+    expect(contract.replace(/\s+/g, " ")).toContain(
+      "When on and the read is unavailable, a green class rises to yellow-agent through project guidance",
+    );
     expect(projectSchema).toContain("raises a green class to yellow-agent through project guidance");
     expect(projectSchema).not.toContain("later phase (GS-004k)");
     expect(coldReadSchema).toContain("raises a green class to yellow-agent through project guidance");

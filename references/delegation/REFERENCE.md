@@ -70,8 +70,12 @@ and ensure both the ticket and project record validate. The seed is an input the
 not a judgment: a first ticket-time block seeds `class` at `green`, and a re-run carries the class
 the previous run persisted. When `lowered_by` records a named human's lowering, the seed is the
 class that person lowered to; the scorer still holds the floor and supersedes the lowering when a
-later computed class exceeds `from`. The scorer only raises the seed, so any seed outside these
-three cases is a hand-derived class. Then run:
+later computed class exceeds `from`. When `review.cold_read` is on, the cited read is unavailable,
+and the computed class is `green`, seed `yellow-agent`, unless a live named-human lowering is in
+force. A live lowering supersedes that raise: keep the lowered class and leave `lowered_by`
+unsuperseded. A later completed read does not reseed `green`; the raised class persists until a
+named human lowers it. The scorer only raises the seed, so any seed outside these four cases is a
+hand-derived class. Then run:
 
 ```text
 ak delegation <ticket> --project <project-record>
@@ -307,6 +311,9 @@ readiness criteria, then re-run the scorer command from step 10. The read adds e
 and does not change factor scores or weights. A completed cold read is binding. An unavailable
 read is cited with its reason; for that ticket only, the author's empty-context check decides
 whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. If that
-ticket's class is `green`, seed `yellow-agent` and re-run the scorer. That seed is project
-guidance raising the class, not a hand-derived class (ruling
-`delegation-class-is-authority-not-finding`). Off and shadow do not seed from the read.
+ticket's class is `green`, seed `yellow-agent` and re-run the scorer, unless a live named-human
+lowering is in force. A live lowering supersedes this raise: keep the lowered class and leave
+`lowered_by` unsuperseded. That yellow-agent seed is project guidance raising the class, not a
+hand-derived class (ruling `delegation-class-is-authority-not-finding`). A later completed read
+does not reseed `green`; the raised class persists until a named human lowers it. Off and shadow
+do not seed from the read. An unscored ticket has no class, so the raise is skipped.
