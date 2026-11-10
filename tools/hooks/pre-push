@@ -73,7 +73,28 @@
 #
 # It admits the push when it cannot run -- no node_modules, no bun, archive
 # fails. A gate that blocks on its own breakage teaches the bypass.
-. "$(dirname "$0")/pre-push-extract.sh"
+#
+# The helper is resolved from the repository root, not from $0. A copy in
+# .git/hooks has no sibling, and sourcing a missing file under dash refuses
+# every push. If the helper is absent, warn and archive without .donors: both
+# refusals still run, and a feature-branch push still goes through.
+_ak_root=$(git rev-parse --show-toplevel 2>/dev/null) || _ak_root=
+_ak_extract=
+if [ -n "$_ak_root" ]; then
+  _ak_extract=$_ak_root/tools/hooks/pre-push-extract.sh
+fi
+if [ -n "$_ak_extract" ] && [ -f "$_ak_extract" ]; then
+  . "$_ak_extract"
+else
+  printf '%s\n' "pre-push: warning: tools/hooks/pre-push-extract.sh is missing; pin check skipped" >&2
+  extract_for_gate() {
+    _sha=$1
+    _dest=$2
+    _root=$3
+    git -C "$_root" archive "$_sha" 2>/dev/null | tar -x -C "$_dest" 2>/dev/null || return 1
+    rm -f "$_dest/ak.install.yaml"
+  }
+fi
 
 build_gate() {
   sha="$1"

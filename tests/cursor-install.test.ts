@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CURSOR_BUN_PIN, cursorAkLauncher } from "../src/packaging/cursor-ak.ts";
@@ -111,6 +111,25 @@ describe("tools/cursor/install.sh", () => {
     const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("install.sh: warning: donor clone failed; provenance pin check will skip");
+  });
+
+  test("clone_donors skips when timeout is not on PATH", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-notimeout-");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    const marker = join(scratch, "cloned");
+    writeFileSync(join(scratch, "tools/donors/clone.sh"), `#!/bin/sh\nprintf 'ran\\n' > '${marker}'\nexit 0\n`, {
+      mode: 0o755,
+    });
+    const trap = join(fx.home, "trap-bin");
+    symlinkSync("/bin/bash", join(trap, "bash"));
+    const path = `${trap}:${join(fx.home, ".bun/bin")}`;
+    const result = runFn({ HOME: fx.home, PATH: path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain(
+      "install.sh: warning: timeout is not on PATH; donor clone skipped (no time bound available)",
+    );
+    expect(existsSync(marker)).toBe(false);
   });
 
   test("clone_donors runs the lock pin clone script", () => {

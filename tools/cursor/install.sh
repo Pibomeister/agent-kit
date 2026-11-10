@@ -113,6 +113,10 @@ login_finds_bun() {
 }
 
 clone_donors() {
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo "install.sh: warning: timeout is not on PATH; donor clone skipped (no time bound available)" >&2
+    return 0
+  fi
   if ! (
     cd "$ROOT" &&
       GIT_TERMINAL_PROMPT=0 \

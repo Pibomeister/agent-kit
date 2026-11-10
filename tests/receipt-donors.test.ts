@@ -253,13 +253,38 @@ donors:
 });
 
 describe("pre-push refusals", () => {
-  test("AK_PREPUSH_SOURCE=1 still refuses a HEAD main push", () => {
+  test("the hook refuses a HEAD main push", () => {
     const scratch = processScratch("ak-hook-refuse-");
     writeFileSync(join(scratch, "README.md"), "scratch\n");
     const sha = seedRepo(scratch);
-    const run = runHook(`HEAD ${sha} refs/heads/main ${ZERO_SHA}\n`, { AK_PREPUSH_SOURCE: "1" }, scratch);
+    const run = runHook(`HEAD ${sha} refs/heads/main ${ZERO_SHA}\n`, {}, scratch);
     expect(run.status, run.stderr).toBe(1);
     expect(run.stderr).toContain("pre-push: refusing to publish main through 'HEAD'");
+  });
+
+  test("a hook copied into .git/hooks refuses HEAD:main and admits a feature branch", () => {
+    const scratch = processScratch("ak-hook-copied-");
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    const sha = seedRepo(scratch);
+    const installed = join(scratch, ".git/hooks/pre-push");
+    writeFileSync(installed, readFileSync(HOOK, "utf8"), { mode: 0o755 });
+    const env = gitEnv();
+    const refuse = spawnSync("/bin/sh", [installed], {
+      cwd: scratch,
+      encoding: "utf8",
+      input: `HEAD ${sha} refs/heads/main ${ZERO_SHA}\n`,
+      env,
+    });
+    expect(refuse.status, refuse.stderr).toBe(1);
+    expect(refuse.stderr).toContain("pre-push: refusing to publish main through 'HEAD'");
+    const admit = spawnSync("/bin/sh", [installed], {
+      cwd: scratch,
+      encoding: "utf8",
+      input: `HEAD ${sha} refs/heads/feat ${ZERO_SHA}\n`,
+      env,
+    });
+    expect(admit.status, admit.stderr).toBe(0);
+    expect(admit.stderr).not.toContain("refusing to publish");
   });
 
   test("a failed donor copy still runs ak build", () => {
@@ -282,6 +307,8 @@ donors:
     writeFileSync(join(scratch, "package.json"), '{"scripts":{"ak":"true"}}\n');
     writeFileSync(join(scratch, "README.md"), "scratch\n");
     writeFileSync(join(scratch, ".gitignore"), ".donors\n");
+    mkdirSync(join(scratch, "tools/hooks"), { recursive: true });
+    writeFileSync(join(scratch, "tools/hooks/pre-push-extract.sh"), readFileSync(EXTRACT, "utf8"));
     const sha = seedRepo(scratch);
     const bin = processScratch("ak-hook-stubs-");
     writeFileSync(join(bin, "cp"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
