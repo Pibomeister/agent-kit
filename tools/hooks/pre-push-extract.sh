@@ -20,7 +20,11 @@ donors_at_pins() {
   _root=$1
   while read -r _path _commit; do
     [ -n "$_path" ] && [ -n "$_commit" ] || continue
-    [ -d "$_root/$_path/.git" ] && git -C "$_root/$_path" cat-file -e "$_commit^{commit}" 2>/dev/null || return 1
+    [ -d "$_root/$_path/.git" ] || return 1
+    (
+      unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+      git -C "$_root/$_path" cat-file -e "$_commit^{commit}"
+    ) 2>/dev/null || return 1
   done <<EOF
 $_rows
 EOF
@@ -30,7 +34,7 @@ extract_for_gate() {
   _sha=$1
   _dest=$2
   _root=$3
-  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+  git -C "$_root" cat-file -e "$_sha^{commit}" 2>/dev/null || return 1
   git -C "$_root" archive "$_sha" 2>/dev/null | tar -x -C "$_dest" 2>/dev/null || return 1
   rm -f "$_dest/ak.install.yaml"
   if [ ! -d "$_root/.donors" ]; then

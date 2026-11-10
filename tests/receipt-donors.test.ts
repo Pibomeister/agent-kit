@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
@@ -366,7 +366,7 @@ exit 0
     expect(readFileSync(mark, "utf8").trim()).toBe("ran");
   });
 
-  test("a linked worktree push runs the pin check without stripping GIT_*", () => {
+  test("the hook clears GIT_DIR before the build", () => {
     const main = processScratch("ak-wt-main-");
     mkdirSync(join(main, "provenance"), { recursive: true });
     mkdirSync(join(main, "tools/hooks"), { recursive: true });
@@ -388,8 +388,8 @@ donors:
     const sha = seedRepo(main);
     const wt = processScratch("ak-wt-linked-");
     rmSync(wt, { recursive: true, force: true });
-    git(main, "worktree", "add", "--detach", wt);
-    mkdirSync(join(wt, "node_modules"));
+    git(main, "worktree", "add", "-q", "--detach", wt);
+    symlinkSync(join(ROOT, "node_modules"), join(wt, "node_modules"));
     spawnSync("cp", ["-R", join(main, ".donors"), join(wt, ".donors")], { encoding: "utf8" });
     const installed = join(main, ".git/hooks/pre-push");
     writeFileSync(installed, readFileSync(HOOK, "utf8"), { mode: 0o755 });
@@ -399,12 +399,6 @@ donors:
     writeFileSync(
       join(bin, "bun"),
       `#!/bin/sh
-for a in "$@"; do
-  if [ "$a" = "--eval" ]; then
-    cd "${ROOT}" || exit 1
-    exec "${bunBin}" "$@"
-  fi
-done
 if [ "$1" = "run" ] && [ "$2" = "ak" ]; then
   printf 'GIT_DIR=%s\\n' "\${GIT_DIR-}" > "$HOOK_MARK"
   exit 0
@@ -431,6 +425,51 @@ exec "${bunBin}" "$@"
     expect(run.status, run.stderr).toBe(0);
     expect(run.stderr).toContain("pre-push: pin check will run");
     expect(readFileSync(mark, "utf8").trim()).toBe("GIT_DIR=");
+  }, 60_000);
+
+  test("a separate git dir with GIT_DIR exported still refuses a failing build", () => {
+    const scratch = processScratch("ak-sep-work-");
+    mkdirSync(join(scratch, "node_modules"));
+    mkdirSync(join(scratch, "tools/hooks"), { recursive: true });
+    writeFileSync(join(scratch, "package.json"), '{"scripts":{"ak":"true"}}\n');
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    writeFileSync(join(scratch, "tools/hooks/pre-push-extract.sh"), readFileSync(EXTRACT, "utf8"));
+    const sha = seedRepo(scratch);
+    const gitDir = processScratch("ak-sep-git-");
+    rmSync(gitDir, { recursive: true, force: true });
+    renameSync(join(scratch, ".git"), gitDir);
+    mkdirSync(join(gitDir, "hooks"), { recursive: true });
+    const installed = join(gitDir, "hooks/pre-push");
+    writeFileSync(installed, readFileSync(HOOK, "utf8"), { mode: 0o755 });
+    const mark = join(scratch, "ak-build.mark");
+    const bunBin = process.execPath;
+    const bin = processScratch("ak-sep-bin-");
+    writeFileSync(
+      join(bin, "bun"),
+      `#!/bin/sh
+if [ "$1" = "run" ] && [ "$2" = "ak" ]; then
+  printf 'ran\\n' > "$HOOK_MARK"
+  exit 1
+fi
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    const run = spawnSync("/bin/sh", [installed], {
+      cwd: scratch,
+      encoding: "utf8",
+      input: `refs/tags/v0 ${sha} refs/heads/main ${ZERO_SHA}\n`,
+      env: {
+        ...process.env,
+        GIT_DIR: gitDir,
+        GIT_WORK_TREE: scratch,
+        HOOK_MARK: mark,
+        PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    });
+    expect(run.status, run.stderr).toBe(1);
+    expect(run.stderr).toContain("pre-push: refusing to publish");
+    expect(readFileSync(mark, "utf8").trim()).toBe("ran");
   }, 60_000);
 
   test("a failed donor copy still runs ak build", () => {
