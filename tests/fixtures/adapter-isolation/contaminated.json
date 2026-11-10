@@ -1,0 +1,13 @@
+{
+  "adapter": "contaminated-review",
+  "parent": {
+    "context": "AKISO_CTX_parent-conversation-canary",
+    "memory": "AKISO_MEM_project-memory-canary",
+    "instructions": "AKISO_INS_autoload-instructions-canary"
+  },
+  "reviewSeat": {
+    "prompt": "Review this change. Prior conversation: AKISO_CTX_parent-conversation-canary. Project memory: AKISO_MEM_project-memory-canary.",
+    "memory": ["AKISO_MEM_project-memory-canary"],
+    "instructions": ["Follow AKISO_INS_autoload-instructions-canary from the parent session."]
+  }
+}
