@@ -11,8 +11,10 @@ import { processScratch } from "./helpers/process-tmp.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const HOOK = join(ROOT, "tools/hooks/pre-push");
+const EXTRACT = join(ROOT, "tools/hooks/pre-push-extract.sh");
 const donorsRequired = process.env.AK_REQUIRE_DONORS === "1";
 const donorsPresent = existsSync(join(ROOT, ".donors"));
+const ZERO_SHA = "0".repeat(40);
 
 type CiStep = { run?: string };
 type CiWorkflow = { jobs?: { check?: { steps?: CiStep[] } } };
@@ -49,16 +51,25 @@ for (const d of parse(readFileSync(process.env.AK_LOCK, "utf8")).donors ?? []) {
   return rows;
 }
 
-function sourceHook(body: string, cwd = ROOT) {
-  return spawnSync("sh", ["-c", `AK_PREPUSH_SOURCE=1; . "$HOOK"; ${body}`], {
+function gitEnv(extra: Record<string, string> = {}) {
+  const base = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+  return { ...base, PATH: process.env.PATH ?? "/usr/bin:/bin", ...extra };
+}
+
+function sourceExtract(body: string, cwd = ROOT, path = process.env.PATH ?? "/usr/bin:/bin") {
+  return spawnSync("sh", ["-c", `. "$EXTRACT"; ${body}`], {
     cwd,
     encoding: "utf8",
-    env: {
-      ...process.env,
-      AK_PREPUSH_SOURCE: "1",
-      HOOK,
-      PATH: process.env.PATH ?? "/usr/bin:/bin",
-    },
+    env: gitEnv({ EXTRACT, PATH: path }),
+  });
+}
+
+function runHook(stdin: string, extraEnv: Record<string, string> = {}, cwd = ROOT) {
+  return spawnSync("sh", [HOOK], {
+    cwd,
+    encoding: "utf8",
+    input: stdin,
+    env: gitEnv(extraEnv),
   });
 }
 
@@ -112,7 +123,7 @@ describe("pre-push extract_for_gate", () => {
       expect(existsSync(join(ROOT, ".donors"))).toBe(true);
       const dest = processScratch("ak-extract-with-donors-");
       const sha = git(ROOT, "rev-parse", "HEAD").trim();
-      const prepared = sourceHook(`extract_for_gate "${sha}" "${dest}" "${ROOT}"`);
+      const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${ROOT}"`);
       expect(prepared.status, prepared.stderr).toBe(0);
       expect(prepared.stderr).toContain("pre-push: pin check will run");
       expect(existsSync(join(dest, ".donors"))).toBe(true);
@@ -143,7 +154,7 @@ donors:
     writeFileSync(join(scratch, ".gitignore"), ".donors\n");
     const sha = seedRepo(scratch);
     const dest = processScratch("ak-extract-pinned-dest-");
-    const prepared = sourceHook(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
     expect(prepared.status, prepared.stderr).toBe(0);
     expect(prepared.stderr).toContain("pre-push: pin check will run");
     expect(existsSync(join(dest, ".donors/donor_one/.git"))).toBe(true);
@@ -180,12 +191,128 @@ donors:
     writeFileSync(join(scratch, "README.md"), "scratch\n");
     const sha = seedRepo(scratch);
     const dest = processScratch("ak-extract-unpinned-dest-");
-    const prepared = sourceHook(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
     expect(prepared.status, prepared.stderr).toBe(0);
     expect(prepared.stderr).toContain(
       "pre-push: warning: pin check skipped because the local donors are not at the lock pins",
     );
     expect(existsSync(join(dest, ".donors"))).toBe(false);
+  });
+
+  test("a missing .donors prints a skip note", () => {
+    const scratch = processScratch("ak-extract-absent-");
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    const sha = seedRepo(scratch);
+    const dest = processScratch("ak-extract-absent-dest-");
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
+    expect(prepared.status, prepared.stderr).toBe(0);
+    expect(prepared.stderr).toContain("pre-push: pin check skipped (.donors absent)");
+    expect(prepared.stderr).not.toContain("not at the lock pins");
+    expect(existsSync(join(dest, ".donors"))).toBe(false);
+  });
+
+  test("a lock-read failure names that cause", () => {
+    const scratch = processScratch("ak-extract-lock-");
+    mkdirSync(join(scratch, ".donors/donor_one"), { recursive: true });
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    const sha = seedRepo(scratch);
+    const dest = processScratch("ak-extract-lock-dest-");
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`);
+    expect(prepared.status, prepared.stderr).toBe(0);
+    expect(prepared.stderr).toContain("pre-push: warning: pin check skipped because the lock file could not be read");
+    expect(prepared.stderr).not.toContain("not at the lock pins");
+    expect(existsSync(join(dest, ".donors"))).toBe(false);
+  });
+
+  test("a copy failure warns, strips a partial .donors, and still returns 0", () => {
+    const scratch = processScratch("ak-extract-copyfail-");
+    mkdirSync(join(scratch, "provenance"), { recursive: true });
+    const commit = makeDonorClone(join(scratch, ".donors/donor_one"));
+    writeFileSync(
+      join(scratch, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    path: .donors/donor_one
+    commit: ${commit}
+    license: MIT
+`,
+    );
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    writeFileSync(join(scratch, ".gitignore"), ".donors\n");
+    const sha = seedRepo(scratch);
+    const dest = processScratch("ak-extract-copyfail-dest-");
+    const bin = processScratch("ak-cp-fail-");
+    writeFileSync(join(bin, "cp"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    const path = `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`;
+    const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${scratch}"`, ROOT, path);
+    expect(prepared.status, prepared.stderr).toBe(0);
+    expect(prepared.stderr).toContain("pre-push: warning: pin check skipped because .donors could not be copied");
+    expect(existsSync(join(dest, ".donors"))).toBe(false);
+  });
+});
+
+describe("pre-push refusals", () => {
+  test("AK_PREPUSH_SOURCE=1 still refuses a HEAD main push", () => {
+    const scratch = processScratch("ak-hook-refuse-");
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    const sha = seedRepo(scratch);
+    const run = runHook(`HEAD ${sha} refs/heads/main ${ZERO_SHA}\n`, { AK_PREPUSH_SOURCE: "1" }, scratch);
+    expect(run.status, run.stderr).toBe(1);
+    expect(run.stderr).toContain("pre-push: refusing to publish main through 'HEAD'");
+  });
+
+  test("a failed donor copy still runs ak build", () => {
+    const scratch = processScratch("ak-hook-copyfail-");
+    mkdirSync(join(scratch, "provenance"), { recursive: true });
+    mkdirSync(join(scratch, "node_modules"));
+    const commit = makeDonorClone(join(scratch, ".donors/donor_one"));
+    const mark = join(scratch, "ak-build.mark");
+    const bunBin = process.execPath;
+    writeFileSync(
+      join(scratch, "provenance/upstream.lock.yaml"),
+      `schema_version: 1
+donors:
+  - id: donor-one
+    path: .donors/donor_one
+    commit: ${commit}
+    license: MIT
+`,
+    );
+    writeFileSync(join(scratch, "package.json"), '{"scripts":{"ak":"true"}}\n');
+    writeFileSync(join(scratch, "README.md"), "scratch\n");
+    writeFileSync(join(scratch, ".gitignore"), ".donors\n");
+    const sha = seedRepo(scratch);
+    const bin = processScratch("ak-hook-stubs-");
+    writeFileSync(join(bin, "cp"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    writeFileSync(
+      join(bin, "bun"),
+      `#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = "--eval" ]; then
+    cd "${ROOT}" || exit 1
+    exec "${bunBin}" "$@"
+  fi
+done
+if [ "$1" = "run" ] && [ "$2" = "ak" ]; then
+  printf 'ran\\n' > "$HOOK_MARK"
+  exit 0
+fi
+exec "${bunBin}" "$@"
+`,
+      { mode: 0o755 },
+    );
+    const run = runHook(
+      `refs/tags/v0 ${sha} refs/heads/main ${ZERO_SHA}\n`,
+      {
+        HOOK_MARK: mark,
+        PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+      scratch,
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stderr).toContain("pre-push: warning: pin check skipped because .donors could not be copied");
+    expect(readFileSync(mark, "utf8").trim()).toBe("ran");
   });
 });
 

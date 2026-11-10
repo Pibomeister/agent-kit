@@ -119,12 +119,23 @@ describe("tools/cursor/install.sh", () => {
     mkdirSync(join(scratch, "tools/donors"), { recursive: true });
     writeFileSync(
       join(scratch, "tools/donors/clone.sh"),
-      "#!/bin/sh\necho clone.sh: .donors/donor_one at pin >&2\nexit 0\n",
+      `#!/bin/sh
+echo "GIT_TERMINAL_PROMPT=\${GIT_TERMINAL_PROMPT-unset}" >&2
+echo "GIT_HTTP_LOW_SPEED_LIMIT=\${GIT_HTTP_LOW_SPEED_LIMIT-unset}" >&2
+echo "GIT_HTTP_LOW_SPEED_TIME=\${GIT_HTTP_LOW_SPEED_TIME-unset}" >&2
+if [ -t 0 ]; then echo stdin-tty >&2; else echo stdin-not-tty >&2; fi
+echo clone.sh: .donors/donor_one at pin >&2
+exit 0
+`,
       { mode: 0o755 },
     );
     const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("clone.sh: .donors/donor_one at pin");
+    expect(result.stderr).toContain("GIT_TERMINAL_PROMPT=0");
+    expect(result.stderr).toContain("GIT_HTTP_LOW_SPEED_LIMIT=1000");
+    expect(result.stderr).toContain("GIT_HTTP_LOW_SPEED_TIME=30");
+    expect(result.stderr).toContain("stdin-not-tty");
     expect(result.stderr).not.toContain("donor clone failed");
   });
 });

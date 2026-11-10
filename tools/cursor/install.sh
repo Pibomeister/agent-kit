@@ -113,7 +113,13 @@ login_finds_bun() {
 }
 
 clone_donors() {
-  if ! (cd "$ROOT" && sh "$ROOT/tools/donors/clone.sh"); then
+  if ! (
+    cd "$ROOT" &&
+      GIT_TERMINAL_PROMPT=0 \
+      GIT_HTTP_LOW_SPEED_LIMIT=1000 \
+      GIT_HTTP_LOW_SPEED_TIME=30 \
+      timeout 300 sh "$ROOT/tools/donors/clone.sh" </dev/null
+  ); then
     echo "install.sh: warning: donor clone failed; provenance pin check will skip" >&2
   fi
   return 0
