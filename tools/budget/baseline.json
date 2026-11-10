@@ -153,8 +153,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23005,
-      "tokens": 5746
+      "bytes": 23438,
+      "tokens": 5854
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -363,8 +363,8 @@
     },
     "bundle/claude-code:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
-      "bytes": 7594,
-      "tokens": 1899
+      "bytes": 7655,
+      "tokens": 1914
     },
     "bundle/claude-code:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -448,8 +448,8 @@
     },
     "bundle/claude-code:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23287,
-      "tokens": 5822
+      "bytes": 23564,
+      "tokens": 5891
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -748,8 +748,8 @@
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27311,
-      "tokens": 6818
+      "bytes": 27545,
+      "tokens": 6877
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -1028,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23005,
-      "tokens": 5746
+      "bytes": 23438,
+      "tokens": 5854
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1238,8 +1238,8 @@
     },
     "bundle/codex:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
-      "bytes": 7594,
-      "tokens": 1899
+      "bytes": 7655,
+      "tokens": 1914
     },
     "bundle/codex:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -1323,8 +1323,8 @@
     },
     "bundle/codex:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23287,
-      "tokens": 5822
+      "bytes": 23564,
+      "tokens": 5891
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -1623,8 +1623,8 @@
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27429,
-      "tokens": 6848
+      "bytes": 27663,
+      "tokens": 6906
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -1903,8 +1903,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23065,
-      "tokens": 5761
+      "bytes": 23498,
+      "tokens": 5869
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2113,8 +2113,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
-      "bytes": 7594,
-      "tokens": 1899
+      "bytes": 7655,
+      "tokens": 1914
     },
     "bundle/cursor:.cursor/references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -2198,8 +2198,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23287,
-      "tokens": 5822
+      "bytes": 23564,
+      "tokens": 5891
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -2493,8 +2493,8 @@
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27419,
-      "tokens": 6845
+      "bytes": 27653,
+      "tokens": 6904
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -2778,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23005,
-      "tokens": 5746
+      "bytes": 23438,
+      "tokens": 5854
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2988,8 +2988,8 @@
     },
     "bundle/droid:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
-      "bytes": 7594,
-      "tokens": 1899
+      "bytes": 7655,
+      "tokens": 1914
     },
     "bundle/droid:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -3073,8 +3073,8 @@
     },
     "bundle/droid:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23287,
-      "tokens": 5822
+      "bytes": 23564,
+      "tokens": 5891
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -3373,8 +3373,8 @@
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27417,
-      "tokens": 6845
+      "bytes": 27651,
+      "tokens": 6903
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -3653,8 +3653,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23005,
-      "tokens": 5746
+      "bytes": 23438,
+      "tokens": 5854
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3863,8 +3863,8 @@
     },
     "bundle/grok:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
-      "bytes": 7594,
-      "tokens": 1899
+      "bytes": 7655,
+      "tokens": 1914
     },
     "bundle/grok:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -3948,8 +3948,8 @@
     },
     "bundle/grok:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23287,
-      "tokens": 5822
+      "bytes": 23564,
+      "tokens": 5891
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -4248,8 +4248,8 @@
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27299,
-      "tokens": 6815
+      "bytes": 27533,
+      "tokens": 6874
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -4528,8 +4528,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23005,
-      "tokens": 5746
+      "bytes": 23438,
+      "tokens": 5854
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4738,8 +4738,8 @@
     },
     "bundle/kimi:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
-      "bytes": 7594,
-      "tokens": 1899
+      "bytes": 7655,
+      "tokens": 1914
     },
     "bundle/kimi:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -4823,8 +4823,8 @@
     },
     "bundle/kimi:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23287,
-      "tokens": 5822
+      "bytes": 23564,
+      "tokens": 5891
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -5123,8 +5123,8 @@
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27441,
-      "tokens": 6851
+      "bytes": 27675,
+      "tokens": 6909
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",

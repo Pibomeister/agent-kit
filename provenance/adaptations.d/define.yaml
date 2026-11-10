@@ -146,8 +146,7 @@ adaptations:
     rationale: >-
       The zero-decision rule becomes an independent cold read of each implementation ticket at
       step 13. Off keeps the author type-check. Shadow stores the read without changing outcome
-      or score. On reclassifies listed decisions (phase 1b, GS-004i). When on, an unavailable
-      read raises green to yellow-agent (phase 1b, GS-004k).
+      or score. On reclassifies listed decisions (phase 1b, GS-004i).
   - path: skills/super-bound/SKILL.md
     source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/codebase_details.md
     rationale: >-
@@ -158,7 +157,6 @@ adaptations:
     rationale: >-
       The zero-context gate names the independent cold read when review.cold_read is on, and
       keeps the author type-check as the outcome gate in off and shadow (phase 1b, GS-004i).
-      When on, an unavailable read raises green to yellow-agent (phase 1b, GS-004k).
   - path: skills/super-bound/skill.yaml
     source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/codebase_details.md
     rationale: >-

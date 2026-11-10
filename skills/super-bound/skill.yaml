@@ -154,7 +154,9 @@ hard_gates:
     check is reclassified, not shipped. When review.cold_read is on, that check is the independent
     cold read. Off and shadow keep the author type-check as the outcome gate. When that read is
     unavailable, the author check decides; cite the read with its reason. When on and the read is
-    unavailable, a green class rises to yellow-agent through project guidance. Off and shadow do
+    unavailable, a green class rises to yellow-agent by the captain's Q1 decision (GS-004k), unless
+    a live named-human lowering is in force. The class may be raised, never lowered automatically
+    (ruling `delegation-class-is-authority-not-finding`). Off and shadow do
     not change class or scorer inputs.
   - Every ticket carries all six named readiness criteria plus vague_terms, assumptions items using
     text and resolved_as, and exact successful ak delegation output, except an unscored ticket under
@@ -198,7 +200,8 @@ stop_conditions:
   - complete when the specification is approved at its hash, every acceptance criterion is covered
     by a ticket, every implementation ticket carries its three evidence blocks (an unscored ticket
     under a delegation coverage limit carries readiness and assumptions, with no delegation block), every on-mode
-    implementation ticket cites a finished cold read, or an unavailable read with its reason, and
+    implementation ticket cites a finished cold read, or an unavailable read with its reason that
+    carries the raised class or the lowering that supersedes it, and
     every published artifact's read-back matched what was sent.
   - needs-input when the run was started by none of the typed command, a validated grant, a passing
     bypass check and the unattended policy's passing `unattended check`, there is no approved
@@ -343,8 +346,7 @@ provenance:
       adaptation: >-
         The zero-decision rule becomes an independent cold read of each implementation ticket.
         Off keeps the author type-check. Shadow stores the read without changing outcome or score.
-        On reclassifies listed decisions (phase 1b, GS-004i). When on, an unavailable read raises
-        green to yellow-agent (phase 1b, GS-004k).
+        On reclassifies listed decisions (phase 1b, GS-004i).
     - donor: egm
       commit: 403d8881d62022490637d740657b33f01e321ea8
       path: agents/codebase_details.md

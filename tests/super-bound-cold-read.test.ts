@@ -3,7 +3,7 @@
  *
  * Pins what an agent following the packaged skill must do. Off and shadow must
  * not change class or score. When on, an unavailable read raises green to
- * yellow-agent through the existing seed. The scorer formula is unchanged.
+ * yellow-agent by the captain's Q1 decision. The scorer formula is unchanged.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -172,25 +172,32 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
   const projectSchema = readFileSync(join(REPO, "schemas/project.schema.json"), "utf8");
   const coldReadSchema = readFileSync(join(REPO, "schemas/cold-read.schema.json"), "utf8");
 
-  test("on: an unavailable read seeds yellow-agent from green through project guidance", () => {
+  test("on: an unavailable read seeds yellow-agent from green by the captain's Q1 decision", () => {
     const note = reference.replace(/\s+/g, " ");
     expect(note).toContain("four cases is a hand-derived class");
     expect(note).not.toContain("three cases is a hand-derived class");
     expect(note).toContain(
-      "When `review.cold_read` is on, the cited read is unavailable, and the computed class is `green`, seed `yellow-agent`",
+      "When `review.cold_read` is on, the cited read is unavailable, and the computed class is `green`, seed `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
     );
     expect(note).toContain("A live lowering supersedes that raise");
     expect(note).toContain("leave `lowered_by` unsuperseded");
     expect(note).toContain("the raised class persists until a named human lowers it");
+    expect(note).toContain("A later completed read does not reseed `green`");
+    expect(note).toContain("The class may be raised, never lowered automatically");
     const on = subsection(reference, "On").replace(/\s+/g, " ");
     expect(on).toContain("If that ticket's class is `green`, seed `yellow-agent`");
     expect(on).toContain("unless a live named-human lowering is in force");
     expect(on).toContain("A live lowering supersedes this raise");
     expect(on).toContain("the raised class persists until a named human lowers it");
     expect(on).toContain("An unscored ticket has no class, so the raise is skipped");
-    expect(on).toContain("That yellow-agent seed is project guidance raising the class");
+    expect(on).toContain("That yellow-agent seed is the captain's Q1 decision (GS-004k)");
+    expect(on).toContain("The class may be raised, never lowered automatically");
     expect(on).toContain("ruling `delegation-class-is-authority-not-finding`");
     expect(on).toContain("Off and shadow do not seed from the read");
+    expect(on).toContain("A later completed read does not reseed `green`");
+    expect(on).toContain(
+      "The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening).",
+    );
     expect(on).not.toContain("Neither case changes the class");
     const packedOn = subsection(packagedReference(), "On").replace(/\s+/g, " ");
     expect(packedOn).toContain("If that ticket's class is `green`, seed `yellow-agent`");
@@ -198,18 +205,33 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
     const skillText = skill.replace(/\s+/g, " ");
     expect(skillText).toContain("green-to-yellow-agent");
     expect(skillText).toContain(
-      "When on and the read is unavailable, a green class rises to `yellow-agent` through project guidance",
+      "When on and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
+    );
+    expect(skillText).toContain(
+      "an unavailable read with its reason that carries the raised class or the lowering that supersedes it",
     );
     expect(packagedBody().replace(/\s+/g, " ")).toContain(
-      "When on and the read is unavailable, a green class rises to `yellow-agent` through project guidance",
+      "When on and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
     );
     expect(contract.replace(/\s+/g, " ")).toContain(
-      "When on and the read is unavailable, a green class rises to yellow-agent through project guidance",
+      "When on and the read is unavailable, a green class rises to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
     );
-    expect(projectSchema).toContain("raises a green class to yellow-agent through project guidance");
+    expect(contract.replace(/\s+/g, " ")).toContain(
+      "an unavailable read with its reason that carries the raised class or the lowering that supersedes it",
+    );
+    expect(projectSchema).toContain(
+      "When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. The class may be raised, never lowered automatically (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k).",
+    );
+    expect(projectSchema).toContain(
+      "The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening).",
+    );
     expect(projectSchema).not.toContain("later phase (GS-004k)");
-    expect(coldReadSchema).toContain("raises a green class to yellow-agent through project guidance");
+    expect(projectSchema).not.toContain("Off and shadow do not raise. (phase 1b, GS-004k).");
+    expect(coldReadSchema).toContain(
+      "When review.cold_read is on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Off and shadow do not raise (phase 1b, GS-004k).",
+    );
     expect(coldReadSchema).not.toContain("later phase (GS-004k)");
+    expect(coldReadSchema).not.toContain("Off and shadow do not raise. (phase 1b, GS-004k).");
   });
 
   test("shadow: the read is stored and listed, and it does not seed a class", () => {
