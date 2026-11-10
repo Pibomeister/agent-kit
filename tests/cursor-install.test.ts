@@ -67,6 +67,18 @@ function noBunPath() {
   return dir;
 }
 
+function linkHostCommands(dir: string, names: readonly string[]) {
+  for (const name of names) {
+    const run = spawnSync("bash", ["-c", 'command -v "$1"', "_", name], { encoding: "utf8" });
+    const resolved = (run.stdout ?? "").trim();
+    expect(run.status, `${name}: ${run.stderr}`).toBe(0);
+    if (!resolved.startsWith("/")) continue;
+    const dest = join(dir, name);
+    if (existsSync(dest)) continue;
+    symlinkSync(resolved, dest);
+  }
+}
+
 function runLauncher(home: string | undefined, path: string, args: string[]) {
   const dir = join(processScratch("ak-cursor-overlay-"), "bin");
   mkdirSync(dir, { recursive: true });
@@ -123,7 +135,13 @@ describe("tools/cursor/install.sh", () => {
     });
     const trap = join(fx.home, "trap-bin");
     symlinkSync("/bin/bash", join(trap, "bash"));
+    linkHostCommands(trap, ["dirname", "git", "cat", "sh", "bash", "mkdir", "rm", "grep", "id", "env"]);
     const path = `${trap}:${join(fx.home, ".bun/bin")}`;
+    const timeoutProbe = spawnSync("bash", ["-c", "command -v timeout"], {
+      encoding: "utf8",
+      env: { PATH: path, HOME: fx.home },
+    });
+    expect(timeoutProbe.status).not.toBe(0);
     const result = runFn({ HOME: fx.home, PATH: path }, `ROOT="${scratch}"; clone_donors`);
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain(
