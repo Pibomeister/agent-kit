@@ -239,6 +239,17 @@ A run whose checks all failed is complete; the failures are the result.
 `needs-input`: the claim resolves to no acceptance criterion, or no revision was named. Returns the
 criterion or the revision it would need, and no partial matrix presented as a verdict.
 
+Under the unattended policy, a ticket that declares no acceptance criteria and no verification at
+all is a coverage limit, never `needs-input`: record it once naming its cause and verify with the
+repository checks actually run, the project's declared test command among them when it declares one
+(its verification recipes, [`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)). The independent verifier seat records
+each on the `verify` gate with its real command, exit status and output digest, declaring itself
+with `--author-kind`, `--host` and `--seat-id`; a verify must always declare an independent seat, so
+the build's implementer seat, or no seat, is refused. The gate
+counts those checks and nothing else, and records the limit on its ship decision and in the ship
+disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any
+other. Outside the policy it is `unavailable`.
+
 `failed`: the repository is unreadable at the named revision, the environment cannot be identified,
 or a configured knowledgebase refuses the write. The receipts are returned unpublished with the
 refusal rather than written to a path in the repository.

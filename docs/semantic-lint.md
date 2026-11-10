@@ -12,7 +12,8 @@ by the [invocation law](../AGENTS.md#the-invocation-law).
 
 ## Enablement
 
-The hook runs by default. It checks changed files only when the key file is present:
+The hook is off unless `AK_JEV_ENABLED=1` in the hook process. It checks changed files only when that
+variable is `1` and the key file is present:
 
 ```sh
 bun tools/hooks/semantic-lint.ts hook
@@ -22,9 +23,17 @@ bun tools/hooks/semantic-lint.ts hook
 
 | Value | Mode |
 |---|---|
-| unset, or any value but `0` and `1` | Default. It runs, and its skips are quiet |
-| `1` | Explicit. It runs, and every result carries a host message |
-| `0` | Off. It reports `skipped/disabled` before it reads the key file or the repository |
+| `1` | On. Every result carries a host message |
+| unset, empty, `0`, or any other value | Off. Quiet `skipped/disabled` before it reads the key file or the repository |
+
+From 0.1.114, a present key file is not enough. Export `AK_JEV_ENABLED=1` into the host process that
+runs the Stop hook. For a Firstmate worker, set it in the environment the worker pane launches with.
+Firstmate does not pass the supervisor's current environment through, and with config/launch-env-allowlist
+the name must be listed. Codex passing its
+environment through to hook commands is not yet receipted. A shell profile that the host does not
+inherit does not turn the hook on.
+`AK_JEV_ENABLED=1` is explicit, so every skip (no-input, duplicate, in-progress, missing-key) prints
+a host message. A keyed user on the old default never saw those.
 
 The key file is named by `key_file` in the pin, relative to the user's home. It must be a regular file, not a symlink, owned by the current user,
 with mode `0600`. The hook reads the first valid `TYPESAFE_API_KEY` or `TYPESAFEAI_API_KEY` assignment as data
@@ -32,13 +41,16 @@ through [one strict reader](../src/semantic-lint/key.ts). It never sources the f
 exports the key, or changes a Firstmate environment file. A missing file reports
 `skipped/missing-key`. Unsafe permissions or malformed credentials report `error/auth`.
 
-In default mode a skip prints its structured result with no `systemMessage`, so a session with no
-key, no changed files or a repeated input sees nothing. Errors and reviewed results always carry the
-message. Explicit mode keeps every message, and the claims below stay active in both modes.
+When the hook is off, a skip prints its structured result with no `systemMessage`. Errors and reviewed
+results always carry the message. With `AK_JEV_ENABLED=1`, every skip also carries a message. The
+claims below stay active whenever the hook runs.
 
-`ak doctor` reports one `semantic lint` finding from the same reader: `PASS` when the key file is
-present, owner-only and parseable, `WARN` when it is absent or `AK_JEV_ENABLED=0`, and `FAIL` when it is unsafe
-or malformed. The disabled check returns before reading the file. Findings never include the key value.
+`ak doctor` reports one `semantic lint` finding from the same reader. It reads `AK_JEV_ENABLED` from
+its own shell, not from the hook's host. `PASS` when `AK_JEV_ENABLED=1` and the key file is present,
+owner-only and parseable, `WARN` when the variable is not `1` or the key file is absent, and `FAIL`
+when `AK_JEV_ENABLED=1` and the file is unsafe or malformed. The disabled check returns before
+reading the file. Findings never include the key value. If the hook's host already has
+`AK_JEV_ENABLED=1`, re-run doctor with it set to check the key.
 
 ## One check per input
 
@@ -52,7 +64,7 @@ replaces only the owner's generation record.
 
 | Current generation | Result |
 |---|---|
-| `complete` | `skipped/duplicate` with no call. The explicit message names the prior trace |
+| `complete` | `skipped/duplicate` with no call. The systemMessage names the prior trace |
 | `in-progress`, under 120 seconds old | `skipped/in-progress` with no call |
 | `released`, or `in-progress` and stale | The next generation is created, and its creator owns the check |
 
@@ -120,8 +132,8 @@ Git discovery has a 1.5-second limit per command. Each HTTP attempt has a 10-sec
 through reading the response body. SIGINT and SIGTERM cancel
 the request or retry wait. Redirects are refused. Auth, network, timeout, cancellation, HTTP,
 unusable-response, input and receipt errors have separate JSON reasons. All hook results exit 0.
-Results other than a default-mode skip include a non-blocking `systemMessage` with status, findings
-and exclusions for the host.
+A disabled skip has no `systemMessage`. With `AK_JEV_ENABLED=1`, every result, skips included, has a
+non-blocking `systemMessage` with status, findings and exclusions for the host.
 The structured result retains error and skip reasons. The hook never emits a host blocking decision.
 Scores 0–1 describe no visible mismatch; scores 2–3 call for manual inspection because the API
 does not identify the exact claim.

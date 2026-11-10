@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-verify/SKILL.md (AUTHORING.md §4.1).
 
 id: super-verify
-version: 0.4.0
+version: 0.5.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -167,6 +167,16 @@ stop_conditions:
     not published.
   - A run whose checks all failed is complete; the failures are the result, not a reason to withhold
     one.
+  - >-
+    Under the unattended policy, a ticket that declares no acceptance criteria and no verification
+    at all is a coverage limit, never needs-input: record it once naming its cause and verify with
+    the repository checks actually run, the project's declared test command among them when it
+    declares one (its verification recipes, schemas/project.schema.json). The independent verifier
+    seat records each on the verify gate with its real command, exit status and output digest,
+    declaring itself with --author-kind, --host and --seat-id; a verify must always declare an
+    independent seat, so the build's implementer seat, or no seat, is refused. The gate counts those checks and nothing else, and records the limit on its ship
+    decision and in the ship disclosure. A ticket that declares criteria or verification the gate
+    cannot read is judged like any other. Outside the policy it is unavailable.
   - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped publish is named in the result as not published, and of these results only exit 1 stops.

@@ -815,6 +815,81 @@ describe("selection and start (command seam)", () => {
   });
 });
 
+/** A ticket bound could not give criteria or named verification. */
+const BARE = { acceptance_criteria: [], verification: [] };
+
+/** A ticket file with `fields` over the demo-bare identity. */
+function bareTicketFile(cwd: string, fields: JsonObject = BARE): string {
+  const path = join(cwd, "bare-ticket.json");
+  writeFileSync(path, `${JSON.stringify({ schema: "ticket", schema_version: 1, id: "demo-bare", ...fields })}\n`);
+  return path;
+}
+
+/** An independent verifier seat, the seat a fallback verify declares unless a test names another. */
+const VERIFIER_SEAT = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "verifier-1"];
+
+/**
+ * An unattended run on a ticket of `fields` whose verify gate records `verify` as its only evidence command,
+ * build-checks and verify each declaring the given seat flags (verify defaults to VERIFIER_SEAT), then check.
+ */
+function bareTicketRun(
+  cwd: string,
+  verify: string[] | undefined,
+  fields: JsonObject = BARE,
+  seats: { build?: string[]; verify?: string[] } = {},
+) {
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const run = runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd, fields)).out);
+  expect(ak(cwd, "record", "--gate", "build-checks", ...(seats.build ?? []), "--", ...ok).code).toBe(0);
+  for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  if (verify !== undefined) ak(cwd, "record", "--gate", "verify", ...(seats.verify ?? VERIFIER_SEAT), "--", ...verify);
+  return { ...ak(cwd, "check"), run };
+}
+
+/** Tickets that declare criteria or verification the gate cannot use: each is judged, never the fallback. */
+const HALF_DECLARED: [string, JsonObject][] = [
+  [
+    "criteria with no verification",
+    { acceptance_criteria: [{ id: "AC-1", text: "It works.", surface: "none" }], verification: [] },
+  ],
+  [
+    "a non-AC criterion id with a real check",
+    {
+      acceptance_criteria: [{ id: "AK9-1", text: "It works.", surface: "none" }],
+      verification: [{ id: "unit", kind: "command", check: "bun test", supports: ["AK9-1"] }],
+    },
+  ],
+  [
+    "a non-kebab check id",
+    {
+      acceptance_criteria: [{ id: "AC-1", text: "It works.", surface: "none" }],
+      verification: [{ id: "Unit Tests", kind: "command", check: "bun test", supports: ["AC-1"] }],
+    },
+  ],
+  ["criteria given as a string", { acceptance_criteria: "AC-1", verification: [] }],
+  ["verification given as an object", { acceptance_criteria: [], verification: { id: "unit", check: "bun test" } }],
+  ["criteria given as null", { acceptance_criteria: null, verification: [] }],
+];
+
+/** An unscored ticket's run: build-checks recorded with `seat` flags and no class, then verify with `receipt`. */
+function unscoredRun(cwd: string, seat: string[], receipt: JsonObject) {
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const ticketPath = ticketFile(cwd);
+  const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+  expect(ak(cwd, "record", "--gate", "build-checks", ...seat, "--", ...ok).code).toBe(0);
+  for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const path = receiptFile(cwd, run, ticketPath, receipt);
+  expect(ak(cwd, "record", "--gate", "verify", "--receipt", path, "--", ...ok).code).toBe(0);
+  return run;
+}
+/** The argv of every command the run's verify records hold, in order. */
+const verifyArgv = (cwd: string, run: string) =>
+  recordsOf(cwd, run, "verify").flatMap((record) => (record.commands ?? []).map((command) => command.argv));
+const UNSCORED_SEAT = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "impl-1"];
+const IMPLEMENTER_RECEIPT = { created_by: { role: "implementer" } };
+
 describe("command evidence, import and the pre-ship check (command seam)", () => {
   test("phase gates are refused without the policy; under it the tool runs and records the command", () => {
     const cwd = repo();
@@ -976,6 +1051,192 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     const r = ak(cwd, "check");
     expect(r.err).toContain("host-unattested");
     expect(r.code).toBe(0);
+  });
+
+  test("an unscored ticket records its implementer seat without a class, and a receipt the implementer wrote is refused", () => {
+    const cwd = repo();
+    const run = unscoredRun(cwd, UNSCORED_SEAT, IMPLEMENTER_RECEIPT);
+    const [build] = recordsOf(cwd, run, "build-checks");
+    expect(build?.class).toBeUndefined();
+    expect(build?.implementer).toEqual({ author_kind: "agent", host: "claude-code", seat_id: "impl-1" });
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("was created by implementer; an independent verifier seat is required");
+  });
+
+  test("an unscored ticket's seat passes check with an independent verifier's receipt", () => {
+    const cwd = repo();
+    unscoredRun(cwd, UNSCORED_SEAT, {
+      created_by: { role: "verifier" },
+      verifier_seat: { id: "verifier-1", implementer_seat: "impl-1", isolation: "host-unattested", attestation: null },
+    });
+    const r = ak(cwd, "check");
+    expect(r.err).not.toContain("an independent verifier seat is required");
+    expect(r.code).toBe(0);
+  });
+
+  test("without the seat recorded, the same implementer receipt is not refused: the seat is what refuses it", () => {
+    const cwd = repo();
+    unscoredRun(cwd, [], IMPLEMENTER_RECEIPT);
+    expect(ak(cwd, "check").code).toBe(0);
+  });
+
+  test("an unscored ticket whose criteria and verification bound derived from the work source verifies like any other", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const stored: unknown = JSON.parse(readFileSync(join(cwd, "ticket.json"), "utf8"));
+    expect(stored).not.toHaveProperty("delegation");
+    const r = ak(cwd, "check");
+    expect(r.err).not.toContain("has no acceptance criteria or named verification");
+    expect(r.code).toBe(0);
+    expect(recordsOf(cwd, run, "verify")).toHaveLength(1);
+  });
+
+  test("with no criteria or named verification, verify falls back to the recorded repository checks as a coverage limit", () => {
+    const cwd = repo();
+    const r = bareTicketRun(cwd, ["sh", "-c", "echo 3 pass"]);
+    expect(r.code).toBe(0);
+    expect(r.err).toContain(
+      "note: coverage limit: ticket demo-bare has no acceptance criteria or named verification; under the unattended policy verify counts the recorded repository checks, each with its argv, exit status and output digest",
+    );
+  });
+
+  test("the fallback counts nothing but the recorded checks: a failing one refuses, and none at all refuses", () => {
+    const failing = repo();
+    const r = bareTicketRun(failing, ["sh", "-c", "echo 1 fail; exit 1"]);
+    expect(r.code).toBe(1);
+    expect(r.err).not.toContain("note: coverage limit");
+    const none = repo();
+    const n = bareTicketRun(none, undefined);
+    expect(n.code).toBe(1);
+  });
+
+  test.each(HALF_DECLARED)("a ticket with %s is judged, not the fallback, and is refused", (_name, fields) => {
+    const r = bareTicketRun(repo(), ["true"], fields);
+    expect(r.code).toBe(1);
+    expect(r.err).not.toContain("note: coverage limit");
+  });
+
+  test("the fallback still refuses a verify recorded by the build's implementer seat", () => {
+    const self = bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT, verify: UNSCORED_SEAT });
+    expect(self.code).toBe(1);
+    expect(self.err).toContain(
+      "verify was recorded by implementer seat impl-1; an independent verifier seat is required",
+    );
+    expect(bareTicketRun(repo(), ok, BARE, { build: UNSCORED_SEAT, verify: VERIFIER_SEAT }).code).toBe(0);
+  });
+
+  test("the fallback refuses a verify that declares no seat, whether or not the build recorded one", () => {
+    for (const build of [UNSCORED_SEAT, []]) {
+      const unseated = bareTicketRun(repo(), ok, BARE, { build, verify: [] });
+      expect(unseated.code).toBe(1);
+      expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
+    }
+  });
+
+  test("a verify re-recorded at the same head under another seat keeps only that seat's commands", () => {
+    const mine = ["sh", "-c", "echo verifier"];
+    // An implementer-seat verify is refused; a verifier re-recording at the same head is judged on its own commands.
+    for (const first of [UNSCORED_SEAT, []]) {
+      const cwd = repo();
+      const { run, code } = bareTicketRun(cwd, ok, BARE, { build: UNSCORED_SEAT, verify: first });
+      expect(code).toBe(1);
+      expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...mine).code).toBe(0);
+      expect(verifyArgv(cwd, run)).toEqual([mine]);
+      expect(ak(cwd, "check").code).toBe(0);
+    }
+    // An unseated command after a verifier's record is not credited to the verifier.
+    const cwd = repo();
+    const { run, code } = bareTicketRun(cwd, mine, BARE, { build: UNSCORED_SEAT });
+    expect(code).toBe(0);
+    expect(ak(cwd, "record", "--gate", "verify", "--", ...ok).code).toBe(0);
+    expect(verifyArgv(cwd, run)).toEqual([ok]);
+    const unseated = ak(cwd, "check");
+    expect(unseated.code).toBe(1);
+    expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
+    // The same seat re-recording keeps accumulating its commands.
+    expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...mine).code).toBe(0);
+    expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...ok).code).toBe(0);
+    expect(verifyArgv(cwd, run)).toEqual([mine, ok]);
+  });
+
+  test("a failing verify command stays on the record when another seat re-records, until that command passes", () => {
+    const fails = ["sh", "-c", "exit 1"];
+    const other = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "verifier-2"];
+    for (const first of [VERIFIER_SEAT, []]) {
+      const cwd = repo();
+      const { run, code } = bareTicketRun(cwd, fails, BARE, { build: UNSCORED_SEAT, verify: first });
+      expect(code).toBe(1);
+      expect(ak(cwd, "record", "--gate", "verify", ...other, "--", ...ok).code).toBe(0);
+      expect(verifyArgv(cwd, run)).toEqual([fails, ok]);
+      const laundered = ak(cwd, "check");
+      expect(laundered.code).toBe(1);
+      expect(laundered.err).toContain(`failed evidence: ${JSON.stringify(fails)} exited 1`);
+    }
+  });
+
+  test("the fallback's coverage limit is recorded on the ship decision and printed in the ship disclosure", () => {
+    const cwd = repo();
+    const { run, code } = bareTicketRun(cwd, ok);
+    expect(code).toBe(0);
+    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
+    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
+    stubGh(
+      withFixtures({
+        [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+      }),
+    );
+    const shipped = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(0);
+    const limit = "ticket demo-bare has no acceptance criteria or named verification";
+    expect(shipped.out).toContain(`coverage limit: ${limit}`);
+    const decisions = join(store(cwd), run, "decisions");
+    const decision: unknown = JSON.parse(readFileSync(join(decisions, readdirSync(decisions).at(-1) ?? ""), "utf8"));
+    expect(decision).toMatchObject({ outcome: "allowed", reasons: [{ code: "coverage-limit" }] });
+    expect(JSON.stringify(decision)).toContain(limit);
+  });
+
+  test("outside the unattended policy a ticket with no criteria or named verification is still unavailable", () => {
+    const cwd = repo();
+    runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd)).out);
+    for (const g of ["build-checks", "review-full", "review-readiness", "verify"])
+      expect(ak(cwd, "record", "--gate", g).code).toBe(0);
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("ticket demo-bare has no acceptance criteria or named verification");
+    expect(r.err).not.toContain("note: coverage limit");
+  });
+
+  test("the classless seat form takes --author-kind, --host and --seat-id together, and the class form is unchanged", () => {
+    const cwd = repo();
+    for (const partial of [
+      ["--author-kind", "agent", "--host", "claude-code"],
+      ["--seat-id", "impl-1"],
+      ["--author-kind", "agent", "--seat-id", "impl-1"],
+    ]) {
+      const r = ak(cwd, "record", "--gate", "build-checks", ...partial);
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("--author-kind, --host and --seat-id must be supplied together");
+    }
+    const classOnly = ak(cwd, "record", "--gate", "build-checks", "--class", "green");
+    expect(classOnly.code).toBe(2);
+    expect(classOnly.err).toContain("--class, --author-kind, and --host must be supplied together");
+    const badKind = ak(
+      cwd,
+      "record",
+      "--gate",
+      "build-checks",
+      "--author-kind",
+      "bot",
+      "--host",
+      "codex",
+      "--seat-id",
+      "s",
+    );
+    expect(badKind.code).toBe(2);
+    expect(badKind.err).toContain("--author-kind must be one of");
+    expect(recordsOf(cwd, "feature", "build-checks")).toEqual([]);
   });
 
   test("a legacy record keeps exactly its members", () => {

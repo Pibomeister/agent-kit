@@ -19,8 +19,9 @@ The authoritative class-to-checkpoint map is
 [`delegation_classes`](../../policies/authority-defaults.yaml). Read it at the checkpoint; do not
 copy its lists into a skill. A class only narrows checkpoint authority already present in a
 runner-validated charter. It never grants authority, and it is never a finding. Project guidance
-may raise the class without producing a finding (ruling
-`delegation-class-is-authority-not-finding`). Record downstream authorship as author kind plus host,
+numbers may raise the class; only a named human may lower it, with the reason recorded (ruling
+`delegation-class-is-authority-not-finding`). An unavailable on-mode cold read raises a green
+class to yellow-agent by the captain's Q1 decision (GS-004k). Record downstream authorship as author kind plus host,
 never as an implementation identity.
 
 The class changes authorship and checkpoint authority, not whether bounding produces a ticket. A
@@ -70,8 +71,13 @@ and ensure both the ticket and project record validate. The seed is an input the
 not a judgment: a first ticket-time block seeds `class` at `green`, and a re-run carries the class
 the previous run persisted. When `lowered_by` records a named human's lowering, the seed is the
 class that person lowered to; the scorer still holds the floor and supersedes the lowering when a
-later computed class exceeds `from`. The scorer only raises the seed, so any seed outside these
-three cases is a hand-derived class. Then run:
+later computed class exceeds `from`. When `review.cold_read` is on, the cited read is unavailable,
+and the computed class is `green`, seed `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in
+force. A live lowering supersedes that raise: keep the lowered class and leave `lowered_by`
+unsuperseded. A later completed read does not reseed `green`; the raised class persists until a
+named human lowers it. Only a named human may lower the class, with the reason recorded (ruling
+`delegation-class-is-authority-not-finding`). The scorer only raises the seed, so any seed outside these four cases is a
+hand-derived class. Then run:
 
 ```text
 ak delegation <ticket> --project <project-record>
@@ -81,6 +87,27 @@ Persist the command's complete JSON output as the ticket's `delegation` block. C
 project artifact references used for the run wherever another artifact consumes the result. A body
 must not reproduce the formula, weights, cut points, floor table or lowering logic. A missing or
 failed scorer run leaves no delegation record and blocks the checkpoint.
+
+Under the unattended policy only, a delegation coverage limit — no project record, a valid one
+without delegation guidance, or a missing `ak delegation` command — is not a missing scorer run and
+never stops a phase. Record it once naming its cause. A missing `ak delegation` command is one not on `PATH`, an unknown subcommand or a usage error from an older CLI, as in a sandbox with only `node <bundle>/bin/ak-gate.mjs`. With it, a present record's validity is not checked, and the cause reads `missing ak delegation command, project record validity not checked`. A present project record is decided by `ak delegation`, never by hand, whether
+or not the draft ticket carries a `delegation` block, since the command reports the project's
+errors before the ticket's missing block: `ak delegation: project does not match its schema: …` is
+`needs-input`, and `ak delegation: project has no guidance.delegation block (weights and cut points)`
+is the coverage limit. Decide it at super-bound step 10. A ticket-side error
+(`ak delegation: ticket has no delegation block to score`, or
+`ak delegation: ticket does not match its schema: …`) is about the draft, not the record. Under the
+limit the persisted unscored ticket carries no `delegation` block, seeded or default, so build has
+no class to pass. Only an absent project
+record skips the command. The ticket carries no `delegation` block, keeps `readiness` and
+`assumptions`, and adds an assumption, resolved `non-goal`, reading
+`delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>`,
+listing the attached never-dropped packs and required sensitive actions in place of the floor.
+Scorer inputs are never invented, and every required sensitive action still stops. No class is
+derived for the ticket downstream: build records no class but still declares the implementer seat,
+and ship states the class as unscored with those packs and actions. A project record that fails
+`schemas/project.schema.json` validation stops under every policy, and outside the unattended
+policy missing delegation guidance is `needs-input`.
 
 ## Factor evidence
 
@@ -285,5 +312,12 @@ the class. Keep the author's type-check as the zero-context gate.
 readiness criteria, then re-run the scorer command from step 10. The read adds evidence only
 and does not change factor scores or weights. A completed cold read is binding. An unavailable
 read is cited with its reason; for that ticket only, the author's empty-context check decides
-whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. Neither
-case changes the class.
+whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. If that
+ticket's class is `green`, seed `yellow-agent` and re-run the scorer, unless a live named-human
+lowering is in force. A live lowering supersedes this raise: keep the lowered class and leave
+`lowered_by` unsuperseded. That yellow-agent seed is the captain's Q1 decision (GS-004k), not a
+hand-derived class. Only a named human may lower the class, with the reason recorded (ruling
+`delegation-class-is-authority-not-finding`). A later completed read
+does not reseed `green`; the raised class persists until a named human lowers it. Off and shadow
+do not seed from the read. An unscored ticket has no class, so the raise is skipped. The validator
+does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening).

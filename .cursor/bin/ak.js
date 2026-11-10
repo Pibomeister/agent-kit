@@ -16999,7 +16999,7 @@ var init_project_schema = __esm(() => {
             default: "off"
           },
           cold_read: {
-            description: "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            description: "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening). A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
             enum: ["off", "shadow", "on"],
             default: "off"
           }
@@ -17943,7 +17943,7 @@ var init_cold_read_schema = __esm(() => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://agent-kit.local/schemas/cold-read.schema.json",
     title: "Ticket cold read",
-    description: "An independent read of one implementation ticket: what the reader would build, every decision the ticket leaves open, terms it could not resolve, codebase claims marked already present or proposed by the ticket, and whether each readiness criterion's named evidence was found. A path or name the ticket proposes is not a defect for being absent at the stated revision. The record is a run artifact cited from the ticket when the project setting is on. A cited read satisfies review.cold_read on only when status is complete or unavailable. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). Not yet backed by live probe evidence (phase 1b, GS-004g).",
+    description: "An independent read of one implementation ticket: what the reader would build, every decision the ticket leaves open, terms it could not resolve, codebase claims marked already present or proposed by the ticket, and whether each readiness criterion's named evidence was found. A path or name the ticket proposes is not a defect for being absent at the stated revision. The record is a run artifact cited from the ticket when the project setting is on. A cited read satisfies review.cold_read on only when status is complete or unavailable. A draft or missing status does not. When review.cold_read is on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Off and shadow do not raise (phase 1b, GS-004k). Not yet backed by live probe evidence (phase 1b, GS-004g).",
     type: "object",
     required: ["ticket", "state"],
     properties: {
@@ -38216,12 +38216,12 @@ function floorClass(floor) {
   return highest(...floor.packs.map((pack) => PACK_FLOORS.get(pack) ?? "green"), ...floor.sensitive_actions.map((action) => ACTION_FLOORS.get(action) ?? "yellow-owner"));
 }
 function scoreDelegation(ticket, project) {
-  const source = ticket.delegation;
-  if (source === undefined)
-    throw new Error("ticket has no delegation block to score");
   const guidance = project.guidance.delegation;
   if (guidance === undefined)
     throw new Error("project has no guidance.delegation block (weights and cut points)");
+  const source = ticket.delegation;
+  if (source === undefined)
+    throw new Error("ticket has no delegation block to score");
   const { yellow_agent: yellowAgent, yellow_owner: yellowOwner, red } = guidance.cut_points;
   if (!(yellowAgent < yellowOwner && yellowOwner < red)) {
     throw new Error("project.guidance.delegation cut points must be strictly ascending");
@@ -43980,11 +43980,7 @@ function collectInput(cwd) {
 init_trace();
 init_wire();
 function enablement(flag3) {
-  if (flag3 === "0")
-    return { enabled: false, explicit: true };
-  if (flag3 === "1")
-    return { enabled: true, explicit: true };
-  return { enabled: true, explicit: false };
+  return flag3 === "1";
 }
 async function runHook(options) {
   const base2 = { advisory: true, excluded: [], excludedOmitted: 0 };
@@ -44028,7 +44024,7 @@ async function runHook(options) {
   }
 }
 function hookOutput(result2, options = {}) {
-  if (options.explicit === false && result2.status === "skipped")
+  if (result2.status === "skipped" && result2.reason === "disabled")
     return options.host === "codex" ? {} : { ...result2 };
   const details = result2.findings.map((finding) => {
     const label = scoreCriteria[Math.floor(finding.score)] ?? "unknown";
@@ -44050,7 +44046,7 @@ async function hookMain(argv) {
   const codex = argv.length === 2 && argv[0] === "--host" && argv[1] === "codex";
   if (argv.length > 0 && !codex)
     return 2;
-  const { enabled, explicit } = enablement(process.env.AK_JEV_ENABLED);
+  const enabled = enablement(process.env.AK_JEV_ENABLED);
   const controller = new AbortController;
   const cancel = () => controller.abort();
   process.once("SIGTERM", cancel);
@@ -44063,7 +44059,7 @@ async function hookMain(argv) {
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal
   });
-  console.log(JSON.stringify(hookOutput(result2, { explicit, host: codex ? "codex" : "claude-code" })));
+  console.log(JSON.stringify(hookOutput(result2, { host: codex ? "codex" : "claude-code" })));
   return 0;
 }
 var ajv10 = new import_ajv16.default({ strict: false });
@@ -44584,15 +44580,15 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
 }
 function checkSemanticLint(keyFile, flag3) {
   const check2 = "semantic lint";
-  if (flag3 === "0")
-    return finding("WARN", check2, "disabled by AK_JEV_ENABLED=0", "Unset AK_JEV_ENABLED to run the Stop hook.");
+  if (flag3 !== "1")
+    return finding("WARN", check2, "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1", "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.");
   let present;
   try {
     present = readKeyFile(keyFile) !== null;
   } catch {
     return finding("FAIL", check2, `${keyFile} is not a private owner-only file with one key assignment`, "Make it a regular file you own, mode 0600, holding one TYPESAFE_API_KEY= line.");
   }
-  return present ? finding("PASS", check2, "key file present and owner-only; the Stop hook runs on changed files", "None.") : finding("WARN", check2, `no key file at ${keyFile}; the Stop hook skips quietly`, "Place an existing key in that file, mode 0600, to turn the check on.");
+  return present ? finding("PASS", check2, "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1", "None.") : finding("WARN", check2, `no key file at ${keyFile}; the Stop hook skips (missing-key)`, "Place an existing key in that file, mode 0600, to turn the check on.");
 }
 function print(items2, json = false) {
   if (json)
