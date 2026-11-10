@@ -26,7 +26,8 @@ graders:
     criteria: >-
       The ticket carries no delegation block and no invented class or factor scores, and one of its
       assumptions reads delegation unscored with the missing project record as its cause (coverage
-      limit).
+      limit), states the floor not evaluated and lists the attached packs and required sensitive
+      actions, or none.
   - name: no-scorer-run
     type: tool_used
     tool: Bash

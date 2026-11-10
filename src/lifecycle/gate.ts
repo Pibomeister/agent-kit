@@ -2002,7 +2002,7 @@ export const LIFECYCLE_USAGE = [
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--binding <file>] [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>] | --author-kind <kind> --host <id> --seat-id <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
@@ -2679,12 +2679,15 @@ export function main(
     const host = str("host");
     const seatId = str("seat-id");
     const identityMembers = [classFlag, authorKindFlag, host].filter((value) => value !== undefined).length;
-    if (identityMembers !== 0 && identityMembers !== 3) {
-      io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
+    // An unscored ticket (no delegation class) still declares its implementer seat, so a receipt that
+    // seat wrote is refused: without --class the seat is the three of --author-kind, --host, --seat-id.
+    const seatMembers = [authorKindFlag, host, seatId].filter((value) => value !== undefined).length;
+    if (classFlag === undefined && seatMembers !== 0 && seatMembers !== 3) {
+      io.err("ak lifecycle record: without --class, --author-kind, --host and --seat-id must be supplied together");
       return 2;
     }
-    if (seatId !== undefined && identityMembers !== 3) {
-      io.err("ak lifecycle record: --seat-id requires --class, --author-kind, and --host");
+    if (classFlag !== undefined && identityMembers !== 3) {
+      io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
       return 2;
     }
     if (seatId !== undefined && !ARTIFACT_ID.test(seatId)) {

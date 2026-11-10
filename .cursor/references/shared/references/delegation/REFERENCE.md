@@ -84,12 +84,18 @@ failed scorer run leaves no delegation record and blocks the checkpoint.
 
 Under the unattended policy only, a delegation coverage limit — no project record, or a valid one
 without delegation guidance — is not a missing scorer run and never stops a phase. Record it once
-naming its cause and run no `.cursor/bin/ak delegation`. The ticket carries no `delegation` block, keeps
-`readiness` and `assumptions`, and adds an assumption, resolved `non-goal`, reading
-`delegation unscored: <cause> (coverage limit)`. Scorer inputs are never invented, and no class is
-derived for the ticket downstream: build records none, and ship states it as unscored. A project
-record that fails [`schemas/project.schema.json`](../../schemas/project.schema.json) validation stops under every policy, and outside the
-unattended policy missing delegation guidance is `needs-input`.
+naming its cause. A present project record is decided by `.cursor/bin/ak delegation`, never by hand: its
+`project does not match its schema` error is `needs-input`, and its
+`project has no guidance.delegation block` error is the coverage limit. Only an absent project
+record skips the command. The ticket carries no `delegation` block, keeps `readiness` and
+`assumptions`, and adds an assumption, resolved `non-goal`, reading
+`delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>`,
+listing the attached never-dropped packs and required sensitive actions in place of the floor.
+Scorer inputs are never invented, and every required sensitive action still stops. No class is
+derived for the ticket downstream: build records no class but still declares the implementer seat,
+and ship states the class as unscored with those packs and actions. A project record that fails
+[`schemas/project.schema.json`](../../schemas/project.schema.json) validation stops under every policy, and outside the unattended
+policy missing delegation guidance is `needs-input`.
 
 ## Factor evidence
 

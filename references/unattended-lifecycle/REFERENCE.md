@@ -42,11 +42,13 @@ sensitive action, including production writes, deploys, releases, destructive ex
 and credential or protection changes. Merge is never the run's.
 
 A delegation coverage limit is no project record, or a valid one without delegation guidance. Bound
-records it once naming its cause and never stops a phase for it: no `ak delegation` runs, and each
-ticket carries no `delegation` block and an assumption reading
-`delegation unscored: <cause> (coverage limit)`, as the delegation reference says. Build, verify,
-review and ship take that ticket as it is: no class is recorded or derived for it, and scorer inputs
-are never invented.
+records it once naming its cause and never stops a phase for it: `ak delegation` decides a present
+record and is not run without one, and each ticket carries no `delegation` block and an assumption reading
+`delegation unscored: <cause> (coverage limit)` that states the floor not evaluated and lists the
+attached packs and required sensitive actions, as the delegation reference says. Build, verify,
+review and ship take that ticket as it is: no class is recorded or derived for it, scorer inputs are
+never invented, and every required sensitive action still stops. The build still declares the
+implementer seat, so self-verification is still refused.
 
 ## Recording each phase
 

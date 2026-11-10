@@ -142,7 +142,7 @@ The project's own release checks, discovered rather than assumed.
    --task <id>`. Recording closes the run; a changed head needs a new run
    and fresh gates. Compose any PR payload from the ticket, receipts and verdict, linking the recipe,
    acceptance-to-evidence matrix and evidence digests with the delegation class, sensitive factors,
-   risks and rollback fields. An unscored ticket's class is stated as unscored with its coverage limit, never derived.
+   risks and rollback fields. An unscored ticket's class is stated as unscored with its coverage limit, never derived, and in place of the sensitive factors the payload lists its attached packs and required sensitive actions and states that the delegation floor was not evaluated.
 8. For no-mistakes delivery, stop at this immutable handoff (under the unattended policy an intermediate one). Do not push, open a PR or pass a skip;
    the task's no-mistakes delivery contract owns the branch from here. Follow
    `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`). A deprecated

@@ -815,6 +815,21 @@ describe("selection and start (command seam)", () => {
   });
 });
 
+/** An unscored ticket's run: build-checks recorded with `seat` flags and no class, then verify with `receipt`. */
+function unscoredRun(cwd: string, seat: string[], receipt: JsonObject) {
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const ticketPath = ticketFile(cwd);
+  const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+  expect(ak(cwd, "record", "--gate", "build-checks", ...seat, "--", ...ok).code).toBe(0);
+  for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const path = receiptFile(cwd, run, ticketPath, receipt);
+  expect(ak(cwd, "record", "--gate", "verify", "--receipt", path, "--", ...ok).code).toBe(0);
+  return run;
+}
+const UNSCORED_SEAT = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "impl-1"];
+const IMPLEMENTER_RECEIPT = { created_by: { role: "implementer" } };
+
 describe("command evidence, import and the pre-ship check (command seam)", () => {
   test("phase gates are refused without the policy; under it the tool runs and records the command", () => {
     const cwd = repo();
@@ -976,6 +991,65 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     const r = ak(cwd, "check");
     expect(r.err).toContain("host-unattested");
     expect(r.code).toBe(0);
+  });
+
+  test("an unscored ticket records its implementer seat without a class, and a receipt the implementer wrote is refused", () => {
+    const cwd = repo();
+    const run = unscoredRun(cwd, UNSCORED_SEAT, IMPLEMENTER_RECEIPT);
+    const [build] = recordsOf(cwd, run, "build-checks");
+    expect(build?.class).toBeUndefined();
+    expect(build?.implementer).toEqual({ author_kind: "agent", host: "claude-code", seat_id: "impl-1" });
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("was created by implementer; an independent verifier seat is required");
+  });
+
+  test("an unscored ticket's seat passes check with an independent verifier's receipt", () => {
+    const cwd = repo();
+    unscoredRun(cwd, UNSCORED_SEAT, {
+      created_by: { role: "verifier" },
+      verifier_seat: { id: "verifier-1", implementer_seat: "impl-1", isolation: "host-unattested", attestation: null },
+    });
+    const r = ak(cwd, "check");
+    expect(r.err).not.toContain("an independent verifier seat is required");
+    expect(r.code).toBe(0);
+  });
+
+  test("without the seat recorded, the same implementer receipt is not refused: the seat is what refuses it", () => {
+    const cwd = repo();
+    unscoredRun(cwd, [], IMPLEMENTER_RECEIPT);
+    expect(ak(cwd, "check").code).toBe(0);
+  });
+
+  test("the classless seat form takes --author-kind, --host and --seat-id together, and the class form is unchanged", () => {
+    const cwd = repo();
+    for (const partial of [
+      ["--author-kind", "agent", "--host", "claude-code"],
+      ["--seat-id", "impl-1"],
+      ["--author-kind", "agent", "--seat-id", "impl-1"],
+    ]) {
+      const r = ak(cwd, "record", "--gate", "build-checks", ...partial);
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("--author-kind, --host and --seat-id must be supplied together");
+    }
+    const classOnly = ak(cwd, "record", "--gate", "build-checks", "--class", "green");
+    expect(classOnly.code).toBe(2);
+    expect(classOnly.err).toContain("--class, --author-kind, and --host must be supplied together");
+    const badKind = ak(
+      cwd,
+      "record",
+      "--gate",
+      "build-checks",
+      "--author-kind",
+      "bot",
+      "--host",
+      "codex",
+      "--seat-id",
+      "s",
+    );
+    expect(badKind.code).toBe(2);
+    expect(badKind.err).toContain("--author-kind must be one of");
+    expect(recordsOf(cwd, "feature", "build-checks")).toEqual([]);
   });
 
   test("a legacy record keeps exactly its members", () => {

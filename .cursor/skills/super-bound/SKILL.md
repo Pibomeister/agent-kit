@@ -70,8 +70,8 @@ a ticket whose class makes a human the author keeps that class, and a delegation
   [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 - The project record's configured guidance ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)) for change size and test
   shape. Absent: the starting points below are advisory and nothing enforces them.
-- Delegation guidance on that same project record. Outside the unattended policy, missing delegation guidance is `needs-input`. Under the unattended policy, no project record, or a valid one without delegation guidance, is a delegation coverage limit: record it once naming its cause, run no `.cursor/bin/ak delegation`, and give each ticket no `delegation` block and an assumption, resolved `non-goal`, reading `delegation unscored: <cause> (coverage limit)`; it never stops this phase.
-  A present project record that fails [`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json) validation is `needs-input` under every policy. Scorer inputs are never invented.
+- Delegation guidance on that same project record. Outside the unattended policy, missing delegation guidance is `needs-input`. Under the unattended policy, no project record, or a valid one without delegation guidance, is a delegation coverage limit: record it once naming its cause, and give each ticket no `delegation` block and an assumption, resolved `non-goal`, reading `delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>; sensitive actions: <ids or none>`. It never stops this phase, and every required sensitive action still stops.
+  A present project record is decided by `.cursor/bin/ak delegation`, never by hand: `project does not match its schema` is `needs-input` under every policy, and `project has no guidance.delegation block` is the coverage limit. Only an absent project record skips `.cursor/bin/ak delegation`. A present project record that fails [`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json) validation is `needs-input` under every policy. Scorer inputs are never invented.
 - The project's verification recipes and surface declarations ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)).
   Absent or empty: record the gap; never assume a browser, running service, trace collector or
   command the project did not declare.
@@ -111,7 +111,7 @@ a ticket whose class makes a human the author keeps that class, and a delegation
    prerequisite: a missing command, or a usage error from an older CLI, is reported as
    `needs-input` naming that prerequisite, not as a scoring failure. Persist the scorer output,
    readiness and assumptions on the evidence-bearing draft before document review; the draft is not
-   an approved implementation ticket. Under a delegation coverage limit this step runs nothing.
+   an approved implementation ticket. Under a delegation coverage limit no scorer output is persisted; readiness and assumptions are still persisted.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
@@ -132,7 +132,7 @@ a ticket whose class makes a human the author keeps that class, and a delegation
    zero-context slice.
 10. Run `.cursor/bin/ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
    factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
-   `assumptions` before returning, including on `needs-input`. Never derive the class in this body. Under a delegation coverage limit this step runs nothing and the ticket carries its unscored assumption.
+   `assumptions` before returning, including on `needs-input`. Never derive the class in this body. Under a delegation coverage limit the ticket carries its unscored assumption in place of the scorer output; readiness and assumptions are still persisted.
 11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
     and what it produces that later tickets rely on with exact names, parameters and return types.
     Write for a skilled developer who knows almost nothing about this toolset or problem domain.
@@ -241,7 +241,7 @@ skill enters, not a skill it starts:
   graph, published under a `run-artifact` placement and linked from the `prd`.
 - `ticket` ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), `type: implementation`, id `bound-<spec>-<slice>` — one
   per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
-  `assumptions` and the exact ticket-time `delegation` output. When `review.cold_read` is on, it
+  `assumptions` and the exact ticket-time `delegation` output, or, unscored under a delegation coverage limit, no `delegation` block and the unscored assumption. When `review.cold_read` is on, it
   cites `cold_read_ref`.
 - `cold-read` ([`schemas/cold-read.schema.json`](../../references/shared/schemas/cold-read.schema.json)) — a run artifact per implementation ticket when
   `review.cold_read` is shadow or on, published under a `run-artifact` placement. Off stores none.
@@ -264,7 +264,7 @@ performed is `failed`, never complete.
 ## Stop conditions
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
-  ticket, every implementation ticket carries the three evidence blocks, every on-mode
+  ticket, every implementation ticket carries the three evidence blocks (an unscored ticket under a delegation coverage limit carries readiness and assumptions, with no `delegation` block), every on-mode
   implementation ticket cites a finished cold read, or an unavailable read with its reason, and
   every published artifact's read-back matched what was sent.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the

@@ -84,10 +84,14 @@ inputs:
       or on, default off (phase 1b, GS-004i). Outside the unattended policy, missing delegation
       guidance is needs-input. Under the unattended policy, no project record, or a valid one
       without delegation guidance, is a delegation coverage limit: record it once naming its cause,
-      run no ak delegation, and give each ticket no delegation block and an assumption, resolved
-      non-goal, reading `delegation unscored: <cause> (coverage limit)`; it never stops this phase.
-      A present project record that fails schemas/project.schema.json validation is needs-input
-      under every policy. Scorer inputs and runtime facilities are never invented.
+      and give each ticket no delegation block and an assumption, resolved non-goal, reading
+      `delegation unscored: <cause> (coverage limit); floor not evaluated; packs: <ids or none>;
+      sensitive actions: <ids or none>`. It never stops this phase, and every required sensitive
+      action still stops. A present project record is decided by ak delegation, never by hand:
+      `project does not match its schema` is needs-input under every policy, and `project has no
+      guidance.delegation block` is the coverage limit. Only an absent project record skips ak
+      delegation. A present project record that fails schemas/project.schema.json validation is
+      needs-input under every policy. Scorer inputs and runtime facilities are never invented.
   - id: charter
     schema: charter
     required: false
@@ -182,7 +186,8 @@ hard_gates:
 
 stop_conditions:
   - complete when the specification is approved at its hash, every acceptance criterion is covered
-    by a ticket, every implementation ticket carries its three evidence blocks, every on-mode
+    by a ticket, every implementation ticket carries its three evidence blocks (an unscored ticket
+    under a delegation coverage limit carries readiness and assumptions, with no delegation block), every on-mode
     implementation ticket cites a finished cold read, or an unavailable read with its reason, and
     every published artifact's read-back matched what was sent.
   - needs-input when the run was started by none of the typed command, a validated grant, a passing
@@ -202,8 +207,10 @@ stop_conditions:
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped publish is named in the result as not published, and of these results only exit 1 stops.
   - Under the unattended policy, no project record, or a valid one without delegation guidance, is
-    a delegation coverage limit that never stops this phase. It is recorded once with its cause, no
-    ak delegation runs, and each ticket carries no delegation block and the unscored assumption.
+    a delegation coverage limit that never stops this phase. It is recorded once with its cause,
+    ak delegation runs only against a present record, and each ticket carries no delegation block
+    and the unscored assumption, which states the floor not evaluated and lists the attached packs
+    and required sensitive actions; every required sensitive action still stops.
     Outside the unattended policy, missing delegation guidance is needs-input. A present project
     record that fails schemas/project.schema.json validation is needs-input under every policy.
 
@@ -418,13 +425,24 @@ tests:
       The skill records one delegation coverage limit naming the missing project record, does not
       stop for it, runs no ak delegation, invents no project record or scorer input, and writes the
       ticket with no delegation block and an assumption reading delegation unscored with that cause.
+  - id: unattended-record-without-guidance-continues-unscored
+    kind: missing-tools
+    given: >-
+      The unattended policy is active and the approved specification binds to the current revision.
+      The committed project record passes its schema but carries no delegation guidance, and ak
+      delegation reports that.
+    expect: >-
+      The skill runs ak delegation, records one delegation coverage limit naming the missing
+      delegation guidance, does not stop for it, leaves the project record unchanged, and writes the
+      ticket with no delegation block and the unscored assumption.
   - id: invalid-project-record-stops
     kind: missing-tools
     given: >-
       The unattended policy is active and the approved specification binds to the current revision,
-      but the committed project record fails schemas/project.schema.json validation.
+      but the committed project record fails schemas/project.schema.json validation, and ak
+      delegation reports that.
     expect: >-
-      The skill stops with needs-input naming the invalid project record, does not treat it as a
+      The skill runs ak delegation and stops with needs-input naming the invalid project record, does not treat it as a
       coverage limit, and writes no ticket.
   - id: delegated-refresh-token-rotation
     kind: adversarial
