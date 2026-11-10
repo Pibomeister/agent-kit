@@ -486,21 +486,23 @@ function keyed(text: string, mode = 0o600): string {
   return file;
 }
 
-function doctorWith(value: string, mode: number) {
+function doctorWith(value: string, mode: number, flag: string | null = "1") {
   const home = processScratch("ak-doctor-jev-home-");
   mkdirSync(join(home, ".config/agent-kit"), { recursive: true });
   writeFileSync(join(home, ".config/agent-kit/jev.env"), `TYPESAFE_API_KEY='${value}'\n`, { mode });
   chmodSync(join(home, ".config/agent-kit/jev.env"), mode);
   const cwd = project();
+  const env: NodeJS.ProcessEnv = {
+    ...maintenanceEnv,
+    CLAUDE_CONFIG_DIR: join(cwd, "claude-home"),
+    CODEX_HOME: join(cwd, "codex-home"),
+    HOME: home,
+  };
+  if (flag === null) delete env.AK_JEV_ENABLED;
+  else env.AK_JEV_ENABLED = flag;
   return spawnSync(process.execPath, [maintenanceCli, "doctor", "--json"], {
     cwd,
-    env: {
-      ...maintenanceEnv,
-      CLAUDE_CONFIG_DIR: join(cwd, "claude-home"),
-      CODEX_HOME: join(cwd, "codex-home"),
-      HOME: home,
-      AK_JEV_ENABLED: "",
-    },
+    env,
     encoding: "utf8",
   });
 }
@@ -514,13 +516,15 @@ describe("ak doctor semantic lint check", () => {
       checkSemanticLint(good, undefined),
       checkSemanticLint(good, "1"),
       checkSemanticLint(good, "0"),
-      checkSemanticLint(join(processScratch("ak-doctor-jev-none-"), "jev.env"), undefined),
-      checkSemanticLint(keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644), undefined),
-      checkSemanticLint(keyed("OTHER=1\n"), undefined),
+      checkSemanticLint(join(processScratch("ak-doctor-jev-none-"), "jev.env"), "1"),
+      checkSemanticLint(keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644), "1"),
+      checkSemanticLint(keyed("OTHER=1\n"), "1"),
     ];
-    expect(found.map((item) => item.level)).toEqual(["PASS", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
-    expect(found[0]?.detail).toBe("key file present and owner-only; the Stop hook runs on changed files");
-    expect(found[2]?.detail).toBe("disabled by AK_JEV_ENABLED=0");
+    expect(found.map((item) => item.level)).toEqual(["WARN", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
+    expect(found[0]?.detail).toBe("AK_JEV_ENABLED is not 1; the Stop hook does not run");
+    expect(found[0]?.remedy).toBe("Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
+    expect(found[1]?.detail).toBe("key file present and owner-only; the Stop hook runs on changed files");
+    expect(found[2]?.detail).toBe("AK_JEV_ENABLED is not 1; the Stop hook does not run");
     expect(found[3]?.detail).toStartWith("no key file at ");
     expect(found[3]?.detail).toEndWith("; the Stop hook skips quietly");
     expect(found[4]?.detail).toEndWith(" is not a private owner-only file with one key assignment");
@@ -534,9 +538,24 @@ describe("ak doctor semantic lint check", () => {
     const target = keyed(`TYPESAFE_API_KEY=${value}\n`);
     const link = join(processScratch("ak-doctor-jev-link-"), "jev.env");
     symlinkSync(target, link);
-    const item = checkSemanticLint(link, undefined);
+    const item = checkSemanticLint(link, "1");
     expect(item.level).toBe("FAIL");
     expect(JSON.stringify(item)).not.toContain(value);
+  });
+
+  test("doctor warns on unset even with a good key file", () => {
+    const run = doctorWith(value, 0o600, null);
+    expect(JSON.parse(run.stdout)).toHaveProperty(
+      "findings",
+      expect.arrayContaining([
+        expect.objectContaining({
+          check: "semantic lint",
+          level: "WARN",
+          detail: "AK_JEV_ENABLED is not 1; the Stop hook does not run",
+        }),
+      ]),
+    );
+    expect(run.stdout + run.stderr).not.toContain(value);
   });
 
   test("the doctor reports the key file it found and never prints its value", () => {
@@ -565,7 +584,7 @@ describe("ak doctor semantic lint check", () => {
     expect(quiet.status).toBe(0);
     expect(JSON.parse(quiet.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],

@@ -43899,11 +43899,9 @@ function collectInput(cwd) {
 init_trace();
 init_wire();
 function enablement(flag3) {
-  if (flag3 === "0")
-    return { enabled: false, explicit: true };
   if (flag3 === "1")
     return { enabled: true, explicit: true };
-  return { enabled: true, explicit: false };
+  return { enabled: false, explicit: false };
 }
 async function runHook(options) {
   const base2 = { advisory: true, excluded: [], excludedOmitted: 0 };
@@ -44503,8 +44501,8 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
 }
 function checkSemanticLint(keyFile, flag3) {
   const check2 = "semantic lint";
-  if (flag3 === "0")
-    return finding("WARN", check2, "disabled by AK_JEV_ENABLED=0", "Unset AK_JEV_ENABLED to run the Stop hook.");
+  if (flag3 !== "1")
+    return finding("WARN", check2, "AK_JEV_ENABLED is not 1; the Stop hook does not run", "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
   let present;
   try {
     present = readKeyFile(keyFile) !== null;

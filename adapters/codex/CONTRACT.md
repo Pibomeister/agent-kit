@@ -276,7 +276,8 @@ runtime's ledgers never live inside a project repository (ruling
 
 The bundle's one hook is the advisory semantic lint. `hooks/hooks.json` runs
 `"${PLUGIN_ROOT}/bin/ak" semantic-lint hook --host codex` on `Stop` with a 30-second timeout, which
-prints only `{ "systemMessage": … }` or `{}` (`docs/semantic-lint.md`). Codex skips this hook until
+prints only `{ "systemMessage": … }` or `{}` (`docs/semantic-lint.md`). It is off unless
+`AK_JEV_ENABLED=1` in the hook process. Codex skips this hook until
 the operator trusts it in `/hooks`, as point 1 below says of every non-managed hook. agent-kit
 records no trust, writes no Codex settings and never passes `--dangerously-bypass-hook-trust`. The
 bundle holds no key and sets no switch.

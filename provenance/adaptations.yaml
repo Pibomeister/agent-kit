@@ -1477,4 +1477,4 @@ adaptations:
     rationale: Schema tests exercise the new project, ticket, recipe and receipt records plus invalid evidence and response shapes.
   - path: tools/hooks/semantic-lint.ts
     source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:.jev-lint/hooks/pre-commit
-    rationale: Adapt explicit missing-key skip to a default-disabled sibling Stop command. Do not adopt the donor's sequential review commands, live environment key, skill entrypoint or global installation. Merge preserves deterministic and foreign hooks.
+    rationale: Adapt explicit missing-key skip to a sibling Stop command that stays off unless AK_JEV_ENABLED=1. Unset, empty, or any other value is a quiet skip. Do not adopt the donor's sequential review commands, live environment key, skill entrypoint or global installation. Merge preserves deterministic and foreign hooks.

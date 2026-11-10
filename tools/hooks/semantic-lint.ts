@@ -27,11 +27,10 @@ export interface HookOptions extends Omit<BatchOptions, "key" | "traceparent"> {
 
 export type Enablement = { enabled: boolean; explicit: boolean };
 
-/** "0" and "1" are explicit; unset or any other value runs by default, with quiet skips. */
+/** Only "1" turns the hook on. Unset, empty, or any other value is off, with quiet skips. */
 export function enablement(flag: string | undefined): Enablement {
-  if (flag === "0") return { enabled: false, explicit: true };
   if (flag === "1") return { enabled: true, explicit: true };
-  return { enabled: true, explicit: false };
+  return { enabled: false, explicit: false };
 }
 
 export interface OutputOptions {

@@ -4117,7 +4117,7 @@ describe("semantic lint Stop hook in the plugin bundles", () => {
     expect(claude.stderr).toBe("");
     expect(JSON.parse(claude.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],

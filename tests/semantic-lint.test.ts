@@ -168,14 +168,18 @@ describe("optional semantic sibling hook", () => {
       encoding: "utf8",
     });
     expect(run.status).toBe(0);
-    expect(JSON.parse(run.stdout)).toMatchObject({
+    expect(JSON.parse(run.stdout)).toEqual({
       status: "skipped",
       reason: "disabled",
-      systemMessage: "JEV lint (advisory): skipped (disabled).",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
     });
+    expect(JSON.parse(run.stdout)).not.toHaveProperty("systemMessage");
   });
 
-  test("unset enable variable runs by default and skips quietly without a key file", () => {
+  test("unset enable variable skips quietly without reading a key file", () => {
     const root = processScratch("semantic-default-");
     const run = (flag: Record<string, string>) =>
       spawnSync(process.execPath, [ENTRY, "hook"], {
@@ -194,17 +198,23 @@ describe("optional semantic sibling hook", () => {
       excludedOmitted: 0,
       systemMessage: "JEV lint (advisory): skipped (missing-key).",
     });
-    const unset = run({});
-    expect(unset.status).toBe(0);
-    expect(unset.stderr).toBe("");
-    expect(JSON.parse(unset.stdout)).toEqual({
+    const quiet = {
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],
       excludedOmitted: 0,
-    });
+    };
+    const unset = run({});
+    expect(unset.status).toBe(0);
+    expect(unset.stderr).toBe("");
+    expect(JSON.parse(unset.stdout)).toEqual(quiet);
+    for (const flag of ["", "0", "true", "yes", " 1"]) {
+      const off = run({ AK_JEV_ENABLED: flag });
+      expect(off.status).toBe(0);
+      expect(JSON.parse(off.stdout)).toEqual(quiet);
+    }
   });
 
   test("command surfaces auth errors as non-blocking host feedback", () => {
@@ -803,34 +813,38 @@ function claimState(dir: string): ClaimView {
   return { names, state: isState(raw) ? raw.state : null };
 }
 
-describe("default-on enablement and one check per input", () => {
-  test("only 0 and 1 are explicit; unset or any other value runs by default", () => {
-    expect(enablement("0")).toEqual({ enabled: false, explicit: true });
-    expect(enablement("1")).toEqual({ enabled: true, explicit: true });
-    for (const flag of [undefined, "", "true", "yes", " 1"])
-      expect(enablement(flag)).toEqual({ enabled: true, explicit: false });
+async function postsFor(flag: string | undefined) {
+  const options = fixture();
+  let calls = 0;
+  const { enabled, explicit } = enablement(flag);
+  const result = await runHook({
+    ...options,
+    enabled,
+    transport: async (_url, init) => {
+      calls += 1;
+      if (!isText(init.body)) throw new Error("non-text request");
+      return reply(init.body);
+    },
   });
+  return { calls, result, explicit };
+}
 
-  test("default mode makes exactly one call and reports the reviewed result with its message", async () => {
-    const options = fixture();
-    const mode = enablement(undefined);
-    let calls = 0;
-    const result = await runHook({
-      ...options,
-      enabled: mode.enabled,
-      transport: async (_url, init) => {
-        calls += 1;
-        if (!isText(init.body)) throw new Error("non-text request");
-        return reply(init.body);
-      },
-    });
-    expect(calls).toBe(1);
-    expect(result.status).toBe("reviewed");
-    const output = hookOutput(result, { explicit: mode.explicit });
+describe("opt-in enablement and one check per input", () => {
+  test("only AK_JEV_ENABLED=1 posts; unset, 0 and any other value skip with no call", async () => {
+    const on = await postsFor("1");
+    expect(on.calls).toBe(1);
+    expect(on.result.status).toBe("reviewed");
+    const output = hookOutput(on.result, { explicit: on.explicit });
     expect(output.systemMessage).toStartWith("JEV lint (advisory): reviewed.\nReceipt trace: ");
-    expect(hookOutput(result, { explicit: mode.explicit, host: "codex" })).toEqual({
+    expect(hookOutput(on.result, { explicit: on.explicit, host: "codex" })).toEqual({
       systemMessage: output.systemMessage,
     });
+    for (const flag of [undefined, "", "0", "true", "yes", " 1"]) {
+      const off = await postsFor(flag);
+      expect(off.calls).toBe(0);
+      expect(off.result).toMatchObject({ status: "skipped", reason: "disabled" });
+      expect(hookOutput(off.result, { explicit: off.explicit })).not.toHaveProperty("systemMessage");
+    }
   });
 
   test("the off switch reads no key file", async () => {
@@ -839,7 +853,7 @@ describe("default-on enablement and one check per input", () => {
     expect(await runHook({ ...options, enabled: true, transport: neverSend })).toMatchObject({ reason: "auth" });
     const off = await runHook({ ...options, enabled: enablement("0").enabled, transport: neverSend });
     expect(off).toMatchObject({ status: "skipped", reason: "disabled" });
-    expect(hookOutput(off, { explicit: true }).systemMessage).toBe("JEV lint (advisory): skipped (disabled).");
+    expect(hookOutput(off, { explicit: false })).not.toHaveProperty("systemMessage");
   });
 
   test("default mode skips are quiet while errors and reviewed results keep their message", () => {

@@ -561,7 +561,7 @@ describe("install and remove", () => {
     expect(run.status).toBe(0);
     expect(JSON.parse(run.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],

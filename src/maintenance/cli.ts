@@ -499,8 +499,13 @@ export async function manifest(
 /** Reads the key through the hook's own strict reader and keeps only whether it holds one. */
 export function checkSemanticLint(keyFile: string, flag: string | undefined): Finding {
   const check = "semantic lint";
-  if (flag === "0")
-    return finding("WARN", check, "disabled by AK_JEV_ENABLED=0", "Unset AK_JEV_ENABLED to run the Stop hook.");
+  if (flag !== "1")
+    return finding(
+      "WARN",
+      check,
+      "AK_JEV_ENABLED is not 1; the Stop hook does not run",
+      "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.",
+    );
   let present: boolean;
   try {
     present = readKeyFile(keyFile) !== null;

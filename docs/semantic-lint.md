@@ -12,7 +12,8 @@ by the [invocation law](../AGENTS.md#the-invocation-law).
 
 ## Enablement
 
-The hook runs by default. It checks changed files only when the key file is present:
+The hook is off unless `AK_JEV_ENABLED=1` in the hook process. It checks changed files only when that
+variable is `1` and the key file is present:
 
 ```sh
 bun tools/hooks/semantic-lint.ts hook
@@ -22,9 +23,11 @@ bun tools/hooks/semantic-lint.ts hook
 
 | Value | Mode |
 |---|---|
-| unset, or any value but `0` and `1` | Default. It runs, and its skips are quiet |
-| `1` | Explicit. It runs, and every result carries a host message |
-| `0` | Off. It reports `skipped/disabled` before it reads the key file or the repository |
+| `1` | On. Every result carries a host message |
+| unset, empty, `0`, or any other value | Off. Quiet `skipped/disabled` before it reads the key file or the repository |
+
+From 0.1.114, a present key file is not enough. Export `AK_JEV_ENABLED=1` into the host process that
+runs the Stop hook. A shell profile that the host does not inherit does not turn the hook on.
 
 The key file is named by `key_file` in the pin, relative to the user's home. It must be a regular file, not a symlink, owned by the current user,
 with mode `0600`. The hook reads the first valid `TYPESAFE_API_KEY` or `TYPESAFEAI_API_KEY` assignment as data
@@ -32,13 +35,14 @@ through [one strict reader](../src/semantic-lint/key.ts). It never sources the f
 exports the key, or changes a Firstmate environment file. A missing file reports
 `skipped/missing-key`. Unsafe permissions or malformed credentials report `error/auth`.
 
-In default mode a skip prints its structured result with no `systemMessage`, so a session with no
-key, no changed files or a repeated input sees nothing. Errors and reviewed results always carry the
-message. Explicit mode keeps every message, and the claims below stay active in both modes.
+When the hook is off, a skip prints its structured result with no `systemMessage`. Errors and reviewed
+results always carry the message. Explicit mode (`AK_JEV_ENABLED=1`) keeps every message, and the
+claims below stay active in both modes.
 
-`ak doctor` reports one `semantic lint` finding from the same reader: `PASS` when the key file is
-present, owner-only and parseable, `WARN` when it is absent or `AK_JEV_ENABLED=0`, and `FAIL` when it is unsafe
-or malformed. The disabled check returns before reading the file. Findings never include the key value.
+`ak doctor` reports one `semantic lint` finding from the same reader: `PASS` when `AK_JEV_ENABLED=1`
+and the key file is present, owner-only and parseable, `WARN` when the variable is not `1` or the key
+file is absent, and `FAIL` when `AK_JEV_ENABLED=1` and the file is unsafe or malformed. The disabled
+check returns before reading the file. Findings never include the key value.
 
 ## One check per input
 
