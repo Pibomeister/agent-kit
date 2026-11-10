@@ -117,12 +117,12 @@ describe("verdict logic", () => {
     expect(decideArm("auto-loaded-instructions", marker, empty, at).kind).toBe("unobservable");
   });
 
-  test("auto-loaded instructions fail when the marker is in the child context", () => {
+  test("auto-loaded instructions stay recorded when the marker is in the child context", () => {
     const leaked = readEvidence(
       `{"type":"system","subtype":"init","memory_paths":["/work/CLAUDE.md"]}\n{"type":"user","message":{"content":"loaded ${marker}"}}\n`,
       `{"resume":false,"fork_turns":"none","childPrompt":"clean"}`,
     );
-    expect(decideArm("auto-loaded-instructions", marker, leaked, at).kind).toBe("fail");
+    expect(decideArm("auto-loaded-instructions", marker, leaked, at).kind).toBe("recorded");
   });
 
   test("auto-loaded instructions are recorded with the files that arrived", () => {
@@ -406,14 +406,14 @@ describe("fixture driver note writing", () => {
     expect(byId.get("role-file-denied")?.verdict).toBe("fail");
   });
 
-  test("a misconfigured adapter that leaks parent, memory and instructions fails each channel", () => {
+  test("a misconfigured adapter that leaks parent and memory fails those channels; instructions stay recorded", () => {
     const r = runCli("claude-code", { AK_PROBE_FIXTURE_DIR: join(FIXTURES, "misconfigured-adapter") });
     expect(r.status).toBe(0);
     if (r.report === null) throw new Error("expected a verdict file");
     const byId = new Map(r.report.arms.map((arm) => [arm.id, arm]));
     expect(byId.get("parent-turn")?.verdict).toBe("fail");
     expect(byId.get("hooks-and-memory")?.verdict).toBe("fail");
-    expect(byId.get("auto-loaded-instructions")?.verdict).toBe("fail");
+    expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
     const parentMarker = byId.get("parent-turn")?.marker;
     const memoryMarker = byId.get("hooks-and-memory")?.marker;
     const instructionMarker = byId.get("auto-loaded-instructions")?.marker;

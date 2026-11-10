@@ -16,7 +16,9 @@ function run(args: readonly string[]): number {
   }
   const evidence = qualifyT3(args[0]);
   if (evidence === null) {
-    process.stderr.write(`t3-qualify: host must be a directory under adapters/, not ${args[0]}\n`);
+    process.stderr.write(
+      `t3-qualify: host must be a packaging host with a directory under adapters/, not ${args[0]}\n`,
+    );
     return 2;
   }
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);

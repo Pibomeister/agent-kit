@@ -46,13 +46,17 @@ describe("Cursor T3 qualification (GAP-13)", () => {
     expect(unknown.status).toBe(2);
     expect(unknown.stderr).toContain("adapters/");
     expect(runScript(T3_SCRIPT, ["adapters/cursor"]).status).toBe(2);
+    expect(runScript(T3_SCRIPT, ["tracker"]).status).toBe(2);
     expect(runScript(T3_SCRIPT, []).status).toBe(2);
   });
 
   test("qualifyT3 refuses a host id that is not a directory under adapters/", () => {
     expect(isAdapterHost("cursor")).toBe(true);
     expect(isAdapterHost("foo")).toBe(false);
+    expect(existsSync(join(REPO, "adapters/tracker"))).toBe(true);
+    expect(isAdapterHost("tracker")).toBe(false);
     expect(qualifyT3("foo")).toBeNull();
+    expect(qualifyT3("tracker")).toBeNull();
     expect(qualifyT3("adapters/cursor")).toBeNull();
     expect(qualifyT3("cursor")).not.toBeNull();
   });

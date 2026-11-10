@@ -4,7 +4,8 @@
  * Native traces qualify a host. This writer emits the evidence document with
  * empty discovery, slash, readonly and isolation slots and a not-qualified
  * verdict. It never fills a slot and never sets strict. Host ids that are not
- * directories under adapters/ are rejected.
+ * packaging hosts, or that are not directories under adapters/, are rejected.
+ * Support adapters such as tracker are not hosts.
  *
  * There is no reader that turns filled slots into a verdict. A later writer
  * that records real traces still needs a scorer. Until that exists every
@@ -13,6 +14,8 @@
 import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { HOST_IDS } from "../packaging/hosts.ts";
 
 export const T3_SLOTS = ["discovery", "slash", "readonly", "isolation"] as const;
 export type T3SlotId = (typeof T3_SLOTS)[number];
@@ -49,6 +52,7 @@ export function isT3HostId(value: string): boolean {
 
 export function isAdapterHost(host: string, repo: string = REPO): boolean {
   if (!isT3HostId(host)) return false;
+  if (!HOST_IDS.some((id) => id === host)) return false;
   try {
     return statSync(join(repo, "adapters", host)).isDirectory();
   } catch {
