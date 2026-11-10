@@ -40,7 +40,7 @@ const maintenanceRoot = project();
 const maintenanceCli = join(import.meta.dir, "../src/maintenance/cli.ts");
 const maintenanceHome = join(maintenanceRoot, "home");
 mkdirSync(join(maintenanceHome, ".config"), { recursive: true });
-const maintenanceEnv = {
+const maintenanceEnv: NodeJS.ProcessEnv = {
   ...process.env,
   PATH: "/usr/bin:/bin",
   HOME: maintenanceHome,
@@ -118,7 +118,7 @@ fi
   chmodSync(codex, 0o755);
   const home = join(root, "home");
   mkdirSync(join(home, ".config"), { recursive: true });
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${fakeBin}:${process.env.PATH}`,
     HOME: home,

@@ -143,7 +143,7 @@ describe("ak doctor lessons coverage", () => {
     git(main, "worktree", "add", "-q", worktree);
     const home = scratch("ak-doctor-home-");
     mkdirSync(join(home, ".config"), { recursive: true });
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
       PATH: "/usr/bin:/bin",
       HOME: home,
@@ -175,7 +175,7 @@ describe("ak doctor lessons coverage", () => {
     const root = scratch("ak-doctor-lessons-");
     spawnSync("git", ["init", "-q", root]);
     mkdirSync(join(root, ".config"), { recursive: true });
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
       PATH: "/usr/bin:/bin",
       HOME: root,

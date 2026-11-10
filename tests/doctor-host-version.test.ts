@@ -92,7 +92,7 @@ function runDoctor(root: string, path: string) {
   mkdirSync(join(root, "claude-home"), { recursive: true });
   mkdirSync(join(root, "codex-home"), { recursive: true });
   mkdirSync(join(root, ".config"), { recursive: true });
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: path,
     HOME: root,
