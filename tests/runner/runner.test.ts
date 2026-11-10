@@ -374,6 +374,30 @@ function withAuditCadence(f: ReturnType<typeof fixture>) {
   writeFileSync(f.path, JSON.stringify(f.charter));
 }
 
+function copyKit(): string {
+  const kit = mkdtempSync(join(scratchRoot, "ak-kit-"));
+  cpSync(join(root, "schemas"), join(kit, "schemas"), { recursive: true });
+  mkdirSync(join(kit, "policies"), { recursive: true });
+  cpSync(join(root, "policies/invocation.yaml"), join(kit, "policies/invocation.yaml"));
+  cpSync(join(root, "package.json"), join(kit, "package.json"));
+  cpSync(join(root, "skills/autopilot"), join(kit, "skills/autopilot"), { recursive: true });
+  return kit;
+}
+
+function procedureKit() {
+  const kit = copyKit();
+  const f = fixture();
+  withAuditCadence(f);
+  return { ...f, kit, runner: new Runner(f.privateDir, f.worker, kit) };
+}
+
+function upgradeProcedure(kit: string) {
+  const path = join(kit, "skills/autopilot/SKILL.md");
+  const original = readFileSync(path, "utf8");
+  writeFileSync(path, `${original}\n# upgraded procedure\n`);
+  return { path, original };
+}
+
 function card(
   f: ReturnType<typeof ready>,
   id = "card-1",
@@ -995,6 +1019,42 @@ describe("runner guards", () => {
     f.runner.finishDelegate("toy-run", "owner-2");
     f.runner.replaceDelegate("toy-run", "child-2", "child-3", 10, started + 4_000);
     expect(f.runner.status("toy-run").delegates?.["child-3"]?.state).toBe("active");
+  });
+
+  test("an audit tick stops when the recorded bundle procedure changes", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    expect(before.procedure.bundle_version).toBeDefined();
+    expect(before.procedure.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    upgradeProcedure(f.kit);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("rolling the bundle procedure back keeps blocked decisions and evidence", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const log = join(f.privateDir, "log.txt");
+    writeFileSync(log, "independently collected verification");
+    f.runner.collect("toy-run", "e1", log, f.revision, "source");
+    expect(split(f, "split", ["yes", "no"]).status).toBe("needs-input");
+    const decisionFile = join(f.privateDir, "toy-run-split.decision.json");
+    const blocked = parseJson(readFileSync(decisionFile, "utf8"));
+    if (!(blocked instanceof Object) || Array.isArray(blocked)) throw new Error("expected decision object");
+    expect(blocked).toMatchObject({ status: "blocked" });
+    const evidence = f.runner.status("toy-run").evidence["e1"];
+    expect(evidence?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const recorded = f.runner.status("toy-run").procedure;
+    if (recorded === undefined) throw new Error("run recorded no procedure");
+    const { path, original } = upgradeProcedure(f.kit);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    writeFileSync(path, original);
+    const restored = f.runner.auditTick("toy-run");
+    expect(restored.procedure).toEqual(recorded);
+    expect(f.runner.status("toy-run").run_state).toBe("needs-input");
+    expect(f.runner.status("toy-run").evidence["e1"]).toEqual(evidence);
+    expect(JSON.parse(readFileSync(decisionFile, "utf8"))).toMatchObject({ status: "blocked" });
   });
 
   test("live charter tick calls the supervisor adapter to replace an overdue delegate", async () => {

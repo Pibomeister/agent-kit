@@ -2134,6 +2134,46 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     });
   }
 
+  test("an incompatible verification schema version is unsupported without falling back to v1", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "schema-v2");
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const receiptPath = receipt(dir, run, ticketPath, { schema_version: 2 });
+    expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toMatchObject({
+      schema_version: 2,
+      status: "passed",
+      exit_status: 0,
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+    const storedDir = join(defaultEvidenceDir(dir), run, "artifacts");
+    const storedVerificationVersions = (): unknown[] => {
+      const versions: unknown[] = [];
+      for (const name of readdirSync(storedDir)) {
+        try {
+          const doc: unknown = JSON.parse(readFileSync(join(storedDir, name), "utf8"));
+          if (
+            doc instanceof Object &&
+            !Array.isArray(doc) &&
+            "schema" in doc &&
+            doc.schema === "verification" &&
+            "schema_version" in doc
+          )
+            versions.push(doc.schema_version);
+        } catch {
+          continue;
+        }
+      }
+      return versions;
+    };
+    expect(storedVerificationVersions()).toEqual([2]);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: evidence unsupported-version");
+    expect(checked.err).not.toContain("allowed");
+    expect(storedVerificationVersions()).toEqual([2]);
+  });
+
   test("a ship decision that skipped a required gate is refused by name", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "partial-gates");
