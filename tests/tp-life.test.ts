@@ -1,6 +1,6 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { decideEvidence, TEMPLATE_REL } from "../src/tp-life/evidence.ts";
@@ -18,34 +18,48 @@ const ORACLE_TIMEOUT = 25_000;
 const children: ChildProcess[] = [];
 
 function stopFixture(child: ChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const pid = child.pid;
   if (pid === undefined) return;
   try {
-    process.kill(-pid, "SIGTERM");
+    process.kill(pid, "SIGTERM");
   } catch (err) {
     if (err instanceof Error && "code" in err && err.code === "ESRCH") return;
   }
 }
 
-async function waitGroupGone(pid: number): Promise<void> {
+async function waitGone(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const pid = child.pid;
+  if (pid === undefined) return;
   const deadline = Date.now() + 2000;
   for (;;) {
     try {
-      process.kill(-pid, 0);
+      process.kill(pid, 0);
     } catch (err) {
       if (err instanceof Error && "code" in err && err.code === "ESRCH") return;
       throw err;
     }
-    if (Date.now() >= deadline) throw new Error(`fixture process group ${pid} still running`);
+    if (Date.now() >= deadline) throw new Error(`fixture ${pid} still running`);
     await new Promise((settle) => setTimeout(settle, 50));
   }
 }
 
-afterAll(async () => {
+async function stopRunChildren(): Promise<void> {
   for (const child of children) stopFixture(child);
-  for (const child of children) {
-    if (child.pid !== undefined) await waitGroupGone(child.pid);
-  }
+  for (const child of children) await waitGone(child);
+  children.length = 0;
+}
+
+afterEach(stopRunChildren);
+
+process.on("SIGINT", () => {
+  for (const child of children) stopFixture(child);
+  process.exit(130);
+});
+process.on("SIGTERM", () => {
+  for (const child of children) stopFixture(child);
+  process.exit(143);
 });
 
 function runScript(args: string[], extra: { cwd?: string; timeout?: number } = {}) {
@@ -64,7 +78,6 @@ function startFixture(broken?: string): Promise<string> {
     cwd: REPO,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
   });
   children.push(child);
   return new Promise((ready, reject) => {
@@ -237,6 +250,63 @@ describe("bound receipts", () => {
     expect(raw.includes("tp-life-unattested")).toBe(true);
     expect(raw.includes("host_login")).toBe(true);
     expect(raw.includes("cases")).toBe(true);
+  });
+
+  test("write then check with a relative path", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-rel-");
+    const oracleJson = join(dir, "report.oracle.json");
+    const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
+    expect(oracle.status).toBe(0);
+    const rel = join("research/tp-life/receipts", "relative-write.json");
+    const abs = join(REPO, rel);
+    try {
+      const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", rel]);
+      expect(written.status).toBe(0);
+      const check = runScript(["receipt", "check", rel]);
+      expect(check.status).toBe(0);
+    } finally {
+      if (existsSync(abs)) unlinkSync(abs);
+    }
+  });
+
+  test("a null receipt is refused as not an object", () => {
+    const dir = processScratch("ak-tp-life-null-");
+    const path = join(dir, "null.json");
+    writeFileSync(path, "null\n");
+    const check = runScript(["receipt", "check", path]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("receipt is not an object")).toBe(true);
+  });
+
+  test("an array receipt is refused as not an object", () => {
+    const dir = processScratch("ak-tp-life-arr-");
+    const path = join(dir, "array.json");
+    writeFileSync(path, "[]\n");
+    const check = runScript(["receipt", "check", path]);
+    expect(check.status).toBe(2);
+    expect(check.stderr.includes("receipt is not an object")).toBe(true);
+  });
+
+  test("a missing oracle JSON prints one line and exits non-zero", () => {
+    const run = runScript([
+      "receipt",
+      "write",
+      "--oracle-json",
+      "/tmp/ak-tp-life-missing-oracle.json",
+      "--out",
+      "/tmp/ak-tp-life-missing-out.json",
+    ]);
+    expect(run.status === 0).toBe(false);
+    expect(run.stderr.includes("cannot read")).toBe(true);
+    expect(run.stderr.includes("\n    at ")).toBe(false);
+  });
+
+  test("a missing receipt prints one line and exits non-zero", () => {
+    const run = runScript(["receipt", "check", "/tmp/ak-tp-life-missing-receipt.json"]);
+    expect(run.status === 0).toBe(false);
+    expect(run.stderr.includes("cannot read")).toBe(true);
+    expect(run.stderr.includes("\n    at ")).toBe(false);
   });
 
   test("a receipt bound to the wrong head is refused with exit 2", async () => {

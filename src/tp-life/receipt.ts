@@ -112,6 +112,7 @@ function boundFieldError(): string {
   if (first === undefined) return "source_revision.diff_hash is missing";
   const params = first.params;
   const path = first.instancePath.replace(/^\//, "").replaceAll("/", ".");
+  if (first.keyword === "type" && first.instancePath === "") return "receipt is not an object";
   if (first.keyword === "required" && Object.prototype.hasOwnProperty.call(params, "missingProperty")) {
     const missing = String(params.missingProperty);
     const named = path.length > 0 ? `${path}.${missing}` : missing;
@@ -146,7 +147,15 @@ export function writeOracleReceipt(repo: string, oracleJsonPath: string, outPath
     io.err("tp-life receipt write: no committed revision\n");
     return 1;
   }
-  const raw = readFileSync(oracleJsonPath, "utf8");
+  const oracleFile = resolveReceiptPath(repo, oracleJsonPath);
+  const outFile = resolveReceiptPath(repo, outPath);
+  let raw: string;
+  try {
+    raw = readFileSync(oracleFile, "utf8");
+  } catch {
+    io.err(`tp-life receipt write: cannot read ${oracleJsonPath}\n`);
+    return 1;
+  }
   const report = parseOracleReport(raw);
   if (report === null) {
     io.err("tp-life receipt write: oracle JSON is not a complete case report\n");
@@ -185,8 +194,8 @@ export function writeOracleReceipt(repo: string, oracleJsonPath: string, outPath
     io.err("tp-life receipt write: constructed receipt failed schemas/verification.schema.json\n");
     return 1;
   }
-  writeFileSync(outPath, `${JSON.stringify(receipt, null, 2)}\n`);
-  io.out(`wrote ${outPath} status=${receipt.status} revision=${snap.revision} unattested\n`);
+  writeFileSync(outFile, `${JSON.stringify(receipt, null, 2)}\n`);
+  io.out(`wrote ${outFile} status=${receipt.status} revision=${snap.revision} unattested\n`);
   return 0;
 }
 

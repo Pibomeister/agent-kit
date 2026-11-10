@@ -2,9 +2,9 @@
 # TP-LIFE fixture, independent oracle, HEAD-bound receipts, G4 evidence record.
 #
 #   scripts/tp-life.sh fixture [--port PORT] [--broken pending|success|failure|disconnect|duplicate|unknown]
-#   scripts/tp-life.sh oracle --base-url http://127.0.0.1:PORT [--out report.json]
-#   scripts/tp-life.sh receipt write --oracle-json report.json --out receipt.json
-#   scripts/tp-life.sh receipt check receipt.json
+#   scripts/tp-life.sh oracle --base-url http://127.0.0.1:PORT [--out /tmp/tp-life-oracle.json]
+#   scripts/tp-life.sh receipt write --oracle-json /tmp/tp-life-oracle.json --out /tmp/tp-life-receipt.json
+#   scripts/tp-life.sh receipt check /tmp/tp-life-receipt.json
 #   scripts/tp-life.sh evidence
 #
 # The fixture and the oracle are separate programs. The oracle speaks HTTP only.

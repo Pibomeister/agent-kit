@@ -10,9 +10,9 @@ import type { Io } from "./types.ts";
 const USAGE = `tp-life: fixture oracle receipts and the G4 evidence record.
 
   scripts/tp-life.sh fixture [--port PORT] [--broken pending|success|failure|disconnect|duplicate|unknown]
-  scripts/tp-life.sh oracle --base-url URL [--out report.json]
-  scripts/tp-life.sh receipt write --oracle-json report.json --out receipt.json
-  scripts/tp-life.sh receipt check [--cwd REPO] receipt.json
+  scripts/tp-life.sh oracle --base-url URL [--out /tmp/tp-life-oracle.json]
+  scripts/tp-life.sh receipt write --oracle-json /tmp/tp-life-oracle.json --out /tmp/tp-life-receipt.json
+  scripts/tp-life.sh receipt check [--cwd REPO] /tmp/tp-life-receipt.json
   scripts/tp-life.sh evidence [--cwd REPO] [--receipts-dir DIR]
 
 evidence always prints G4 as not-run. oracle_sub_verdict is computed from
