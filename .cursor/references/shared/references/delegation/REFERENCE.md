@@ -82,6 +82,15 @@ project artifact references used for the run wherever another artifact consumes 
 must not reproduce the formula, weights, cut points, floor table or lowering logic. A missing or
 failed scorer run leaves no delegation record and blocks the checkpoint.
 
+Under the unattended policy only, a delegation coverage limit — no project record, or a valid one
+without delegation guidance — is not a missing scorer run and never stops a phase. Record it once
+naming its cause and run no `.cursor/bin/ak delegation`. The ticket carries no `delegation` block, keeps
+`readiness` and `assumptions`, and adds an assumption, resolved `non-goal`, reading
+`delegation unscored: <cause> (coverage limit)`. Scorer inputs are never invented, and no class is
+derived for the ticket downstream: build records none, and ship states it as unscored. A project
+record that fails [`schemas/project.schema.json`](../../schemas/project.schema.json) validation stops under every policy, and outside the
+unattended policy missing delegation guidance is `needs-input`.
+
 ## Factor evidence
 
 Every factor carries a project-guided score and at least one evidence string. The meanings are

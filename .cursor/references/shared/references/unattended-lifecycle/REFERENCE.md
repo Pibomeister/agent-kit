@@ -34,11 +34,19 @@ document-review decisions, specification approval and ticket approvals; build's 
 precondition. A ticket whose delegation class makes a human the author is implemented by the agent
 within its allowed changes, with the true class, floor and `author_kind: agent` recorded.
 
-Every other stop still stops: a missing or unsupported prerequisite (for example bound without
-project guidance; a knowledgebase coverage limit is not one, as the knowledgebase-binding reference
-says), a blocking review finding, a prototype that needs a person, unprovable or failed evidence,
-and every sensitive action, including production writes, deploys, releases, destructive external
-operations and credential or protection changes. Merge is never the run's.
+Every other stop still stops: a missing or unsupported prerequisite (for example a project record
+that fails [`schemas/project.schema.json`](../../schemas/project.schema.json) validation; a delegation coverage limit is not one, and a
+knowledgebase coverage limit is not one either, as the knowledgebase-binding reference says), a
+blocking review finding, a prototype that needs a person, unprovable or failed evidence, and every
+sensitive action, including production writes, deploys, releases, destructive external operations
+and credential or protection changes. Merge is never the run's.
+
+A delegation coverage limit is no project record, or a valid one without delegation guidance. Bound
+records it once naming its cause and never stops a phase for it: no `.cursor/bin/ak delegation` runs, and each
+ticket carries no `delegation` block and an assumption reading
+`delegation unscored: <cause> (coverage limit)`, as the delegation reference says. Build, verify,
+review and ship take that ticket as it is: no class is recorded or derived for it, and scorer inputs
+are never invented.
 
 ## Recording each phase
 

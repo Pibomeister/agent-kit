@@ -55,7 +55,7 @@ Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin
 check --phase super-bound` exiting 0 is the start, with no command or grant (an exception to ruling
 `entrypoint-phase-operation-split`). The approved-alignment input, open document-review decisions, the capability-map review, the specification approval and the ticket approvals then
 proceed with your own recommended answers, recorded as unattended advances and never as approvals;
-a ticket whose class makes a human the author keeps that class. Record the `bound` gate as
+a ticket whose class makes a human the author keeps that class, and a delegation coverage limit (Inputs) never stops this phase. Record the `bound` gate as
 [the unattended-lifecycle reference](../../references/shared/references/unattended-lifecycle/REFERENCE.md) says.
 
 ## Inputs
@@ -70,8 +70,8 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
   [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 - The project record's configured guidance ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)) for change size and test
   shape. Absent: the starting points below are advisory and nothing enforces them.
-- Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are
-  never invented.
+- Delegation guidance on that same project record. Outside the unattended policy, missing delegation guidance is `needs-input`. Under the unattended policy, no project record, or a valid one without delegation guidance, is a delegation coverage limit: record it once naming its cause, run no `.cursor/bin/ak delegation`, and give each ticket no `delegation` block and an assumption, resolved `non-goal`, reading `delegation unscored: <cause> (coverage limit)`; it never stops this phase.
+  A present project record that fails [`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json) validation is `needs-input` under every policy. Scorer inputs are never invented.
 - The project's verification recipes and surface declarations ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)).
   Absent or empty: record the gap; never assume a browser, running service, trace collector or
   command the project did not declare.
@@ -111,7 +111,7 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
    prerequisite: a missing command, or a usage error from an older CLI, is reported as
    `needs-input` naming that prerequisite, not as a scoring failure. Persist the scorer output,
    readiness and assumptions on the evidence-bearing draft before document review; the draft is not
-   an approved implementation ticket.
+   an approved implementation ticket. Under a delegation coverage limit this step runs nothing.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
@@ -132,7 +132,7 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
    zero-context slice.
 10. Run `.cursor/bin/ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
    factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
-   `assumptions` before returning, including on `needs-input`. Never derive the class in this body.
+   `assumptions` before returning, including on `needs-input`. Never derive the class in this body. Under a delegation coverage limit this step runs nothing and the ticket carries its unscored assumption.
 11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
     and what it produces that later tickets rely on with exact names, parameters and return types.
     Write for a skilled developer who knows almost nothing about this toolset or problem domain.
@@ -167,7 +167,7 @@ change and no scorer change. Off and shadow keep the author type-check as the ou
 and shadow do not change the class or the scorer inputs.
 
 Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
-`vague_terms`, and `assumptions` items using `text` and `resolved_as`. Vagueness, an open assumption
+`vague_terms`, and `assumptions` items using `text` and `resolved_as`, except an unscored ticket under a delegation coverage limit, which carries every block but `delegation`. Vagueness, an open assumption
 or scorer failure stops it; no total, hand-derived class or request to delegate substitutes (ruling
 `delegation-class-is-authority-not-finding`). No factor or lowering crosses the sensitive floor
 (ruling `sensitive-surface-sets-the-floor`).
@@ -269,10 +269,10 @@ performed is `failed`, never complete.
   every published artifact's read-back matched what was sent.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different
-  revision, missing project guidance or grant at `bound.run`, a failed scorer, an unresolved
+  revision, missing delegation guidance outside the unattended policy, a project record that fails its schema, a missing grant at `bound.run`, a failed scorer, an unresolved
   assumption or vague criterion, a document-review decision left open, a settled decision that
   new evidence invalidated, or an on-mode cold read that still lists an unsettled decision.
-  When assessment ran, the returned draft retains `delegation`, `readiness` and `assumptions`.
+  When assessment ran, the returned draft retains `delegation`, `readiness` and `assumptions`. Under the unattended policy a delegation coverage limit never stops this phase.
 - `cap-reached` — the consensus plan gate reached its round cap, or the runner-supplied ticket
   budget ran out. Returns the unresolved architectural question or the undecomposed remainder.
 - `cancelled` — the human ended the run before approving the specification.
