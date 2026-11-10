@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","memory_paths":["/work/CLAUDE.md"]}
+{"type":"user","message":{"content":"loaded instruction {{MARKER}}"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"UNKNOWN"}]}}
