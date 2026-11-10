@@ -45,6 +45,7 @@ const maintenanceEnv = {
   CODEX_HOME: join(maintenanceRoot, "codex-home"),
   AK_PUBLISHED_ROOT: join(maintenanceRoot, "missing-published"),
 };
+delete maintenanceEnv.AK_JEV_ENABLED;
 const doctorJson = spawnSync(process.execPath, [maintenanceCli, "doctor", "--json"], {
   cwd: maintenanceRoot,
   env: maintenanceEnv,
@@ -509,6 +510,10 @@ function doctorWith(value: string, mode: number, flag: string | null = "1") {
 
 describe("ak doctor semantic lint check", () => {
   const value = "fixture-doctor-key-value";
+  const notOne =
+    "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1";
+  const passWhenHostHasFlag =
+    "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1";
 
   test("reports each key-file state without the key value", () => {
     const good = keyed(`TYPESAFE_API_KEY="${value}"\n`);
@@ -521,15 +526,21 @@ describe("ak doctor semantic lint check", () => {
       checkSemanticLint(keyed("OTHER=1\n"), "1"),
     ];
     expect(found.map((item) => item.level)).toEqual(["WARN", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
-    expect(found[0]?.detail).toBe("AK_JEV_ENABLED is not 1; the Stop hook does not run");
+    expect(found[0]?.detail).toBe(notOne);
     expect(found[0]?.remedy).toBe("Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
-    expect(found[1]?.detail).toBe("key file present and owner-only; the Stop hook runs on changed files");
-    expect(found[2]?.detail).toBe("AK_JEV_ENABLED is not 1; the Stop hook does not run");
+    expect(found[1]?.detail).toBe(passWhenHostHasFlag);
+    expect(found[2]?.detail).toBe(notOne);
     expect(found[3]?.detail).toStartWith("no key file at ");
     expect(found[3]?.detail).toEndWith("; the Stop hook skips (missing-key)");
     expect(found[4]?.detail).toEndWith(" is not a private owner-only file with one key assignment");
     for (const item of found) {
       expect(item.check).toBe("semantic lint");
+      expect(JSON.stringify(item)).not.toContain(value);
+    }
+    for (const flag of ["", "true", " 1"]) {
+      const item = checkSemanticLint(good, flag);
+      expect(item.level).toBe("WARN");
+      expect(item.detail).toBe(notOne);
       expect(JSON.stringify(item)).not.toContain(value);
     }
   });
@@ -543,6 +554,18 @@ describe("ak doctor semantic lint check", () => {
     expect(JSON.stringify(item)).not.toContain(value);
   });
 
+  test("a disabled doctor check returns before reading a bad key file", () => {
+    const unsafe = keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644);
+    const link = join(processScratch("ak-doctor-jev-disabled-link-"), "jev.env");
+    symlinkSync(keyed(`TYPESAFE_API_KEY=${value}\n`), link);
+    for (const file of [unsafe, link]) {
+      const item = checkSemanticLint(file, undefined);
+      expect(item.level).toBe("WARN");
+      expect(item.detail).toBe(notOne);
+      expect(JSON.stringify(item)).not.toContain(value);
+    }
+  });
+
   test("doctor warns on unset even with a good key file", () => {
     const run = doctorWith(value, 0o600, null);
     expect(JSON.parse(run.stdout)).toHaveProperty(
@@ -551,7 +574,7 @@ describe("ak doctor semantic lint check", () => {
         expect.objectContaining({
           check: "semantic lint",
           level: "WARN",
-          detail: "AK_JEV_ENABLED is not 1; the Stop hook does not run",
+          detail: notOne,
         }),
       ]),
     );

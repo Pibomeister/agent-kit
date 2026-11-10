@@ -503,7 +503,7 @@ export function checkSemanticLint(keyFile: string, flag: string | undefined): Fi
     return finding(
       "WARN",
       check,
-      "AK_JEV_ENABLED is not 1; the Stop hook does not run",
+      "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1",
       "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.",
     );
   let present: boolean;
@@ -518,7 +518,12 @@ export function checkSemanticLint(keyFile: string, flag: string | undefined): Fi
     );
   }
   return present
-    ? finding("PASS", check, "key file present and owner-only; the Stop hook runs on changed files", "None.")
+    ? finding(
+        "PASS",
+        check,
+        "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1",
+        "None.",
+      )
     : finding(
         "WARN",
         check,

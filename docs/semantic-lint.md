@@ -58,7 +58,7 @@ replaces only the owner's generation record.
 
 | Current generation | Result |
 |---|---|
-| `complete` | `skipped/duplicate` with no call. The explicit message names the prior trace |
+| `complete` | `skipped/duplicate` with no call. The systemMessage names the prior trace |
 | `in-progress`, under 120 seconds old | `skipped/in-progress` with no call |
 | `released`, or `in-progress` and stale | The next generation is created, and its creator owns the check |
 

@@ -44500,14 +44500,14 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
 function checkSemanticLint(keyFile, flag3) {
   const check2 = "semantic lint";
   if (flag3 !== "1")
-    return finding("WARN", check2, "AK_JEV_ENABLED is not 1; the Stop hook does not run", "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
+    return finding("WARN", check2, "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1", "Export AK_JEV_ENABLED=1 into the host process to run the Stop hook.");
   let present;
   try {
     present = readKeyFile(keyFile) !== null;
   } catch {
     return finding("FAIL", check2, `${keyFile} is not a private owner-only file with one key assignment`, "Make it a regular file you own, mode 0600, holding one TYPESAFE_API_KEY= line.");
   }
-  return present ? finding("PASS", check2, "key file present and owner-only; the Stop hook runs on changed files", "None.") : finding("WARN", check2, `no key file at ${keyFile}; the Stop hook skips (missing-key)`, "Place an existing key in that file, mode 0600, to turn the check on.");
+  return present ? finding("PASS", check2, "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1", "None.") : finding("WARN", check2, `no key file at ${keyFile}; the Stop hook skips (missing-key)`, "Place an existing key in that file, mode 0600, to turn the check on.");
 }
 function print(items2, json = false) {
   if (json)

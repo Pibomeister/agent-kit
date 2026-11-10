@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { processScratch } from "./helpers/process-tmp.ts";
 import { collectInput } from "../src/semantic-lint/input.ts";
 import { enablement, hookOutput, runHook, unwireHook, wireHook } from "../tools/hooks/semantic-lint.ts";
@@ -179,7 +179,7 @@ describe("optional semantic sibling hook", () => {
     expect(JSON.parse(run.stdout)).not.toHaveProperty("systemMessage");
   });
 
-  test("unset enable variable skips quietly without reading a key file", () => {
+  test("off values skip quietly without a key file, and AK_JEV_ENABLED=1 reports missing-key", () => {
     const root = processScratch("semantic-default-");
     const run = (flag: Record<string, string>) =>
       spawnSync(process.execPath, [ENTRY, "hook"], {
@@ -223,10 +223,17 @@ describe("optional semantic sibling hook", () => {
     writeFileSync(join(home, pin.key_file), 'TYPESAFE_API_KEY="fixture-private-key"\n', { mode: 0o600 });
     chmodSync(join(home, pin.key_file), 0o600);
     const cwd = processScratch("semantic-keyed-unset-cwd-");
+    const state = processScratch("semantic-keyed-unset-state-");
     const run = (flag: Record<string, string>) =>
       spawnSync(process.execPath, [ENTRY, "hook"], {
         cwd,
-        env: { PATH: process.env.PATH, HOME: home, ...flag },
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          GIT_CEILING_DIRECTORIES: dirname(cwd),
+          XDG_STATE_HOME: state,
+          ...flag,
+        },
         encoding: "utf8",
       });
     const unset = run({});
