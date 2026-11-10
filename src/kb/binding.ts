@@ -126,7 +126,7 @@ function describe(validate: ValidateFunction): string {
     .join("; ");
 }
 
-/** `HEAD:ak.kb.yaml` when the working file is gone; null when git cannot show it. */
+/** The committed `HEAD:ak.kb.yaml`. Null when git cannot show that path. */
 function committedBindingText(projectRoot: string): string | null {
   const shown = git(projectRoot, ["show", `HEAD:${BINDING_FILE}`]);
   return shown.status === 0 ? shown.stdout : null;
@@ -134,10 +134,10 @@ function committedBindingText(projectRoot: string): string | null {
 
 /**
  * Parse and shape-check the folder's binding. A committed `HEAD:ak.kb.yaml`
- * wins over the working file so a worker cannot retarget lookup. With no
- * committed binding, the working file is used. A confirmed miss of both is a
- * note, not an error: an unbound folder is the unconfigured case the contract
- * defines, not a malformed one.
+ * wins over uncommitted working-file edits. A committed binding on the worker
+ * HEAD still steers lookup. With no committed binding, the working file is
+ * used. A confirmed miss of both is a note, not an error: an unbound folder is
+ * the unconfigured case the contract defines, not a malformed one.
  */
 export function loadKbBinding(projectRoot: string): KbBindingResult {
   const text = committedBindingText(projectRoot) ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
