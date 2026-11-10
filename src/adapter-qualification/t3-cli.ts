@@ -10,6 +10,10 @@ does not call a host and does not invent traces.
 `;
 
 function run(args: readonly string[]): number {
+  if (args.length === 1 && args[0] === "--help") {
+    process.stdout.write(USAGE);
+    return 0;
+  }
   if (args.length !== 1 || args[0] === undefined) {
     process.stderr.write(USAGE);
     return 2;

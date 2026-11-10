@@ -1,17 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
-import { isAdapterHost, qualifyT3 } from "../src/adapter-qualification/t3.ts";
+import { isAdapterHost, qualifyT3, T3_SLOTS } from "../src/adapter-qualification/t3.ts";
+import { HOST_IDS } from "../src/packaging/hosts.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const T3_SCRIPT = join(REPO, "scripts/t3-qualify.sh");
 const CURSOR_CONTRACT = join(REPO, "adapters/cursor/CONTRACT.md");
 
 function scriptEnv(): NodeJS.ProcessEnv {
-  const bunBin = join(process.env["HOME"] ?? "", ".bun/bin");
-  const path = `${bunBin}:${process.env["PATH"] ?? ""}`;
+  const bunDir = dirname(process.execPath);
+  const path = `${bunDir}:${process.env["PATH"] ?? ""}`;
   return { ...process.env, PATH: path };
 }
 
@@ -48,6 +49,9 @@ describe("Cursor T3 qualification (GAP-13)", () => {
     expect(runScript(T3_SCRIPT, ["adapters/cursor"]).status).toBe(2);
     expect(runScript(T3_SCRIPT, ["tracker"]).status).toBe(2);
     expect(runScript(T3_SCRIPT, []).status).toBe(2);
+    const help = runScript(T3_SCRIPT, ["--help"]);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("t3-qualify:");
   });
 
   test("qualifyT3 refuses a host id that is not a directory under adapters/", () => {
@@ -59,6 +63,24 @@ describe("Cursor T3 qualification (GAP-13)", () => {
     expect(qualifyT3("tracker")).toBeNull();
     expect(qualifyT3("adapters/cursor")).toBeNull();
     expect(qualifyT3("cursor")).not.toBeNull();
+  });
+
+  test("qualifyT3 writes empty not-qualified slots for every packaging host", () => {
+    for (const id of HOST_IDS) {
+      const evidence = qualifyT3(id);
+      expect(evidence).not.toBeNull();
+      if (evidence === null) throw new Error(`expected T3 evidence for ${id}`);
+      expect(evidence.host).toBe(id);
+      expect(evidence.adapter).toBe(`adapters/${id}`);
+      expect(evidence.traces.map((slot) => slot.id)).toEqual([...T3_SLOTS]);
+      for (const slot of evidence.traces) {
+        expect(slot.path).toBeNull();
+        expect(slot.sha256).toBeNull();
+        expect(slot.recordedAt).toBeNull();
+      }
+      expect(evidence.verdict).toBe("not-qualified");
+      expect(evidence.strict).toBe(false);
+    }
   });
 
   test("the cursor contract still records isolated-review-context as docs-only partial", () => {

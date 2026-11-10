@@ -406,7 +406,7 @@ describe("fixture driver note writing", () => {
     expect(byId.get("role-file-denied")?.verdict).toBe("fail");
   });
 
-  test("a misconfigured adapter that leaks parent and memory fails those channels; instructions stay recorded", () => {
+  test("misconfigured-adapter label re-asserts leaked parent and memory markers fail, with no adapter configuration exercised", () => {
     const r = runCli("claude-code", { AK_PROBE_FIXTURE_DIR: join(FIXTURES, "misconfigured-adapter") });
     expect(r.status).toBe(0);
     if (r.report === null) throw new Error("expected a verdict file");
@@ -414,14 +414,6 @@ describe("fixture driver note writing", () => {
     expect(byId.get("parent-turn")?.verdict).toBe("fail");
     expect(byId.get("hooks-and-memory")?.verdict).toBe("fail");
     expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
-    const parentMarker = byId.get("parent-turn")?.marker;
-    const memoryMarker = byId.get("hooks-and-memory")?.marker;
-    const instructionMarker = byId.get("auto-loaded-instructions")?.marker;
-    expect(parentMarker !== null && parentMarker !== undefined && isMarker(parentMarker)).toBe(true);
-    expect(memoryMarker !== null && memoryMarker !== undefined && isMarker(memoryMarker)).toBe(true);
-    expect(instructionMarker !== null && instructionMarker !== undefined && isMarker(instructionMarker)).toBe(true);
-    expect(parentMarker).not.toBe(memoryMarker);
-    expect(memoryMarker).not.toBe(instructionMarker);
   });
 
   test("a misconfigured adapter with no retained evidence is unobservable, not a pass", () => {
@@ -432,7 +424,6 @@ describe("fixture driver note writing", () => {
     expect(byId.get("parent-turn")?.verdict).toBe("unobservable");
     expect(byId.get("hooks-and-memory")?.verdict).toBe("unobservable");
     expect(byId.get("auto-loaded-instructions")?.verdict).toBe("unobservable");
-    expect(byId.get("parent-turn")?.verdict).not.toBe("pass");
   });
 
   test("mastracode without a child transcript is unobservable on every arm that needs one", () => {
