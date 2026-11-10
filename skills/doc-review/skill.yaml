@@ -1,7 +1,7 @@
 # Execution contract for doc-review (schemas/skill.schema.json).
 # Prose mirror: skills/doc-review/SKILL.md. The two are one statement in two forms.
 id: doc-review
-version: 0.4.0
+version: 0.5.0
 kind: standalone
 invocation: M
 summary: >-
@@ -146,7 +146,7 @@ stop_conditions:
     extension authorizes another.
   - cancelled when the caller ended the run before the panel returned.
   - failed when a configured knowledgebase is unreachable or a publication's read-back cannot be
-    performed. A knowledgebase coverage limit (no binding, an unregistered one, or a missing or
+    performed. A knowledgebase coverage limit (no binding, an unregistered one, a publish skipped as read-only (kb.read-only), a missing in-repo one (kb.in-repo-missing), or a missing or
     unknown ak kb command) stops nothing; the records are returned in the session and named as not
     published, and the calling phase continues.
 

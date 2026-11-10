@@ -241,7 +241,7 @@ criterion or the revision it would need, and no partial matrix presented as a ve
 or a configured knowledgebase refuses the write. The receipts are returned unpublished with the
 refusal rather than written to a path in the repository.
 
-A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered) or a
+A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a
 missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable,
 each skipped publish is named in the result as not published, and only exit 1 stops.
 

@@ -277,7 +277,7 @@ performed is `failed`, never complete.
   budget ran out. Returns the unresolved architectural question or the undecomposed remainder.
 - `cancelled` — the human ended the run before approving the specification.
 - `failed` — a configured knowledgebase is unreachable, or a publication's read-back cannot be
-  performed. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered)
+  performed. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing,
   or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are
   unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 

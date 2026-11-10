@@ -20,6 +20,7 @@ prerequisite.
 | Exit | Meaning | What the run does |
 |---|---|---|
 | 0 | bound: the output names the knowledgebase, its path and the project id | reads and publishes through the commands below |
+| 0 | `bound, read-only` (backend `in-repo`): the project's own committed wiki | reads; every publish exits 3 `kb.read-only`, a coverage limit (ruling `kb-binding-is-a-locator`) |
 | 3 | no knowledgebase configured | a coverage limit: a read is **unavailable** and a publish is **skipped**, and the run continues |
 | 1 | a knowledgebase is configured and cannot be used | `failed`: stop and report the message, never proceed from memory |
 
@@ -30,15 +31,20 @@ and the phase continues from the repository and the run's own records. Each skip
 Gate evidence still goes through `node <bundle>/bin/ak-gate.mjs record`, which needs no
 knowledgebase. Of these results only exit 1 stops.
 
-Exit 3 has two causes and the output says which; a missing or unknown command is reported as that
+Exit 3 has these causes and the output says which; a missing or unknown command is reported as that
 prerequisite. Report exit 3 in these words rather than as a missing adapter or a missing file:
 
 - **`kb.unbound`** — the project commits no `ak.kb.yaml`. The setup step is committing one at the
   project root.
 - **`kb.unregistered`** — the project is bound, and this machine has not been told where that
   knowledgebase is checked out. The setup step is `ak kb register <knowledgebase-id> <path>`.
+- **`kb.in-repo-missing`** — an `in-repo` binding with nothing to read at the revision it would
+  read; the message names which cause and its fix (`adapters/knowledgebase/backends/in-repo.md`,
+  "A missing knowledgebase").
+- **`kb.read-only`** — from a publish only: the binding is read-only, nothing was written, and the
+  record is named as not published (ruling `kb-binding-is-a-locator`).
 
-Both are the operator's to do. An agent does not create a knowledgebase, write `ak.kb.yaml` or
+The first three are the operator's to do. An agent does not create a knowledgebase, write `ak.kb.yaml` or
 register a path unless a human asks for exactly that. **`ak.install.yaml` is not a cause.** That
 file sets which adapters an install attaches, which only decides packaged mode ceilings; its absence
 is the default install and never makes a knowledgebase unavailable.
@@ -79,7 +85,8 @@ JSON: the pages at that scope and every scope above it, most specific first, eac
   into whatever consumes the read.
 - Cite what was read by `ref` and `content_hash`, not by a file path in the knowledgebase.
 - A page whose `status` is `proposed` or `unreviewed` has not been accepted by a human. It is
-  context, not a settled decision.
+  context, not a settled decision. `superseded`, `deprecated` and `rejected` are not settled either:
+  they record a decision that was replaced, retired or declined, and only `accepted` stands.
 
 ## Publishing: `publishArtifact`
 

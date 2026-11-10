@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.5.0
+version: 0.6.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -228,7 +228,7 @@ stop_conditions:
     or stale verify, readiness or review record also stops here.
   - needs-input when the autonomous form has no trusted evidence. The message names trusted evidence
     as unavailable and says the manual form remains open.
-  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered) or a missing or
+  - A knowledgebase coverage limit, ak kb check exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or
     unknown ak kb command, never stops this phase under any policy. Reads are unavailable, each
     skipped draft is named in the result as not published, and of these results only exit 1 stops.
 

@@ -2,6 +2,8 @@
 
 **Status:** Accepted.
 **Date:** 2026-09-19.
+**Amended:** 2026-11-09. §1's application-local paths may now be *read* through a read-only binding;
+nothing is written to them. See "Amendment: reading an application-local tree" below.
 **Revised:** 2026-10-05. The prior-art citations now say what was read, not where it lives. The
 decision is unchanged.
 **Authority:** `research/sources/engineering-skills-repo-plan.md` §1.2, §8; release scenarios 21, 22, 24.
@@ -154,3 +156,12 @@ configurable, per arch §8; central ownership does not.
   scenario 24), because lessons are KB pages with supersession and skills are package files.
 - agent-kit does not depend on this particular `kb` implementation. The adapter is the boundary; a
   different KB satisfying the same seven operations and supporting the nine kinds is substitutable.
+
+## Amendment: reading an application-local tree (2026-11-09)
+
+§1 says the application-local paths do not survive. That still holds for every write: no skill
+creates or extends a documentation tree in an application repository. It diverges for reading: a
+decision or concept tree a project already commits may be read through a read-only binding
+(`adapters/knowledgebase/backends/in-repo.md`, ADR-0010 as amended 2026-11-09), and a publish to it is
+skipped rather than written.
+

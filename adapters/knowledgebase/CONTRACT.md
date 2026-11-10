@@ -84,6 +84,9 @@ scenario 21, and it is the single most common way a donor's behavior survives wh
 **Configured** means two things, both stated in §7: the project folder commits a binding,
 `ak.kb.yaml`, and the machine has registered where that knowledgebase is checked out. Either one
 missing is the unconfigured case, and the result says which and names the step that supplies it.
+A read-only binding (§7, `in-repo`) needs no registration. A missing in-repo knowledgebase
+(`kb.in-repo-missing`) and a publish to a read-only one (`kb.read-only`) are unconfigured too: the
+result names the cause, nothing is written, and the run continues (ruling `kb-binding-is-a-locator`).
 `ak.install.yaml` is neither: it decides which adapters an install *attaches*, which sets packaged
 mode ceilings (the table below), and it never makes a knowledgebase reachable. A checkout with no
 `ak.install.yaml` is the default install, not a broken one.
@@ -277,10 +280,14 @@ published to the KB afterwards.
 `ak validate` fails a skill whose outputs name a repository path where a KB operation belongs; the
 corresponding eval case asserts that no application-local docs tree appears.
 
-The KB locator is the binding file of §7 and holds no project knowledge. A binding whose
-knowledgebase resolves to the application repository — its checkout, any of its work trees, or a
-directory inside its tree — is refused on every operation, because a publish through it would be
-the write this section forbids.
+The KB locator is the binding file of §7 and holds no project knowledge. A knowledgebase that can be
+written never resolves to the application repository: a writable binding whose knowledgebase is its
+checkout, any of its work trees, or a directory inside its tree is refused on every operation,
+because a publish through it would be the write this section forbids. A read-only binding (backend
+`in-repo`) may name a directory the project already commits, because it carries no publish: every
+publish to it is skipped (`kb.read-only`) and nothing is written anywhere, so no operation here
+creates or extends a documentation tree in the application repository (ruling
+`kb-binding-is-a-locator`).
 
 ---
 
@@ -425,6 +432,7 @@ unmet.
 | Binding id | The knowledgebase is | Document |
 |---|---|---|
 | `local-git` | a git repository of files on this machine | `adapters/knowledgebase/backends/local-git.md` |
+| `in-repo` | a directory of pages the project itself commits, read only | `adapters/knowledgebase/backends/in-repo.md` |
 
 A binding is additive: a document under `backends/`, a row here, a schema at
 `schemas/kb-backends/<id>.schema.json` and the code that carries its operations under `src/kb/`.

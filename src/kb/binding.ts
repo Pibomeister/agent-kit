@@ -7,10 +7,12 @@ import { parse as parseYaml } from "yaml";
 
 import commonSchema from "../../schemas/common.schema.json" with { type: "json" };
 import bindingSchema from "../../schemas/kb-binding.schema.json" with { type: "json" };
+import inRepoSchema from "../../schemas/kb-backends/in-repo.schema.json" with { type: "json" };
 import localGitSchema from "../../schemas/kb-backends/local-git.schema.json" with { type: "json" };
 import { isDir, isInside, readTextIfPresent } from "../util/fs.ts";
 import { error, note, warning, type Issue } from "../validation/types.ts";
 import { commonDir, git, workTreeTop } from "./git.ts";
+import { IN_REPO, inRepoBindingIssues, resolveInRepo, type InRepoLocation } from "./in-repo.ts";
 
 /**
  * How one project folder reaches its central knowledgebase
@@ -30,7 +32,8 @@ export const BACKEND_SCHEMAS_DIR = "schemas/kb-backends";
 export interface KbBinding {
   backend: string;
   project: string;
-  locator: Record<string, string>;
+  /** A backend's keys: each a string or, where its schema says so, a map of strings. */
+  locator: Record<string, string | Record<string, string>>;
 }
 
 export interface KbBindingResult {
@@ -53,8 +56,10 @@ export interface ResolvedKb {
   binding: KbBinding;
   /** The knowledgebase's id in the operator's registry. */
   knowledgebase: string;
-  /** The knowledgebase checkout, by real path. */
+  /** The knowledgebase checkout, by real path; for an in-repo binding, the project's git top level. */
   root: string;
+  /** Present for a read-only in-repo binding: where it reads and at which revision. */
+  inRepo?: InRepoLocation;
 }
 
 export interface KbResolution {
@@ -80,6 +85,7 @@ const validBinding = ajv.compile<KbBinding>(bindingSchema);
  * holds this map equal to the documents in `BACKENDS_DIR`.
  */
 export const BACKEND_VALIDATORS: ReadonlyMap<string, ValidateFunction<KbBinding>> = new Map([
+  [IN_REPO, ajv.compile<KbBinding>(inRepoSchema)],
   ["local-git", ajv.compile<KbBinding>(localGitSchema)],
 ]);
 
@@ -99,6 +105,13 @@ const validRegistry = ajv.compile<KbRegistry>({
       },
     },
   },
+});
+
+/** Every backend's locator names its knowledgebase by a string id; its own schema has already said so. */
+const hasKnowledgebaseId = ajv.compile<{ knowledgebase: string }>({
+  type: "object",
+  required: ["knowledgebase"],
+  properties: { knowledgebase: { type: "string" } },
 });
 
 /** How to bind and register, said once: every unavailable result ends with it. */
@@ -176,6 +189,10 @@ export function loadKbBinding(projectRoot: string): KbBindingResult {
         ),
       ],
     };
+  }
+  if (id === IN_REPO) {
+    const issues = inRepoBindingIssues(value, BINDING_FILE);
+    if (issues.length > 0) return { binding: null, issues };
   }
   return { binding: value, issues: [] };
 }
@@ -308,7 +325,21 @@ export function resolveKnowledgebase(projectRoot: string, registryFile: string):
     return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
   }
   const binding = loaded.binding;
-  const id = binding.locator["knowledgebase"] ?? "";
+  const locator = binding.locator;
+  const id = hasKnowledgebaseId(locator) ? locator.knowledgebase : "";
+  if (binding.backend === IN_REPO) {
+    // Read in place and never written, so there is no registration and no separate checkout (backends/in-repo.md, "No setup").
+    const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE);
+    if (inRepo.location === null || inRepo.top === null) {
+      const failed = inRepo.issues.some((issue) => issue.severity === "error");
+      return { resolved: null, state: failed ? "failed" : "unavailable", issues: inRepo.issues };
+    }
+    return {
+      resolved: { binding, knowledgebase: id, root: inRepo.top, inRepo: inRepo.location },
+      state: "available",
+      issues: [],
+    };
+  }
   const registry = readRegistry(registryFile);
   if (registry.registry === null) return { resolved: null, state: "failed", issues: registry.issues };
   const entry = registry.registry.knowledgebases[id];

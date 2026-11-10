@@ -276,7 +276,7 @@ or a check seat that cannot be filled independently. Returns what is missing and
 it, never a narrowed version of the work.
 
 `failed`: no writable worktree, the branch is checked out elsewhere, or a configured knowledgebase refuses a
-receipt, ticket result or check result. The worktree and the ledger are left intact for the resume. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered) or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
+receipt, ticket result or check result. The worktree and the ledger are left intact for the resume. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the ticket mid-run. The branch, the worktree and the recorded
 rulings are kept rather than cleaned up, because the next run reads them instead of re-deriving them.

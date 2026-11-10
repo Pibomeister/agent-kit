@@ -176,7 +176,7 @@ the narrower question it proposes and no partial dossier.
 the write. The dossier content is returned to the caller unpublished, with the refusal, rather than
 written to a path in the repository.
 
-A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered) or a
+A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a
 missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable,
 each skipped publish is named in the result as not published, and only exit 1 stops.
 
