@@ -107,7 +107,7 @@ function parseBoundRaw(text: string): BoundRaw | null {
   }
 }
 
-function boundShapeError(): string {
+function boundFieldError(): string {
   const first = boundValidator.errors?.[0];
   if (first === undefined) return "source_revision.diff_hash is missing";
   const params = first.params;
@@ -221,7 +221,7 @@ export function readBoundReceipt(repo: string, receiptPath: string): BoundRead {
   if (bound === null) {
     return {
       code: 2,
-      message: `tp-life receipt check: refused, ${boundShapeError()}\n`,
+      message: `tp-life receipt check: refused, ${boundFieldError()}\n`,
       view: null,
     };
   }
