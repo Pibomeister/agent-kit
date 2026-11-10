@@ -321,7 +321,9 @@ describe("an unscored ticket still carries criteria and named verification, and 
       "Bound still records every ticket, scored or unscored, with acceptance criteria and named verification derived from the work source (the issue text or plan)",
     );
     expect(text).toContain("the project's declared test command among them when it declares one");
-    expect(text).toContain("A verify must always declare an independent seat.");
+    expect(text).toContain(
+      "A verify must always declare an independent seat; the gate checks its independence against the seat the build recorded, so a build recorded with no seat leaves it unchecked.",
+    );
     expect(text).toContain(
       "The gate counts those checks and nothing else, refuses a verify recorded by the build's implementer seat or by no seat, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
     );

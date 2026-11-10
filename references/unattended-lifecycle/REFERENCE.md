@@ -56,7 +56,8 @@ derived from the work source (the issue text or plan). A ticket that declares ne
 coverage limit for verify, never a stop: it records the cause once and verifies with the repository
 checks actually run, the project's declared test command among them when it declares one, each
 recorded on the `verify` gate by the independent verifier seat with its real command, exit status
-and output digest. A verify must always declare an independent seat. The gate
+and output digest. A verify must always declare an independent seat; the gate checks its independence
+against the seat the build recorded, so a build recorded with no seat leaves it unchecked. The gate
 counts those checks and nothing else, refuses a verify recorded by the build's implementer seat or by
 no seat, and records the limit on its ship decision and in the ship disclosure. A
 ticket that declares criteria or verification the gate cannot read is judged like any other.

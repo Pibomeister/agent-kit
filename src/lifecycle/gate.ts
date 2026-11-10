@@ -768,8 +768,13 @@ export function recordGate(
   if (previous !== undefined && previous.run_id !== a.run)
     return refuse(`${a.gate} at this snapshot was recorded for run ${String(previous.run_id)}, not ${a.run}`);
   const recordedClass = a.delegationClass ?? DELEGATION_CLASSES.find((known) => known === previous?.class);
-  const implementer =
-    a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);
+  // An unattended verify is judged on its seat and its commands, so it names only the seat this call declares and
+  // carries earlier commands only from that same seat (or from no seat to no seat).
+  const exactSeat = a.gate === "verify" && a.policy !== undefined;
+  const sameSeat = a.implementer?.seat_id === previous?.implementer?.seat_id;
+  const implementer = exactSeat
+    ? a.implementer
+    : (a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined));
   if (recordedClass !== undefined) record.class = recordedClass;
   if (implementer !== undefined) record.implementer = implementer;
   // The run's use record is the one place a bypassed start lives; a typed record ends it for the phase.
@@ -799,7 +804,7 @@ export function recordGate(
   if (a.policy !== undefined) {
     record.policy = a.policy;
     record.commands = [
-      ...(Array.isArray(previous?.commands) ? previous.commands : []),
+      ...(Array.isArray(previous?.commands) && (!exactSeat || sameSeat) ? previous.commands : []),
       ...(evidence === undefined ? [] : [evidence]),
     ];
   }
@@ -1074,8 +1079,10 @@ function evaluateEvidence(
     // Under the unattended policy only a ticket that declares neither criteria nor verification at all (each
     // field absent or an empty array, as declaresEvidence reads them) is a coverage limit: verify counts the
     // repository checks its records ran, whose argv, exit status and stored output digest commandRefusals already holds to
-    // passing. A verify recorded by no seat, or by the build's implementer seat, is refused, as a receipt
-    // naming no verifier seat or the implementer's is. A half-declared or malformed ticket, and every
+    // passing. A verify recorded by no seat, or by the build's implementer seat, is refused: stricter than the
+    // receipt path, which needs a seat only for a surface check or once the build recorded one. Independence
+    // is checked against the build's recorded seats, so a build recorded with no seat leaves it unchecked. A
+    // half-declared or malformed ticket, and every
     // ticket outside the policy, stays unavailable.
     const detail = `ticket ${run.ticket.id} has no acceptance criteria or named verification`;
     const limit = run.policy !== undefined && !declaresEvidence(ticket);

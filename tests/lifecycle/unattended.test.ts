@@ -884,6 +884,9 @@ function unscoredRun(cwd: string, seat: string[], receipt: JsonObject) {
   expect(ak(cwd, "record", "--gate", "verify", "--receipt", path, "--", ...ok).code).toBe(0);
   return run;
 }
+/** The argv of every command the run's verify records hold, in order. */
+const verifyArgv = (cwd: string, run: string) =>
+  recordsOf(cwd, run, "verify").flatMap((record) => (record.commands ?? []).map((command) => command.argv));
 const UNSCORED_SEAT = ["--author-kind", "agent", "--host", "claude-code", "--seat-id", "impl-1"];
 const IMPLEMENTER_RECEIPT = { created_by: { role: "implementer" } };
 
@@ -1130,6 +1133,32 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
       expect(unseated.code).toBe(1);
       expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
     }
+  });
+
+  test("a verify re-recorded at the same head under another seat keeps only that seat's commands", () => {
+    const mine = ["sh", "-c", "echo verifier"];
+    // An implementer-seat verify is refused; a verifier re-recording at the same head is judged on its own commands.
+    for (const first of [UNSCORED_SEAT, []]) {
+      const cwd = repo();
+      const { run, code } = bareTicketRun(cwd, ok, BARE, { build: UNSCORED_SEAT, verify: first });
+      expect(code).toBe(1);
+      expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...mine).code).toBe(0);
+      expect(verifyArgv(cwd, run)).toEqual([mine]);
+      expect(ak(cwd, "check").code).toBe(0);
+    }
+    // An unseated command after a verifier's record is not credited to the verifier.
+    const cwd = repo();
+    const { run, code } = bareTicketRun(cwd, mine, BARE, { build: UNSCORED_SEAT });
+    expect(code).toBe(0);
+    expect(ak(cwd, "record", "--gate", "verify", "--", ...ok).code).toBe(0);
+    expect(verifyArgv(cwd, run)).toEqual([ok]);
+    const unseated = ak(cwd, "check");
+    expect(unseated.code).toBe(1);
+    expect(unseated.err).toContain("verify names no verifier seat; an independent verifier seat is required");
+    // The same seat re-recording keeps accumulating its commands.
+    expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...mine).code).toBe(0);
+    expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...ok).code).toBe(0);
+    expect(verifyArgv(cwd, run)).toEqual([mine, ok]);
   });
 
   test("the fallback's coverage limit is recorded on the ship decision and printed in the ship disclosure", () => {
