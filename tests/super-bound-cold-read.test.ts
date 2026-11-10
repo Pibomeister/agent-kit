@@ -183,7 +183,7 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
     expect(note).toContain("leave `lowered_by` unsuperseded");
     expect(note).toContain("the raised class persists until a named human lowers it");
     expect(note).toContain("A later completed read does not reseed `green`");
-    expect(note).toContain("The class may be raised, never lowered automatically");
+    expect(note).toContain("Only a named human may lower the class, with the reason recorded");
     const on = subsection(reference, "On").replace(/\s+/g, " ");
     expect(on).toContain("If that ticket's class is `green`, seed `yellow-agent`");
     expect(on).toContain("unless a live named-human lowering is in force");
@@ -191,7 +191,7 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
     expect(on).toContain("the raised class persists until a named human lowers it");
     expect(on).toContain("An unscored ticket has no class, so the raise is skipped");
     expect(on).toContain("That yellow-agent seed is the captain's Q1 decision (GS-004k)");
-    expect(on).toContain("The class may be raised, never lowered automatically");
+    expect(on).toContain("Only a named human may lower the class, with the reason recorded");
     expect(on).toContain("ruling `delegation-class-is-authority-not-finding`");
     expect(on).toContain("Off and shadow do not seed from the read");
     expect(on).toContain("A later completed read does not reseed `green`");
@@ -208,7 +208,7 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
       "When on and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
     );
     expect(skillText).toContain(
-      "an unavailable read with its reason that carries the raised class or the lowering that supersedes it",
+      "an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise",
     );
     expect(packagedBody().replace(/\s+/g, " ")).toContain(
       "When on and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
@@ -217,10 +217,10 @@ describe("unavailable on-mode cold read raises green to yellow-agent (GS-004k)",
       "When on and the read is unavailable, a green class rises to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force",
     );
     expect(contract.replace(/\s+/g, " ")).toContain(
-      "an unavailable read with its reason that carries the raised class or the lowering that supersedes it",
+      "an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise",
     );
     expect(projectSchema).toContain(
-      "When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. The class may be raised, never lowered automatically (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k).",
+      "When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k).",
     );
     expect(projectSchema).toContain(
       "The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening).",

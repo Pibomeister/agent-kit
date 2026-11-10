@@ -19,7 +19,7 @@ The authoritative class-to-checkpoint map is
 [`delegation_classes`](../../policies/authority-defaults.yaml). Read it at the checkpoint; do not
 copy its lists into a skill. A class only narrows checkpoint authority already present in a
 runner-validated charter. It never grants authority, and it is never a finding. Project guidance
-numbers may raise the class; only a named human may lower it (ruling
+numbers may raise the class; only a named human may lower it, with the reason recorded (ruling
 `delegation-class-is-authority-not-finding`). An unavailable on-mode cold read raises a green
 class to yellow-agent by the captain's Q1 decision (GS-004k). Record downstream authorship as author kind plus host,
 never as an implementation identity.
@@ -75,7 +75,7 @@ later computed class exceeds `from`. When `review.cold_read` is on, the cited re
 and the computed class is `green`, seed `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in
 force. A live lowering supersedes that raise: keep the lowered class and leave `lowered_by`
 unsuperseded. A later completed read does not reseed `green`; the raised class persists until a
-named human lowers it. The class may be raised, never lowered automatically (ruling
+named human lowers it. Only a named human may lower the class, with the reason recorded (ruling
 `delegation-class-is-authority-not-finding`). The scorer only raises the seed, so any seed outside these four cases is a
 hand-derived class. Then run:
 
@@ -316,7 +316,7 @@ whether it publishes, is reshaped, or is reclassified `type: decision` and sent 
 ticket's class is `green`, seed `yellow-agent` and re-run the scorer, unless a live named-human
 lowering is in force. A live lowering supersedes this raise: keep the lowered class and leave
 `lowered_by` unsuperseded. That yellow-agent seed is the captain's Q1 decision (GS-004k), not a
-hand-derived class. The class may be raised, never lowered automatically (ruling
+hand-derived class. Only a named human may lower the class, with the reason recorded (ruling
 `delegation-class-is-authority-not-finding`). A later completed read
 does not reseed `green`; the raised class persists until a named human lowers it. Off and shadow
 do not seed from the read. An unscored ticket has no class, so the raise is skipped. The validator

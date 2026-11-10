@@ -163,7 +163,7 @@ Gate: a decision ticket is never emitted as executable work. A ticket that fails
 check is reclassified, never shipped as an implementation ticket because the deadline is close.
 When `review.cold_read` is on, that check is the independent cold read, not the author's reread.
 When that read is unavailable, the author check decides; cite the read with its reason. When on
-and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. The class may be raised, never lowered automatically (ruling `delegation-class-is-authority-not-finding`). Off
+and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off
 and shadow keep the author type-check as the outcome gate. Off and shadow do not change the class or the scorer inputs.
 
 Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
@@ -265,7 +265,7 @@ performed is `failed`, never complete.
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
   ticket, every implementation ticket carries the three evidence blocks (an unscored ticket under a delegation coverage limit carries readiness and assumptions, with no `delegation` block), every on-mode
-  implementation ticket cites a finished cold read, or an unavailable read with its reason that carries the raised class or the lowering that supersedes it, and
+  implementation ticket cites a finished cold read, or an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise, and
   every published artifact's read-back matched what was sent.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different
