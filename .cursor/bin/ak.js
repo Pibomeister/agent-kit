@@ -17798,7 +17798,7 @@ var init_charter_schema = __esm(() => {
           },
           review_rounds: { type: "integer", minimum: 1, maximum: 5 },
           delegate_replacements: {
-            description: "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed attempt records no progress, no replacement and approves no checkpoint.",
+            description: "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed probe records no progress, and a failed replacement records no replacement for its delegate. Effects of earlier steps in the same tick stand. No failed attempt approves a checkpoint.",
             type: "integer",
             minimum: 0
           }
@@ -42296,17 +42296,22 @@ class Runner {
     return delegate;
   }
   recordProgress(id, delegateId, kind, ref, now = Date.now()) {
+    this.recordProgressBatch(id, [{ delegate: delegateId, kind, ref }], now);
+  }
+  recordProgressBatch(id, entries, now = Date.now()) {
     const run2 = this.load(id);
-    const delegate = run2.delegates?.[delegateId];
-    if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
-      throw new Error("progress must identify an active delegate and a side effect");
-    if (kind === "commit") {
-      const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
-      if (observed.code !== 0 || observed.text !== "commit")
-        throw new Error("commit side effect was not observed");
+    for (const { delegate: delegateId, kind, ref } of entries) {
+      const delegate = run2.delegates?.[delegateId];
+      if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
+        throw new Error("progress must identify an active delegate and a side effect");
+      if (kind === "commit") {
+        const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
+        if (observed.code !== 0 || observed.text !== "commit")
+          throw new Error("commit side effect was not observed");
+      }
+      if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
+        delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     }
-    if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
-      delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     this.save(run2);
   }
   auditTick(id, now = Date.now()) {
@@ -43178,7 +43183,7 @@ async function serve(argv, io) {
   };
   const applyPersistedCap = () => {
     const { cap, spent } = recoveryBudget();
-    if (cap !== undefined && spent >= cap)
+    if (cap !== undefined && spent > 0 && spent >= cap)
       haltAudit("cap");
   };
   const runAudit = async () => {
@@ -43211,9 +43216,7 @@ async function serve(argv, io) {
         const observed = JSON.parse(probe.stdout.toString());
         if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
           throw new Error("audit probe did not cover every active delegate");
-        for (const progress of observed.progress) {
-          runner.recordProgress(runId, progress.delegate, progress.kind, progress.ref);
-        }
+        runner.recordProgressBatch(runId, observed.progress);
         const tick2 = runner.auditTick(runId);
         for (const delegate of tick2.replace) {
           const key = sha256Hex(`${runId}\x00replace\x00${delegate}`);
