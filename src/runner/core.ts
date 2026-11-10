@@ -1484,6 +1484,18 @@ export class Runner {
     return replacement;
   }
 
+  recordAuditAdapterFailure(id: string) {
+    const run = this.load(id);
+    const cap = run.charter.limits.delegate_replacements;
+    if (cap === undefined) return { cap, spent: 0, exhausted: true };
+    const current = run.budget_consumption["delegate_replacements"] ?? 0;
+    if (!Number.isSafeInteger(current) || current < 0) throw new Error("delegate replacement count is corrupt");
+    const spent = current + 1;
+    run.budget_consumption["delegate_replacements"] = spent;
+    this.save(run);
+    return { cap, spent, exhausted: spent >= cap };
+  }
+
   finishDelegate(id: string, delegateId: string): void {
     const run = this.load(id);
     const delegate = run.delegates?.[delegateId];

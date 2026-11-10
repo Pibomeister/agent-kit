@@ -77,6 +77,8 @@ export interface Charter {
     fix_cycles: number;
     ci_repair_attempts: number;
     resource_units?: number;
+    /** Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided. */
+    delegate_replacements?: number;
   };
 }
 
