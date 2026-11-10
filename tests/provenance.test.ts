@@ -305,6 +305,22 @@ describe("donor provenance", () => {
     expect(issues.some((i) => i.rule === "provenance.source-not-at-pin")).toBe(false);
   });
 
+  test("an empty .donors/ skips each lock donor whose clone is missing", () => {
+    const ctx = ctxFor({
+      "provenance/upstream.lock.yaml": lockFor("a".repeat(40)),
+      "provenance/adaptations.d/batch-1.yaml":
+        "adaptations:\n  - path: skills/adapted/SKILL.md\n    source: donor-one@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:x.md\n",
+      "provenance/conversation-map.yaml": CONVERSATION_MAP,
+    });
+    mkdirSync(join(ctx.root, ".donors"));
+    const issues = checkProvenance(ctx);
+    const skip = issues.find((i) => i.rule === "provenance.donors-unavailable");
+    expect(skip?.severity).toBe("note");
+    expect(skip?.file).toBe(".donors/donor_one");
+    expect(skip?.skipped).toBe("donor paths at pin");
+    expect(issues.some((i) => i.rule === "provenance.source-not-at-pin")).toBe(false);
+  });
+
   test("every fragment under provenance/adaptations.d/ counts toward the merged view", () => {
     const ctx = ctxFor({
       "provenance/upstream.lock.yaml": lockFor("a".repeat(40)),

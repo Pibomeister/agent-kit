@@ -100,6 +100,33 @@ describe("tools/cursor/install.sh", () => {
     expect(readFileSync(fx.bun, "utf8")).toBe(body);
     expect(existsSync(fx.sudoLog)).toBe(false);
   });
+
+  test("clone_donors reuses clone.sh and continues when it fails", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    writeFileSync(join(scratch, "tools/donors/clone.sh"), "#!/bin/sh\necho clone-failed >&2\nexit 1\n", {
+      mode: 0o755,
+    });
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("install.sh: warning: donor clone failed; provenance pin check will skip");
+  });
+
+  test("clone_donors runs the lock pin clone script", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-ok-");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    writeFileSync(
+      join(scratch, "tools/donors/clone.sh"),
+      "#!/bin/sh\necho clone.sh: .donors/donor_one at pin >&2\nexit 0\n",
+      { mode: 0o755 },
+    );
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("clone.sh: .donors/donor_one at pin");
+    expect(result.stderr).not.toContain("donor clone failed");
+  });
 });
 
 describe("cursor ak launcher", () => {

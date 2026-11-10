@@ -112,6 +112,13 @@ login_finds_bun() {
     "$BASH_BIN" -l -c 'command -v bun >/dev/null && [ "$(bun --version)" = "'"$PIN"'" ]'
 }
 
+clone_donors() {
+  if ! (cd "$ROOT" && sh "$ROOT/tools/donors/clone.sh"); then
+    echo "install.sh: warning: donor clone failed; provenance pin check will skip" >&2
+  fi
+  return 0
+}
+
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
   return 0
 fi
@@ -134,3 +141,4 @@ fi
 
 cd "$ROOT"
 bun install --frozen-lockfile
+clone_donors

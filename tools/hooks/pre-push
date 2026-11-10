@@ -56,10 +56,12 @@
 # validated; a second gate measuring the working tree would undo it.
 #
 # It does NOT run `bun test`. CI runs that after clone.sh with AK_REQUIRE_DONORS.
-# This gate copies `.donors/` into the extract when the working tree has them,
-# so `ak build`'s validate step runs the pin check. It still does not run the
-# test suite. A gate that cries wolf is a gate people pass --no-verify to, and
-# that would take the first refusal down with it.
+# This gate copies `.donors/` into the extract only when every lock pin is
+# present locally, so `ak build`'s validate step runs the pin check. A partial
+# or unpinned local clone is not copied: the gate warns and keeps the old skip
+# rather than refusing a commit for a property of the working tree. It still
+# does not run the test suite. A gate that cries wolf is a gate people pass
+# --no-verify to, and that would take the first refusal down with it.
 #
 # It measures the default install. A skill's packaged mode depends on
 # ak.install.yaml, which is gitignored and so never in an archive; the rm below
@@ -71,17 +73,54 @@
 #
 # It admits the push when it cannot run -- no node_modules, no bun, archive
 # fails. A gate that blocks on its own breakage teaches the bypass.
+#
+# Tests source this file with AK_PREPUSH_SOURCE=1 to call extract_for_gate
+# without running the stdin loop.
+donors_at_pins() {
+  _root=$1
+  [ -d "$_root/.donors" ] || return 1
+  _lock=$_root/provenance/upstream.lock.yaml
+  [ -f "$_lock" ] || return 1
+  _rows=$(
+    AK_LOCK=$_lock bun --eval '
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
+for (const d of parse(readFileSync(process.env.AK_LOCK, "utf8")).donors ?? []) {
+  if (typeof d.path === "string" && typeof d.commit === "string") console.log(d.path, d.commit);
+}
+'
+  ) || return 1
+  [ -n "$_rows" ] || return 1
+  while read -r _path _commit; do
+    [ -n "$_path" ] && [ -n "$_commit" ] || continue
+    git -C "$_root/$_path" cat-file -e "$_commit^{commit}" 2>/dev/null || return 1
+  done <<EOF
+$_rows
+EOF
+}
+
+extract_for_gate() {
+  _sha=$1
+  _dest=$2
+  _root=$3
+  git -C "$_root" archive "$_sha" 2>/dev/null | tar -x -C "$_dest" 2>/dev/null || return 1
+  rm -f "$_dest/ak.install.yaml"
+  if donors_at_pins "$_root"; then
+    rm -rf "$_dest/.donors"
+    cp -R "$_root/.donors" "$_dest/.donors" || return 1
+    printf '%s\n' "pre-push: pin check will run (.donors copied at lock pins)" >&2
+  elif [ -d "$_root/.donors" ]; then
+    printf '%s\n' "pre-push: warning: pin check skipped because the local donors are not at the lock pins" >&2
+  fi
+}
+
 build_gate() {
   sha="$1"
   root=$(git rev-parse --show-toplevel) || return 0
   [ -d "$root/node_modules" ] || return 0
   tmp=$(mktemp -d) || return 0
-  git archive "$sha" 2>/dev/null | tar -x -C "$tmp" 2>/dev/null || { rm -rf "$tmp"; return 0; }
-  if [ -d "$root/.donors" ]; then
-    cp -R "$root/.donors" "$tmp/.donors" 2>/dev/null || { rm -rf "$tmp"; return 0; }
-  fi
+  extract_for_gate "$sha" "$tmp" "$root" || { rm -rf "$tmp"; return 0; }
   ln -s "$root/node_modules" "$tmp/node_modules" 2>/dev/null || { rm -rf "$tmp"; return 0; }
-  rm -f "$tmp/ak.install.yaml"
   out=$(cd "$tmp" && bun run ak build 2>&1)
   status=$?
   rm -rf "$tmp"
@@ -98,6 +137,10 @@ build_gate() {
     "      with no ak.install.yaml in the extract: the default install" >&2
   return 1
 }
+
+if [ "${AK_PREPUSH_SOURCE:-}" = 1 ]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 refused=0
 while read -r local_ref local_sha remote_ref remote_sha; do
