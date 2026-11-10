@@ -17440,7 +17440,7 @@ var init_kb_binding_schema = __esm(() => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://agent-kit.local/schemas/kb-binding.schema.json",
     title: "Knowledgebase binding",
-    description: "The shape of ak.kb.yaml, the file at a project folder's root that says how this checkout reaches its central knowledgebase: which backend, which project record in it, and the backend's own locator (adapters/knowledgebase/CONTRACT.md \xA77; ruling `kb-binding-is-a-locator`). It is the small KB locator plan \xA71.2 lets a working repository hold: a pointer, never a copy of the knowledgebase and never a place project artifacts are written. The file holds no secret and no machine path and is committed, so every checkout and every task copy of the project binds the same knowledgebase and project. Where that knowledgebase lives on one machine is the operator's registration outside every checkout, which `ak kb check` resolves. The root object refuses unknown keys. `locator` is open here, any key with a nonempty string value; only a backend schema restricts its keys.",
+    description: "The shape of ak.kb.yaml, the file at a project folder's root that says how this checkout reaches its central knowledgebase: which backend, which project record in it, and the backend's own locator (adapters/knowledgebase/CONTRACT.md \xA77; ruling `kb-binding-is-a-locator`). It is the small KB locator plan \xA71.2 lets a working repository hold: a pointer, never a copy of the knowledgebase and never a place project artifacts are written. The file holds no secret and no machine path and is committed, so every checkout and every task copy of the project binds the same knowledgebase and project. Where that knowledgebase lives on one machine is the operator's registration outside every checkout, which `ak kb check` resolves. The root object refuses unknown keys. `locator` is open here, any key with a nonempty string or a map of nonempty strings; only a backend schema restricts its keys and which shape each takes.",
     type: "object",
     additionalProperties: false,
     required: ["backend", "project", "locator"],
@@ -17456,8 +17456,57 @@ var init_kb_binding_schema = __esm(() => {
       locator: {
         description: "What the backend needs to find the knowledgebase, without a machine path. Which keys a backend requires is its binding's to state, in schemas/kb-backends/<backend>.schema.json beside adapters/knowledgebase/backends/<backend>.md; `ak kb check` applies it after this schema. This schema names no implementation.",
         type: "object",
-        additionalProperties: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        additionalProperties: {
+          anyOf: [
+            { $ref: "common.schema.json#/$defs/nonempty_string" },
+            {
+              type: "object",
+              minProperties: 1,
+              additionalProperties: { $ref: "common.schema.json#/$defs/nonempty_string" }
+            }
+          ]
+        },
         minProperties: 1
+      }
+    }
+  };
+});
+
+// schemas/kb-backends/in-repo.schema.json
+var in_repo_schema_default;
+var init_in_repo_schema = __esm(() => {
+  in_repo_schema_default = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://agent-kit.local/schemas/kb-backends/in-repo.schema.json",
+    title: "Knowledgebase binding: in-repo",
+    description: "What adapters/knowledgebase/backends/in-repo.md reads from ak.kb.yaml, applied by `ak kb check` after the generic schemas/kb-binding.schema.json has passed. The knowledgebase is a directory of pages committed in the project's own repository, read only, so the locator names a path relative to the project folder and never a machine path, and the directory each kind is read from. The revision read is the merge-base of the checkout's HEAD and the remote's default branch (refs/remotes/origin/HEAD); the binding cannot name another, because a binding a branch commits could name that branch itself (docs/decisions/0010-file-backed-knowledgebase.md, amendment of 2026-11-09). `ak kb check` also refuses a kind map in which one directory equals or contains another (kb.binding-invalid), which a schema cannot say.",
+    type: "object",
+    required: ["locator"],
+    $defs: {
+      relative_dir: {
+        description: "A directory as forward-slash segments relative to where it is read from: no leading slash, no backslash, no segment that is `.`, and no `..` anywhere.",
+        type: "string",
+        pattern: "^(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+)*$",
+        not: { pattern: "\\.\\." }
+      }
+    },
+    properties: {
+      locator: {
+        type: "object",
+        required: ["knowledgebase", "path", "kinds"],
+        propertyNames: { enum: ["knowledgebase", "path", "kinds"] },
+        properties: {
+          knowledgebase: { type: "string", pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" },
+          path: { $ref: "#/$defs/relative_dir" },
+          kinds: {
+            type: "object",
+            minProperties: 1,
+            propertyNames: {
+              enum: ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"]
+            },
+            additionalProperties: { $ref: "#/$defs/relative_dir" }
+          }
+        }
       }
     }
   };
@@ -17509,207 +17558,24 @@ function commonDir(dir) {
 }
 var init_git = () => {};
 
-// src/kb/binding.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, realpathSync as realpathSync3, writeFileSync as writeFileSync2 } from "fs";
-import { userInfo } from "os";
-import { dirname as dirname2, isAbsolute as isAbsolute3, join as join5, relative as relative3 } from "path";
-function describe(validate) {
-  return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
+// src/util/hash.ts
+import { createHash } from "crypto";
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value))
+    return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
-function loadKbBinding(projectRoot) {
-  const text = readTextIfPresent(join5(projectRoot, BINDING_FILE2));
-  if (text === null) {
-    return {
-      binding: null,
-      issues: [
-        note("kb.unbound", BINDING_FILE2, `No binding: this folder reaches no knowledgebase, so kb-read returns unavailable and kb-write refuses (adapters/knowledgebase/CONTRACT.md \xA71). ${SETUP}`)
-      ]
-    };
-  }
-  let value;
-  try {
-    value = $parse(text, { uniqueKeys: true });
-  } catch (cause) {
-    const first = (cause instanceof Error ? cause.message : String(cause)).split(`
-`)[0];
-    return { binding: null, issues: [error("kb.binding-unparseable", BINDING_FILE2, `Not valid YAML: ${first}`)] };
-  }
-  if (!validBinding(value)) {
-    return {
-      binding: null,
-      issues: [
-        error("kb.binding-invalid", BINDING_FILE2, `Does not match schemas/kb-binding.schema.json: ${describe(validBinding)}`)
-      ]
-    };
-  }
-  const id = value.backend;
-  const backend = BACKEND_VALIDATORS.get(id);
-  if (backend === undefined) {
-    return {
-      binding: null,
-      issues: [
-        error("kb.backend-unknown", BINDING_FILE2, `backend '${id}' has no document at ${BACKENDS_DIR2}/${id}.md, so no operation knows how to reach it. A binding is added by writing that document (adapters/knowledgebase/CONTRACT.md \xA77).`)
-      ]
-    };
-  }
-  if (!backend(value)) {
-    return {
-      binding: null,
-      issues: [
-        error("kb.binding-invalid", BINDING_FILE2, `Does not match ${BACKEND_SCHEMAS_DIR2}/${id}.schema.json: ${describe(backend)}`)
-      ]
-    };
-  }
-  return { binding: value, issues: [] };
+function sha256Hex(text) {
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
-function findKbProjectRoot(start) {
-  const from = realpathSync3(start);
-  const ceiling = workTreeTop(from) ?? from;
-  for (let dir = from;; dir = dirname2(dir)) {
-    if (existsSync4(join5(dir, BINDING_FILE2)))
-      return dir;
-    if (dir === ceiling || dirname2(dir) === dir || relative3(ceiling, dir).startsWith(".."))
-      return from;
-  }
+function artifactHash(artifact) {
+  const subject = artifact !== null && typeof artifact === "object" && !Array.isArray(artifact) ? Object.fromEntries(Object.entries(artifact).filter(([k]) => k !== "approvals")) : artifact;
+  return `sha256:${sha256Hex(canonicalJson(subject))}`;
 }
-function registryPath(env = process.env) {
-  return env.AK_KB_REGISTRY ?? join5(userInfo().homedir, ".agent-kit", "kb", "registry.json");
-}
-function readRegistry(file) {
-  const text = readTextIfPresent(file);
-  if (text === null)
-    return { registry: { knowledgebases: {} }, issues: [] };
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch (cause) {
-    return {
-      registry: null,
-      issues: [
-        error("kb.registry-invalid", file, `Not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`)
-      ]
-    };
-  }
-  if (!validRegistry(value)) {
-    return {
-      registry: null,
-      issues: [error("kb.registry-invalid", file, `Not a knowledgebase registry: ${describe(validRegistry)}`)]
-    };
-  }
-  return { registry: value, issues: [] };
-}
-function checkRoot(root, projectRoot) {
-  if (!isDir(root)) {
-    return [error("kb.root-missing", root, "The registered knowledgebase checkout is not a directory.")];
-  }
-  const real = realpathSync3(root);
-  if (workTreeTop(real) !== real) {
-    return [
-      error("kb.root-not-a-repository", root, "The registered knowledgebase checkout is not the top of a git work tree. A knowledgebase is a git repository of its own; create one with `git init` and register that directory.")
-    ];
-  }
-  if (projectRoot === null)
-    return [];
-  const project = realpathSync3(projectRoot);
-  const projectTop = workTreeTop(project) ?? project;
-  const sameRepository = commonDir(real) !== null && commonDir(real) === commonDir(project);
-  if (sameRepository || isInside(real, projectTop) || isInside(projectTop, real)) {
-    return [
-      error("kb.root-inside-project", root, "The registered knowledgebase checkout is the project's own repository or shares a tree with it. Project knowledge is never written into the application repository (adapters/knowledgebase/CONTRACT.md \xA73), so every operation refuses.")
-    ];
-  }
-  return [];
-}
-function registerKnowledgebase(file, id, path, cwd) {
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(id)) {
-    return [
-      error("kb.register-id", "-", `'${id}' is not a knowledgebase id: lowercase words joined by single hyphens.`)
-    ];
-  }
-  const target = isAbsolute3(path) ? path : join5(cwd, path);
-  const projectRoot = findKbProjectRoot(cwd);
-  const rootIssues = checkRoot(target, existsSync4(join5(projectRoot, BINDING_FILE2)) ? projectRoot : null);
-  if (rootIssues.length > 0)
-    return rootIssues;
-  const loaded = readRegistry(file);
-  if (loaded.registry === null)
-    return loaded.issues;
-  const next = {
-    knowledgebases: { ...loaded.registry.knowledgebases, [id]: { path: realpathSync3(target) } }
-  };
-  mkdirSync2(dirname2(file), { recursive: true });
-  writeFileSync2(file, `${JSON.stringify(next, null, 2)}
-`);
-  return [];
-}
-function resolveKnowledgebase(projectRoot, registryFile) {
-  const loaded = loadKbBinding(projectRoot);
-  if (loaded.binding === null) {
-    const unbound = loaded.issues.every((issue) => issue.rule === "kb.unbound");
-    return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
-  }
-  const binding = loaded.binding;
-  const id = binding.locator["knowledgebase"] ?? "";
-  const registry = readRegistry(registryFile);
-  if (registry.registry === null)
-    return { resolved: null, state: "failed", issues: registry.issues };
-  const entry = registry.registry.knowledgebases[id];
-  if (entry === undefined) {
-    return {
-      resolved: null,
-      state: "unavailable",
-      issues: [
-        warning("kb.unregistered", BINDING_FILE2, `Bound to knowledgebase '${id}', which this machine has not registered (${registryFile}), so kb-read returns unavailable and kb-write refuses. ${SETUP}`)
-      ]
-    };
-  }
-  const rootIssues = checkRoot(entry.path, projectRoot);
-  if (rootIssues.length > 0)
-    return { resolved: null, state: "failed", issues: rootIssues };
-  const root = realpathSync3(entry.path);
-  if (git2(root, ["rev-parse", "--is-inside-work-tree"]).status !== 0) {
-    return {
-      resolved: null,
-      state: "failed",
-      issues: [error("kb.root-not-a-repository", entry.path, "git cannot read the registered knowledgebase checkout.")]
-    };
-  }
-  return { resolved: { binding, knowledgebase: id, root }, state: "available", issues: [] };
-}
-var import__20204, BINDING_FILE2 = "ak.kb.yaml", BACKENDS_DIR2 = "adapters/knowledgebase/backends", BACKEND_SCHEMAS_DIR2 = "schemas/kb-backends", ajv, validBinding, BACKEND_VALIDATORS, validRegistry, SETUP;
-var init_binding = __esm(() => {
-  init_dist();
-  init_common_schema();
-  init_kb_binding_schema();
-  init_local_git_schema();
-  init_fs();
-  init_git();
-  import__20204 = __toESM(require_2020(), 1);
-  ajv = new import__20204.default({ strict: false, allErrors: true });
-  ajv.addSchema(common_schema_default);
-  validBinding = ajv.compile(kb_binding_schema_default);
-  BACKEND_VALIDATORS = new Map([
-    ["local-git", ajv.compile(local_git_schema_default)]
-  ]);
-  validRegistry = ajv.compile({
-    type: "object",
-    additionalProperties: false,
-    required: ["knowledgebases"],
-    properties: {
-      knowledgebases: {
-        type: "object",
-        propertyNames: { pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" },
-        additionalProperties: {
-          type: "object",
-          additionalProperties: false,
-          required: ["path"],
-          properties: { path: { type: "string", minLength: 1 } }
-        }
-      }
-    }
-  });
-  SETUP = `Bind the project by committing ${BINDING_FILE2} at its root, and register the knowledgebase checkout once per machine with ` + "`ak kb register <knowledgebase-id> <path>`. ak.install.yaml is not part of this: it sets packaged mode ceilings and never makes a knowledgebase available.";
-});
+var init_hash = () => {};
 
 // src/util/suggest.ts
 function distance(a, b) {
@@ -17762,25 +17628,6 @@ function unknownSelector(kind, input, candidates) {
   return `unknown ${kind} '${input}'; ${candidatesClause(input, candidates)}`;
 }
 var LIST_WHOLE = 6;
-
-// src/util/hash.ts
-import { createHash } from "crypto";
-function canonicalJson(value) {
-  if (value === null || typeof value !== "object")
-    return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value))
-    return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
-}
-function sha256Hex(text) {
-  return createHash("sha256").update(text, "utf8").digest("hex");
-}
-function artifactHash(artifact) {
-  const subject = artifact !== null && typeof artifact === "object" && !Array.isArray(artifact) ? Object.fromEntries(Object.entries(artifact).filter(([k]) => k !== "approvals")) : artifact;
-  return `sha256:${sha256Hex(canonicalJson(subject))}`;
-}
-var init_hash = () => {};
 
 // schemas/charter.schema.json
 var charter_schema_default;
@@ -22293,16 +22140,16 @@ var init_verification_schema = __esm(() => {
 function instance() {
   if (compiled !== null)
     return compiled;
-  const ajv2 = new import__20205.default({ strict: false, allErrors: true, validateFormats: true });
-  import_ajv_formats3.default(ajv2);
-  ajv2.addSchema(common_schema_default);
-  ajv2.addSchema(pack_schema_default);
+  const ajv = new import__20204.default({ strict: false, allErrors: true, validateFormats: true });
+  import_ajv_formats3.default(ajv);
+  ajv.addSchema(common_schema_default);
+  ajv.addSchema(pack_schema_default);
   for (const schema of Object.values(ARTIFACT_SCHEMAS))
-    ajv2.addSchema(schema);
-  compiled = ajv2;
-  return ajv2;
+    ajv.addSchema(schema);
+  compiled = ajv;
+  return ajv;
 }
-function describe2(validate) {
+function describe(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
 function checkRunArtifact(text) {
@@ -22313,7 +22160,7 @@ function checkRunArtifact(text) {
     return { artifact: null, problem: `not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}` };
   }
   if (!validHeader(value)) {
-    return { artifact: null, problem: `not an envelope-bearing artifact: ${describe2(validHeader)}` };
+    return { artifact: null, problem: `not an envelope-bearing artifact: ${describe(validHeader)}` };
   }
   if (!ARTIFACT_SCHEMA_IDS.includes(value.schema)) {
     return {
@@ -22329,11 +22176,11 @@ function checkRunArtifact(text) {
     };
   }
   if (!validate(value)) {
-    return { artifact: null, problem: `does not match schemas/${value.schema}.schema.json: ${describe2(validate)}` };
+    return { artifact: null, problem: `does not match schemas/${value.schema}.schema.json: ${describe(validate)}` };
   }
   return { artifact: value, problem: "" };
 }
-var import__20205, import_ajv_formats3, ARTIFACT_SCHEMAS, ARTIFACT_SCHEMA_IDS, compiled = null, validHeader;
+var import__20204, import_ajv_formats3, ARTIFACT_SCHEMAS, ARTIFACT_SCHEMA_IDS, compiled = null, validHeader;
 var init_artifacts = __esm(() => {
   init_charter_schema();
   init_cold_read_schema();
@@ -22357,7 +22204,7 @@ var init_artifacts = __esm(() => {
   init_trail_schema();
   init_verification_recipe_schema();
   init_verification_schema();
-  import__20205 = __toESM(require_2020(), 1);
+  import__20204 = __toESM(require_2020(), 1);
   import_ajv_formats3 = __toESM(require_dist(), 1);
   ARTIFACT_SCHEMAS = {
     charter: charter_schema_default,
@@ -22382,7 +22229,7 @@ var init_artifacts = __esm(() => {
     "verification-recipe": verification_recipe_schema_default
   };
   ARTIFACT_SCHEMA_IDS = Object.keys(ARTIFACT_SCHEMAS);
-  validHeader = new import__20205.default({ strict: false }).compile({
+  validHeader = new import__20204.default({ strict: false }).compile({
     type: "object",
     required: ["schema", "id", "project", "run_id"],
     properties: {
@@ -22392,6 +22239,1114 @@ var init_artifacts = __esm(() => {
       run_id: { type: ["string", "null"] }
     }
   });
+});
+
+// src/kb/trail-publish.ts
+import { closeSync, fsyncSync, openSync, writeFileSync as writeFileSync2 } from "fs";
+import { join as join5 } from "path";
+function markTrailAttempt(directory, record) {
+  let created = false;
+  try {
+    const file = openSync(join5(directory, `${sha256Hex(record)}.attempt`), "wx", 384);
+    created = true;
+    try {
+      writeFileSync2(file, `${record}
+`);
+      fsyncSync(file);
+    } finally {
+      closeSync(file);
+    }
+    const parent = openSync(directory, "r");
+    try {
+      fsyncSync(parent);
+    } finally {
+      closeSync(parent);
+    }
+  } catch (error2) {
+    if (!created && error2 instanceof Error && "code" in error2 && error2.code === "EEXIST") {
+      return {
+        status: "failed",
+        code: "kb.trail-publication-unknown",
+        message: `${record}: publication outcome unknown; an attempt was marked, so the record is not resent.`
+      };
+    }
+    return {
+      status: "failed",
+      code: "kb.trail-attempt-unrecorded",
+      message: created ? `${record}: this call created a mark but could not make it durable; nothing was sent. The mark remains; a later call conservatively reports publication-unknown and must not resend.` : `${record}: the publish-attempt mark could not be created; nothing was sent and this call created no mark.`
+    };
+  }
+  return null;
+}
+var init_trail_publish = __esm(() => {
+  init_hash();
+});
+
+// src/kb/local-git.ts
+import { existsSync as existsSync4, lstatSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, rmSync as rmSync2, rmdirSync, statSync as statSync3, writeFileSync as writeFileSync3 } from "fs";
+import { dirname as dirname2, join as join6 } from "path";
+function refused(code, message) {
+  return { status: "refused", code, message };
+}
+function failed(code, message) {
+  return { status: "failed", code, message };
+}
+function scopeSegments(scope) {
+  if (scope === PROJECT_SCOPE)
+    return [];
+  const segments = scope.split("/");
+  if (segments.length > MAX_SCOPE_DEPTH)
+    return null;
+  return segments.every((segment) => KEBAB.test(segment) && !RESERVED_SEGMENTS.has(segment)) ? segments : null;
+}
+function scopeProblem(scope) {
+  return refused("kb.scope-is-a-path", `'${scope}' is not a scope. Pass the component as kebab-case words joined by '/', or '${PROJECT_SCOPE}' for the whole project; the knowledgebase resolves it to a location, and a path the caller computed is refused (ADR-0001 \xA77).`);
+}
+function nearKind(kind) {
+  const near = closest(kind, KB_KINDS);
+  return near.length === 0 ? "" : ` (did you mean ${near.join(" or ")}?)`;
+}
+function kindProblem(kind) {
+  return refused("kb.kind-unknown", `'${kind}' is not a knowledgebase document kind${nearKind(kind)}. The nine are ${KB_KINDS.join(", ")}; there is no tenth (ADR-0001 \xA72).`);
+}
+function documentPath(project, segments, kind, id) {
+  return ["projects", project, "documents", ...segments, kind, `${id}.md`].join("/");
+}
+function documentRef(scope, kind, id) {
+  return `doc:${scope}/${kind}/${id}`;
+}
+function artifactsPath(project) {
+  return ["projects", project, "runs", ARTIFACTS_FILE].join("/");
+}
+function storedArtifact(text, ref) {
+  const lines = text.split(`
+`);
+  for (let index = lines.length - 1;index >= 0; index -= 1) {
+    const value = parseStored(lines[index] ?? "");
+    if (value?.record.ref === ref)
+      return { line: index + 1, value };
+  }
+  return null;
+}
+function refCommitted(root, project, ref) {
+  if (ref.startsWith("doc:")) {
+    const parts = ref.slice(4).split("/");
+    const id = parts.at(-1) ?? "";
+    const kind = parts.at(-2) ?? "";
+    const segments = scopeSegments(parts.slice(0, -2).join("/"));
+    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) {
+      return { status: "absent" };
+    }
+    const content = committed(root, documentPath(project, segments, kind, id));
+    return content.status === "found" ? { status: "found" } : content;
+  }
+  if (ref.startsWith("run:")) {
+    const parts = ref.slice(4).split("/");
+    if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part)))
+      return { status: "absent" };
+    const content = committed(root, artifactsPath(project));
+    if (content.status !== "found")
+      return content;
+    return { status: storedArtifact(content.text, ref) !== null ? "found" : "absent" };
+  }
+  return { status: "absent" };
+}
+function documentHash(request) {
+  const subject = {
+    kind: request.kind,
+    scope: request.scope,
+    id: request.id,
+    title: request.title,
+    body: request.body
+  };
+  return `sha256:${sha256Hex(canonicalJson(subject))}`;
+}
+function idempotencyKey(run, ref, hash) {
+  return `sha256:${sha256Hex([run ?? "", "publishArtifact", ref, hash].join(`
+`))}`;
+}
+function approvalsOf(artifact) {
+  const approvals = artifact.approvals;
+  return Array.isArray(approvals) ? [...new Set(approvals.map((approval) => canonicalJson(approval)))].toSorted() : [];
+}
+function headCommit(root) {
+  const head = git2(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  return head.status === 0 ? head.stdout.trim() : null;
+}
+function committed(root, path) {
+  const listed = git2(root, ["ls-tree", "-z", "HEAD", "--", path]);
+  if (listed.status !== 0)
+    return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
+  if (listed.stdout === "")
+    return { status: "absent" };
+  const shown = git2(root, ["show", `HEAD:${path}`]);
+  return shown.status === 0 ? { status: "found", text: shown.stdout } : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
+}
+function normalizeBody(body) {
+  return `${body.replace(/\r+\n/g, `
+`).replace(/^\n+/, "").replace(/\s+$/, "")}
+`;
+}
+function parseDocument(text) {
+  if (!text.startsWith(`---
+`))
+    return null;
+  const end = text.indexOf(`
+---
+`, 4);
+  if (end === -1)
+    return null;
+  let value;
+  try {
+    value = $parse(text.slice(4, end));
+  } catch {
+    return null;
+  }
+  if (!validMeta(value))
+    return null;
+  return { meta: value, body: normalizeBody(text.slice(end + 5)) };
+}
+function parseStored(text) {
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  return validStored(value) ? value : null;
+}
+function renderDocument(meta, body) {
+  return `---
+${$stringify(meta)}---
+
+${body}`;
+}
+function committedScopes(kb) {
+  if (headCommit(kb.root) === null)
+    return [];
+  const base = ["projects", kb.binding.project, "documents"].join("/");
+  const listed = git2(kb.root, ["ls-tree", "-r", "-z", "--name-only", "HEAD", `${base}/`]);
+  if (listed.status !== 0)
+    return [];
+  const scopes = new Set;
+  for (const path of listed.stdout.split("\x00")) {
+    if (!path.endsWith(".md"))
+      continue;
+    const segments = path.slice(base.length + 1).split("/").slice(0, -2);
+    for (let depth = 1;depth <= segments.length; depth += 1)
+      scopes.add(segments.slice(0, depth).join("/"));
+  }
+  return [...scopes].toSorted();
+}
+function readContext(kb, kinds, scope) {
+  const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
+  if (unknown !== undefined)
+    return kindProblem(unknown);
+  const segments = scopeSegments(scope);
+  if (segments === null)
+    return scopeProblem(scope);
+  const project = kb.binding.project;
+  const scopes = Array.from({ length: segments.length + 1 }, (_, depth) => segments.slice(0, segments.length - depth));
+  const outcome = {
+    status: "complete",
+    knowledgebase: kb.knowledgebase,
+    project,
+    documents: [],
+    coverage: {
+      kinds: [...kinds],
+      scopes: scopes.map((at) => at.length === 0 ? PROJECT_SCOPE : at.join("/")),
+      unreadable: [],
+      run_artifact_links: "not-selected"
+    }
+  };
+  if (headCommit(kb.root) === null)
+    return outcome;
+  for (const at of scopes) {
+    for (const kind of kinds) {
+      const dir = ["projects", project, "documents", ...at, kind].join("/");
+      const listed = git2(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
+      if (listed.status !== 0)
+        return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
+      for (const path of listed.stdout.split("\x00").filter((name) => name.endsWith(".md"))) {
+        const content = committed(kb.root, path);
+        if (content.status !== "found" && content.status !== "absent")
+          return content;
+        const parsed = parseDocument(content.status === "found" ? content.text : "");
+        if (parsed === null) {
+          outcome.coverage.unreadable.push(path);
+          continue;
+        }
+        const revision = git2(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim();
+        outcome.documents.push({
+          ref: parsed.meta.ref,
+          kind: parsed.meta.kind,
+          scope: parsed.meta.scope,
+          id: parsed.meta.id,
+          title: parsed.meta.title,
+          status: parsed.meta.status,
+          content_hash: documentHash({ ...parsed.meta, body: parsed.body }),
+          revision,
+          body: parsed.body
+        });
+      }
+    }
+  }
+  return outcome;
+}
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function withLock(root, write) {
+  const gitDir = git2(root, ["rev-parse", "--absolute-git-dir"]).stdout.trim();
+  const lock = join6(gitDir, "ak-kb-publish.lock");
+  for (let attempt = 0;attempt < LOCK_ATTEMPTS; attempt += 1) {
+    try {
+      mkdirSync2(lock);
+    } catch {
+      if (existsSync4(lock) && Date.now() - statSync3(lock).mtimeMs > LOCK_STALE_MS)
+        rmSync2(lock, { recursive: true });
+      else
+        sleep(LOCK_WAIT_MS);
+      continue;
+    }
+    try {
+      return write();
+    } finally {
+      rmdirSync(lock);
+    }
+  }
+  return failed("kb.locked", "Another publish held the knowledgebase for too long. Nothing was written; retry.");
+}
+function restoreRecord(root, path, before, existing, written) {
+  const file = join6(root, path);
+  try {
+    if (headCommit(root) !== before)
+      return "HEAD changed during publication";
+    if (existsSync4(file) && !lstatSync(file).isFile())
+      return "the record is no longer a regular file";
+    const current = existsSync4(file) ? readFileSync3(file, "utf8") : null;
+    if (current === existing) {
+      const index = git2(root, ["diff", "--cached", "--name-only", "--", path]);
+      return index.status === 0 && index.stdout.trim() === "" ? null : "the record's index state changed";
+    }
+    if (current !== written)
+      return "the record contains an incomplete write or concurrent content";
+    const entries = git2(root, ["ls-files", "--stage", "--", path]);
+    if (entries.status !== 0)
+      return "the record's index could not be inspected";
+    let expectedMode = "100644";
+    if (before !== null) {
+      const tree = git2(root, ["ls-tree", before, "--", path]);
+      if (tree.status !== 0)
+        return "the original record mode could not be read";
+      if (tree.stdout.trim() !== "")
+        expectedMode = tree.stdout.split(" ")[0] ?? "";
+    }
+    const workingMode = (lstatSync(file).mode & 73) === 0 ? "100644" : "100755";
+    if (workingMode !== expectedMode || entries.stdout.trim() !== "" && !entries.stdout.startsWith(`${expectedMode} `)) {
+      return "the record has concurrent mode changes";
+    }
+    if (entries.stdout.trim() !== "") {
+      const staged = git2(root, ["show", `:${path}`]);
+      if (staged.status !== 0)
+        return "the indexed record could not be read";
+      if (staged.stdout !== written && staged.stdout !== existing)
+        return "the record has concurrent staged content";
+    }
+    const reset = git2(root, ["reset", "-q", "--", path]);
+    if (reset.status !== 0)
+      return `the record's index could not be restored: ${reset.stderr.trim()}`;
+    if (headCommit(root) !== before || !lstatSync(file).isFile() || readFileSync3(file, "utf8") !== written) {
+      return "the record or HEAD changed before cleanup";
+    }
+    if (existing === null)
+      rmSync2(file);
+    else
+      writeFileSync3(file, existing);
+    const status = git2(root, ["status", "--porcelain", "--", path]);
+    return status.status === 0 && status.stdout.trim() === "" && headCommit(root) === before ? null : "the record's original state could not be confirmed after cleanup";
+  } catch (error2) {
+    return error2 instanceof Error ? error2.message : String(error2);
+  }
+}
+function commitRecord(kb, store, identity2, trailAttempt) {
+  return withLock(kb.root, () => {
+    const path = store.path;
+    const before = headCommit(kb.root);
+    const content = before === null ? { status: "absent" } : committed(kb.root, path);
+    if (content.status !== "found" && content.status !== "absent")
+      return content;
+    const existing = content.status === "found" ? content.text : null;
+    const file = join6(kb.root, path);
+    const uncommitted = failed("kb.uncommitted-record", `${path} has uncommitted content in the knowledgebase checkout. Nothing was written over it; commit or remove it there first.`);
+    const stored = existing === null ? null : store.find(existing);
+    if (stored !== null) {
+      if (stored === "unreadable" || stored.published !== identity2.hash) {
+        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with a different digest (${stored === "unreadable" ? stored : stored.published}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`);
+      }
+      const linked = [...new Set(stored.links)].toSorted();
+      const wanted = [...new Set(identity2.links)].toSorted();
+      if (linked.join(`
+`) !== wanted.join(`
+`)) {
+        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with other links (${linked.join(", ") || "none"}). A stored record's links are not rewritten; publish the linked artifact as a new record that supersedes this one.`);
+      }
+      if (identity2.approvals.every((approval) => stored.approvals.includes(approval))) {
+        return {
+          status: "complete",
+          ref: identity2.ref,
+          content_hash: stored.published,
+          idempotency_key: stored.key,
+          run: stored.run,
+          revision: stored.revision(),
+          effect: "none"
+        };
+      }
+      if (!stored.approvals.every((approval) => identity2.approvals.includes(approval))) {
+        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with approvals this copy does not carry. Stored approvals are added to, never replaced; republish the copy that holds every approval already stored.`);
+      }
+    }
+    if (existing === null ? existsSync4(file) : git2(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "") {
+      return uncommitted;
+    }
+    const nextContent = store.write(existing);
+    mkdirSync2(dirname2(file), { recursive: true });
+    if (trailAttempt !== undefined) {
+      const refusal = markTrailAttempt(trailAttempt.directory, trailAttempt.record);
+      if (refusal !== null)
+        return refusal;
+    }
+    try {
+      writeFileSync3(file, nextContent);
+    } catch (error2) {
+      const cleanup = restoreRecord(kb.root, path, before, existing, nextContent);
+      return failed(cleanup !== null && trailAttempt !== undefined ? "kb.trail-publication-unknown" : "kb.write-failed", `${identity2.ref}: record write failed: ${error2 instanceof Error ? error2.message : String(error2)}. ${cleanup === null ? "The original working record and index are unchanged or restored." : `cleanup was not confirmed (${cleanup}); content may have been published or exposed.`}${trailAttempt === undefined ? "" : " The attempt mark is retained; do not resend."}`);
+    }
+    const added = git2(kb.root, ["add", "--", path]);
+    const made = added.status === 0 ? git2(kb.root, [
+      "commit",
+      "-q",
+      "-m",
+      `kb(${kb.binding.project}): publish ${identity2.ref}`,
+      "-m",
+      `Idempotency-Key: ${identity2.key}`,
+      "--",
+      path
+    ]) : added;
+    if (made.status !== 0) {
+      const cleanup = restoreRecord(kb.root, path, before, existing, nextContent);
+      return failed(cleanup !== null && trailAttempt !== undefined ? "kb.trail-publication-unknown" : "kb.commit-failed", `${identity2.ref}: commit failed: ${made.stderr.trim().split(`
+`)[0] || "git failed"}. ${cleanup === null ? "The original working record and index are restored." : `cleanup was not confirmed (${cleanup}); content may have been published or exposed.`}${trailAttempt === undefined ? "" : " The attempt mark is retained; do not resend."}`);
+    }
+    const readBack = committed(kb.root, path);
+    if (readBack.status !== "found" && readBack.status !== "absent")
+      return readBack;
+    const after = headCommit(kb.root);
+    const written = readBack.status === "absent" ? null : store.find(readBack.text);
+    if (written === null || written === "unreadable" || after === null || after === before || written.observed !== identity2.hash || written.approvals.join(`
+`) !== identity2.approvals.join(`
+`)) {
+      return failed("kb.read-back-mismatch", `${identity2.ref} was written but its read-back does not match what was sent.`);
+    }
+    return {
+      status: "complete",
+      ref: identity2.ref,
+      content_hash: written.observed,
+      idempotency_key: written.key,
+      run: written.run,
+      revision: after,
+      effect: "published"
+    };
+  });
+}
+function publishDocument(kb, request) {
+  if (!KB_KINDS.includes(request.kind))
+    return kindProblem(request.kind);
+  const segments = scopeSegments(request.scope);
+  if (segments === null)
+    return scopeProblem(request.scope);
+  if (!KEBAB.test(request.id) || request.id.length > 64) {
+    return refused("kb.id-invalid", `'${request.id}' is not a record id: lowercase words joined by single hyphens.`);
+  }
+  if (request.title.trim() === "" || request.title.includes(`
+`)) {
+    return refused("kb.title-invalid", "A page needs a one-line title.");
+  }
+  if (request.run !== null && !ARTIFACT_ID.test(request.run)) {
+    return refused("kb.run-invalid", `'${request.run}' is not a run id.`);
+  }
+  if (request.body.trim() === "")
+    return refused("kb.body-empty", "A page with no body is not published.");
+  if (/^\s*---\s*\n/.test(request.body)) {
+    return refused("kb.body-has-header", "The page body begins with a metadata header. The knowledgebase writes that header, status included, so a body that brings its own is refused.");
+  }
+  const body = normalizeBody(request.body);
+  const subject = { ...request, title: request.title.trim(), body };
+  const ref = documentRef(request.scope, request.kind, request.id);
+  const hash = documentHash(subject);
+  const key = idempotencyKey(request.run, ref, hash);
+  const meta = {
+    ref,
+    kind: request.kind,
+    scope: request.scope,
+    id: request.id,
+    title: subject.title,
+    status: request.kind === "adr" ? "proposed" : "unreviewed",
+    published_hash: hash,
+    idempotency_key: key,
+    run: request.run
+  };
+  const path = documentPath(kb.binding.project, segments, request.kind, request.id);
+  const store = {
+    path,
+    find: (text) => {
+      const parsed = parseDocument(text);
+      if (parsed === null)
+        return "unreadable";
+      return {
+        revision: () => git2(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
+        published: parsed.meta.published_hash,
+        observed: documentHash({ ...parsed.meta, body: parsed.body }),
+        key: parsed.meta.idempotency_key,
+        run: parsed.meta.run,
+        links: [],
+        approvals: []
+      };
+    },
+    write: () => renderDocument(meta, body)
+  };
+  return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
+}
+function publishRunArtifact(kb, text, run, links, trailAttempts) {
+  if (!ARTIFACT_ID.test(run))
+    return refused("kb.run-invalid", `'${run}' is not a run id.`);
+  const checked = checkRunArtifact(text);
+  if (checked.artifact === null) {
+    return refused("kb.artifact-invalid", `The artifact is refused before any write: ${checked.problem}.`);
+  }
+  const artifact = checked.artifact;
+  const project = kb.binding.project;
+  if (artifact.project.id !== project) {
+    return refused("kb.project-mismatch", `The artifact belongs to project '${artifact.project.id}' and this checkout is bound to '${project}'.`);
+  }
+  if (artifact.run_id !== null && artifact.run_id !== run) {
+    return refused("kb.run-mismatch", `The artifact names run '${artifact.run_id}', not '${run}'.`);
+  }
+  const head = headCommit(kb.root);
+  for (const link of links) {
+    const resolved = head === null ? { status: "absent" } : refCommitted(kb.root, project, link);
+    if (resolved.status !== "found" && resolved.status !== "absent")
+      return resolved;
+    if (resolved.status === "absent") {
+      return refused("kb.link-unresolved", `'${link}' names no record in the knowledgebase, so nothing can link from it.`);
+    }
+  }
+  const ref = `run:${run}/${artifact.schema}/${artifact.id}`;
+  const hash = artifactHash(artifact);
+  const key = idempotencyKey(run, ref, hash);
+  const stored = { record: { ref, content_hash: hash, idempotency_key: key, links: [...links] }, artifact };
+  const path = artifactsPath(project);
+  const store = {
+    path,
+    find: (lines) => {
+      const found = storedArtifact(lines, ref);
+      if (found === null)
+        return null;
+      const { line, value } = found;
+      return {
+        revision: () => {
+          const blamed = git2(kb.root, ["blame", "--porcelain", "-L", `${line},${line}`, "HEAD", "--", path]);
+          return blamed.stdout.split(" ")[0] ?? "";
+        },
+        published: value.record.content_hash,
+        observed: artifactHash(value.artifact),
+        key: value.record.idempotency_key,
+        run,
+        links: value.record.links,
+        approvals: approvalsOf(value.artifact)
+      };
+    },
+    write: (lines) => {
+      const kept = lines === null || lines === "" || lines.endsWith(`
+`) ? lines ?? "" : `${lines}
+`;
+      return `${kept}${JSON.stringify(stored)}
+`;
+    }
+  };
+  const identity2 = { ref, hash, key, links, approvals: approvalsOf(artifact) };
+  if (artifact.schema === "trail" || artifact.schema === "trail-audit") {
+    if (trailAttempts === undefined || trailAttempts === "") {
+      return refused("kb.trail-attempts-required", "Trail and trail-audit publication needs --trail-attempts.");
+    }
+    return commitRecord(kb, store, identity2, {
+      directory: trailAttempts,
+      record: `${kb.knowledgebase}/${project}/${ref}`
+    });
+  }
+  if (trailAttempts !== undefined) {
+    return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
+  }
+  return commitRecord(kb, store, identity2);
+}
+var import__20205, KB_KINDS, PROJECT_SCOPE = "project", ARTIFACTS_FILE = "artifacts.jsonl", KEBAB, ARTIFACT_ID, RESERVED_SEGMENTS, MAX_SCOPE_DEPTH = 8, LOCK_ATTEMPTS = 50, LOCK_WAIT_MS = 100, LOCK_STALE_MS = 120000, ajv, validMeta, validStored;
+var init_local_git = __esm(() => {
+  init_dist();
+  init_hash();
+  init_artifacts();
+  init_git();
+  init_trail_publish();
+  import__20205 = __toESM(require_2020(), 1);
+  KB_KINDS = ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"];
+  KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+  RESERVED_SEGMENTS = new Set([...KB_KINDS, PROJECT_SCOPE, "projects", "documents", "runs"]);
+  ajv = new import__20205.default({ strict: false });
+  validMeta = ajv.compile({
+    type: "object",
+    required: ["ref", "kind", "scope", "id", "title", "status", "published_hash", "idempotency_key", "run"],
+    properties: {
+      ref: { type: "string" },
+      kind: { type: "string" },
+      scope: { type: "string" },
+      id: { type: "string" },
+      title: { type: "string" },
+      status: { type: "string" },
+      published_hash: { type: "string" },
+      idempotency_key: { type: "string" },
+      run: { type: ["string", "null"] }
+    }
+  });
+  validStored = ajv.compile({
+    type: "object",
+    required: ["record", "artifact"],
+    properties: {
+      artifact: { type: "object" },
+      record: {
+        type: "object",
+        required: ["ref", "content_hash", "idempotency_key", "links"],
+        properties: {
+          ref: { type: "string" },
+          content_hash: { type: "string" },
+          idempotency_key: { type: "string" },
+          links: { type: "array", items: { type: "string" } }
+        }
+      }
+    }
+  });
+});
+
+// src/kb/in-repo.ts
+import { realpathSync as realpathSync3 } from "fs";
+import { basename as basename2, posix, relative as relative3, sep as sep2 } from "path";
+function locatorOf(binding) {
+  const locator = binding.locator;
+  return validLocator(locator) ? locator : { knowledgebase: "", path: "", kinds: {} };
+}
+function inRepoBindingIssues(binding, file) {
+  const dirs = Object.entries(locatorOf(binding).kinds);
+  for (const [kind, dir] of dirs) {
+    for (const [other, otherDir] of dirs) {
+      if (kind !== other && (dir === otherDir || otherDir.startsWith(`${dir}/`))) {
+        return [
+          error("kb.binding-invalid", file, `locator.kinds maps ${kind} to '${dir}' and ${other} to '${otherDir}': one directory equals or contains the other, so a page would be read under two kinds.`)
+        ];
+      }
+    }
+  }
+  return [];
+}
+function missing(file, message) {
+  return [
+    warning("kb.in-repo-missing", file, `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. ${IN_REPO_MISSING_REMEDY}`)
+  ];
+}
+function defaultBranch(top) {
+  const target = git2(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
+  const found = git2(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (found.status !== 0)
+    return null;
+  return { name: target.status === 0 ? target.stdout.trim() : "origin/HEAD", sha: found.stdout.trim() };
+}
+function resolveInRepo(projectRoot, binding, file) {
+  const project = realpathSync3(projectRoot);
+  const top = workTreeTop(project);
+  if (top === null)
+    return { location: null, top, issues: missing(file, `${project} is not in a git work tree.`) };
+  const locator = locatorOf(binding);
+  const remote = defaultBranch(top);
+  if (remote === null) {
+    return {
+      location: null,
+      top,
+      issues: missing(file, "refs/remotes/origin/HEAD does not resolve, so there is no remote default branch to read.")
+    };
+  }
+  const base = remote.name;
+  const baseSha = remote.sha;
+  if (git2(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
+    return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
+  }
+  const merged = git2(top, ["merge-base", "HEAD", baseSha]);
+  if (merged.status === 1) {
+    return {
+      location: null,
+      top,
+      issues: missing(file, `HEAD shares no history with the remote default branch ${base}.`)
+    };
+  }
+  if (merged.status !== 0) {
+    return {
+      location: null,
+      top,
+      issues: [error("kb.unreadable", file, `git merge-base failed: ${merged.stderr.trim()}`)]
+    };
+  }
+  const revision = merged.stdout.trim();
+  const projectPrefix = relative3(top, project).split(sep2).join("/");
+  const path = posix.join(projectPrefix, locator.path);
+  const listed = git2(top, ["ls-tree", "--full-tree", revision, "--", path]);
+  if (listed.status !== 0) {
+    return {
+      location: null,
+      top,
+      issues: [error("kb.unreadable", file, `git could not list ${path}: ${listed.stderr.trim()}`)]
+    };
+  }
+  if (!/^\d+ tree [0-9a-f]+\t/.test(listed.stdout)) {
+    return {
+      location: null,
+      top,
+      issues: missing(file, `'${locator.path}' is not a directory at ${revision.slice(0, 12)}, the merge-base of HEAD and the remote default branch ${base}.`)
+    };
+  }
+  const kinds = Object.fromEntries(Object.entries(locator.kinds).map(([kind, dir]) => [kind, posix.join(path, dir)]));
+  return { location: { configuredPath: locator.path, path, base, revision, kinds, projectPrefix }, top, issues: [] };
+}
+function splitFrontMatter(text) {
+  const normalized = text.replace(/\r+\n/g, `
+`);
+  if (!normalized.startsWith(`---
+`))
+    return { meta: { title: null, status: null }, body: normalized };
+  const end = normalized.indexOf(`
+---
+`, 3);
+  if (end === -1)
+    return { meta: { title: null, status: null }, body: normalized };
+  return { meta: headerMeta(normalized.slice(4, end)), body: normalized.slice(end + 5) };
+}
+function headerMeta(yaml) {
+  try {
+    const parsed = $parse(yaml);
+    return {
+      title: hasScalarTitle(parsed) ? String(parsed.title) : null,
+      status: hasScalarStatus(parsed) ? String(parsed.status) : null
+    };
+  } catch {
+    return { title: headerLine(yaml, "title"), status: null };
+  }
+}
+function headerLine(yaml, key) {
+  const line = yaml.split(`
+`).find((text) => text.startsWith(`${key}:`));
+  const value = line?.slice(key.length + 1).trim().replace(/^(["'])(.*)\1$/, "$2") ?? "";
+  return value === "" ? null : value;
+}
+function firstWord(text) {
+  const word = text.replaceAll(/[*_`[\]]/g, " ").trim().split(/\s+/)[0] ?? "";
+  const cleaned = word.toLowerCase().replaceAll(/[^a-z0-9-]/g, "");
+  return cleaned === "" ? null : cleaned;
+}
+function declaredStatus(meta, body) {
+  if (meta.status !== null)
+    return firstWord(meta.status);
+  const inline = /^\s*\*\*Status:?\*\*:?[ \t]*(\S.*)$/im.exec(body);
+  if (inline?.[1] !== undefined)
+    return firstWord(inline[1]);
+  const section = /^##[ \t]+Status[ \t]*\n+(?:[ \t]*\n)*[ \t]*(\S.*)$/im.exec(body);
+  return section?.[1] === undefined ? null : firstWord(section[1]);
+}
+function titleOf(meta, body, id) {
+  if (meta.title !== null && meta.title.trim() !== "")
+    return meta.title.trim();
+  const heading = /^#[ \t]+(\S.*)$/m.exec(body);
+  return heading?.[1]?.trim() ?? id;
+}
+function unreadable(message) {
+  return { status: "failed", code: "kb.unreadable", message };
+}
+function lastChanges(top, revision, dirs) {
+  const log = git2(top, [
+    "-c",
+    "core.quotePath=false",
+    "log",
+    "--cc",
+    "--format=@%H",
+    "--name-only",
+    revision,
+    "--",
+    ...dirs
+  ]);
+  if (log.status !== 0)
+    return unreadable(`git could not walk the history of ${dirs.join(", ")}: ${log.stderr.trim()}`);
+  const changed = new Map;
+  let commit = "";
+  for (const line of log.stdout.split(`
+`)) {
+    if (line.startsWith("@"))
+      commit = line.slice(1);
+    else if (line !== "" && !changed.has(line))
+      changed.set(line, commit);
+  }
+  return changed;
+}
+function listPages(top, location, kinds) {
+  const pages = [];
+  for (const kind of kinds) {
+    const dir = location.kinds[kind];
+    if (dir === undefined)
+      continue;
+    const listed = git2(top, ["ls-tree", "-r", "-z", "--full-tree", location.revision, "--", `${dir}/`]);
+    if (listed.status !== 0) {
+      return unreadable(`git could not list ${dir}: ${listed.stderr.trim()}`);
+    }
+    for (const entry of listed.stdout.split("\x00")) {
+      const tab = entry.indexOf("\t");
+      if (tab === -1)
+        continue;
+      const [mode, type] = entry.slice(0, tab).split(" ");
+      const path = entry.slice(tab + 1);
+      if (type !== "blob" || mode !== "100644" && mode !== "100755")
+        continue;
+      if (!path.endsWith(".md") || basename2(path) === "index.md")
+        continue;
+      pages.push({ kind, path });
+    }
+  }
+  return pages;
+}
+function readInRepoContext(kb, location, kinds, scope) {
+  const top = kb.root;
+  kinds = [...new Set(kinds)];
+  const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
+  if (unknown !== undefined)
+    return kindProblem(unknown);
+  const segments = scopeSegments(scope);
+  if (segments === null)
+    return scopeProblem(scope);
+  const scopes = Array.from({ length: segments.length + 1 }, (_, depth) => segments.slice(0, segments.length - depth));
+  const outcome = {
+    status: "complete",
+    knowledgebase: kb.knowledgebase,
+    project: kb.binding.project,
+    documents: [],
+    coverage: {
+      kinds: [...kinds],
+      scopes: scopes.map((at) => at.length === 0 ? PROJECT_SCOPE : at.join("/")),
+      unreadable: [],
+      run_artifact_links: "not-selected"
+    }
+  };
+  const listed = listPages(top, location, kinds);
+  if (!Array.isArray(listed))
+    return listed;
+  const shown = (path) => location.projectPrefix === "" ? path : path.slice(location.projectPrefix.length + 1);
+  const stems = new Map;
+  for (const page of listed) {
+    const key = `${page.kind}/${basename2(page.path, ".md")}`;
+    stems.set(key, (stems.get(key) ?? 0) + 1);
+  }
+  const changes = lastChanges(top, location.revision, [
+    ...new Set(listed.map((page) => location.kinds[page.kind] ?? ""))
+  ]);
+  if (!(changes instanceof Map))
+    return changes;
+  for (const page of listed) {
+    const id = basename2(page.path, ".md");
+    if (!KEBAB.test(id) || (stems.get(`${page.kind}/${id}`) ?? 0) > 1) {
+      outcome.coverage.unreadable.push(shown(page.path));
+      continue;
+    }
+    const content = git2(top, ["show", `${location.revision}:${page.path}`]);
+    if (content.status !== 0)
+      return unreadable(`git could not read ${page.path}: ${content.stderr.trim()}`);
+    const parsed = splitFrontMatter(content.stdout);
+    const body = normalizeBody(parsed.body);
+    const title = titleOf(parsed.meta, body, id);
+    const declared = declaredStatus(parsed.meta, body);
+    const status = declared !== null && SETTLED_STATUSES.has(declared) ? declared : "unreviewed";
+    const document = {
+      ref: `doc:${PROJECT_SCOPE}/${page.kind}/${id}`,
+      kind: page.kind,
+      scope: PROJECT_SCOPE,
+      id,
+      title,
+      status,
+      declared_status: declared,
+      content_hash: documentHash({ kind: page.kind, scope: PROJECT_SCOPE, id, title, body, run: null }),
+      revision: changes.get(page.path) ?? location.revision,
+      body
+    };
+    outcome.documents.push(document);
+  }
+  return outcome;
+}
+var import__20206, IN_REPO = "in-repo", SETTLED_STATUSES, ajv2, validLocator, hasScalarTitle, hasScalarStatus, IN_REPO_MISSING_REMEDY = "Commit the knowledgebase path on the remote's default branch, fetch origin (and run `git remote set-head origin --auto` if origin/HEAD is unset), or repair the binding.";
+var init_in_repo = __esm(() => {
+  init_dist();
+  init_git();
+  init_local_git();
+  import__20206 = __toESM(require_2020(), 1);
+  SETTLED_STATUSES = new Set(["accepted", "superseded", "deprecated", "rejected", "proposed"]);
+  ajv2 = new import__20206.default({ strict: false });
+  validLocator = ajv2.compile({
+    type: "object",
+    required: ["knowledgebase", "path", "kinds"],
+    properties: {
+      knowledgebase: { type: "string" },
+      path: { type: "string" },
+      kinds: { type: "object", additionalProperties: { type: "string" } }
+    }
+  });
+  hasScalarTitle = ajv2.compile({
+    type: "object",
+    required: ["title"],
+    properties: { title: { type: ["string", "number", "boolean"] } }
+  });
+  hasScalarStatus = ajv2.compile({
+    type: "object",
+    required: ["status"],
+    properties: { status: { type: ["string", "number", "boolean"] } }
+  });
+});
+
+// src/kb/binding.ts
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, realpathSync as realpathSync4, writeFileSync as writeFileSync4 } from "fs";
+import { userInfo } from "os";
+import { dirname as dirname3, isAbsolute as isAbsolute3, join as join7, relative as relative4 } from "path";
+function describe2(validate) {
+  return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
+}
+function loadKbBinding(projectRoot) {
+  const text = readTextIfPresent(join7(projectRoot, BINDING_FILE2));
+  if (text === null) {
+    return {
+      binding: null,
+      issues: [
+        note("kb.unbound", BINDING_FILE2, `No binding: this folder reaches no knowledgebase, so kb-read returns unavailable and kb-write refuses (adapters/knowledgebase/CONTRACT.md \xA71). ${SETUP}`)
+      ]
+    };
+  }
+  let value;
+  try {
+    value = $parse(text, { uniqueKeys: true });
+  } catch (cause) {
+    const first = (cause instanceof Error ? cause.message : String(cause)).split(`
+`)[0];
+    return { binding: null, issues: [error("kb.binding-unparseable", BINDING_FILE2, `Not valid YAML: ${first}`)] };
+  }
+  if (!validBinding(value)) {
+    return {
+      binding: null,
+      issues: [
+        error("kb.binding-invalid", BINDING_FILE2, `Does not match schemas/kb-binding.schema.json: ${describe2(validBinding)}`)
+      ]
+    };
+  }
+  const id = value.backend;
+  const backend = BACKEND_VALIDATORS.get(id);
+  if (backend === undefined) {
+    return {
+      binding: null,
+      issues: [
+        error("kb.backend-unknown", BINDING_FILE2, `backend '${id}' has no document at ${BACKENDS_DIR2}/${id}.md, so no operation knows how to reach it. A binding is added by writing that document (adapters/knowledgebase/CONTRACT.md \xA77).`)
+      ]
+    };
+  }
+  if (!backend(value)) {
+    return {
+      binding: null,
+      issues: [
+        error("kb.binding-invalid", BINDING_FILE2, `Does not match ${BACKEND_SCHEMAS_DIR2}/${id}.schema.json: ${describe2(backend)}`)
+      ]
+    };
+  }
+  if (id === IN_REPO) {
+    const issues = inRepoBindingIssues(value, BINDING_FILE2);
+    if (issues.length > 0)
+      return { binding: null, issues };
+  }
+  return { binding: value, issues: [] };
+}
+function findKbProjectRoot(start) {
+  const from = realpathSync4(start);
+  const ceiling = workTreeTop(from) ?? from;
+  for (let dir = from;; dir = dirname3(dir)) {
+    if (existsSync5(join7(dir, BINDING_FILE2)))
+      return dir;
+    if (dir === ceiling || dirname3(dir) === dir || relative4(ceiling, dir).startsWith(".."))
+      return from;
+  }
+}
+function registryPath(env = process.env) {
+  return env.AK_KB_REGISTRY ?? join7(userInfo().homedir, ".agent-kit", "kb", "registry.json");
+}
+function readRegistry(file) {
+  const text = readTextIfPresent(file);
+  if (text === null)
+    return { registry: { knowledgebases: {} }, issues: [] };
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch (cause) {
+    return {
+      registry: null,
+      issues: [
+        error("kb.registry-invalid", file, `Not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`)
+      ]
+    };
+  }
+  if (!validRegistry(value)) {
+    return {
+      registry: null,
+      issues: [error("kb.registry-invalid", file, `Not a knowledgebase registry: ${describe2(validRegistry)}`)]
+    };
+  }
+  return { registry: value, issues: [] };
+}
+function checkRoot(root, projectRoot) {
+  if (!isDir(root)) {
+    return [error("kb.root-missing", root, "The registered knowledgebase checkout is not a directory.")];
+  }
+  const real = realpathSync4(root);
+  if (workTreeTop(real) !== real) {
+    return [
+      error("kb.root-not-a-repository", root, "The registered knowledgebase checkout is not the top of a git work tree. A knowledgebase is a git repository of its own; create one with `git init` and register that directory.")
+    ];
+  }
+  if (projectRoot === null)
+    return [];
+  const project = realpathSync4(projectRoot);
+  const projectTop = workTreeTop(project) ?? project;
+  const sameRepository = commonDir(real) !== null && commonDir(real) === commonDir(project);
+  if (sameRepository || isInside(real, projectTop) || isInside(projectTop, real)) {
+    return [
+      error("kb.root-inside-project", root, "The registered knowledgebase checkout is the project's own repository or shares a tree with it. Project knowledge is never written into the application repository (adapters/knowledgebase/CONTRACT.md \xA73), so every operation refuses.")
+    ];
+  }
+  return [];
+}
+function registerKnowledgebase(file, id, path, cwd) {
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(id)) {
+    return [
+      error("kb.register-id", "-", `'${id}' is not a knowledgebase id: lowercase words joined by single hyphens.`)
+    ];
+  }
+  const target = isAbsolute3(path) ? path : join7(cwd, path);
+  const projectRoot = findKbProjectRoot(cwd);
+  const rootIssues = checkRoot(target, existsSync5(join7(projectRoot, BINDING_FILE2)) ? projectRoot : null);
+  if (rootIssues.length > 0)
+    return rootIssues;
+  const loaded = readRegistry(file);
+  if (loaded.registry === null)
+    return loaded.issues;
+  const next = {
+    knowledgebases: { ...loaded.registry.knowledgebases, [id]: { path: realpathSync4(target) } }
+  };
+  mkdirSync3(dirname3(file), { recursive: true });
+  writeFileSync4(file, `${JSON.stringify(next, null, 2)}
+`);
+  return [];
+}
+function resolveKnowledgebase(projectRoot, registryFile) {
+  const loaded = loadKbBinding(projectRoot);
+  if (loaded.binding === null) {
+    const unbound = loaded.issues.every((issue) => issue.rule === "kb.unbound");
+    return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
+  }
+  const binding = loaded.binding;
+  const locator = binding.locator;
+  const id = hasKnowledgebaseId(locator) ? locator.knowledgebase : "";
+  if (binding.backend === IN_REPO) {
+    const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE2);
+    if (inRepo.location === null || inRepo.top === null) {
+      const failed2 = inRepo.issues.some((issue) => issue.severity === "error");
+      return { resolved: null, state: failed2 ? "failed" : "unavailable", issues: inRepo.issues };
+    }
+    return {
+      resolved: { binding, knowledgebase: id, root: inRepo.top, inRepo: inRepo.location },
+      state: "available",
+      issues: []
+    };
+  }
+  const registry = readRegistry(registryFile);
+  if (registry.registry === null)
+    return { resolved: null, state: "failed", issues: registry.issues };
+  const entry = registry.registry.knowledgebases[id];
+  if (entry === undefined) {
+    return {
+      resolved: null,
+      state: "unavailable",
+      issues: [
+        warning("kb.unregistered", BINDING_FILE2, `Bound to knowledgebase '${id}', which this machine has not registered (${registryFile}), so kb-read returns unavailable and kb-write refuses. ${SETUP}`)
+      ]
+    };
+  }
+  const rootIssues = checkRoot(entry.path, projectRoot);
+  if (rootIssues.length > 0)
+    return { resolved: null, state: "failed", issues: rootIssues };
+  const root = realpathSync4(entry.path);
+  if (git2(root, ["rev-parse", "--is-inside-work-tree"]).status !== 0) {
+    return {
+      resolved: null,
+      state: "failed",
+      issues: [error("kb.root-not-a-repository", entry.path, "git cannot read the registered knowledgebase checkout.")]
+    };
+  }
+  return { resolved: { binding, knowledgebase: id, root }, state: "available", issues: [] };
+}
+var import__20207, BINDING_FILE2 = "ak.kb.yaml", BACKENDS_DIR2 = "adapters/knowledgebase/backends", BACKEND_SCHEMAS_DIR2 = "schemas/kb-backends", ajv3, validBinding, BACKEND_VALIDATORS, validRegistry, hasKnowledgebaseId, SETUP;
+var init_binding = __esm(() => {
+  init_dist();
+  init_common_schema();
+  init_kb_binding_schema();
+  init_in_repo_schema();
+  init_local_git_schema();
+  init_fs();
+  init_git();
+  init_in_repo();
+  import__20207 = __toESM(require_2020(), 1);
+  ajv3 = new import__20207.default({ strict: false, allErrors: true });
+  ajv3.addSchema(common_schema_default);
+  validBinding = ajv3.compile(kb_binding_schema_default);
+  BACKEND_VALIDATORS = new Map([
+    [IN_REPO, ajv3.compile(in_repo_schema_default)],
+    ["local-git", ajv3.compile(local_git_schema_default)]
+  ]);
+  validRegistry = ajv3.compile({
+    type: "object",
+    additionalProperties: false,
+    required: ["knowledgebases"],
+    properties: {
+      knowledgebases: {
+        type: "object",
+        propertyNames: { pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        additionalProperties: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path"],
+          properties: { path: { type: "string", minLength: 1 } }
+        }
+      }
+    }
+  });
+  hasKnowledgebaseId = ajv3.compile({
+    type: "object",
+    required: ["knowledgebase"],
+    properties: { knowledgebase: { type: "string" } }
+  });
+  SETUP = `Bind the project by committing ${BINDING_FILE2} at its root, and register the knowledgebase checkout once per machine with ` + "`ak kb register <knowledgebase-id> <path>`. ak.install.yaml is not part of this: it sets packaged mode ceilings and never makes a knowledgebase available.";
 });
 
 // src/learn/core/config.ts
@@ -22742,7 +23697,7 @@ var init_secrets = __esm(() => {
 
 // src/learn/core/store.ts
 import { appendFileSync, existsSync as existsSync7, mkdirSync as mkdirSync4, readFileSync as readFileSync6, writeFileSync as writeFileSync5 } from "fs";
-import { dirname as dirname4, join as join10, relative as relative4 } from "path";
+import { dirname as dirname4, join as join10, relative as relative5 } from "path";
 function nowIso(date = new Date) {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -22802,7 +23757,7 @@ function readText(path, fallback = "") {
 function recordRedactions(gate, path, found) {
   if (Object.keys(found).length === 0)
     return;
-  const row = { at: nowIso(), file: relative4(gate, path), kinds: found };
+  const row = { at: nowIso(), file: relative5(gate, path), kinds: found };
   appendJsonl(join10(gate, SECRET_REDACTIONS_FILE), [row]);
 }
 function gateText(gate, path, text) {
@@ -22968,15 +23923,15 @@ import {
   linkSync,
   mkdirSync as mkdirSync5,
   readFileSync as readFileSync7,
-  realpathSync as realpathSync4,
+  realpathSync as realpathSync5,
   renameSync,
   rmSync as rmSync3,
   statSync as statSync6,
   writeFileSync as writeFileSync6
 } from "fs";
-import { basename as basename2, dirname as dirname5, extname, join as join11 } from "path";
+import { basename as basename3, dirname as dirname5, extname, join as join11 } from "path";
 function spanValidator() {
-  rowValidator ??= new import__20207.default({ strict: false }).compile(learn_span_schema_default);
+  rowValidator ??= new import__20208.default({ strict: false }).compile(learn_span_schema_default);
   return rowValidator;
 }
 function hex(bytes) {
@@ -23055,7 +24010,7 @@ function projectKey(config, root) {
     return null;
   let real = root;
   try {
-    real = realpathSync4(root);
+    real = realpathSync5(root);
   } catch {}
   return createHmac("sha256", salt).update(real).digest("hex").slice(0, 12);
 }
@@ -23068,7 +24023,7 @@ function sessionKey(config, hostSessionId) {
   return createHmac("sha256", salt).update(`session:${hostSessionId}`).digest("hex").slice(0, 16);
 }
 function rotatedPath(path) {
-  const name = basename2(path);
+  const name = basename3(path);
   const ext = extname(name);
   return join11(dirname5(path), `${name.slice(0, name.length - ext.length)}.1${ext}`);
 }
@@ -23177,10 +24132,10 @@ function spanRows(config) {
   const current = join11(config.runtimeDir, SPAN_FILE);
   return [...rowsIn(rotatedPath(current)), ...rowsIn(current)];
 }
-var import__20207, SPAN_FILE = "spans.jsonl", SALT_FILE = ".salt", SALT_BYTES = 32, MEMORY_JOB_ATTRS, ATTRS, rowValidator, openSpans, LOOPS;
+var import__20208, SPAN_FILE = "spans.jsonl", SALT_FILE = ".salt", SALT_BYTES = 32, MEMORY_JOB_ATTRS, ATTRS, rowValidator, openSpans, LOOPS;
 var init_trace = __esm(() => {
   init_learn_span_schema();
-  import__20207 = __toESM(require_2020(), 1);
+  import__20208 = __toESM(require_2020(), 1);
   MEMORY_JOB_ATTRS = [
     "dropped_by_provenance",
     "dropped_by_redaction",
@@ -23219,7 +24174,7 @@ var init_trace = __esm(() => {
 import { Database } from "bun:sqlite";
 import { createHash as createHash2, randomBytes as randomBytes2, randomUUID } from "crypto";
 import { appendFileSync as appendFileSync3, existsSync as existsSync9, mkdirSync as mkdirSync6, readFileSync as readFileSync8, renameSync as renameSync2, rmSync as rmSync4, statSync as statSync7 } from "fs";
-import { basename as basename3, join as join12, resolve as resolve3 } from "path";
+import { basename as basename4, join as join12, resolve as resolve3 } from "path";
 function subscriptionEnv(env) {
   return { ...Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key))), ...OTEL_CONTENT_OFF };
 }
@@ -23241,7 +24196,7 @@ function userSettings(path) {
   return settingsFrom(text);
 }
 function subscriptionCommand(command, configDir, cwd) {
-  if (command[0] === undefined || basename3(command[0]) !== "claude")
+  if (command[0] === undefined || basename4(command[0]) !== "claude")
     return null;
   const user = userSettings(join12(configDir, "settings.json"));
   const userEnv = user === null ? Object.fromEntries(KNOWN_METERED_NAMES.map((name) => [name, ""])) : validateHostEnvelope(user.env) ? user.env : {};
@@ -23731,7 +24686,7 @@ var init_ledger = __esm(() => {
 
 // src/learn/core/paths.ts
 import { readFileSync as readFileSync10, statSync as statSync9 } from "fs";
-import { delimiter, dirname as dirname6, join as join14, relative as relative5, resolve as resolve4, sep as sep2 } from "path";
+import { delimiter, dirname as dirname6, join as join14, relative as relative6, resolve as resolve4, sep as sep3 } from "path";
 function projectFolderName(path) {
   return resolve4(path).replace(/[^A-Za-z0-9-]/g, "-");
 }
@@ -23776,7 +24731,7 @@ function rootOf(cwd) {
 function inProtectedFolder(path, home, platform = process.platform) {
   if (platform !== "darwin")
     return false;
-  const [folder] = relative5(resolve4(home).toLowerCase(), resolve4(path).toLowerCase()).split(sep2);
+  const [folder] = relative6(resolve4(home).toLowerCase(), resolve4(path).toLowerCase()).split(sep3);
   return folder === "documents" || folder === "desktop" || folder === "downloads";
 }
 function linkedWorktree(cwd, canRead = () => true) {
@@ -23800,7 +24755,7 @@ function linkedWorktree(cwd, canRead = () => true) {
       const common = resolve4(administrative, readFileSync10(commonPath, "utf8").trim());
       if (!canRead(common))
         return null;
-      return { worktree, root: common.endsWith(`${sep2}.git`) ? dirname6(common) : common };
+      return { worktree, root: common.endsWith(`${sep3}.git`) ? dirname6(common) : common };
     } catch {
       return null;
     }
@@ -23828,7 +24783,7 @@ var init_paths = __esm(() => {
 
 // src/learn/memory/registry.ts
 import { mkdirSync as mkdirSync8, statSync as statSync10 } from "fs";
-import { basename as basename4, dirname as dirname7, join as join15, resolve as resolve5, sep as sep3 } from "path";
+import { basename as basename5, dirname as dirname7, join as join15, resolve as resolve5, sep as sep4 } from "path";
 function readRegistry2(config) {
   return readJson(registryPath2(config), {});
 }
@@ -23855,7 +24810,7 @@ function recordResolvedWorktree(config, worktree, root) {
   writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
 }
 function ineligible(root) {
-  if (`${root}${sep3}`.includes(`${sep3}.no-mistakes${sep3}repos${sep3}`) || `${root}${sep3}`.includes(`${sep3}.no-mistakes${sep3}worktrees${sep3}`))
+  if (`${root}${sep4}`.includes(`${sep4}.no-mistakes${sep4}repos${sep4}`) || `${root}${sep4}`.includes(`${sep4}.no-mistakes${sep4}worktrees${sep4}`))
     return "managed by no-mistakes";
   try {
     const bare = statSync10(join15(root, ".git"), { throwIfNoEntry: false }) === undefined && statSync10(join15(root, "HEAD")).isFile() && statSync10(join15(root, "objects")).isDirectory();
@@ -23876,7 +24831,7 @@ function absent(root) {
   }
 }
 function byClaim(a, b) {
-  return Number(absent(a.root)) - Number(absent(b.root)) || Number(basename4(b.root) === b.mem_project) - Number(basename4(a.root) === a.mem_project) || b.last_seen - a.last_seen || a.root.localeCompare(b.root);
+  return Number(absent(a.root)) - Number(absent(b.root)) || Number(basename5(b.root) === b.mem_project) - Number(basename5(a.root) === a.mem_project) || b.last_seen - a.last_seen || a.root.localeCompare(b.root);
 }
 function clean(input) {
   const held = new Map;
@@ -23928,7 +24883,7 @@ function registerRoot(config, root, at = nowMs()) {
   const cleaned = clean(current);
   const resolved = resolve5(root);
   const reason = ineligible(resolved);
-  const refusal = reason === null ? admit(cleaned, { root: resolved, mem_project: basename4(resolved), last_seen: at }) : ineligibleWarning(resolved, reason);
+  const refusal = reason === null ? admit(cleaned, { root: resolved, mem_project: basename5(resolved), last_seen: at }) : ineligibleWarning(resolved, reason);
   const { held, warnings } = cleaned;
   if (refusal !== null && !warnings.includes(refusal))
     warnings.push(refusal);
@@ -24041,7 +24996,7 @@ var init_pages = __esm(() => {
 });
 
 // src/learn/kb.ts
-import { basename as basename5, join as join16 } from "path";
+import { basename as basename6, join as join16 } from "path";
 function kebab(text) {
   const out = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64).replace(/-+$/, "");
   return out === "" ? "project" : out;
@@ -24049,7 +25004,7 @@ function kebab(text) {
 function lessonDraft(input, project, runId, at = new Date) {
   if (!LOCAL_ID.test(input.localId))
     throw new Error(`lesson draft: local id must look like ls-003, got ${JSON.stringify(input.localId)}`);
-  const projectId = kebab(basename5(project.root));
+  const projectId = kebab(basename6(project.root));
   const repoName = project.repo ?? projectId;
   const created = nowIso(at);
   const draft = {
@@ -24121,7 +25076,7 @@ var init_kb = __esm(() => {
 
 // src/learn/memory/ledger.ts
 import { existsSync as existsSync11, mkdirSync as mkdirSync9, readdirSync as readdirSync2 } from "fs";
-import { basename as basename6, dirname as dirname8, join as join17 } from "path";
+import { basename as basename7, dirname as dirname8, join as join17 } from "path";
 function isFailureObservation(row) {
   return FAILURE_TYPES.has(row.type) || FAILURE_TITLE.test(row.title ?? "");
 }
@@ -24201,7 +25156,7 @@ function splitLines(text) {
   return lines;
 }
 function lessonId(page) {
-  return basename6(page.path, ".md");
+  return basename7(page.path, ".md");
 }
 function loadLessons(ledger) {
   const dir = ledger.path("lessons");
@@ -24212,7 +25167,7 @@ function loadLessons(ledger) {
   for (const name of names) {
     const path = join17(dir, name);
     const { meta, body } = parsePage(readText(path));
-    const id = basename6(name, ".md");
+    const id = basename7(name, ".md");
     out.set(id, { meta: { ...meta, id }, body, path });
   }
   return out;
@@ -24702,7 +25657,7 @@ var init_events = __esm(() => {
 });
 
 // src/learn/review/ingest.ts
-import { basename as basename7, join as join18 } from "path";
+import { basename as basename8, join as join18 } from "path";
 import { homedir as homedir2 } from "os";
 function githubCommentEvent(comment, byId, pr, sha, prAuthor, project) {
   const login = comment.user?.login ?? "";
@@ -24973,7 +25928,7 @@ function eventsFromReflectQueue(ctx, root, project) {
 function memProject(ctx, root) {
   const registry = readJson(registryPath2(ctx.config), {});
   const recorded = registry[projectFolderName(root)]?.mem_project;
-  return typeof recorded === "string" && recorded !== "" ? recorded : basename7(root);
+  return typeof recorded === "string" && recorded !== "" ? recorded : basename8(root);
 }
 function deferredNote(result) {
   return result.deferred === 0 ? "" : `; ${result.deferred} claude-mem review observation(s) wait for the memory loop to screen them`;
@@ -25017,9 +25972,10 @@ function ingest(ctx, ledger, root, options = {}) {
   const kb = resolveKnowledgebase(root, registryPath(ctx.env));
   if (kb.state === "failed")
     throw new Error(`knowledgebase findings: ${kb.issues.map((issue) => issue.message).join("; ")}`);
-  if (kb.resolved !== null)
-    events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
-  else if (kb.issues.some((issue) => issue.rule === "kb.unregistered")) {
+  if (kb.resolved !== null) {
+    if (kb.resolved.inRepo === undefined)
+      events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
+  } else if (kb.issues.some((issue) => issue.rule === "kb.unregistered" || issue.rule === "kb.in-repo-missing")) {
     unavailable2.push("kb-finding");
     ctx.io.err(`ak learn review: review source kb-finding unavailable: ${kb.issues.map((issue) => issue.message).join("; ")}`);
   }
@@ -25686,9 +26642,9 @@ var init_ROLE7 = () => {};
 
 // src/learn/core/roles.ts
 import { readFileSync as readFileSync12 } from "fs";
-import { basename as basename8, join as join19, resolve as resolve6 } from "path";
+import { basename as basename9, join as join19, resolve as resolve6 } from "path";
 function bundled(dir) {
-  return basename8(dir) === "bin";
+  return basename9(dir) === "bin";
 }
 function packageRoot(dir) {
   return resolve6(dir, ...bundled(dir) ? [".."] : ["..", "..", ".."]);
@@ -26535,7 +27491,7 @@ __export(exports_cli, {
   prNumbers: () => prNumbers,
   ingestOptions: () => ingestOptions
 });
-import { basename as basename9 } from "path";
+import { basename as basename10 } from "path";
 function rootFor(args, ctx) {
   const named = flag(args, "repo") ?? flag(args, "cwd");
   const root = mainRepoRoot(named ?? ctx.cwd);
@@ -26641,7 +27597,7 @@ var init_cli = __esm(() => {
         usage: "review run [--pr N[,N]] [--repo PATH] [--cwd PATH] [--gh-repo owner/name] [--since YYYY-MM-DD] [--source codex]   ingest, maintain, propose",
         run: spanned("review.run", (args, ctx) => locked(args, ctx, (ledger, root) => {
           stage(ctx, "review.ingest", root, (inner) => doIngest(args, inner, ledger, root));
-          ctx.io.out(`maintain: ${stage(ctx, "review.maintain", root, (inner) => maintain(inner, ledger, basename9(root)))}`);
+          ctx.io.out(`maintain: ${stage(ctx, "review.maintain", root, (inner) => maintain(inner, ledger, basename10(root)))}`);
           ctx.io.out(`propose: ${stage(ctx, "review.propose", root, (inner) => propose(inner, ledger, root))}`);
           return 0;
         }))
@@ -26656,7 +27612,7 @@ var init_cli = __esm(() => {
       maintain: {
         usage: "review maintain               classify unprocessed events into pattern pages",
         run: spanned("review.maintain", (args, ctx) => locked(args, ctx, (ledger, root) => {
-          ctx.io.out(`maintain: ${maintain(ctx, ledger, basename9(root))}`);
+          ctx.io.out(`maintain: ${maintain(ctx, ledger, basename10(root))}`);
           return 0;
         }))
       },
@@ -27333,8 +28289,8 @@ var init_guardrails = __esm(() => {
 });
 
 // src/learn/skills/roster.ts
-import { existsSync as existsSync18, readdirSync as readdirSync5, readFileSync as readFileSync14, realpathSync as realpathSync5, statSync as statSync11 } from "fs";
-import { basename as basename10, dirname as dirname11, join as join22 } from "path";
+import { existsSync as existsSync18, readdirSync as readdirSync5, readFileSync as readFileSync14, realpathSync as realpathSync6, statSync as statSync11 } from "fs";
+import { basename as basename11, dirname as dirname11, join as join22 } from "path";
 function frontmatter(text3) {
   const match = /^---\n([\s\S]*?)\n---/.exec(text3);
   if (match === null)
@@ -27376,7 +28332,7 @@ function skillsUnder(root) {
   const walk = (dir) => {
     let real;
     try {
-      real = realpathSync5(dir);
+      real = realpathSync6(dir);
     } catch {
       return;
     }
@@ -27411,7 +28367,7 @@ function installedSkills(root) {
     try {
       fm = frontmatter(readFileSync14(path, "utf8"));
     } catch {}
-    const name = basename10(dirname11(path));
+    const name = basename11(dirname11(path));
     return {
       name,
       description: oneLine3(fm.description ?? ""),
@@ -27452,7 +28408,7 @@ function clip(text3, width) {
 function rosterSection(ctx, root, options = {}) {
   const envWidth = Number.parseInt(ctx.env.AK_LEARN_ROSTER_WIDTH ?? "", 10);
   const width = options.width ?? (Number.isFinite(envWidth) && envWidth > 0 ? envWidth : DEFAULT_WIDTH);
-  const catalog = basename10(import.meta.dir) === "bin" ? [] : catalogSkills(options.packageRoot ?? PACKAGE_ROOT);
+  const catalog = basename11(import.meta.dir) === "bin" ? [] : catalogSkills(options.packageRoot ?? PACKAGE_ROOT);
   const known = new Set(catalog.map((skill) => skill.name));
   const levels = [["catalog", catalog]];
   const installed = [["global", join22(ctx.config.configDir, "skills")]];
@@ -28056,7 +29012,7 @@ var init_redact = __esm(() => {
 import { createHash as createHash5 } from "crypto";
 import { closeSync as closeSync2, existsSync as existsSync20, openSync as openSync2, readdirSync as readdirSync6, readFileSync as readFileSync16, readSync, statSync as statSync12 } from "fs";
 import { homedir as homedir3 } from "os";
-import { basename as basename11, delimiter as delimiter2, dirname as dirname12, isAbsolute as isAbsolute6, join as join24, relative as relative6, resolve as resolve7, sep as sep4 } from "path";
+import { basename as basename12, delimiter as delimiter2, dirname as dirname12, isAbsolute as isAbsolute6, join as join24, relative as relative7, resolve as resolve7, sep as sep5 } from "path";
 function object(value) {
   return value !== undefined && validateObject(value) ? value : null;
 }
@@ -28276,7 +29232,7 @@ function normalizedFile(path, cwd) {
     return null;
   if (!isAbsolute6(clean2))
     return clean2.replace(/^\.\//, "");
-  const rel = relative6(cwd, clean2);
+  const rel = relative7(cwd, clean2);
   return rel !== "" && !rel.startsWith("..") && !isAbsolute6(rel) ? rel : scrubCaptured(clean2);
 }
 function filesFromValue(value, cwd) {
@@ -28490,10 +29446,10 @@ function droidOutput(part) {
   return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "inferred" };
 }
 function grokNativeId(dir, summary) {
-  return string(object(summary?.info)?.id) ?? basename11(dir);
+  return string(object(summary?.info)?.id) ?? basename12(dir);
 }
 function kimiNativeId(dir, state) {
-  return string(state?.id) ?? basename11(dir);
+  return string(state?.id) ?? basename12(dir);
 }
 function parseCodexSession(path, now = Date.now()) {
   const rows = readJsonLines(path);
@@ -28635,7 +29591,7 @@ function grokCwd(dir, summary) {
   if (recorded !== null)
     return recorded;
   try {
-    return decodeURIComponent(basename11(dirname12(dir)));
+    return decodeURIComponent(basename12(dirname12(dir)));
   } catch {
     return null;
   }
@@ -28857,7 +29813,7 @@ function repoOrigin(root, canRead) {
   }
 }
 function isNoMistakesPath(path) {
-  return `${path}${sep4}`.includes(`${sep4}.no-mistakes${sep4}`);
+  return `${path}${sep5}`.includes(`${sep5}.no-mistakes${sep5}`);
 }
 function workerRootResolver(registry, worktrees, guard = {}) {
   const entries = Object.values(registry);
@@ -28885,7 +29841,7 @@ function workerRootResolver(registry, worktrees, guard = {}) {
   };
   return (cwd) => {
     const path = resolve7(cwd);
-    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep4}`))?.[1];
+    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep5}`))?.[1];
     if (placed !== undefined)
       return placed;
     let protectedRead = false;
@@ -28994,7 +29950,7 @@ function scanWorkerSessions(homes, rootFor2, options = {}) {
     });
   };
   for (const home of homes.codex) {
-    for (const path of walk(join24(home, "sessions"), (file) => basename11(file).startsWith("rollout-") && file.endsWith(".jsonl")))
+    for (const path of walk(join24(home, "sessions"), (file) => basename12(file).startsWith("rollout-") && file.endsWith(".jsonl")))
       collect("codex", path, path, () => {
         const meta = codexMeta(object(parseJson(firstLine2(path))));
         return { cwd: string(meta?.cwd), nativeId: codexNativeId(meta) };
@@ -29008,7 +29964,7 @@ function scanWorkerSessions(homes, rootFor2, options = {}) {
       }, () => parseDroidSession(path));
   }
   for (const home of homes.grok) {
-    for (const path of walk(join24(home, "sessions"), (file) => basename11(file) === "chat_history.jsonl")) {
+    for (const path of walk(join24(home, "sessions"), (file) => basename12(file) === "chat_history.jsonl")) {
       const dir = dirname12(path);
       collect("grok", path, path, () => {
         const summary = readObject(join24(dir, "summary.json"));
@@ -29017,7 +29973,7 @@ function scanWorkerSessions(homes, rootFor2, options = {}) {
     }
   }
   for (const home of homes.kimi) {
-    for (const path of walk(join24(home, "sessions"), (file) => basename11(file) === "state.json")) {
+    for (const path of walk(join24(home, "sessions"), (file) => basename12(file) === "state.json")) {
       const dir = dirname12(path);
       const wire = join24(dir, "agents", "main", "wire.jsonl");
       if (existsSync20(wire))
@@ -29637,7 +30593,7 @@ var init_tool_distill = __esm(() => {
 // src/learn/memory/consolidate.ts
 import { createHash as createHash6 } from "crypto";
 import { existsSync as existsSync21, rmSync as rmSync7 } from "fs";
-import { basename as basename12, join as join25 } from "path";
+import { basename as basename13, join as join25 } from "path";
 function stratify(episodes, batch) {
   const seen = new Set;
   const repeats = new Set;
@@ -29721,7 +30677,7 @@ function sessionsOf(evidence, obsSession) {
   return out;
 }
 function nextLessonId2(ledger) {
-  const numbers = loadLessons(ledger).values().map(({ path }) => basename12(path, ".md").slice(3)).filter((digits) => /^\d+$/.test(digits)).map(Number).toArray();
+  const numbers = loadLessons(ledger).values().map(({ path }) => basename13(path, ".md").slice(3)).filter((digits) => /^\d+$/.test(digits)).map(Number).toArray();
   return `ls-${String(numbers.length > 0 ? Math.max(...numbers) + 1 : 1).padStart(3, "0")}`;
 }
 function lessonBody(statement, evidence) {
@@ -29992,7 +30948,7 @@ function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
     traceId: runOf(ctx).traceId,
     loop: "memory",
     role: "consolidator",
-    project: basename12(root)
+    project: basename13(root)
   });
   if (reply === null) {
     const state2 = readState(ledger);
@@ -30016,7 +30972,7 @@ function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
       reviewSessions.set(`obs:${row.id}`, row.memory_session_id);
   }
   const summary = applyConsolidation(ledger, reply, valid, obsSession, {
-    review: review === null ? undefined : { ledger: review, project: basename12(root), sessions: reviewSessions },
+    review: review === null ? undefined : { ledger: review, project: basename13(root), sessions: reviewSessions },
     runId,
     sessionOf: citedObsSessions(source, ledger)
   });
@@ -30105,7 +31061,7 @@ var init_consolidate = __esm(() => {
 
 // src/learn/memory/deep.ts
 import { existsSync as existsSync22, readdirSync as readdirSync7, readFileSync as readFileSync17 } from "fs";
-import { basename as basename13, join as join26 } from "path";
+import { basename as basename14, join as join26 } from "path";
 function daysBefore(day, days) {
   const at = new Date(`${day}T00:00:00Z`);
   at.setUTCDate(at.getUTCDate() - days);
@@ -30301,7 +31257,7 @@ function deep(ctx, ledger, root, review, trigger = "tick") {
       traceId: runOf(ctx).traceId,
       loop: "memory",
       role: "lesson-merger",
-      project: basename13(root)
+      project: basename14(root)
     });
     if (reply !== null)
       pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
@@ -30504,9 +31460,9 @@ function degenerate(text3, previous, inputTokens) {
     return "repeated lines";
   if (previous.trim() !== "" && text3.length < 0.3 * previous.length && inputTokens < 5000)
     return "collapsed";
-  const missing = SECTIONS.filter((section2) => !text3.includes(section2));
-  if (missing.length > 0)
-    return `missing sections [${missing.map((section2) => `'${section2}'`).join(", ")}]`;
+  const missing2 = SECTIONS.filter((section2) => !text3.includes(section2));
+  if (missing2.length > 0)
+    return `missing sections [${missing2.map((section2) => `'${section2}'`).join(", ")}]`;
   return null;
 }
 function memoryText(lines, record = null) {
@@ -30761,7 +31717,7 @@ var init_reflect = __esm(() => {
 
 // src/learn/memory/tick.ts
 import { mkdirSync as mkdirSync14 } from "fs";
-import { basename as basename14, join as join27 } from "path";
+import { basename as basename15, join as join27 } from "path";
 function backoffElapsed(state, job, now) {
   const failures = job === "reflect" ? state.reflect_failures : state.nightly_failures;
   const attempted = job === "reflect" ? state.last_reflect_attempt : state.last_nightly_attempt;
@@ -30883,7 +31839,7 @@ function runProject(ctx, claude, root, memProject2, options = {}) {
     let refreshed = 0;
     const captures = WorkerSessionSource.open(ledger);
     const distiller = toolDistiller(ctx.config, ctx.distill ?? commandDistiller(ctx.config), {
-      project: memProject2 || basename14(root),
+      project: memProject2 || basename15(root),
       dryRun
     });
     try {
@@ -31049,7 +32005,7 @@ function tickRun(ctx, options) {
         const workerSessions = scan.sessions.get(entry.root) ?? [];
         if (options.only === undefined && Math.max(claudeActivity(entry.root), scan.activity.get(entry.root) ?? 0) < cutoff)
           continue;
-        const name = entry.mem_project || basename14(entry.root);
+        const name = entry.mem_project || basename15(entry.root);
         projects += 1;
         let lines;
         try {
@@ -31143,7 +32099,7 @@ __export(exports_cli2, {
   WIKI_PATHS: () => WIKI_PATHS
 });
 import { readFileSync as readFileSync18, rmSync as rmSync8 } from "fs";
-import { basename as basename15, join as join28 } from "path";
+import { basename as basename16, join as join28 } from "path";
 function rootFor2(args, ctx) {
   const repo = flag(args, "repo");
   const root = sessionRoot(repo ?? ctx.cwd);
@@ -31250,7 +32206,7 @@ function status(args, ctx) {
     ctx.io.out(JSON.stringify(run2));
   if (runs.length === 0)
     ctx.io.out("(none)");
-  const name = entry?.mem_project || basename15(root);
+  const name = entry?.mem_project || basename16(root);
   const ticks = generations(tickLogPath(ctx.config)).flatMap((path) => readText(path).split(`
 `)).filter((line) => line.startsWith(`${name}: `)).slice(-20);
   ctx.io.out("");
@@ -31432,7 +32388,7 @@ var init_cli2 = __esm(() => {
 
 // src/learn/skills/learn.ts
 import { existsSync as existsSync24, mkdirSync as mkdirSync15, readdirSync as readdirSync8, readFileSync as readFileSync19, rmSync as rmSync9, statSync as statSync13 } from "fs";
-import { basename as basename16, join as join29 } from "path";
+import { basename as basename17, join as join29 } from "path";
 function skillsLedger(ctx, root) {
   return new Ledger(loopDir(ctx.config, root, "skills")).ensure({
     "registry.json": `${JSON.stringify(EMPTY_REGISTRY, null, 1)}
@@ -31705,7 +32661,7 @@ ${s.messages.map((m) => `- ${m.slice(0, 300)}`).join(`
 `) || "(none)"
       },
       { title: "Rejected names (never propose again)", body: registry.rejected.join(", ") || "(none)" },
-      { title: `Sessions (${sessions.length}, repository ${basename16(root)})`, body }
+      { title: `Sessions (${sessions.length}, repository ${basename17(root)})`, body }
     ], ctx.env);
     if (ctx.config.dryRun) {
       ctx.span?.status("dry-run");
@@ -31716,7 +32672,7 @@ ${s.messages.map((m) => `- ${m.slice(0, 300)}`).join(`
       ...runOf(ctx),
       loop: "skills",
       role: "skill-scout",
-      project: basename16(root)
+      project: basename17(root)
     }));
     if (proposed === null) {
       ctx.span?.status("failed", "no-judge-output");
@@ -32668,12 +33624,12 @@ function openHookFile(file) {
   if (!isJsonObject(found))
     return { refuse: `${file.path}: "hooks" is not an object; nothing written` };
   const events = {};
-  const unreadable = [];
+  const unreadable2 = [];
   for (const [key, value] of Object.entries(found)) {
     if (isEventList(value))
       events[key] = value;
     else if (!Array.isArray(value) || value.length > 0)
-      unreadable.push(key);
+      unreadable2.push(key);
   }
   const original = new Set(Object.keys(events));
   const doc = { hooks: events };
@@ -32689,7 +33645,7 @@ function openHookFile(file) {
     }
     return { ...out, ...now };
   };
-  return { doc, unreadable, contents: () => file.bare ? merged() : { ...raw, hooks: merged() } };
+  return { doc, unreadable: unreadable2, contents: () => file.bare ? merged() : { ...raw, hooks: merged() } };
 }
 function hookFilePlan(ctx, file, specs) {
   const opened = openHookFile(file);
@@ -32869,7 +33825,7 @@ function wire(ctx, deps, options = {}) {
   }
   return refused2.size > 0 ? 1 : 0;
 }
-var import_ajv11, OUR_HOOK, ajv3, isJsonObject, isEventList, declaresSessionStart, MEM_MODE = "code--review-learning", CONTEXT_OBSERVATIONS = "25", SESSION_MATCHER = "startup|resume|clear|compact", WIRE_HOSTS, HOST_LABEL, GROK_HOOKS_FILE = "agent-kit-learn.json";
+var import_ajv11, OUR_HOOK, ajv4, isJsonObject, isEventList, declaresSessionStart, MEM_MODE = "code--review-learning", CONTEXT_OBSERVATIONS = "25", SESSION_MATCHER = "startup|resume|clear|compact", WIRE_HOSTS, HOST_LABEL, GROK_HOOKS_FILE = "agent-kit-learn.json";
 var init_wire = __esm(() => {
   init_proc();
   init_roles();
@@ -32879,9 +33835,9 @@ var init_wire = __esm(() => {
   init_code_review_learning();
   import_ajv11 = __toESM(require_ajv(), 1);
   OUR_HOOK = /(?:^|[\s/"'])(?:ak|cli\.ts)['"]?\s+learn\s+hook\s+(.*)$/;
-  ajv3 = new import_ajv11.default({ strict: false });
-  isJsonObject = ajv3.compile({ type: "object" });
-  isEventList = ajv3.compile({
+  ajv4 = new import_ajv11.default({ strict: false });
+  isJsonObject = ajv4.compile({ type: "object" });
+  isEventList = ajv4.compile({
     type: "array",
     minItems: 1,
     items: {
@@ -32889,7 +33845,7 @@ var init_wire = __esm(() => {
       properties: { matcher: { type: "string" }, hooks: { type: "array", items: { type: "object" } } }
     }
   });
-  declaresSessionStart = ajv3.compile({
+  declaresSessionStart = ajv4.compile({
     type: "object",
     required: ["hooks"],
     properties: { hooks: { type: "object", required: ["SessionStart"] } }
@@ -33697,8 +34653,8 @@ function verifyChecks(ctx, deps, repo) {
   const paths = unitPaths(deps, kind);
   const entries = wiredAkPaths(hookLines, paths?.unit ?? null);
   if (entries.length > 0) {
-    const missing = entries.filter((entry) => !existsSync31(entry));
-    check2("ak entry exists", missing.length === 0, missing.length === 0 ? entries.join(" ") : `missing: ${missing.join(" ")}`);
+    const missing2 = entries.filter((entry) => !existsSync31(entry));
+    check2("ak entry exists", missing2.length === 0, missing2.length === 0 ? entries.join(" ") : `missing: ${missing2.join(" ")}`);
   }
   if (paths !== null) {
     check2(`${kind} unit written`, existsSync31(paths.unit), paths.unit);
@@ -34469,7 +35425,7 @@ var init_json = __esm(() => {
 // src/learn/doctor/collect.ts
 import { createHash as createHash8 } from "crypto";
 import { existsSync as existsSync34, openSync as openSync4, readFileSync as readFileSync25, readSync as readSync2, closeSync as closeSync4, readdirSync as readdirSync12, statSync as statSync16 } from "fs";
-import { basename as basename17, dirname as dirname15, join as join37, resolve as resolve11, sep as sep5 } from "path";
+import { basename as basename18, dirname as dirname15, join as join37, resolve as resolve11, sep as sep6 } from "path";
 function parseLine(line) {
   return object2(parseJson2(line) ?? undefined);
 }
@@ -34661,7 +35617,7 @@ function parseClaudeSession(path) {
     }
   }
   if (id === null)
-    id = basename17(path, ".jsonl");
+    id = basename18(path, ".jsonl");
   return { id, cwd, started_at: started, log };
 }
 function codexMeta2(rows) {
@@ -34714,7 +35670,7 @@ function parseCodexSession2(path) {
     }
   }
   return {
-    id: text3(meta.id) ?? basename17(path, ".jsonl"),
+    id: text3(meta.id) ?? basename18(path, ".jsonl"),
     cwd: text3(meta.cwd),
     started_at: text3(meta.timestamp) ?? text3(rows[0]?.timestamp),
     log
@@ -34725,7 +35681,7 @@ function grokCwd2(dir, summary) {
   if (recorded !== null)
     return recorded;
   try {
-    const decoded = decodeURIComponent(basename17(dirname15(dir)));
+    const decoded = decodeURIComponent(basename18(dirname15(dir)));
     return decoded.startsWith("/") ? decoded : null;
   } catch {
     return null;
@@ -34755,7 +35711,7 @@ function parseGrokSession2(dir) {
     }
   }
   return {
-    id: text3(object2(summary?.info)?.id) ?? basename17(dir),
+    id: text3(object2(summary?.info)?.id) ?? basename18(dir),
     cwd: grokCwd2(dir, summary),
     started_at: text3(summary?.created_at),
     log
@@ -34764,7 +35720,7 @@ function parseGrokSession2(dir) {
 function belongsTo(cwd, root) {
   const top = resolve11(root);
   const place = resolve11(cwd);
-  return place === top || place.startsWith(`${top}${sep5}`);
+  return place === top || place.startsWith(`${top}${sep6}`);
 }
 function files(dir, accept, depth) {
   if (depth < 0 || !existsSync34(dir))
@@ -34846,7 +35802,7 @@ function skillsIn(root, scope2) {
   return names.map((name) => join37(root, name, "SKILL.md")).filter(isFile).map((path) => {
     const meta = frontmatter2(readFileSync25(path, "utf8"));
     return {
-      name: skillName(meta.name ?? basename17(dirname15(path))),
+      name: skillName(meta.name ?? basename18(dirname15(path))),
       path,
       scope: scope2,
       description: truncate(meta.description ?? "", 300)
@@ -35069,16 +36025,16 @@ function parseScore(session2, reply) {
   if (reply === null || declared !== null)
     return { ...base, status: "unavailable", why: declared ?? "no usable reply", results: {}, failed: false };
   const results = {};
-  const missing = [];
+  const missing2 = [];
   for (const scorer of SCORERS) {
     const checked = result(scorer, reply[scorer]);
     if (checked === null)
-      missing.push(scorer);
+      missing2.push(scorer);
     else
       results[scorer] = checked;
   }
-  if (missing.length > 0)
-    return { ...base, status: "unavailable", why: `invalid or missing: ${missing.join(", ")}`, results, failed: false };
+  if (missing2.length > 0)
+    return { ...base, status: "unavailable", why: `invalid or missing: ${missing2.join(", ")}`, results, failed: false };
   const failed2 = SCORERS.some((scorer) => {
     const score2 = results[scorer]?.score;
     return score2 !== null && score2 !== undefined && score2 < FAIL_BELOW;
@@ -36048,8 +37004,8 @@ var init_rewrite = __esm(() => {
 
 // src/learn/doctor/loop.ts
 import { createHash as createHash9 } from "crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync36, mkdirSync as mkdirSync21, readFileSync as readFileSync27, realpathSync as realpathSync6 } from "fs";
-import { dirname as dirname17, isAbsolute as isAbsolute9, join as join40, relative as relative7, resolve as resolve12 } from "path";
+import { chmodSync as chmodSync2, existsSync as existsSync36, mkdirSync as mkdirSync21, readFileSync as readFileSync27, realpathSync as realpathSync7 } from "fs";
+import { dirname as dirname17, isAbsolute as isAbsolute9, join as join40, relative as relative8, resolve as resolve12 } from "path";
 function loadRewrites(ledger) {
   return readJson(ledger.path(REWRITES_FILE), []);
 }
@@ -36105,7 +37061,7 @@ function doctorArgs(args) {
 }
 function repoPath(repo, path) {
   try {
-    const inside = relative7(realpathSync6(repo), realpathSync6(path));
+    const inside = relative8(realpathSync7(repo), realpathSync7(path));
     return inside === "" || inside.startsWith("..") || isAbsolute9(inside) ? null : inside;
   } catch {
     return null;
@@ -36389,8 +37345,8 @@ __export(exports_cli5, {
   RUN_FILE: () => RUN_FILE
 });
 import { randomBytes as randomBytes3 } from "crypto";
-import { chmodSync as chmodSync3, existsSync as existsSync37, mkdirSync as mkdirSync22, readlinkSync, realpathSync as realpathSync7, writeFileSync as writeFileSync13 } from "fs";
-import { basename as basename18, delimiter as delimiter3, dirname as dirname18, join as join41, resolve as resolve13 } from "path";
+import { chmodSync as chmodSync3, existsSync as existsSync37, mkdirSync as mkdirSync22, readlinkSync, realpathSync as realpathSync8, writeFileSync as writeFileSync13 } from "fs";
+import { basename as basename19, delimiter as delimiter3, dirname as dirname18, join as join41, resolve as resolve13 } from "path";
 function enclosingWorkTree(path) {
   let dir = resolve13(path);
   for (;; ) {
@@ -36411,19 +37367,19 @@ function linkTarget(path) {
 }
 function realOutputPath(path, hops = 0) {
   let dir = resolve13(path);
-  const missing = [];
+  const missing2 = [];
   for (;; ) {
     try {
-      return join41(realpathSync7(dir), ...missing);
+      return join41(realpathSync8(dir), ...missing2);
     } catch {
       const link = hops < MAX_LINK_HOPS ? linkTarget(dir) : null;
       if (link !== null)
-        return join41(realOutputPath(resolve13(dirname18(dir), link), hops + 1), ...missing);
+        return join41(realOutputPath(resolve13(dirname18(dir), link), hops + 1), ...missing2);
     }
     const parent = dirname18(dir);
     if (parent === dir)
       return resolve13(path);
-    missing.unshift(basename18(dir));
+    missing2.unshift(basename19(dir));
     dir = parent;
   }
 }
@@ -36486,9 +37442,9 @@ function collectOptions(args, ctx) {
     return fail("--all and --repo are exclusive");
   const named = repoText === undefined ? [ctx.cwd] : paths(repoText);
   const repos = all ? [] : repoText === undefined ? [mainRepoRoot(ctx.cwd)] : named.map(repoOf);
-  const missing = named.filter((_, index) => repos[index] === null);
-  if (missing.length > 0)
-    return fail(repoText === undefined ? "not in a repository: pass --repo P or --all" : `--repo names no directory: ${missing.join(", ")}`);
+  const missing2 = named.filter((_, index) => repos[index] === null);
+  if (missing2.length > 0)
+    return fail(repoText === undefined ? "not in a repository: pass --repo P or --all" : `--repo names no directory: ${missing2.join(", ")}`);
   const roots = repos.filter((repo) => repo !== null);
   const homes = defaultHomes(ctx.env, ctx.config.configDir);
   const value = {
@@ -36806,11 +37762,11 @@ var init_cli5 = __esm(() => {
 // src/maintenance/cli.ts
 init_common_schema();
 var import_ajv17 = __toESM(require_ajv(), 1);
-var import__202013 = __toESM(require_2020(), 1);
+var import__202014 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync6 } from "child_process";
-import { existsSync as existsSync41, readFileSync as readFileSync41, realpathSync as realpathSync17 } from "fs";
+import { existsSync as existsSync41, readFileSync as readFileSync41, realpathSync as realpathSync18 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename22, isAbsolute as isAbsolute18, join as join53, relative as relative15 } from "path";
+import { basename as basename23, isAbsolute as isAbsolute18, join as join53, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -37307,610 +38263,14 @@ function scoreDelegationFiles(ticketInput, projectInput, cwd = process.cwd()) {
 
 // src/maintenance/cli.ts
 init_binding();
+init_in_repo();
 
 // src/kb/cli.ts
 init_binding();
+init_in_repo();
+init_local_git();
 import { existsSync as existsSync6, readFileSync as readFileSync4, statSync as statSync4 } from "fs";
 import { isAbsolute as isAbsolute4, join as join8 } from "path";
-
-// src/kb/local-git.ts
-init_dist();
-init_hash();
-init_artifacts();
-init_git();
-var import__20206 = __toESM(require_2020(), 1);
-import { existsSync as existsSync5, lstatSync, mkdirSync as mkdirSync3, readFileSync as readFileSync3, rmSync as rmSync2, rmdirSync, statSync as statSync3, writeFileSync as writeFileSync4 } from "fs";
-import { dirname as dirname3, join as join7 } from "path";
-
-// src/kb/trail-publish.ts
-init_hash();
-import { closeSync, fsyncSync, openSync, writeFileSync as writeFileSync3 } from "fs";
-import { join as join6 } from "path";
-function markTrailAttempt(directory, record) {
-  let created = false;
-  try {
-    const file = openSync(join6(directory, `${sha256Hex(record)}.attempt`), "wx", 384);
-    created = true;
-    try {
-      writeFileSync3(file, `${record}
-`);
-      fsyncSync(file);
-    } finally {
-      closeSync(file);
-    }
-    const parent = openSync(directory, "r");
-    try {
-      fsyncSync(parent);
-    } finally {
-      closeSync(parent);
-    }
-  } catch (error2) {
-    if (!created && error2 instanceof Error && "code" in error2 && error2.code === "EEXIST") {
-      return {
-        status: "failed",
-        code: "kb.trail-publication-unknown",
-        message: `${record}: publication outcome unknown; an attempt was marked, so the record is not resent.`
-      };
-    }
-    return {
-      status: "failed",
-      code: "kb.trail-attempt-unrecorded",
-      message: created ? `${record}: this call created a mark but could not make it durable; nothing was sent. The mark remains; a later call conservatively reports publication-unknown and must not resend.` : `${record}: the publish-attempt mark could not be created; nothing was sent and this call created no mark.`
-    };
-  }
-  return null;
-}
-
-// src/kb/local-git.ts
-var KB_KINDS = ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"];
-var PROJECT_SCOPE = "project";
-var ARTIFACTS_FILE = "artifacts.jsonl";
-var KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-var ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-var RESERVED_SEGMENTS = new Set([...KB_KINDS, PROJECT_SCOPE, "projects", "documents", "runs"]);
-var MAX_SCOPE_DEPTH = 8;
-var LOCK_ATTEMPTS = 50;
-var LOCK_WAIT_MS = 100;
-var LOCK_STALE_MS = 120000;
-var ajv2 = new import__20206.default({ strict: false });
-var validMeta = ajv2.compile({
-  type: "object",
-  required: ["ref", "kind", "scope", "id", "title", "status", "published_hash", "idempotency_key", "run"],
-  properties: {
-    ref: { type: "string" },
-    kind: { type: "string" },
-    scope: { type: "string" },
-    id: { type: "string" },
-    title: { type: "string" },
-    status: { type: "string" },
-    published_hash: { type: "string" },
-    idempotency_key: { type: "string" },
-    run: { type: ["string", "null"] }
-  }
-});
-var validStored = ajv2.compile({
-  type: "object",
-  required: ["record", "artifact"],
-  properties: {
-    artifact: { type: "object" },
-    record: {
-      type: "object",
-      required: ["ref", "content_hash", "idempotency_key", "links"],
-      properties: {
-        ref: { type: "string" },
-        content_hash: { type: "string" },
-        idempotency_key: { type: "string" },
-        links: { type: "array", items: { type: "string" } }
-      }
-    }
-  }
-});
-function refused(code, message) {
-  return { status: "refused", code, message };
-}
-function failed(code, message) {
-  return { status: "failed", code, message };
-}
-function scopeSegments(scope) {
-  if (scope === PROJECT_SCOPE)
-    return [];
-  const segments = scope.split("/");
-  if (segments.length > MAX_SCOPE_DEPTH)
-    return null;
-  return segments.every((segment) => KEBAB.test(segment) && !RESERVED_SEGMENTS.has(segment)) ? segments : null;
-}
-function scopeProblem(scope) {
-  return refused("kb.scope-is-a-path", `'${scope}' is not a scope. Pass the component as kebab-case words joined by '/', or '${PROJECT_SCOPE}' for the whole project; the knowledgebase resolves it to a location, and a path the caller computed is refused (ADR-0001 \xA77).`);
-}
-function nearKind(kind) {
-  const near = closest(kind, KB_KINDS);
-  return near.length === 0 ? "" : ` (did you mean ${near.join(" or ")}?)`;
-}
-function kindProblem(kind) {
-  return refused("kb.kind-unknown", `'${kind}' is not a knowledgebase document kind${nearKind(kind)}. The nine are ${KB_KINDS.join(", ")}; there is no tenth (ADR-0001 \xA72).`);
-}
-function documentPath(project, segments, kind, id) {
-  return ["projects", project, "documents", ...segments, kind, `${id}.md`].join("/");
-}
-function documentRef(scope, kind, id) {
-  return `doc:${scope}/${kind}/${id}`;
-}
-function artifactsPath(project) {
-  return ["projects", project, "runs", ARTIFACTS_FILE].join("/");
-}
-function storedArtifact(text, ref) {
-  const lines = text.split(`
-`);
-  for (let index = lines.length - 1;index >= 0; index -= 1) {
-    const value = parseStored(lines[index] ?? "");
-    if (value?.record.ref === ref)
-      return { line: index + 1, value };
-  }
-  return null;
-}
-function refCommitted(root, project, ref) {
-  if (ref.startsWith("doc:")) {
-    const parts = ref.slice(4).split("/");
-    const id = parts.at(-1) ?? "";
-    const kind = parts.at(-2) ?? "";
-    const segments = scopeSegments(parts.slice(0, -2).join("/"));
-    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) {
-      return { status: "absent" };
-    }
-    const content = committed(root, documentPath(project, segments, kind, id));
-    return content.status === "found" ? { status: "found" } : content;
-  }
-  if (ref.startsWith("run:")) {
-    const parts = ref.slice(4).split("/");
-    if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part)))
-      return { status: "absent" };
-    const content = committed(root, artifactsPath(project));
-    if (content.status !== "found")
-      return content;
-    return { status: storedArtifact(content.text, ref) !== null ? "found" : "absent" };
-  }
-  return { status: "absent" };
-}
-function documentHash(request) {
-  const subject = {
-    kind: request.kind,
-    scope: request.scope,
-    id: request.id,
-    title: request.title,
-    body: request.body
-  };
-  return `sha256:${sha256Hex(canonicalJson(subject))}`;
-}
-function idempotencyKey(run, ref, hash) {
-  return `sha256:${sha256Hex([run ?? "", "publishArtifact", ref, hash].join(`
-`))}`;
-}
-function approvalsOf(artifact) {
-  const approvals = artifact.approvals;
-  return Array.isArray(approvals) ? [...new Set(approvals.map((approval) => canonicalJson(approval)))].toSorted() : [];
-}
-function headCommit(root) {
-  const head = git2(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  return head.status === 0 ? head.stdout.trim() : null;
-}
-function committed(root, path) {
-  const listed = git2(root, ["ls-tree", "-z", "HEAD", "--", path]);
-  if (listed.status !== 0)
-    return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
-  if (listed.stdout === "")
-    return { status: "absent" };
-  const shown = git2(root, ["show", `HEAD:${path}`]);
-  return shown.status === 0 ? { status: "found", text: shown.stdout } : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
-}
-function normalizeBody(body) {
-  return `${body.replace(/\r+\n/g, `
-`).replace(/^\n+/, "").replace(/\s+$/, "")}
-`;
-}
-function parseDocument(text) {
-  if (!text.startsWith(`---
-`))
-    return null;
-  const end = text.indexOf(`
----
-`, 4);
-  if (end === -1)
-    return null;
-  let value;
-  try {
-    value = $parse(text.slice(4, end));
-  } catch {
-    return null;
-  }
-  if (!validMeta(value))
-    return null;
-  return { meta: value, body: normalizeBody(text.slice(end + 5)) };
-}
-function parseStored(text) {
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  return validStored(value) ? value : null;
-}
-function renderDocument(meta, body) {
-  return `---
-${$stringify(meta)}---
-
-${body}`;
-}
-function committedScopes(kb) {
-  if (headCommit(kb.root) === null)
-    return [];
-  const base = ["projects", kb.binding.project, "documents"].join("/");
-  const listed = git2(kb.root, ["ls-tree", "-r", "-z", "--name-only", "HEAD", `${base}/`]);
-  if (listed.status !== 0)
-    return [];
-  const scopes = new Set;
-  for (const path of listed.stdout.split("\x00")) {
-    if (!path.endsWith(".md"))
-      continue;
-    const segments = path.slice(base.length + 1).split("/").slice(0, -2);
-    for (let depth = 1;depth <= segments.length; depth += 1)
-      scopes.add(segments.slice(0, depth).join("/"));
-  }
-  return [...scopes].toSorted();
-}
-function readContext(kb, kinds, scope) {
-  const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
-  if (unknown !== undefined)
-    return kindProblem(unknown);
-  const segments = scopeSegments(scope);
-  if (segments === null)
-    return scopeProblem(scope);
-  const project = kb.binding.project;
-  const scopes = Array.from({ length: segments.length + 1 }, (_, depth) => segments.slice(0, segments.length - depth));
-  const outcome = {
-    status: "complete",
-    knowledgebase: kb.knowledgebase,
-    project,
-    documents: [],
-    coverage: {
-      kinds: [...kinds],
-      scopes: scopes.map((at) => at.length === 0 ? PROJECT_SCOPE : at.join("/")),
-      unreadable: [],
-      run_artifact_links: "not-selected"
-    }
-  };
-  if (headCommit(kb.root) === null)
-    return outcome;
-  for (const at of scopes) {
-    for (const kind of kinds) {
-      const dir = ["projects", project, "documents", ...at, kind].join("/");
-      const listed = git2(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
-      if (listed.status !== 0)
-        return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
-      for (const path of listed.stdout.split("\x00").filter((name) => name.endsWith(".md"))) {
-        const content = committed(kb.root, path);
-        if (content.status !== "found" && content.status !== "absent")
-          return content;
-        const parsed = parseDocument(content.status === "found" ? content.text : "");
-        if (parsed === null) {
-          outcome.coverage.unreadable.push(path);
-          continue;
-        }
-        const revision = git2(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim();
-        outcome.documents.push({
-          ref: parsed.meta.ref,
-          kind: parsed.meta.kind,
-          scope: parsed.meta.scope,
-          id: parsed.meta.id,
-          title: parsed.meta.title,
-          status: parsed.meta.status,
-          content_hash: documentHash({ ...parsed.meta, body: parsed.body }),
-          revision,
-          body: parsed.body
-        });
-      }
-    }
-  }
-  return outcome;
-}
-function sleep(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-function withLock(root, write) {
-  const gitDir = git2(root, ["rev-parse", "--absolute-git-dir"]).stdout.trim();
-  const lock = join7(gitDir, "ak-kb-publish.lock");
-  for (let attempt = 0;attempt < LOCK_ATTEMPTS; attempt += 1) {
-    try {
-      mkdirSync3(lock);
-    } catch {
-      if (existsSync5(lock) && Date.now() - statSync3(lock).mtimeMs > LOCK_STALE_MS)
-        rmSync2(lock, { recursive: true });
-      else
-        sleep(LOCK_WAIT_MS);
-      continue;
-    }
-    try {
-      return write();
-    } finally {
-      rmdirSync(lock);
-    }
-  }
-  return failed("kb.locked", "Another publish held the knowledgebase for too long. Nothing was written; retry.");
-}
-function restoreRecord(root, path, before, existing, written) {
-  const file = join7(root, path);
-  try {
-    if (headCommit(root) !== before)
-      return "HEAD changed during publication";
-    if (existsSync5(file) && !lstatSync(file).isFile())
-      return "the record is no longer a regular file";
-    const current = existsSync5(file) ? readFileSync3(file, "utf8") : null;
-    if (current === existing) {
-      const index = git2(root, ["diff", "--cached", "--name-only", "--", path]);
-      return index.status === 0 && index.stdout.trim() === "" ? null : "the record's index state changed";
-    }
-    if (current !== written)
-      return "the record contains an incomplete write or concurrent content";
-    const entries = git2(root, ["ls-files", "--stage", "--", path]);
-    if (entries.status !== 0)
-      return "the record's index could not be inspected";
-    let expectedMode = "100644";
-    if (before !== null) {
-      const tree = git2(root, ["ls-tree", before, "--", path]);
-      if (tree.status !== 0)
-        return "the original record mode could not be read";
-      if (tree.stdout.trim() !== "")
-        expectedMode = tree.stdout.split(" ")[0] ?? "";
-    }
-    const workingMode = (lstatSync(file).mode & 73) === 0 ? "100644" : "100755";
-    if (workingMode !== expectedMode || entries.stdout.trim() !== "" && !entries.stdout.startsWith(`${expectedMode} `)) {
-      return "the record has concurrent mode changes";
-    }
-    if (entries.stdout.trim() !== "") {
-      const staged = git2(root, ["show", `:${path}`]);
-      if (staged.status !== 0)
-        return "the indexed record could not be read";
-      if (staged.stdout !== written && staged.stdout !== existing)
-        return "the record has concurrent staged content";
-    }
-    const reset = git2(root, ["reset", "-q", "--", path]);
-    if (reset.status !== 0)
-      return `the record's index could not be restored: ${reset.stderr.trim()}`;
-    if (headCommit(root) !== before || !lstatSync(file).isFile() || readFileSync3(file, "utf8") !== written) {
-      return "the record or HEAD changed before cleanup";
-    }
-    if (existing === null)
-      rmSync2(file);
-    else
-      writeFileSync4(file, existing);
-    const status = git2(root, ["status", "--porcelain", "--", path]);
-    return status.status === 0 && status.stdout.trim() === "" && headCommit(root) === before ? null : "the record's original state could not be confirmed after cleanup";
-  } catch (error2) {
-    return error2 instanceof Error ? error2.message : String(error2);
-  }
-}
-function commitRecord(kb, store, identity2, trailAttempt) {
-  return withLock(kb.root, () => {
-    const path = store.path;
-    const before = headCommit(kb.root);
-    const content = before === null ? { status: "absent" } : committed(kb.root, path);
-    if (content.status !== "found" && content.status !== "absent")
-      return content;
-    const existing = content.status === "found" ? content.text : null;
-    const file = join7(kb.root, path);
-    const uncommitted = failed("kb.uncommitted-record", `${path} has uncommitted content in the knowledgebase checkout. Nothing was written over it; commit or remove it there first.`);
-    const stored = existing === null ? null : store.find(existing);
-    if (stored !== null) {
-      if (stored === "unreadable" || stored.published !== identity2.hash) {
-        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with a different digest (${stored === "unreadable" ? stored : stored.published}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`);
-      }
-      const linked = [...new Set(stored.links)].toSorted();
-      const wanted = [...new Set(identity2.links)].toSorted();
-      if (linked.join(`
-`) !== wanted.join(`
-`)) {
-        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with other links (${linked.join(", ") || "none"}). A stored record's links are not rewritten; publish the linked artifact as a new record that supersedes this one.`);
-      }
-      if (identity2.approvals.every((approval) => stored.approvals.includes(approval))) {
-        return {
-          status: "complete",
-          ref: identity2.ref,
-          content_hash: stored.published,
-          idempotency_key: stored.key,
-          run: stored.run,
-          revision: stored.revision(),
-          effect: "none"
-        };
-      }
-      if (!stored.approvals.every((approval) => identity2.approvals.includes(approval))) {
-        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with approvals this copy does not carry. Stored approvals are added to, never replaced; republish the copy that holds every approval already stored.`);
-      }
-    }
-    if (existing === null ? existsSync5(file) : git2(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "") {
-      return uncommitted;
-    }
-    const nextContent = store.write(existing);
-    mkdirSync3(dirname3(file), { recursive: true });
-    if (trailAttempt !== undefined) {
-      const refusal = markTrailAttempt(trailAttempt.directory, trailAttempt.record);
-      if (refusal !== null)
-        return refusal;
-    }
-    try {
-      writeFileSync4(file, nextContent);
-    } catch (error2) {
-      const cleanup = restoreRecord(kb.root, path, before, existing, nextContent);
-      return failed(cleanup !== null && trailAttempt !== undefined ? "kb.trail-publication-unknown" : "kb.write-failed", `${identity2.ref}: record write failed: ${error2 instanceof Error ? error2.message : String(error2)}. ${cleanup === null ? "The original working record and index are unchanged or restored." : `cleanup was not confirmed (${cleanup}); content may have been published or exposed.`}${trailAttempt === undefined ? "" : " The attempt mark is retained; do not resend."}`);
-    }
-    const added = git2(kb.root, ["add", "--", path]);
-    const made = added.status === 0 ? git2(kb.root, [
-      "commit",
-      "-q",
-      "-m",
-      `kb(${kb.binding.project}): publish ${identity2.ref}`,
-      "-m",
-      `Idempotency-Key: ${identity2.key}`,
-      "--",
-      path
-    ]) : added;
-    if (made.status !== 0) {
-      const cleanup = restoreRecord(kb.root, path, before, existing, nextContent);
-      return failed(cleanup !== null && trailAttempt !== undefined ? "kb.trail-publication-unknown" : "kb.commit-failed", `${identity2.ref}: commit failed: ${made.stderr.trim().split(`
-`)[0] || "git failed"}. ${cleanup === null ? "The original working record and index are restored." : `cleanup was not confirmed (${cleanup}); content may have been published or exposed.`}${trailAttempt === undefined ? "" : " The attempt mark is retained; do not resend."}`);
-    }
-    const readBack = committed(kb.root, path);
-    if (readBack.status !== "found" && readBack.status !== "absent")
-      return readBack;
-    const after = headCommit(kb.root);
-    const written = readBack.status === "absent" ? null : store.find(readBack.text);
-    if (written === null || written === "unreadable" || after === null || after === before || written.observed !== identity2.hash || written.approvals.join(`
-`) !== identity2.approvals.join(`
-`)) {
-      return failed("kb.read-back-mismatch", `${identity2.ref} was written but its read-back does not match what was sent.`);
-    }
-    return {
-      status: "complete",
-      ref: identity2.ref,
-      content_hash: written.observed,
-      idempotency_key: written.key,
-      run: written.run,
-      revision: after,
-      effect: "published"
-    };
-  });
-}
-function publishDocument(kb, request) {
-  if (!KB_KINDS.includes(request.kind))
-    return kindProblem(request.kind);
-  const segments = scopeSegments(request.scope);
-  if (segments === null)
-    return scopeProblem(request.scope);
-  if (!KEBAB.test(request.id) || request.id.length > 64) {
-    return refused("kb.id-invalid", `'${request.id}' is not a record id: lowercase words joined by single hyphens.`);
-  }
-  if (request.title.trim() === "" || request.title.includes(`
-`)) {
-    return refused("kb.title-invalid", "A page needs a one-line title.");
-  }
-  if (request.run !== null && !ARTIFACT_ID.test(request.run)) {
-    return refused("kb.run-invalid", `'${request.run}' is not a run id.`);
-  }
-  if (request.body.trim() === "")
-    return refused("kb.body-empty", "A page with no body is not published.");
-  if (/^\s*---\s*\n/.test(request.body)) {
-    return refused("kb.body-has-header", "The page body begins with a metadata header. The knowledgebase writes that header, status included, so a body that brings its own is refused.");
-  }
-  const body = normalizeBody(request.body);
-  const subject = { ...request, title: request.title.trim(), body };
-  const ref = documentRef(request.scope, request.kind, request.id);
-  const hash = documentHash(subject);
-  const key = idempotencyKey(request.run, ref, hash);
-  const meta = {
-    ref,
-    kind: request.kind,
-    scope: request.scope,
-    id: request.id,
-    title: subject.title,
-    status: request.kind === "adr" ? "proposed" : "unreviewed",
-    published_hash: hash,
-    idempotency_key: key,
-    run: request.run
-  };
-  const path = documentPath(kb.binding.project, segments, request.kind, request.id);
-  const store = {
-    path,
-    find: (text) => {
-      const parsed = parseDocument(text);
-      if (parsed === null)
-        return "unreadable";
-      return {
-        revision: () => git2(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
-        published: parsed.meta.published_hash,
-        observed: documentHash({ ...parsed.meta, body: parsed.body }),
-        key: parsed.meta.idempotency_key,
-        run: parsed.meta.run,
-        links: [],
-        approvals: []
-      };
-    },
-    write: () => renderDocument(meta, body)
-  };
-  return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
-}
-function publishRunArtifact(kb, text, run, links, trailAttempts) {
-  if (!ARTIFACT_ID.test(run))
-    return refused("kb.run-invalid", `'${run}' is not a run id.`);
-  const checked = checkRunArtifact(text);
-  if (checked.artifact === null) {
-    return refused("kb.artifact-invalid", `The artifact is refused before any write: ${checked.problem}.`);
-  }
-  const artifact = checked.artifact;
-  const project = kb.binding.project;
-  if (artifact.project.id !== project) {
-    return refused("kb.project-mismatch", `The artifact belongs to project '${artifact.project.id}' and this checkout is bound to '${project}'.`);
-  }
-  if (artifact.run_id !== null && artifact.run_id !== run) {
-    return refused("kb.run-mismatch", `The artifact names run '${artifact.run_id}', not '${run}'.`);
-  }
-  const head = headCommit(kb.root);
-  for (const link of links) {
-    const resolved = head === null ? { status: "absent" } : refCommitted(kb.root, project, link);
-    if (resolved.status !== "found" && resolved.status !== "absent")
-      return resolved;
-    if (resolved.status === "absent") {
-      return refused("kb.link-unresolved", `'${link}' names no record in the knowledgebase, so nothing can link from it.`);
-    }
-  }
-  const ref = `run:${run}/${artifact.schema}/${artifact.id}`;
-  const hash = artifactHash(artifact);
-  const key = idempotencyKey(run, ref, hash);
-  const stored = { record: { ref, content_hash: hash, idempotency_key: key, links: [...links] }, artifact };
-  const path = artifactsPath(project);
-  const store = {
-    path,
-    find: (lines) => {
-      const found = storedArtifact(lines, ref);
-      if (found === null)
-        return null;
-      const { line, value } = found;
-      return {
-        revision: () => {
-          const blamed = git2(kb.root, ["blame", "--porcelain", "-L", `${line},${line}`, "HEAD", "--", path]);
-          return blamed.stdout.split(" ")[0] ?? "";
-        },
-        published: value.record.content_hash,
-        observed: artifactHash(value.artifact),
-        key: value.record.idempotency_key,
-        run,
-        links: value.record.links,
-        approvals: approvalsOf(value.artifact)
-      };
-    },
-    write: (lines) => {
-      const kept = lines === null || lines === "" || lines.endsWith(`
-`) ? lines ?? "" : `${lines}
-`;
-      return `${kept}${JSON.stringify(stored)}
-`;
-    }
-  };
-  const identity2 = { ref, hash, key, links, approvals: approvalsOf(artifact) };
-  if (artifact.schema === "trail" || artifact.schema === "trail-audit") {
-    if (trailAttempts === undefined || trailAttempts === "") {
-      return refused("kb.trail-attempts-required", "Trail and trail-audit publication needs --trail-attempts.");
-    }
-    return commitRecord(kb, store, identity2, {
-      directory: trailAttempts,
-      record: `${kb.knowledgebase}/${project}/${ref}`
-    });
-  }
-  if (trailAttempts !== undefined) {
-    return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
-  }
-  return commitRecord(kb, store, identity2);
-}
-
-// src/kb/cli.ts
 var EXIT_UNAVAILABLE = 3;
 var USAGE = [
   "ak kb \u2014 reach the project's central knowledgebase (ak.kb.yaml)",
@@ -37930,7 +38290,7 @@ var USAGE = [
   `  kinds: ${KB_KINDS.join(", ")}`,
   "  scope: a component as kebab-case words joined by '/', or 'project' for the whole project",
   "",
-  "Exit 0 complete, 1 failed or refused, 2 usage, 3 no knowledgebase configured."
+  "Exit 0 complete, 1 failed or refused, 2 usage, 3 no knowledgebase configured, or a publish to a read-only one skipped."
 ];
 var NOT_CARRIED = new Map([
   ["record-decision", "recordDecision"],
@@ -37997,6 +38357,12 @@ function check(options, args) {
   const resolution = resolveKnowledgebase(root, options.registry ?? registryPath());
   for (const issue of sortIssues(resolution.issues))
     options.io.out(formatIssue(issue));
+  if (resolution.resolved?.inRepo !== undefined) {
+    const kb = resolution.resolved;
+    const at = resolution.resolved.inRepo;
+    options.io.out(`ak kb check: bound, read-only. ${BINDING_FILE2} names backend ${kb.binding.backend}, knowledgebase '${kb.knowledgebase}' at path '${at.configuredPath}' read at ${at.revision.slice(0, 12)} (the merge-base of HEAD and the remote default branch ${at.base}), project '${kb.binding.project}'. readContext is carried; a publish is skipped (kb.read-only, a coverage limit); the other five operations refuse.`);
+    return 0;
+  }
   if (resolution.resolved !== null) {
     const kb = resolution.resolved;
     options.io.out(`ak kb check: bound. ${BINDING_FILE2} names backend ${kb.binding.backend}, knowledgebase '${kb.knowledgebase}' at ${kb.root}, project '${kb.binding.project}'. readContext and publishArtifact are carried; the other five operations refuse.`);
@@ -38024,9 +38390,13 @@ function read(options, args) {
     return usage(options.io, "--dir is not a directory");
   if (resolution.resolved === null)
     return reportUnresolved(options.io, "kb-read", resolution);
-  const outcome = readContext(resolution.resolved, kinds.split(","), scope);
+  const resolved = resolution.resolved;
+  if (resolved.inRepo !== undefined) {
+    return finish(options.io, readInRepoContext(resolved, resolved.inRepo, kinds.split(","), scope));
+  }
+  const outcome = readContext(resolved, kinds.split(","), scope);
   if (outcome.status === "complete" && scope !== PROJECT_SCOPE) {
-    const known = committedScopes(resolution.resolved);
+    const known = committedScopes(resolved);
     if (!known.includes(scope))
       options.io.err(`ak kb read: note: no committed page sits at scope '${scope}' or below it, so the result holds only the scopes above it: ${unknownSelector("scope", scope, known)}`);
   }
@@ -38075,6 +38445,15 @@ function publish(options, args) {
     return usage(options.io, "--dir is not a directory");
   if (resolution.resolved === null)
     return reportUnresolved(options.io, "kb-write", resolution);
+  if (resolution.resolved.inRepo !== undefined) {
+    printResult(options.io, {
+      status: "skipped",
+      capability: "kb-write",
+      code: "kb.read-only",
+      message: `Knowledgebase '${resolution.resolved.knowledgebase}' is read-only (backend ${IN_REPO}), so nothing was published. A coverage limit: name this record as not published and continue.`
+    });
+    return EXIT_UNAVAILABLE;
+  }
   const text = readFile(options, path);
   if (text === null) {
     printResult(options.io, { status: "refused", code: "kb.file-unreadable", message: `${path} could not be read.` });
@@ -39712,7 +40091,7 @@ class Judge {
 }
 
 // src/guard/hosts/claude-code.ts
-var import__20208 = __toESM(require_2020(), 1);
+var import__20209 = __toESM(require_2020(), 1);
 
 // src/guard/action.ts
 function shellAction(command) {
@@ -39721,8 +40100,8 @@ function shellAction(command) {
 
 // src/guard/hosts/claude-code.ts
 var CLAUDE_CODE_EVENT = "PreToolUse";
-var ajv4 = new import__20208.default({ strict: false });
-var envelope = ajv4.compile({
+var ajv5 = new import__20209.default({ strict: false });
+var envelope = ajv5.compile({
   type: "object",
   required: ["tool_name"],
   properties: {
@@ -39733,7 +40112,7 @@ var envelope = ajv4.compile({
   }
 });
 function stringField2(field2, required) {
-  return ajv4.compile({
+  return ajv5.compile({
     type: "object",
     required: required ? [field2] : [],
     properties: { [field2]: { type: "string", minLength: 1 } }
@@ -39843,7 +40222,7 @@ function encodeClaudeCode(verdict) {
 // src/guard/policy.ts
 init_dist();
 init_common_schema();
-var import__20209 = __toESM(require_2020(), 1);
+var import__202010 = __toESM(require_2020(), 1);
 var import_ajv_formats4 = __toESM(require_dist(), 1);
 // schemas/guard-policy.schema.json
 var guard_policy_schema_default = {
@@ -40069,10 +40448,10 @@ function parseGuardPolicy(text4, validate, file) {
 }
 function guardPolicyValidator() {
   try {
-    const ajv5 = new import__20209.default({ strict: false, allErrors: true, validateFormats: true });
-    import_ajv_formats4.default(ajv5);
-    ajv5.addSchema(common_schema_default);
-    return ajv5.compile(guard_policy_schema_default);
+    const ajv6 = new import__202010.default({ strict: false, allErrors: true, validateFormats: true });
+    import_ajv_formats4.default(ajv6);
+    ajv6.addSchema(common_schema_default);
+    return ajv6.compile(guard_policy_schema_default);
   } catch {
     return;
   }
@@ -40250,16 +40629,16 @@ function resolveLink(absolute) {
 // src/runner/cli.ts
 init_hash();
 import { timingSafeEqual } from "crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync40, readFileSync as readFileSync35, realpathSync as realpathSync15, unlinkSync } from "fs";
+import { chmodSync as chmodSync4, existsSync as existsSync40, readFileSync as readFileSync35, realpathSync as realpathSync16, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname23, isAbsolute as isAbsolute16, relative as relative13, resolve as resolve17 } from "path";
+import { dirname as dirname23, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
 
 // src/runner/core.ts
 init_dist();
 init_hash();
 import { createHash as createHash11 } from "crypto";
-import { existsSync as existsSync39, mkdirSync as mkdirSync24, readFileSync as readFileSync32, realpathSync as realpathSync11, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
-import { basename as basename19, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative11, resolve as resolve16 } from "path";
+import { existsSync as existsSync39, mkdirSync as mkdirSync24, readFileSync as readFileSync32, realpathSync as realpathSync12, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
+import { basename as basename20, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -40270,16 +40649,16 @@ function isDesignReport(value) {
 }
 
 // src/runner/evidence.ts
-import { mkdirSync as mkdirSync23, readFileSync as readFileSync30, realpathSync as realpathSync8, writeFileSync as writeFileSync14 } from "fs";
-import { isAbsolute as isAbsolute11, join as join43, relative as relative8 } from "path";
+import { mkdirSync as mkdirSync23, readFileSync as readFileSync30, realpathSync as realpathSync9, writeFileSync as writeFileSync14 } from "fs";
+import { isAbsolute as isAbsolute11, join as join43, relative as relative9 } from "path";
 
 class PrivateFileEvidenceStore {
   root;
   constructor(stateDir) {
     this.root = join43(stateDir, "evidence");
     mkdirSync23(this.root, { recursive: true, mode: 448 });
-    const resolved = realpathSync8(this.root);
-    const rel = relative8(stateDir, resolved);
+    const resolved = realpathSync9(this.root);
+    const rel = relative9(stateDir, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence store escapes runner state directory");
   }
@@ -40289,8 +40668,8 @@ class PrivateFileEvidenceStore {
     return ref;
   }
   read(ref) {
-    const resolved = realpathSync8(ref);
-    const rel = relative8(this.root, resolved);
+    const resolved = realpathSync9(ref);
+    const rel = relative9(this.root, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence ref escapes runner store");
     return readFileSync30(resolved);
@@ -40337,7 +40716,7 @@ function councilOutcome(approve, pair, veto) {
 }
 
 // src/runner/wire.ts
-var import__202010 = __toESM(require_2020(), 1);
+var import__202011 = __toESM(require_2020(), 1);
 var grant = {
   type: "object",
   required: ["charter_hash", "covers"],
@@ -40409,20 +40788,20 @@ var argsSchema = {
     }
   }
 };
-var ajv5 = new import__202010.default({ strict: false });
-var isArgs = ajv5.compile(argsSchema);
-var isRequest = ajv5.compile({
+var ajv6 = new import__202011.default({ strict: false });
+var isArgs = ajv6.compile(argsSchema);
+var isRequest = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["token", "verb", "args"],
   properties: { token: { type: "string" }, verb: { type: "string" }, args: argsSchema }
 });
-var isResponse = ajv5.compile({
+var isResponse = ajv6.compile({
   type: "object",
   required: ["ok"],
   properties: { ok: { type: "boolean" }, result: true, error: { type: "string" } }
 });
-var isSeatConfig = ajv5.compile({
+var isSeatConfig = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["launchers"],
@@ -40440,19 +40819,19 @@ var isSeatConfig = ajv5.compile({
     }
   }
 });
-var isSeatAnswer = ajv5.compile({
+var isSeatAnswer = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["choice", "rationale"],
   properties: { choice: { type: "string" }, rationale: { type: "string" } }
 });
-var isVerifyConfig = ajv5.compile({
+var isVerifyConfig = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["command"],
   properties: { command: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } }
 });
-var isEventConfig = ajv5.compile({
+var isEventConfig = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["command", "timeout_ms"],
@@ -40461,13 +40840,13 @@ var isEventConfig = ajv5.compile({
     timeout_ms: { type: "integer", minimum: 1 }
   }
 });
-var isEventAck = ajv5.compile({
+var isEventAck = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["run", "key"],
   properties: { run: { type: "string" }, key: { type: "string" } }
 });
-var isAuditProbeReply = ajv5.compile({
+var isAuditProbeReply = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["probed", "progress"],
@@ -40488,7 +40867,7 @@ var isAuditProbeReply = ajv5.compile({
     }
   }
 });
-var isAuditReplacementReply = ajv5.compile({
+var isAuditReplacementReply = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["key", "stood_down", "replacement", "expected_runtime_seconds"],
@@ -40499,7 +40878,7 @@ var isAuditReplacementReply = ajv5.compile({
     expected_runtime_seconds: { type: "integer", minimum: 1 }
   }
 });
-var isAutonomyStatus = ajv5.compile({
+var isAutonomyStatus = ajv6.compile({
   type: "object",
   required: ["autonomy"],
   properties: {
@@ -40511,12 +40890,12 @@ var isAutonomyStatus = ajv5.compile({
     }
   }
 });
-var isVersionManifest = ajv5.compile({
+var isVersionManifest = ajv6.compile({
   type: "object",
   required: ["version"],
   properties: { version: { type: "string", minLength: 1 } }
 });
-var isEffectConfig = ajv5.compile({
+var isEffectConfig = ajv6.compile({
   type: "object",
   additionalProperties: false,
   required: ["adapters"],
@@ -40540,12 +40919,12 @@ var isEffectConfig = ajv5.compile({
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync4 } from "child_process";
 import { createHash as createHash10 } from "crypto";
-import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync5, readFileSync as readFileSync31, readlinkSync as readlinkSync3, realpathSync as realpathSync10 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative10, resolve as resolve15 } from "path";
+import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync5, readFileSync as readFileSync31, readlinkSync as readlinkSync3, realpathSync as realpathSync11 } from "fs";
+import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15 } from "path";
 
 // src/runner/path.ts
-import { lstatSync as lstatSync4, realpathSync as realpathSync9 } from "fs";
-import { delimiter as delimiter4, dirname as dirname20, isAbsolute as isAbsolute12, relative as relative9, resolve as resolve14 } from "path";
+import { lstatSync as lstatSync4, realpathSync as realpathSync10 } from "fs";
+import { delimiter as delimiter4, dirname as dirname20, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
 function workerControlledPath(path, workerRoot) {
   if (!isAbsolute12(path))
     return true;
@@ -40564,7 +40943,7 @@ function workerControlledPath(path, workerRoot) {
     }
   }
   try {
-    const rel = relative9(workerRoot, realpathSync9(existing));
+    const rel = relative10(workerRoot, realpathSync10(existing));
     return rel === "" || !rel.startsWith("..") && !isAbsolute12(rel);
   } catch {
     return true;
@@ -40582,7 +40961,7 @@ function resolveRunnerGit(workerRoot) {
     const candidate = join44(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
-      const binary = realpathSync10(candidate);
+      const binary = realpathSync11(candidate);
       if (!workerControlledPath(binary, workerRoot))
         return { binary, path, workerRoot, home: "/dev/null" };
     } catch {}
@@ -40605,7 +40984,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
   };
   const proc = spawnSync4(context.binary, [
     "-c",
-    `safe.directory=${realpathSync10(project)}`,
+    `safe.directory=${realpathSync11(project)}`,
     "-c",
     "core.fsmonitor=false",
     "-c",
@@ -40778,10 +41157,10 @@ function treeHash(context, project, ignoreUntrackedDirs) {
     paths2.set(path, ["untracked"]);
   }
   const digest = createHash10("sha256");
-  const root = realpathSync10(project);
+  const root = realpathSync11(project);
   for (const path of [...paths2.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve15(project, path);
-    const rel = relative10(root, at);
+    const rel = relative11(root, at);
     if (path === "" || isAbsolute13(path) || rel === "" || rel.startsWith("..") || isAbsolute13(rel))
       return "runner index contains a path outside the worker root";
     digest.update(JSON.stringify([path, paths2.get(path)?.toSorted(), rawFile(context, project, path)]));
@@ -40859,17 +41238,17 @@ var ACTION_FOR = new Map([
   ["ship-pr", "open-pr"]
 ]);
 function inside(path, root) {
-  const rel = relative11(root, path);
+  const rel = relative12(root, path);
   return rel === "" || !rel.startsWith("..") && !isAbsolute14(rel);
 }
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
-  const missing = [];
+  const missing2 = [];
   while (!existsSync39(existing)) {
-    missing.unshift(basename19(existing));
+    missing2.unshift(basename20(existing));
     existing = dirname21(existing);
   }
-  return join45(realpathSync11(existing), ...missing);
+  return join45(realpathSync12(existing), ...missing2);
 }
 function digest(bytes) {
   return `sha256:${createHash11("sha256").update(bytes).digest("hex")}`;
@@ -40922,8 +41301,8 @@ class Runner {
   evidenceStore;
   constructor(stateDir, workerRoot, kitRoot, enforceSnapshot = false) {
     const requestedStateDir = canonicalFuturePath(stateDir);
-    this.workerRoot = realpathSync11(workerRoot);
-    this.kitRoot = realpathSync11(kitRoot);
+    this.workerRoot = realpathSync12(workerRoot);
+    this.kitRoot = realpathSync12(kitRoot);
     if (inside(this.kitRoot, this.workerRoot))
       throw new Error("runner bundle is worker-writable");
     this.enforceSnapshot = enforceSnapshot;
@@ -40931,13 +41310,13 @@ class Runner {
       throw new Error("runner state is worker-writable");
     const gitContext = resolveRunnerGit(this.workerRoot);
     const commonDir2 = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
-    this.sharedGitDir = commonDir2.code === 0 ? realpathSync11(isAbsolute14(commonDir2.text) ? commonDir2.text : join45(this.workerRoot, commonDir2.text)) : null;
+    this.sharedGitDir = commonDir2.code === 0 ? realpathSync12(isAbsolute14(commonDir2.text) ? commonDir2.text : join45(this.workerRoot, commonDir2.text)) : null;
     if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
       throw new Error("runner bundle cannot use the shared git common directory");
     if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
       throw new Error("runner state cannot use the shared git common directory");
     mkdirSync24(requestedStateDir, { recursive: true, mode: 448 });
-    this.stateDir = realpathSync11(requestedStateDir);
+    this.stateDir = realpathSync12(requestedStateDir);
     if (inside(this.stateDir, this.workerRoot))
       throw new Error("runner state resolves into worker root");
     if (this.sharedGitDir !== null && inside(this.stateDir, this.sharedGitDir))
@@ -41283,7 +41662,7 @@ class Runner {
     const observed = this.observedSnapshot();
     if (observed !== null && observed.revision !== revision)
       throw new Error("start revision differs from worker checkout");
-    const source = realpathSync11(charterPath);
+    const source = realpathSync12(charterPath);
     this.assertPrivatePath(source);
     const charterValue = JSON.parse(readFileSync32(source, "utf8"));
     if (!this.validateCharter(charterValue))
@@ -41291,7 +41670,7 @@ class Runner {
     const charter = charterValue;
     const immutable = charter.immutability;
     const hash = charterDigest(charter);
-    if (charter.status !== "active" || immutable.hash !== hash || realpathSync11(immutable.location) !== source)
+    if (charter.status !== "active" || immutable.hash !== hash || realpathSync12(immutable.location) !== source)
       throw new Error("charter is inactive, moved or has a mismatched hash");
     if (!charter.approvals.some((a) => a.by === "human" && a.authority === "explicit" && a.artifact_hash === hash))
       throw new Error("active charter lacks a human approval bound to its hash");
@@ -41348,7 +41727,7 @@ class Runner {
       throw new Error("run is stopped; no new gate evidence can be collected");
     if (!ID.test(evidenceId))
       throw new Error("invalid evidence id");
-    const source = realpathSync11(sourcePath);
+    const source = realpathSync12(sourcePath);
     try {
       this.assertPrivatePath(source);
     } catch {
@@ -42062,10 +42441,10 @@ class Runner {
 }
 
 // src/council/config.ts
-var import__202011 = __toESM(require_2020(), 1);
-import { readFileSync as readFileSync33, realpathSync as realpathSync12, statSync as statSync18 } from "fs";
+var import__202012 = __toESM(require_2020(), 1);
+import { readFileSync as readFileSync33, realpathSync as realpathSync13, statSync as statSync18 } from "fs";
 var DEFAULT_TIMEOUT_MS = 900000;
-var ajv6 = new import__202011.default({ strict: false });
+var ajv7 = new import__202012.default({ strict: false });
 var nonEmpty = { type: "string", minLength: 1 };
 var launcher = {
   type: "object",
@@ -42088,7 +42467,7 @@ var seat = {
     chain: { type: "array", minItems: 1, items: launcher }
   }
 };
-var isCouncilConfig = ajv6.compile({
+var isCouncilConfig = ajv7.compile({
   type: "object",
   additionalProperties: false,
   required: ["veto"],
@@ -42097,7 +42476,7 @@ var isCouncilConfig = ajv6.compile({
     veto: seat
   }
 });
-var isCouncilAnswer = ajv6.compile({
+var isCouncilAnswer = ajv7.compile({
   type: "object",
   additionalProperties: false,
   required: ["choice", "rationale"],
@@ -42120,7 +42499,7 @@ function rosterProblems(seats) {
   return problems;
 }
 function readCouncilConfig(path) {
-  const real = realpathSync12(path);
+  const real = realpathSync13(path);
   const stat = statSync18(real);
   if (!stat.isFile())
     throw new Error("council configuration is not a regular file");
@@ -42137,8 +42516,8 @@ function readCouncilConfig(path) {
 
 // src/council/outbound.ts
 init_secrets();
-import { realpathSync as realpathSync13 } from "fs";
-import { basename as basename20 } from "path";
+import { realpathSync as realpathSync14 } from "fs";
+import { basename as basename21 } from "path";
 var DEFAULT_MAX_BYTES = 262144;
 var BUILT_IN_DENY = [
   ".env",
@@ -42172,7 +42551,7 @@ function segmentPattern(entry) {
 }
 function deniedSegment(path) {
   const segments = path.split(/[\\/]+/).filter((segment) => segment.length > 0);
-  const name = basename20(path);
+  const name = basename21(path);
   for (const entry of BUILT_IN_DENY) {
     const pattern = segmentPattern(entry);
     if (pattern.test(name) || segments.some((segment) => pattern.test(segment)))
@@ -42185,7 +42564,7 @@ function deniedBy(path) {
   if (given !== null)
     return given;
   try {
-    return deniedSegment(realpathSync13(path));
+    return deniedSegment(realpathSync14(path));
   } catch {
     return null;
   }
@@ -42290,12 +42669,12 @@ function chainFailures(seat2, attempts) {
 }
 
 // src/runner/token.ts
-import { readFileSync as readFileSync34, realpathSync as realpathSync14, statSync as statSync19 } from "fs";
-import { dirname as dirname22, isAbsolute as isAbsolute15, relative as relative12 } from "path";
+import { readFileSync as readFileSync34, realpathSync as realpathSync15, statSync as statSync19 } from "fs";
+import { dirname as dirname22, isAbsolute as isAbsolute15, relative as relative13 } from "path";
 function readAdminToken(path, forbiddenRoot) {
-  const at = realpathSync14(path);
-  const root = realpathSync14(forbiddenRoot);
-  const rel = relative12(root, at);
+  const at = realpathSync15(path);
+  const root = realpathSync15(forbiddenRoot);
+  const rel = relative13(root, at);
   const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
   const probe = gitProcess(resolveRunnerGit(root), dirname22(at), [
     "rev-parse",
@@ -42606,9 +42985,9 @@ async function serve(argv, io) {
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
   if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error("serve needs --socket, --state-dir, --worker-root, --run-id, --admin-token-file, a 32+ character AK_RUNNER_WORKER_TOKEN, and socket mode 600 or 660");
-  const workerRoot = realpathSync15(worker);
+  const workerRoot = realpathSync16(worker);
   const socketPath = resolve17(socket);
-  const relativeSocket = relative13(workerRoot, socketPath);
+  const relativeSocket = relative14(workerRoot, socketPath);
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
     throw new Error("runner socket is inside worker root");
   if (existsSync40(socketPath)) {
@@ -42630,12 +43009,12 @@ async function serve(argv, io) {
     if (existsSync40(socketPath))
       unlinkSync(socketPath);
   }
-  const socketParent = realpathSync15(dirname23(socketPath));
-  const relativeParent = relative13(workerRoot, socketParent);
+  const socketParent = realpathSync16(dirname23(socketPath));
+  const relativeParent = relative14(workerRoot, socketParent);
   if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
   const entry = process.argv[1];
-  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve17(import.meta.dir, "..", "..") : resolve17(realpathSync15(entry), "..", ".."));
+  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve17(import.meta.dir, "..", "..") : resolve17(realpathSync16(entry), "..", ".."));
   const runner = new Runner(state, workerRoot, kitRoot, true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
@@ -42644,7 +43023,7 @@ async function serve(argv, io) {
     throw new Error("admin and worker tokens must differ");
   let launchers = [];
   if (seatConfigPath !== undefined) {
-    const configPath = realpathSync15(seatConfigPath);
+    const configPath = realpathSync16(seatConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isSeatConfig(configValue))
@@ -42657,7 +43036,7 @@ async function serve(argv, io) {
   }
   let council = null;
   if (councilConfigPath !== undefined) {
-    runner.assertPrivatePath(realpathSync15(councilConfigPath));
+    runner.assertPrivatePath(realpathSync16(councilConfigPath));
     council = readCouncilConfig(councilConfigPath);
     if (council.pair !== undefined)
       throw new Error("the runner's supervisor pair comes from --seat-config; a council configuration names the veto only");
@@ -42668,7 +43047,7 @@ async function serve(argv, io) {
   }
   let verifyCommand = null;
   if (verifyConfigPath !== undefined) {
-    const configPath = realpathSync15(verifyConfigPath);
+    const configPath = realpathSync16(verifyConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isVerifyConfig(configValue))
@@ -42678,7 +43057,7 @@ async function serve(argv, io) {
   let eventCommand = null;
   let eventTimeoutMs = null;
   if (eventConfigPath !== undefined) {
-    const configPath = realpathSync15(eventConfigPath);
+    const configPath = realpathSync16(eventConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isEventConfig(configValue))
@@ -42689,7 +43068,7 @@ async function serve(argv, io) {
   let loopCommand = null;
   let loopTimeoutMs = null;
   if (loopConfigPath !== undefined) {
-    const configPath = realpathSync15(loopConfigPath);
+    const configPath = realpathSync16(loopConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isEventConfig(configValue))
@@ -42699,7 +43078,7 @@ async function serve(argv, io) {
   }
   const effectAdapters = new Map;
   if (effectConfigPath !== undefined) {
-    const configPath = realpathSync15(effectConfigPath);
+    const configPath = realpathSync16(effectConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync35(configPath, "utf8"));
     if (!isEffectConfig(configValue))
@@ -42821,7 +43200,7 @@ async function serve(argv, io) {
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
-        const missing = [
+        const missing2 = [
           eventCommand === null ? "event-adapter" : null,
           !deliveryHealthy ? "event-delivery-failed" : null,
           loopCommand === null ? "loop-adapter" : null,
@@ -42833,7 +43212,7 @@ async function serve(argv, io) {
           const run2 = runner.status(runId);
           return equal(request.token, adminToken) ? run2 : workerRun(run2);
         };
-        const presented = request.verb === "status" ? { ...visibleStatus(), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } } : result2;
+        const presented = request.verb === "status" ? { ...visibleStatus(), autonomy: { mode: missing2.length === 0 ? "autonomous" : "guided", missing: missing2 } } : result2;
         connection.end(`${JSON.stringify({ ok: true, result: presented })}
 `);
         if (request.verb === "event" || request.verb === "start")
@@ -42946,13 +43325,13 @@ async function runRunner(argv, io) {
 }
 
 // src/council/cli.ts
-var import__202012 = __toESM(require_2020(), 1);
+var import__202013 = __toESM(require_2020(), 1);
 import { createHash as createHash12 } from "crypto";
 import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync36, rmSync as rmSync14, writeFileSync as writeFileSync16 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { basename as basename21, join as join46 } from "path";
+import { basename as basename22, join as join46 } from "path";
 var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
-var isCouncilCard = new import__202012.default({ strict: false }).compile({
+var isCouncilCard = new import__202013.default({ strict: false }).compile({
   type: "object",
   additionalProperties: false,
   required: ["id", "question", "options", "approve"],
@@ -43046,7 +43425,7 @@ async function run2(args, io) {
   const card = cardValue;
   if (!card.options.includes(card.approve))
     throw new Error("the card's approving option is not one of its options");
-  const context = args.context.map((path) => ({ path, name: basename21(path), text: readFileSync36(path, "utf8") }));
+  const context = args.context.map((path) => ({ path, name: basename22(path), text: readFileSync36(path, "utf8") }));
   const items2 = [
     { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}
@@ -43211,7 +43590,7 @@ var semantic_lint_response_schema_default = {
 };
 
 // src/semantic-lint/client.ts
-var ajv7 = new import_ajv14.default({ strict: false });
+var ajv8 = new import_ajv14.default({ strict: false });
 var scoreCriteria = [
   "No relevant claim to assess",
   "The claim matches the supplied implementation",
@@ -43219,7 +43598,7 @@ var scoreCriteria = [
   "A clear mismatch is visible in the supplied implementation"
 ];
 var unit = { type: "number", minimum: 0, maximum: 1 };
-var isScore = ajv7.compile({
+var isScore = ajv8.compile({
   type: "object",
   required: ["type", "score"],
   properties: {
@@ -43228,7 +43607,7 @@ var isScore = ajv7.compile({
     confidence: unit
   }
 });
-var isReply = ajv7.compile(semantic_lint_response_schema_default);
+var isReply = ajv8.compile(semantic_lint_response_schema_default);
 function measurement(value) {
   if (!isScore(value))
     return null;
@@ -43365,8 +43744,8 @@ import { mkdirSync as mkdirSync26, readdirSync as readdirSync13, readFileSync as
 import { join as join48 } from "path";
 var CLAIM_VERSION = 1;
 var STALE_MS = 120000;
-var ajv8 = new import_ajv15.default({ strict: false });
-var isRecord = ajv8.compile({
+var ajv9 = new import_ajv15.default({ strict: false });
+var isRecord = ajv9.compile({
   type: "object",
   required: ["state", "trace", "started_at", "ended_at"],
   properties: {
@@ -43446,8 +43825,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync39, realpathSync as realpathSync16 } from "fs";
-import { isAbsolute as isAbsolute17, join as join49, relative as relative14, resolve as resolve18 } from "path";
+import { lstatSync as lstatSync7, readFileSync as readFileSync39, realpathSync as realpathSync17 } from "fs";
+import { isAbsolute as isAbsolute17, join as join49, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -43465,7 +43844,7 @@ function collectInput(cwd) {
   const top = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 1500 });
   if (top.code !== 0)
     throw new Error("repository");
-  const root = realpathSync16(top.stdout.trim());
+  const root = realpathSync17(top.stdout.trim());
   const changed = run(["git", "diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR", "--"], {
     cwd: root,
     timeoutMs: 1500
@@ -43485,7 +43864,7 @@ function collectInput(cwd) {
     else {
       try {
         const stat = lstatSync7(absolute);
-        const rel = relative14(root, realpathSync16(absolute));
+        const rel = relative15(root, realpathSync17(absolute));
         if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
           reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
@@ -43607,8 +43986,8 @@ async function hookMain(argv) {
   console.log(JSON.stringify(hookOutput(result2, { explicit, host: codex ? "codex" : "claude-code" })));
   return 0;
 }
-var ajv9 = new import_ajv16.default({ strict: false });
-var isHookDoc = ajv9.compile({
+var ajv10 = new import_ajv16.default({ strict: false });
+var isHookDoc = ajv10.compile({
   type: "object",
   properties: {
     hooks: {
@@ -43625,7 +44004,7 @@ var isHookDoc = ajv9.compile({
     }
   }
 });
-var isCommand = ajv9.compile({ type: "string" });
+var isCommand = ajv10.compile({ type: "string" });
 if (false) {}
 
 // src/maintenance/host-probe-version.ts
@@ -43849,7 +44228,7 @@ init_config();
 init_paths();
 init_session_context();
 init_lessons();
-var ajv10 = new import_ajv17.default;
+var ajv11 = new import_ajv17.default;
 var pluginSchema = {
   type: "object",
   properties: {
@@ -43863,14 +44242,14 @@ var pluginSchema = {
   },
   additionalProperties: true
 };
-var validPluginList = ajv10.compile({ type: "array", items: pluginSchema });
-var validCodexList = ajv10.compile({
+var validPluginList = ajv11.compile({ type: "array", items: pluginSchema });
+var validCodexList = ajv11.compile({
   type: "object",
   required: ["installed"],
   properties: { installed: { type: "array", items: pluginSchema } },
   additionalProperties: true
 });
-var validClaudeMarketplaces = ajv10.compile({
+var validClaudeMarketplaces = ajv11.compile({
   type: "array",
   items: {
     type: "object",
@@ -43884,7 +44263,7 @@ var validClaudeMarketplaces = ajv10.compile({
     additionalProperties: true
   }
 });
-var validCodexConfig = ajv10.compile({
+var validCodexConfig = ajv11.compile({
   type: "object",
   properties: {
     marketplaces: {
@@ -43898,18 +44277,18 @@ var validCodexConfig = ajv10.compile({
   },
   additionalProperties: true
 });
-var validManifest = ajv10.compile({
+var validManifest = ajv11.compile({
   type: "object",
   required: ["name", "version"],
   properties: { name: { type: "string" }, version: { type: "string" } },
   additionalProperties: true
 });
-var validSettings = ajv10.compile({
+var validSettings = ajv11.compile({
   type: "object",
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__202013.default({ strict: false });
+var bindingAjv = new import__202014.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -43944,7 +44323,7 @@ function jsonCommand(binary2, args, cwd = process.cwd()) {
 }
 function projectRoot() {
   const top = command("git", ["rev-parse", "--show-toplevel"]);
-  return realpathSync17(top.ok ? top.output : process.cwd());
+  return realpathSync18(top.ok ? top.output : process.cwd());
 }
 function inProject(row, root) {
   if (row.projectEnabled === true)
@@ -43952,7 +44331,7 @@ function inProject(row, root) {
   if (row.projectPath === undefined)
     return true;
   try {
-    return realpathSync17(row.projectPath) === root;
+    return realpathSync18(row.projectPath) === root;
   } catch {
     return false;
   }
@@ -44057,9 +44436,12 @@ function checkKnowledgebase(cwd, registry = registryPath()) {
   const resolution = resolveKnowledgebase(findKbProjectRoot(cwd), registry);
   if (resolution.resolved !== null) {
     const kb = resolution.resolved;
-    return finding("PASS", "knowledgebase binding", `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'`, "No action needed.");
+    return finding("PASS", "knowledgebase binding", `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'${kb.inRepo === undefined ? "" : ", read-only: a publish is skipped"}`, "No action needed.");
   }
   const issue = resolution.issues[0];
+  if (issue?.rule === "kb.in-repo-missing") {
+    return finding("WARN", "knowledgebase binding", `kb.in-repo-missing: ${issue.message}`, `${IN_REPO_MISSING_REMEDY} Then run ak kb check.`);
+  }
   if (resolution.state === "unavailable") {
     return finding("WARN", "knowledgebase binding", issue?.rule === "kb.unregistered" ? "ak.kb.yaml names a knowledgebase this machine has not registered" : "no ak.kb.yaml, so knowledgebase reads are unavailable and publishes refuse", "Commit ak.kb.yaml at the project root and run ak kb register <knowledgebase-id> <path>, then ak kb check.");
   }
@@ -44085,13 +44467,13 @@ function checkLinearis(root, backend) {
   if (!root || backend !== "linear-linearis")
     return finding("WARN", "linearis", "no linear-linearis binding to check", "Add the binding if this repo uses Linear.");
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
-  const top = topResult.ok ? realpathSync17(topResult.output) : realpathSync17(root);
+  const top = topResult.ok ? realpathSync18(topResult.output) : realpathSync18(root);
   for (const base2 of new Set([root, top])) {
     const binary2 = join53(base2, "node_modules", ".bin", "linearis");
     if (!existsSync41(binary2))
       continue;
-    const target = realpathSync17(binary2);
-    if ([root, top].every((folder) => relative15(join53(realpathSync17(folder), "node_modules"), target).startsWith("..")))
+    const target = realpathSync18(binary2);
+    if ([root, top].every((folder) => relative16(join53(realpathSync18(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -44199,7 +44581,7 @@ function checkMaintenanceCommand(current2, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename22(path) !== "ak")
+  if (!path || basename23(path) !== "ak")
     return null;
   try {
     const current2 = readFileSync41(path, "utf8");

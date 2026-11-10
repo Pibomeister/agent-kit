@@ -274,7 +274,7 @@ evidence: the message names trusted evidence as unavailable and says the manual 
 
 `failed`: a candidate secret or an internal marker was found, a required release check failed, or
 the pull-request lookup returned an outcome that is neither success nor an empty list. The reason is
-named and the run stays resumable. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered) or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped draft is named in the result as not published, and only exit 1 stops.
+named and the run stays resumable. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped draft is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew mid-run. Effects already performed are reported with their
 idempotency keys so a resumed run recognises them.

@@ -185,7 +185,7 @@ performed is `failed`, never complete.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, no request, no
   explicit approval (outside the unattended policy, whose recorded advance stands in), a question outside the charter at `align.run`, or a fork only the human can
   settle. The first returns the command to type and nothing else.
-- A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered) or a
+- A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a
   missing or unknown `ak kb` command — never stops this phase under any policy: reads are
   unavailable, each skipped publish is named in the result as not published, and of these results
   only exit 1 stops.
