@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { decideEvidence, TEMPLATE_REL } from "../src/tp-life/evidence.ts";
@@ -273,8 +273,10 @@ describe("bound receipts", () => {
     copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
     writeFileSync(join(work, ".gitignore"), "rel.json\n");
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
-    spawnSync("git", ["-C", work, "init", "-q"], { env: gitEnv });
-    spawnSync("git", ["-C", work, "add", "-A"], { env: gitEnv });
+    const init = spawnSync("git", ["-C", work, "init", "-q"], { env: gitEnv });
+    expect(init.status).toBe(0);
+    const add = spawnSync("git", ["-C", work, "add", "-A"], { env: gitEnv });
+    expect(add.status).toBe(0);
     const commit = spawnSync(
       "git",
       ["-C", work, "-c", "user.email=td@example.invalid", "-c", "user.name=td", "commit", "-qm", "td"],
@@ -283,6 +285,8 @@ describe("bound receipts", () => {
     expect(commit.status).toBe(0);
     const written = runScript(["receipt", "write", "--cwd", work, "--oracle-json", oracleJson, "--out", "rel.json"]);
     expect(written.status).toBe(0);
+    expect(existsSync(join(work, "rel.json"))).toBe(true);
+    expect(existsSync(join(REPO, "rel.json"))).toBe(false);
     const check = runScript(["receipt", "check", "--cwd", work, "rel.json"]);
     expect(check.status).toBe(0);
   });

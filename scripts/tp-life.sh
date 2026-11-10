@@ -3,7 +3,7 @@
 #
 #   scripts/tp-life.sh fixture [--port PORT] [--broken pending|success|failure|disconnect|duplicate|unknown]
 #   scripts/tp-life.sh oracle --base-url http://127.0.0.1:PORT [--out /tmp/tp-life-oracle.json]
-#   scripts/tp-life.sh receipt write --oracle-json /tmp/tp-life-oracle.json --out /tmp/tp-life-receipt.json
+#   scripts/tp-life.sh receipt write [--cwd REPO] --oracle-json /tmp/tp-life-oracle.json --out /tmp/tp-life-receipt.json
 #   scripts/tp-life.sh receipt check /tmp/tp-life-receipt.json
 #   scripts/tp-life.sh evidence
 #
