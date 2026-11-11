@@ -231,7 +231,7 @@ export function bindBehaviorPolicy(args: {
   const checks = behaviorChecks(args.ticket, ticketSurfaces(args.ticket));
   if ("reason" in checks) return { ok: false, reason: checks.reason };
   const ticketWantsBehavior = checks.length > 0;
-  if (args.lookup === "unavailable")
+  if (args.lookup === "unavailable" && ticketWantsBehavior)
     return {
       ok: false,
       reason: "the authoritative project record is unavailable; missing project cannot turn this run off",

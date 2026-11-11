@@ -387,12 +387,16 @@ tree carries the file because it carries the commit, and needs no setup of its o
 resolves that committed file at the merge-base of the validated start revision and the charter's
 `repos[0].base_branch` (`origin/<branch>` when that ref exists, else the local branch). The
 committed binding at that explicit revision wins over the working file. Fall back to the working
-file only when that revision has no committed `ak.kb.yaml`. That merge-base trusts the base ref, so
-it rests on host write isolation of `.git`. `.cursor/bin/ak kb check`, `read`, `publish`, and `lifecycle open`
-do not pass a revision and read the working `ak.kb.yaml`. The **project folder** is the nearest
-directory at or above the working directory that holds `ak.kb.yaml`, searching no higher than the
-repository's top level; with none there, the folder is unbound and §1's unconfigured case applies.
-A `backend` with no document under `backends/` is refused, since nothing states how to reach it.
+file only when that revision has no committed `ak.kb.yaml`. When the merge-base cannot be computed
+and the charter cites no ticket, start is allowed and the project record is unavailable; the
+working `ak.kb.yaml` is not read. When the charter cites a ticket, an uncomputable merge-base is
+refused. That merge-base trusts the base ref, so it rests on host write isolation of `.git`. An
+`in-repo` backend's own availability check is separate: it reads pages at the merge-base of `HEAD`
+and `refs/remotes/origin/HEAD`. `.cursor/bin/ak kb check`, `read`, `publish`, and `lifecycle open` do not pass
+a revision and read the working `ak.kb.yaml`. The **project folder** is the nearest directory at or
+above the working directory that holds `ak.kb.yaml`, searching no higher than the repository's top
+level; with none there, the folder is unbound and §1's unconfigured case applies. A `backend` with
+no document under `backends/` is refused, since nothing states how to reach it.
 
 ### The registration
 

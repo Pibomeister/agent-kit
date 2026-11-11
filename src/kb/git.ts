@@ -7,7 +7,7 @@ export interface GitRun {
   stderr: string;
 }
 
-/** A git invocation. Runner.start passes its isolated git; other callers use `git` or `gitWithoutReplace`. */
+/** A git invocation. Runner.start passes its isolated git; other callers use `git`. */
 export type GitFn = (root: string, args: readonly string[], input?: string) => GitRun;
 
 function gitEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -38,8 +38,9 @@ export function git(root: string, args: readonly string[], input?: string): GitR
 }
 
 /**
- * Same as `git`, plus `GIT_NO_REPLACE_OBJECTS=1` so a worker `git replace` cannot
- * retarget a blob or tree read at an explicit revision.
+ * Same as `git`, plus `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=/dev/null`,
+ * `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1` so a worker cannot
+ * retarget a blob, tree or merge-base at an explicit revision.
  */
 export function gitWithoutReplace(root: string, args: readonly string[], input?: string): GitRun {
   return runGit(
@@ -47,6 +48,7 @@ export function gitWithoutReplace(root: string, args: readonly string[], input?:
     args,
     gitEnv({
       GIT_NO_REPLACE_OBJECTS: "1",
+      GIT_GRAFT_FILE: "/dev/null",
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_NOSYSTEM: "1",
     }),
@@ -54,10 +56,13 @@ export function gitWithoutReplace(root: string, args: readonly string[], input?:
   );
 }
 
-/** Isolated git when `revision` is set; otherwise the ordinary adapter git. */
+/** Isolated git when `revision` is set. An explicit revision requires `gitFn`. */
 export function gitForRevision(revision: string | undefined, gitFn?: GitFn): GitFn {
-  if (gitFn !== undefined) return gitFn;
-  return revision !== undefined && revision !== "" ? gitWithoutReplace : git;
+  if (revision !== undefined && revision !== "") {
+    if (gitFn === undefined) throw new Error("an explicit revision requires a git function");
+    return gitFn;
+  }
+  return gitFn ?? git;
 }
 
 /** The top of the work tree `dir` is in, by real path; null outside a repository. */
