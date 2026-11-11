@@ -48,7 +48,7 @@ function subsection(text: string, name: string): string {
 }
 
 const OFF_TRIGGERS =
-  "missing review object, a missing key, an unknown value, a missing project, or an unindexed project";
+  "missing review object, a missing key, an unknown value, or a checkout with no indexed project record";
 
 const UNAVAILABLE_FALLBACK = "When that read is unavailable, the author check decides";
 

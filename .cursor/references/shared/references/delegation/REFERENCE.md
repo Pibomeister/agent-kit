@@ -313,10 +313,10 @@ raises. A series that raises uncertainty takes the normal path with no new count
 Load this section at super-bound step 13. The scorer formula does not change. Not yet backed by
 live probe evidence (phase 1b, GS-004i).
 
-**Mode.** Read `review.cold_read` from the one indexed project record for this ticket. A missing
-review object, a missing key, an unknown value, a missing project, or an unindexed project is
-off. Off dispatches nothing, stores nothing, and leaves the author's type-check as the
-zero-context gate.
+**Mode.** Read `review.cold_read` from the checkout's own indexed project record, not from the
+ticket's project field. A missing review object, a missing key, an unknown value, or a checkout
+with no indexed project record is off. Off dispatches nothing, stores nothing, and leaves the
+author's type-check as the zero-context gate.
 
 **Skip.** Dispatch is skipped only when the validator's exemption detector would exempt the ticket.
 A ticket is exempt from `cold_read_ref` only when every declared write
