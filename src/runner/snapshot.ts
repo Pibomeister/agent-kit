@@ -112,14 +112,18 @@ export function gitProcess(
 ): GitResult {
   const empty = emptyTreeId(context, project, timeoutMs);
   if (empty.code !== 0) return empty;
-  const proc = spawnSync(context.binary, [...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
-    cwd: project,
-    env: { ...gitEnv(context), ...extraEnv },
-    input,
-    maxBuffer: 1 << 30,
-    timeout: timeoutMs,
-    killSignal: "SIGKILL",
-  });
+  const proc = spawnSync(
+    context.binary,
+    ["--work-tree", realpathSync(project), ...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args],
+    {
+      cwd: project,
+      env: { ...gitEnv(context), ...extraEnv },
+      input,
+      maxBuffer: 1 << 30,
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
+    },
+  );
   if (proc.error !== undefined) {
     if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
       return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
@@ -231,7 +235,7 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
   const gitDir = runnerGit(context, project, ["rev-parse", "--absolute-git-dir"]);
   if (gitDir.code !== 0) throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
   const objectDir = realpathSync(join(gitDir.text, "objects"));
-  const scratch = mkdtempSync(join(gitDir.text, "ak-merge-"));
+  const scratch = mkdtempSync(join(context.home, "ak-merge-"));
   try {
     const init = spawnSync(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q"], {
       cwd: scratch,
