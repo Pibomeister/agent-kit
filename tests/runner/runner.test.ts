@@ -3724,6 +3724,11 @@ describe("runner guards", () => {
     );
   });
 
+  test("a state dir named ..foo under the worker is rejected", () => {
+    const f = fixture();
+    expect(() => new Runner(join(f.worker, "..foo"), f.worker, root)).toThrow("runner state is worker-writable");
+  });
+
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
     const dir = mkdtempSync(join(scratchRoot, "ak-runner-link-"));
     const worker = join(dir, "worker");
