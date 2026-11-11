@@ -1,6 +1,6 @@
 /**
  * GS-017-01 round 5. Discriminating CLI probe of the worker-pointer premise.
- * Measured on the current working tree. Exit 0 always. Prints one JSON object.
+ * Measured on the current working tree. Exit 1 when a case could not run.
  *
  * Usage, from the repository root:
  *   bun research/probes/gs017-t01-r5-authority.ts
@@ -948,25 +948,34 @@ function w3_missingProjectRecord() {
   };
 }
 
+function runCase(fn: () => object) {
+  try {
+    return { ran: true as const, ...fn() };
+  } catch (cause) {
+    return { ran: false as const, ok: false as const, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+}
+
 const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: ROOT }).stdout.toString().trim();
 
 const report = {
   head,
   premise: "Worker-selected pointers and a self-recomputed binding hash establish protected Runner creation lineage.",
   cases: {
-    e1a_forged_parent_cli_open: e1a_forgedParentCliOpen(),
-    e1b_pointer_removal_reseal: e1b_pointerRemovalReseal(),
-    e1c_real_firstmate_bind: e1c_realFirstmateBind(),
-    e1_authentic_firstmate_runner_cli: e1_authenticFirstmateRunnerCli(),
-    e1_runner_start_then_toy_binding: e1_runnerStartThenToyBinding(),
-    e2_prefeature_cli_check: e2_prefeatureCliCheck(),
-    e3_ticket_kind_without_private_copy: e3_ticketKindWithoutPrivateCopy(),
-    e4_requirements_self_cite: e4_requirementsSelfCite(),
-    w1_retain_only_hides_ordinary_fail: w1_retainOnlyHidesOrdinaryFail(),
-    w3_missing_project_record_ordinary_open: w3_missingProjectRecord(),
+    e1a_forged_parent_cli_open: runCase(e1a_forgedParentCliOpen),
+    e1b_pointer_removal_reseal: runCase(e1b_pointerRemovalReseal),
+    e1c_real_firstmate_bind: runCase(e1c_realFirstmateBind),
+    e1_authentic_firstmate_runner_cli: runCase(e1_authenticFirstmateRunnerCli),
+    e1_runner_start_then_toy_binding: runCase(e1_runnerStartThenToyBinding),
+    e2_prefeature_cli_check: runCase(e2_prefeatureCliCheck),
+    e3_ticket_kind_without_private_copy: runCase(e3_ticketKindWithoutPrivateCopy),
+    e4_requirements_self_cite: runCase(e4_requirementsSelfCite),
+    w1_retain_only_hides_ordinary_fail: runCase(w1_retainOnlyHidesOrdinaryFail),
+    w3_missing_project_record_ordinary_open: runCase(w3_missingProjectRecord),
   },
 };
 
+process.exitCode = Object.values(report.cases).some((value) => value.ran === false) ? 1 : 0;
 const reportPath = join(mkdtempSync(join(tmpdir(), "ak-bv-r5-report-")), "gs017-t01-r5-exploit-after.json");
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ ...report, report_path: reportPath }, null, 2));

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/behavior-contract.schema.json",
   "title": "Behavior contract",
-  "description": "Intent-backed behavior for one selected subsystem. Requirements carry a stable property id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
+  "description": "Intent-backed behavior for one selected subsystem. Requirements carry a stable requirement id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Properties cite those requirement ids. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
   "type": "object",
   "required": ["identity", "requirements", "structure", "properties", "assumptions", "correspondence", "limits"],
   "properties": {

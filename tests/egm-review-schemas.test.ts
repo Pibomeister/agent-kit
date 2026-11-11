@@ -59,7 +59,7 @@ describe("project.review settings", () => {
     },
   );
 
-  test("an empty review object validates (both keys default off)", () => {
+  test("an empty review object validates (every key defaults off)", () => {
     expect(validateProject({ ...projectExample, review: {} })).toBe(true);
   });
 
