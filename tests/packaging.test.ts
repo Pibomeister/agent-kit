@@ -1269,6 +1269,7 @@ describe("bundle planning", () => {
     expect(authoredRefs).toHaveLength(10);
     const mentions = catalogMentionResolver();
     const delegationHref = "[`delegation_classes`](../../policies/authority-defaults.yaml)";
+    const mentionGeneratedHref = "[`policies/limits.yaml`](../../policies/limits.yaml)";
     for (const host of ["claude-code", "codex", "cursor"] as const) {
       const plan = planBundle({ root: REPO, catalog }, host, { profile: "core" });
       expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
@@ -1309,6 +1310,13 @@ describe("bundle planning", () => {
       expect({ host, hasDelegationHref: delegation?.contents.includes(delegationHref) }).toEqual({
         host,
         hasDelegationHref: true,
+      });
+      const principles = [...plan.files.values()].find(
+        (file) => file.source === "references/engineering-principles/REFERENCE.md",
+      );
+      expect({ host, hasMentionGeneratedHref: principles?.contents.includes(mentionGeneratedHref) }).toEqual({
+        host,
+        hasMentionGeneratedHref: true,
       });
     }
   });

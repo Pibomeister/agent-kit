@@ -1028,7 +1028,8 @@ describe("runner guards", () => {
   });
 
   // GAP-20 closed for audit-cadence runs; residue: a run without audit_cadence_seconds never
-  // re-checks its recorded bundle procedure, and nothing else does.
+  // re-checks its recorded bundle procedure, and nothing else does. policies/invocation.yaml
+  // is an unhashed input the captain can choose to add later.
   test("an audit tick stops when the recorded bundle procedure changes", () => {
     const f = procedureKit();
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
