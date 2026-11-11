@@ -68,6 +68,7 @@ function isolationArgs(project: string): string[] {
     "core.hooksPath=/dev/null",
     "-c",
     "core.excludesFile=/dev/null",
+    // Defense-in-depth: throwaway GIT_DIR already ignores worker merge config.
     "-c",
     "merge.default=",
     "-c",
@@ -204,10 +205,10 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
 /** Only trunk-side CI configuration changes invalidate an otherwise identical patch. */
 export function ciConfigDrift(context: RunnerGitContext, project: string, oldBase: string, newBase: string): boolean {
   if (oldBase === newBase) return false;
+  const converterGuard = ["--no-ext-diff", "--no-textconv"] as const;
   const changed = runnerGit(context, project, [
     "diff",
-    "--no-ext-diff",
-    "--no-textconv",
+    ...converterGuard,
     "--no-renames",
     "--name-only",
     "-z",
@@ -216,6 +217,8 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
     "--",
   ]);
   if (changed.code !== 0) throw new Error(`cannot compare CI configuration: ${changed.stderr}`);
+  const converters = runnerGit(context, project, ["diff", ...converterGuard, "--exit-code", oldBase, newBase, "--"]);
+  if (converters.code > 1) throw new Error(`cannot compare CI configuration: ${converters.stderr}`);
   return new TextDecoder()
     .decode(changed.stdout)
     .split("\0")

@@ -1151,6 +1151,34 @@ describe("runner guards", () => {
     expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
   });
 
+  test("trunk CI drift does not run worker diff.external or textconv", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    const extMarker = join(f.privateDir, "ci-ext.marker");
+    const tcMarker = join(f.privateDir, "ci-tc.marker");
+    const ext = join(f.privateDir, "ci-ext.sh");
+    const tc = join(f.privateDir, "ci-tc.sh");
+    writeFileSync(ext, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(extMarker)}\nexit 0\n`);
+    writeFileSync(tc, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(tcMarker)}\ncat\n`);
+    chmodSync(ext, 0o700);
+    chmodSync(tc, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "attributes"), ".github/workflows/ci.yml diff=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.external", ext]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", tc]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(existsSync(extMarker)).toBe(false);
+    expect(existsSync(tcMarker)).toBe(false);
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
   test("renaming a CI workflow off the CI path voids a verdict", () => {
     const f = patchVerdictFixture(false, true, (worker) => {
       git(worker, "checkout", "main");

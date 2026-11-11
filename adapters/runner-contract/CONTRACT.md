@@ -406,10 +406,12 @@ outside the worker root; nested repositories use the same executable and a runne
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
 have a ten-second timeout with a kill signal, set `--work-tree` to the inspected directory so a
 worker `core.worktree` cannot hide untracked files, set `attr.tree` to the empty tree so worker
-`.gitattributes` cannot assign merge drivers, textconv or filters, override `merge.default` and
-`merge.renormalize`, and do not invoke those programs. Verdict `merge-tree` runs against a
-throwaway `GIT_DIR` in the runner state directory, outside the worker root, so neither
-`.git/info/attributes` nor a concurrent writer under the worker `.git` can assign `merge=union`.
+`.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
+programs. `-c merge.default=` and `-c merge.renormalize=false` are defense-in-depth: the throwaway
+`GIT_DIR` already ignores worker merge config, so those `-c` flags are not load-bearing while that
+scratch dir is in use. Verdict `merge-tree` runs against a throwaway `GIT_DIR` in the runner state
+directory, outside the worker root, so neither `.git/info/attributes` nor a concurrent writer under
+the worker `.git` can assign `merge=union`.
 Verdict binding treats a worktree as clean only when its bytes equal the committed blob bytes,
 including nested gitlinks
 after their `HEAD` matches. An autocrlf or `eol=crlf` checkout whose bytes differ from the blob is
