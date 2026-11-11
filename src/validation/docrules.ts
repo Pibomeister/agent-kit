@@ -1457,22 +1457,22 @@ function ticketRules(rc: RuleContext): void {
   const { doc } = rc;
   if (str(doc["type"]) !== "implementation") return;
 
-  const matches: IndexedDoc[] = [];
+  const projects: IndexedDoc[] = [];
   for (const entry of rc.index.all) {
-    if (entry.schema === "project") matches.push(entry);
+    if (entry.schema === "project") projects.push(entry);
   }
   // Missing review object, missing key, and unknown values are off: the default, and no behaviour change.
-  if (matches.length === 0) return;
+  if (projects.length === 0) return;
   let anyOn = false;
-  for (const entry of matches) {
+  for (const entry of projects) {
     if (str(obj(entry.doc["review"])?.["cold_read"]) === "on") anyOn = true;
   }
   if (!anyOn) return;
-  if (matches.length > 1) {
+  if (projects.length > 1) {
     fail(
       rc,
       RULE,
-      `the checkout has ${matches.length} indexed project records; identity.id must be unique when review.cold_read is on`,
+      `the checkout has ${projects.length} indexed project records; review.cold_read on requires exactly one`,
     );
     return;
   }
