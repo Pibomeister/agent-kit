@@ -1,0 +1,17 @@
+{
+  "procedure": "TP-LIFE",
+  "gate": "G4",
+  "suite": "T5",
+  "covers": ["AT-01", "AT-16", "AT-24", "AT-25", "AT-26"],
+  "verdict": "not-run",
+  "reason": "No operator and independent-oracle environment receipts are bound to this head.",
+  "receipts": [],
+  "human_steps": "research/tp-life/HUMAN-STEPS.md",
+  "commands": {
+    "fixture": "scripts/tp-life.sh fixture [--port PORT] [--broken pending|success|failure|disconnect|duplicate|unknown]",
+    "oracle": "scripts/tp-life.sh oracle --base-url http://127.0.0.1:PORT [--out /tmp/tp-life-oracle.json]",
+    "receipt_write": "scripts/tp-life.sh receipt write [--cwd REPO] --oracle-json /tmp/tp-life-oracle.json --out /tmp/tp-life-receipt.json",
+    "receipt_check": "scripts/tp-life.sh receipt check [--cwd REPO] /tmp/tp-life-receipt.json",
+    "evidence": "scripts/tp-life.sh evidence [--cwd REPO] [--receipts-dir DIR]"
+  }
+}
