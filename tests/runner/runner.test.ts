@@ -497,6 +497,10 @@ function projectOnlyJsonl(kb: string): string {
   return `${projectLine}\n`;
 }
 
+function artifactsJsonl(kb: string): string {
+  return readFileSync(join(kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8");
+}
+
 function commitInRepoKb(worker: string, jsonl: string | null, message: string) {
   mkdirSync(join(worker, "wiki", "adr"), { recursive: true });
   writeFileSync(join(worker, "wiki", "adr", ".gitkeep"), "");
@@ -1769,6 +1773,7 @@ describe("runner guards", () => {
   });
 
   test("a planted commit-graph file does not retarget the merge-base binding", () => {
+    // Does not pin core.commitGraph=false; the argv assertion does.
     const f = fixture(3, FEATURE_WORKER_TEMPLATE);
     const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
     if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
@@ -1954,6 +1959,33 @@ describe("runner guards", () => {
     unlinkStoreTicket(f, ticket);
     const onKb = publishToyKb(ticket, "on");
     forkFeatureFromOlderKb(f, null, readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  for (const baseMode of ["off", "shadow"] as const) {
+    test(`a worker branched before the base left review.behavior ${baseMode} cannot start when the ticket already exists`, () => {
+      const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+      const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+      if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+      unlinkStoreTicket(f, parsed);
+      const atO = publishToyKb(parsed, baseMode);
+      const atT = publishToyKb(parsed, "on");
+      forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+      expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+        "the charter base tip has a knowledgebase record the merge-base does not",
+      );
+    });
+  }
+
+  test("a worker branched before the base published the ticket cannot start when mode and project already match", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    unlinkStoreTicket(f, parsed);
+    const onKb = publishToyKb(parsed, "on");
+    forkFeatureFromOlderKb(f, projectOnlyJsonl(onKb.kb), artifactsJsonl(onKb.kb));
     expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
       "the charter base tip has a knowledgebase record the merge-base does not",
     );
