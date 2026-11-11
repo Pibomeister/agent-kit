@@ -2033,6 +2033,36 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     ).toContain(RULE_COLD_REF);
   });
 
+  test("README.md plus write_ownership.paths src/** still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(
+          textOnlyTicket({
+            write_ownership: {
+              paths: ["src/**"],
+              generated_artifacts: [],
+              migration_sequence: null,
+              interfaces: [],
+            },
+          }),
+          [onProject()],
+        ),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("README.md plus a non-empty symbols list still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(textOnlyTicket({ allowed_changes: { files: ["README.md"], symbols: ["someSymbol"] } }), [onProject()]),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a README.md ticket with no work_source still requires cold_read_ref when on", () => {
+    expect(rulesOf(run(ticket({ allowed_changes: { files: ["README.md"] } }), [onProject()]))).toContain(RULE_COLD_REF);
+  });
+
   test("a docs/*.txt glob still requires cold_read_ref when on", () => {
     expect(rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/notes.txt"] } }), [onProject()]))).toContain(
       RULE_COLD_REF,
@@ -2065,6 +2095,12 @@ describe("ticket.cold-read-ref-required-when-on", () => {
   test("a schema-valid docs/{../skills}/**/*.md glob still requires cold_read_ref when on", () => {
     expect(
       rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{../skills}/**/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-invalid docs/../skills/SKILL.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/../skills/SKILL.md"] } }), [onProject()])),
     ).toContain(RULE_COLD_REF);
   });
 
