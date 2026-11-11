@@ -1959,6 +1959,47 @@ describe("runner guards", () => {
     );
   });
 
+  test("a worker branched before the base added ticket checks cannot start with the weaker freeze", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = parsed;
+    const newer = enabledToyTicket(parsed);
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(
+      f,
+      readFileSync(join(atO.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+      readFileSync(join(atT.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+    );
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  test("a worker branched before a same-check ticket body edit still starts", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = enabledToyTicket(parsed);
+    const newer: JsonObject = {
+      ...older,
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified, with different prose.", surface: "none" }],
+    };
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(
+      f,
+      readFileSync(join(atO.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+      readFileSync(join(atT.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+    );
+    const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
   test("approved ticket is absent from the runner store under W1 on", () => {
     const f = fixture();
     const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));

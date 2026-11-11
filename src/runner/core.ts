@@ -21,6 +21,8 @@ import {
   projectHashOf,
   reviewMode,
   RUN_SCHEMA_VERSION,
+  type FrozenBehaviorCheck,
+  type JsonObject,
 } from "../lifecycle/behavior-policy.ts";
 import { charterAllowsProtectedStart } from "../lifecycle/protected-start.ts";
 import { compileSchemas } from "../validation/schemas.ts";
@@ -740,28 +742,48 @@ export class Runner {
 
   /** Committed project and ticket at `revision`. Missing KB, project or ticket is absent, not a throw. */
   private committedKbView(projectId: string, ticketId: string, revision: string, gitFn: GitFn) {
+    const none = this.frozenRequiredChecks({}, undefined);
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
     const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
-    if (resolved.resolved === null) return { mode: "absent" as const, project: false, ticket: false };
+    if (resolved.resolved === null) return { mode: "absent", project: false, ticket: false, required_checks: none };
     const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
     const project = published.status === "found";
-    const mode = project ? reviewMode(published.project) : "absent";
+    const reviewed = project ? reviewMode(published.project) : "absent";
+    const mode = reviewed === "on" || reviewed === "shadow" || reviewed === "off" ? reviewed : "absent";
     const looked = lookupCommittedArtifact(resolved.resolved, ticketId, {
       schema: "ticket",
       revision,
       git: gitFn,
     });
+    const ticket = looked.status === "found";
     return {
-      mode: mode === "on" || mode === "shadow" || mode === "off" ? mode : ("absent" as const),
+      mode,
       project,
-      ticket: looked.status === "found",
+      ticket,
+      required_checks: ticket
+        ? this.frozenRequiredChecks(looked.artifact, project ? published.project : undefined)
+        : none,
     };
+  }
+
+  /** Checks bindBehaviorPolicy would freeze for this ticket at the committed project. */
+  private frozenRequiredChecks(ticket: JsonObject, project: JsonObject | undefined): FrozenBehaviorCheck[] {
+    const bound = bindBehaviorPolicy({
+      runId: "floor",
+      ticket,
+      ticketHash: `sha256:${"0".repeat(64)}`,
+      project,
+      lookup: project === undefined ? "absent" : "resolved",
+      capturedAt: "1970-01-01T00:00:00Z",
+    });
+    return bound.ok ? bound.binding.required_checks : [];
   }
 
   /**
    * True when the charter base tip's committed project mode is `on` and the
    * merge-base's is not, or when the tip has the project or ticket and the
-   * merge-base does not.
+   * merge-base does not, or when a required check frozen from the tip ticket
+   * is absent from the merge-base freeze.
    */
   private tipRecordsDiverge(
     projectId: string,
@@ -772,10 +794,12 @@ export class Runner {
   ): boolean {
     const atTip = this.committedKbView(projectId, ticketId, tip, gitFn);
     const atBase = this.committedKbView(projectId, ticketId, mergeBase, gitFn);
+    const baseChecks = new Set(atBase.required_checks.map((check) => canonicalJson(check)));
     return (
       (atTip.mode === "on" && atBase.mode !== "on") ||
       (atTip.project && !atBase.project) ||
-      (atTip.ticket && !atBase.ticket)
+      (atTip.ticket && !atBase.ticket) ||
+      atTip.required_checks.some((check) => !baseChecks.has(canonicalJson(check)))
     );
   }
 
