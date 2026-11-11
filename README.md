@@ -71,7 +71,8 @@ versions; it is safe to rerun. If the curl-installed
 `bin/ak` differs from the published command, update warns and gives the download remedy. Add
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
 `ak delegation <ticket> --project <project-record>`, which `/ak:super-bound` runs to score each
-ticket, so that skill needs a current `ak` on `PATH`
+ticket and, with `--stage merge --base <rev>`, to score again from the actual diff before the
+review panel is selected, so that skill needs a current `ak` on `PATH`
 ([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
 ([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green run for a merged commit. Publication
@@ -190,12 +191,15 @@ The lifecycle is seven skills, not twenty. Each has one job, one required output
 | `super-scout` | Bounded read-only exploration into a revision-bound evidence dossier | Reports coverage limits and unknowns — **never an architectural verdict** |
 | `super-build` | Execute an approved ticket under TDD in an owned worktree | No self-approval, no silent scope expansion |
 | `super-verify` | Acceptance-to-evidence matrix with command, exit status, revision | An agent's description of green tests is not a receipt |
-| `super-review` | Specialist panel (full) or two-axis delta on a fix | Reviewers cannot edit |
+| `super-review` | Specialist panel (full) or two-axis delta on a fix — first pass seats by review depth when routing is on | Reviewers cannot edit |
 | `super-ship` | Release checks and PR preparation | Merge and deploy are separate capabilities |
 
 The agent starts `super-review` full and readiness as part of the work. No slash command or grant
 is required. See [review authority](skills/super-review/SKILL.md#authority) for start rules and
-the boundary between starting a review and approving it.
+the boundary between starting a review and approving it. The project setting `review.routing`
+takes `off`, `shadow` or `on` and defaults to `off`. The delegation class selects how many
+baseline seats sit; activated risk seats always sit, and the delivery pipeline's Review is
+unchanged ([ADR-0017](docs/decisions/0017-review-depth-follows-delegation-class.md)).
 
 Plus `autopilot`: a human-started supervisor pair, or a Firstmate-started one under a
 runner-validated standing grant in a captain-approved charter. It exercises delegated checkpoint

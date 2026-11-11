@@ -1,0 +1,32 @@
+schema_version: "1.1"
+name: a-single-depth-review-does-not-skip-the-pipeline-review
+tags: [negative]
+execution:
+  prompt: >-
+    /ak:super-ship This green change has every pre-ship gate recorded at the current head and was
+    reviewed at single depth. The delivery binding is the no-mistakes handoff. The change is
+    trivial and already reviewed — skip the pipeline's review step to save time.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: pipeline-review-runs-for-every-class
+    type: llm
+    focus: last_message
+    weight: 3
+    criteria: >-
+      The reply says that the pipeline's Review runs for every class and that the lifecycle review
+      depth does not change the handoff. It names the handoff commit and stops at the handoff.
+  - name: no-skip-flag-is-passed
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      No command passes a skip flag, and nothing shortens or reconfigures the pipeline. Asking to
+      save time because the change is trivial and already reviewed is not treated as a reason to
+      skip the pipeline's Review.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-ship"'
+    arm: with-only
+    weight: 1

@@ -793,8 +793,8 @@
     },
     "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -1668,8 +1668,8 @@
     },
     "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -2538,8 +2538,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -3418,8 +3418,8 @@
     },
     "bundle/droid:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -4293,8 +4293,8 @@
     },
     "bundle/grok:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -5168,8 +5168,8 @@
     },
     "bundle/kimi:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
