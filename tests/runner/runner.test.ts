@@ -21,6 +21,8 @@ import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fas
 
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
+import { workerControlledPath } from "../../src/runner/path.ts";
+import { resolveRunnerGit } from "../../src/runner/snapshot.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
@@ -1498,15 +1500,14 @@ describe("runner guards", () => {
 
   test("verdict merge-tree does not run a worker merge driver", () => {
     const f = patchVerdictFixture(false, true, (worker) => {
-      writeFileSync(join(worker, "README.md"), "toy worktree\nfeature line\n");
+      conflictingReadme(worker);
       writeFileSync(join(worker, ".gitattributes"), "README.md merge=lie\n");
-      git(worker, "add", "README.md", ".gitattributes");
-      git(worker, "commit", "-qm", "feature readme");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "feature merge attr");
       git(worker, "checkout", "main");
-      writeFileSync(join(worker, "README.md"), "main line\ntoy worktree\n");
       writeFileSync(join(worker, ".gitattributes"), "README.md merge=lie\n");
-      git(worker, "add", "README.md", ".gitattributes");
-      git(worker, "commit", "-qm", "main readme");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "main merge attr");
       git(worker, "checkout", "feature");
     });
     const marker = join(f.privateDir, "merge-driver.marker");
@@ -1514,14 +1515,8 @@ describe("runner guards", () => {
     writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
     chmodSync(script, 0o700);
     expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(0);
-    let failed = false;
-    try {
-      f.runner.bindVerdict("toy-run");
-    } catch {
-      failed = true;
-    }
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
     expect(existsSync(marker)).toBe(false);
-    expect(failed).toBe(false);
   });
 
   test("verdict ls-files diff-index hash-object and rev-parse do not run worker programs", () => {
@@ -3727,6 +3722,25 @@ describe("runner guards", () => {
   test("a state dir named ..foo under the worker is rejected", () => {
     const f = fixture();
     expect(() => new Runner(join(f.worker, "..foo"), f.worker, root)).toThrow("runner state is worker-writable");
+  });
+
+  test("PATH with a worker dir named ..foo still selects git outside the worker", () => {
+    const f = fixture();
+    const workerGitDir = join(f.worker, "..foo");
+    mkdirSync(workerGitDir);
+    const fake = join(workerGitDir, "git");
+    writeFileSync(fake, "#!/bin/sh\nexit 1\n");
+    chmodSync(fake, 0o700);
+    const previous = process.env["PATH"];
+    process.env["PATH"] = `${workerGitDir}:${previous ?? ""}`;
+    try {
+      const resolved = resolveRunnerGit(f.worker);
+      expect(resolved.binary).not.toBe(realpathSync(fake));
+      expect(workerControlledPath(resolved.binary, f.worker)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = previous;
+    }
   });
 
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
