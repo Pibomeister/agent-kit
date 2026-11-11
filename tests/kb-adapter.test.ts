@@ -388,6 +388,19 @@ describe("a configured knowledgebase that cannot be used is failed", () => {
     expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
   });
 
+  test("ak kb check reads an uncommitted ak.kb.yaml edit", () => {
+    const fx = registered();
+    writeFileSync(
+      join(fx.project, BINDING_FILE),
+      "backend: local-git\nproject: edited-project\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    const loaded = loadKbBinding(fx.project);
+    expect(loaded.binding?.project).toBe("edited-project");
+    const check = kb(fx, fx.project, "check");
+    expect(check.code).toBe(0);
+    expect(check.out).toContain("project 'edited-project'");
+  });
+
   test("a registered checkout that is gone or is not a repository", () => {
     const fx = fixture();
     writeFileSync(

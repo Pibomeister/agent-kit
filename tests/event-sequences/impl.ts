@@ -310,7 +310,7 @@ function writeCharter(privateDir: string, limit: number) {
 }
 
 function git(cwd: string, args: readonly string[]): string {
-  const result = Bun.spawnSync(["git", ...args], { cwd });
+  const result = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], { cwd });
   if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
   return result.stdout.toString().trim();
 }
@@ -321,7 +321,7 @@ const WORKER_TEMPLATE = (() => {
   const worker = processScratch("ak-event-seq-worker-");
   writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
   writeFileSync(join(worker, "README.md"), "toy worktree\n");
-  git(worker, ["init", "-q"]);
+  git(worker, ["init", "-q", "-b", "main"]);
   git(worker, ["add", "."]);
   git(worker, [
     "-c",

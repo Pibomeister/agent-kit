@@ -92,5 +92,6 @@ a validated parent (Runner.start's explicit human authority on the recomputed ha
 charter, and a standing `autopilot.start` grant, with the child bound against that parent on the
 same ticket hash), no task-bound record, or a ticket with no criteria and no named verification.
 The grant remains the authorization record; ship-preflight still refuses a host-unattested verifier
-on that path. Parent-run trust rests on host write isolation of the evidence store. A home-ledger
-check is a follow-up.
+on that path. Parent-run trust rests on host write isolation of the evidence store. Runner.start's
+merge-base for the knowledgebase binding trusts the charter base ref the same way, so it rests on
+host write isolation of `.git`. A home-ledger check, and pinning a base SHA, are follow-ups.

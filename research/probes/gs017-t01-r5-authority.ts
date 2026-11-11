@@ -6,17 +6,7 @@
  *   bun research/probes/gs017-t01-r5-authority.ts
  */
 import { createHash } from "node:crypto";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
@@ -33,7 +23,7 @@ import { Runner } from "../../src/runner/core.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
 import { artifactHash, canonicalJson } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
-import { processScratch } from "../../tests/helpers/process-tmp.ts";
+import { processScratch, removeProcessDir } from "../../tests/helpers/process-tmp.ts";
 import { makeTree } from "../../tests/helpers/tree.ts";
 import { FIXED_NOW, makeBundle, makeDir, makeHome } from "../../tests/firstmate/fixture.ts";
 
@@ -110,7 +100,7 @@ function repo(): string {
   git(template, "commit", "-q", "-m", "init");
   git(template, "checkout", "-q", "-b", "feature");
   writeFileSync(join(template, "src/a.js"), "export const a = 2;\n");
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-bv-r5-")));
+  const dir = realpathSync(processScratch("ak-bv-r5-"));
   cpSync(template, dir, { recursive: true });
   return dir;
 }
@@ -173,7 +163,7 @@ function ak(cwd: string, registry: string | undefined, ...argv: string[]) {
 }
 
 function spawnCli(cwd: string, registry: string | undefined, ...argv: string[]) {
-  const result = Bun.spawnSync(["bun", join(ROOT, "src/cli.ts"), "lifecycle", ...argv], {
+  const result = Bun.spawnSync([process.execPath, join(ROOT, "src/cli.ts"), "lifecycle", ...argv], {
     cwd,
     env: registry === undefined ? gitEnv(cwd) : { ...gitEnv(cwd), AK_KB_REGISTRY: registry },
   });
@@ -273,7 +263,7 @@ function writeCharter(charterPath: string, runId: string, ticket: JsonObject, pr
 function firstmateThenRunner(cwd: string, ticketFile: string, registry: string, projectId: string) {
   ensureMainNoMistakes(cwd);
   const ticket = parseObject(readFileSync(ticketFile, "utf8"));
-  const privateDir = realpathSync(mkdtempSync(join(tmpdir(), "ak-bv-r5-runner-")));
+  const privateDir = realpathSync(processScratch("ak-bv-r5-runner-"));
   const evidence = join(privateDir, "evidence");
   mkdirSync(evidence);
   const { home, upstream } = makeHome({ patched: true });
@@ -327,7 +317,7 @@ function firstmateThenRunner(cwd: string, ticketFile: string, registry: string, 
 function receipt(cwd: string, run: string, ticket: JsonObject, extra: JsonObject = {}): string {
   const snapshot = takeSnapshot(cwd);
   if (typeof snapshot === "string") throw new Error(snapshot);
-  const receiptDir = mkdtempSync(join(tmpdir(), "ak-bv-r5-receipt-"));
+  const receiptDir = processScratch("ak-bv-r5-receipt-");
   const outputPath = join(receiptDir, "verification-output.log");
   writeFileSync(outputPath, "1 pass, 0 fail\n");
   const outputDigest = `sha256:${createHash("sha256").update(readFileSync(outputPath)).digest("hex")}`;
@@ -364,7 +354,7 @@ function forgedParentBinding(
   ticket: JsonObject,
   project: JsonObject,
 ): { bindingPath: string; parentDir: string; ledger: string } {
-  const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-r5-parent-"));
+  const parentDir = processScratch("ak-bv-r5-parent-");
   const evidence = join(parentDir, "evidence");
   mkdirSync(evidence);
   const frozen = bindBehaviorPolicy({
@@ -388,7 +378,7 @@ function forgedParentBinding(
   writeJson(join(parentDir, "charter.json"), { schema: "charter", run_id: "parent-run" });
   const bindingPath = join(parentDir, "binding.json");
   writeJson(bindingPath, { schema: "firstmate-binding", run_id: "parent-run", evidence: { location: evidence } });
-  const ledger = mkdtempSync(join(tmpdir(), "ak-bv-r5-ledger-"));
+  const ledger = processScratch("ak-bv-r5-ledger-");
   const at = realpathSync(bindingPath);
   const sha = `sha256:${createHash("sha256").update(readFileSync(bindingPath)).digest("hex")}`;
   writeJson(join(ledger, "parent-run.json"), { binding_path: at, binding_sha256: sha });
@@ -593,7 +583,7 @@ function e1_authenticFirstmateRunnerCli() {
 }
 
 function e1_runnerStartThenToyBinding() {
-  const dir = mkdtempSync(join(tmpdir(), "ak-bv-r5-runner-"));
+  const dir = processScratch("ak-bv-r5-runner-");
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
@@ -693,7 +683,7 @@ function e1_runnerStartThenToyBinding() {
       project: { id: "toy" },
     });
     writeJson(join(worker, "delegated.json"), ticket);
-    const ledger = mkdtempSync(join(tmpdir(), "ak-bv-r5-auth-ledger-"));
+    const ledger = processScratch("ak-bv-r5-auth-ledger-");
     const at = realpathSync(bindingPath);
     writeJson(join(ledger, "toy-run.json"), {
       binding_path: at,
@@ -774,7 +764,7 @@ function e2_prefeatureCliCheck() {
 }
 
 function e3_ticketKindWithoutPrivateCopy() {
-  const dir = mkdtempSync(join(tmpdir(), "ak-bv-r5-e3-"));
+  const dir = processScratch("ak-bv-r5-e3-");
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
@@ -974,12 +964,29 @@ const report = {
 };
 
 function caseFailed(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) return false;
-  const row = value as { ran?: boolean; ok?: boolean; bind_ok?: boolean; bypass?: boolean };
-  return row.ran === false || row.ok === false || row.bind_ok === false || row.bypass === true;
+  if (typeof value !== "object" || value === null || !("ran" in value)) return true;
+  const row = value as {
+    ran?: boolean;
+    ok?: boolean;
+    bind_ok?: boolean;
+    bypass?: boolean;
+    admitted?: boolean;
+    hidden?: boolean;
+    refused?: boolean;
+    gate_changed?: boolean;
+  };
+  return (
+    row.ran === false ||
+    row.ok === false ||
+    row.bind_ok === false ||
+    row.bypass === true ||
+    row.admitted === true ||
+    row.hidden === true ||
+    row.refused === false ||
+    row.gate_changed === true
+  );
 }
 
 process.exitCode = Object.values(report.cases).some(caseFailed) ? 1 : 0;
-const reportPath = join(mkdtempSync(join(tmpdir(), "ak-bv-r5-report-")), "gs017-t01-r5-exploit-after.json");
-writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-console.log(JSON.stringify({ ...report, report_path: reportPath }, null, 2));
+console.log(JSON.stringify(report, null, 2));
+removeProcessDir();

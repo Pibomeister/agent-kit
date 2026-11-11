@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { ValidateFunction } from "ajv";
 import { parse as parseYaml } from "yaml";
@@ -11,7 +11,7 @@ import inRepoSchema from "../../schemas/kb-backends/in-repo.schema.json" with { 
 import localGitSchema from "../../schemas/kb-backends/local-git.schema.json" with { type: "json" };
 import { isDir, isInside, readTextIfPresent } from "../util/fs.ts";
 import { error, note, warning, type Issue } from "../validation/types.ts";
-import { commonDir, git, workTreeTop } from "./git.ts";
+import { commonDir, git, gitForRevision, workTreeTop, type GitFn } from "./git.ts";
 import { IN_REPO, inRepoBindingIssues, resolveInRepo, type InRepoLocation } from "./in-repo.ts";
 
 /**
@@ -127,36 +127,39 @@ function describe(validate: ValidateFunction): string {
 }
 
 /**
- * The committed binding at `revision` (or HEAD), relative to `projectRoot`.
- * Uses `git rev-parse --show-prefix` so a nested folder is not read as the
+ * The committed binding at an explicit `revision`, relative to `projectRoot`.
+ * Callers without a revision read the working file instead. Uses
+ * `git rev-parse --show-prefix` so a nested folder is not read as the
  * repo-root `ak.kb.yaml`. An explicit revision that `rev-parse --verify` cannot
  * resolve is an error, not a miss. A confirmed miss of the path is null.
+ * Reads at an explicit revision ignore `refs/replace`.
  */
-function committedBindingText(projectRoot: string, revision?: string) {
-  const explicit = revision !== undefined && revision !== "";
-  const rev = explicit ? revision : "HEAD";
-  if (explicit) {
-    const verified = git(projectRoot, ["rev-parse", "--verify", `${rev}^{commit}`]);
-    if (verified.status !== 0) return { text: null, unresolved: `revision ${rev} cannot be resolved` };
-  }
-  const prefix = git(projectRoot, ["rev-parse", "--show-prefix"]);
+function committedBindingText(projectRoot: string, revision?: string, gitFn?: GitFn) {
+  if (revision === undefined || revision === "") return { text: null };
+  const run = gitForRevision(revision, gitFn);
+  const verified = run(projectRoot, ["rev-parse", "--verify", `${revision}^{commit}`]);
+  if (verified.status !== 0) return { text: null, unresolved: `revision ${revision} cannot be resolved` };
+  const prefix = run(projectRoot, ["rev-parse", "--show-prefix"]);
   if (prefix.status !== 0) return { text: null };
-  const shown = git(projectRoot, ["show", `${rev}:${prefix.stdout.trim()}${BINDING_FILE}`]);
+  const shown = run(projectRoot, ["show", `${revision}:${prefix.stdout.trim()}${BINDING_FILE}`]);
   return { text: shown.status === 0 ? shown.stdout : null };
 }
 
 /**
- * Parse and shape-check the folder's binding. A committed binding at the given
- * revision (HEAD when omitted) wins over the working file. Runner.start passes
- * the merge-base of HEAD and the charter base branch so a worker commit before
- * start cannot retarget lookup. A nested folder is read from that folder, not
- * from the git top level. Fall back to the working file only when that revision
- * has no committed binding. An unresolvable explicit revision is an error. A
+ * Parse and shape-check the folder's binding. With an explicit revision
+ * (Runner.start's merge-base of the start revision and the charter base
+ * branch), the committed binding at that revision wins over the working file.
+ * That merge-base trusts the base ref, so it rests on host write isolation of
+ * `.git`, the same as parent-run trust of the evidence store. `ak kb
+ * check/read/publish` and `lifecycle open` omit the revision and read the
+ * working file. A nested folder is read from that folder, not from the git top
+ * level. Fall back to the working file only when an explicit revision has no
+ * committed binding. An unresolvable explicit revision is an error. A
  * confirmed miss of both is a note, not an error: an unbound folder is the
  * unconfigured case the contract defines, not a malformed one.
  */
-export function loadKbBinding(projectRoot: string, revision?: string): KbBindingResult {
-  const committed = committedBindingText(projectRoot, revision);
+export function loadKbBinding(projectRoot: string, revision?: string, gitFn?: GitFn): KbBindingResult {
+  const committed = committedBindingText(projectRoot, revision, gitFn);
   if (committed.unresolved !== undefined) {
     return {
       binding: null,
@@ -233,13 +236,20 @@ export function loadKbBinding(projectRoot: string, revision?: string): KbBinding
  * it holding ak.kb.yaml, searching no higher than the git top level. A linked
  * work tree has its own top level and its own copy of the committed file, which
  * is why a task copy binds without any setup of its own. With no binding found,
- * `start` is returned and the folder reads as unbound.
+ * `start` is returned and the folder reads as unbound. With an explicit
+ * revision, the walk uses that revision's tree, not the working tree.
  */
-export function findKbProjectRoot(start: string): string {
+export function findKbProjectRoot(start: string, revision?: string, gitFn?: GitFn): string {
   const from = realpathSync(start);
   const ceiling = workTreeTop(from) ?? from;
+  const explicit = revision !== undefined && revision !== "";
+  const run = gitForRevision(revision, gitFn);
   for (let dir = from; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, BINDING_FILE))) return dir;
+    if (explicit) {
+      const rel = relative(ceiling, dir).split(sep).join("/");
+      const path = rel === "" ? BINDING_FILE : `${rel}/${BINDING_FILE}`;
+      if (run(ceiling, ["cat-file", "-e", `${revision}:${path}`]).status === 0) return dir;
+    } else if (existsSync(join(dir, BINDING_FILE))) return dir;
     if (dir === ceiling || dirname(dir) === dir || relative(ceiling, dir).startsWith("..")) return from;
   }
 }
@@ -349,8 +359,13 @@ export function registerKnowledgebase(file: string, id: string, path: string, cw
  * Resolve the binding of the project at `projectRoot` to a knowledgebase this
  * machine can reach, or say which of the two ways it cannot.
  */
-export function resolveKnowledgebase(projectRoot: string, registryFile: string, revision?: string): KbResolution {
-  const loaded = loadKbBinding(projectRoot, revision);
+export function resolveKnowledgebase(
+  projectRoot: string,
+  registryFile: string,
+  revision?: string,
+  gitFn?: GitFn,
+): KbResolution {
+  const loaded = loadKbBinding(projectRoot, revision, gitFn);
   if (loaded.binding === null) {
     const unbound = loaded.issues.every((issue) => issue.rule === "kb.unbound");
     return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
@@ -360,7 +375,7 @@ export function resolveKnowledgebase(projectRoot: string, registryFile: string, 
   const id = hasKnowledgebaseId(locator) ? locator.knowledgebase : "";
   if (binding.backend === IN_REPO) {
     // Read in place and never written, so there is no registration and no separate checkout (backends/in-repo.md, "No setup").
-    const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE);
+    const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE, gitFn);
     if (inRepo.location === null || inRepo.top === null) {
       const failed = inRepo.issues.some((issue) => issue.severity === "error");
       return { resolved: null, state: failed ? "failed" : "unavailable", issues: inRepo.issues };
