@@ -1,6 +1,6 @@
 {
   "name": "agent-kit",
-  "version": "0.1.116",
+  "version": "0.1.124",
   "private": true,
   "description": "One engineering lifecycle amalgamated from eleven donors (ten MIT, one Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.",
   "license": "MIT",
