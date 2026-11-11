@@ -41038,7 +41038,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv) {
   const empty = emptyTreeId(context, project, timeoutMs);
   if (empty.code !== 0)
     return empty;
-  const proc = spawnSync4(context.binary, [...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
+  const proc = spawnSync4(context.binary, ["--work-tree", realpathSync11(project), ...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
     cwd: project,
     env: { ...gitEnv(context), ...extraEnv },
     input,
@@ -41154,7 +41154,7 @@ function mergeTreeClean(context, project, baseRef, head) {
   if (gitDir.code !== 0)
     throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
   const objectDir = realpathSync11(join44(gitDir.text, "objects"));
-  const scratch = mkdtempSync3(join44(gitDir.text, "ak-merge-"));
+  const scratch = mkdtempSync3(join44(context.home, "ak-merge-"));
   try {
     const init = spawnSync4(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q"], {
       cwd: scratch,

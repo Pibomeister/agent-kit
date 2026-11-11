@@ -404,11 +404,14 @@ The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
-have a ten-second timeout with a kill signal, set `attr.tree` to the empty tree so worker
+have a ten-second timeout with a kill signal, set `--work-tree` to the inspected directory so a
+worker `core.worktree` cannot hide untracked files, set `attr.tree` to the empty tree so worker
 `.gitattributes` cannot assign merge drivers, textconv or filters, override `merge.default` and
 `merge.renormalize`, and do not invoke those programs. Verdict `merge-tree` runs against a
-throwaway `GIT_DIR` so `.git/info/attributes` cannot assign `merge=union`. Verdict binding treats
-a worktree as clean only when its bytes equal the committed blob bytes, including nested gitlinks
+throwaway `GIT_DIR` in the runner state directory, outside the worker root, so neither
+`.git/info/attributes` nor a concurrent writer under the worker `.git` can assign `merge=union`.
+Verdict binding treats a worktree as clean only when its bytes equal the committed blob bytes,
+including nested gitlinks
 after their `HEAD` matches. An autocrlf or `eol=crlf` checkout whose bytes differ from the blob is
 dirty. There is no conversion path. Residues, documented with no conversion or extra refusal:
 CRLF/eol/ident/LFS stay fail-closed on raw bytes; ENOENT, sparse-checkout and skip-worktree stay
