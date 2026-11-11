@@ -56,17 +56,24 @@ function uniqueObservations(observations: readonly OracleObservation[]): OracleO
 }
 
 export function oracleSubVerdict(observations: readonly OracleObservation[]): OracleSubVerdict {
-  let failedDuplicate = false;
-  let passed = false;
+  const failedAt: string[] = [];
+  const passedAt: string[] = [];
   for (const row of observations) {
+    const at = row.created_at;
+    if (at === undefined) continue;
     if (row.status === "failed" && row.exit_status === 1 && isDuplicateOnlyFail(row.cases)) {
-      failedDuplicate = true;
+      failedAt.push(at);
     }
     if (row.status === "passed" && row.exit_status === 0 && isAllPass(row.cases)) {
-      passed = true;
+      passedAt.push(at);
     }
   }
-  return failedDuplicate && passed ? "red-to-green" : "incomplete";
+  for (const failed of failedAt) {
+    for (const passed of passedAt) {
+      if (failed < passed) return "red-to-green";
+    }
+  }
+  return "incomplete";
 }
 
 function reasonFor(sub: OracleSubVerdict, bound: number): string {
@@ -92,7 +99,13 @@ export function decideEvidence(template: EvidenceRecord, observations: readonly 
 }
 
 export function renderEvidence(repo: string, io: Io, receiptsDirArg?: string): number {
-  const raw = readFileSync(join(repo, TEMPLATE_REL), "utf8");
+  let raw: string;
+  try {
+    raw = readFileSync(join(repo, TEMPLATE_REL), "utf8");
+  } catch {
+    io.err(`tp-life evidence: cannot read ${TEMPLATE_REL}\n`);
+    return 1;
+  }
   const template = parseEvidenceRecord(raw);
   if (template === null) {
     io.err("tp-life evidence: template is not a G4 record\n");

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { renderEvidence } from "./evidence.ts";
-import { flagValue, takeFlag } from "./parse.ts";
+import { flagMissingValue, flagValue, takeFlag } from "./parse.ts";
 import { checkReceipt, writeOracleReceipt } from "./receipt.ts";
 import type { Io } from "./types.ts";
 
@@ -16,10 +16,12 @@ const USAGE = `tp-life: fixture oracle receipts and the G4 evidence record.
   scripts/tp-life.sh evidence [--cwd REPO] [--receipts-dir DIR]
 
 Relative paths on receipt write and check resolve against the repo (--cwd, or
-this checkout). evidence always prints G4 as not-run. oracle_sub_verdict is
-computed from unattested receipts. Machine-checked covers only the per-case
-comparison inside each receipt. red-to-green needs a failed duplicate-only
-receipt and a passed receipt on the same head. Duplicate copies count once.
+this checkout). A --out inside the repo, outside research/tp-life/receipts/,
+and not gitignored, prints a warning: that file stales the next snapshot.
+evidence always prints G4 as not-run. oracle_sub_verdict is computed from
+unattested receipts. Machine-checked covers only the per-case comparison
+inside each receipt. red-to-green needs a failed duplicate-only receipt
+before a passed receipt on the same head. Duplicate copies count once.
 `;
 
 const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
@@ -36,6 +38,10 @@ function io(): Io {
 }
 
 export function runTpLife(argv: readonly string[], sink: Io): number {
+  if (flagMissingValue(argv, "--cwd")) {
+    sink.err("tp-life: --cwd needs a path\n");
+    return 2;
+  }
   const cwdTaken = takeFlag(argv, "--cwd");
   const receiptsTaken = takeFlag(cwdTaken.rest, "--receipts-dir");
   const rest = receiptsTaken.rest;

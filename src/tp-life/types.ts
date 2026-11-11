@@ -45,6 +45,7 @@ export interface OracleObservation {
   digest: string;
   status: string;
   exit_status?: number;
+  created_at?: string;
   cases: CaseResult[];
 }
 

@@ -12,11 +12,11 @@ Do not copy or edit `research/tp-life/evidence.template.json`.
 ## 0. Candidate
 
 Record `git rev-parse HEAD`, `git status --porcelain=v1`, bundle version, host,
-OS, and whether `claude` or `codex` is signed in. Missing host login is a
-blocker, not a pass. `receipt write` copies those fields from this checkout
-into the receipt. It does not run the oracle and it does not talk to
-`127.0.0.1`. Set `AK_TP_LIFE_HOST_LOGIN` to `claude`, `codex`, or `none`
-before you write.
+OS, and whether `claude` or `codex` is signed in. If `AK_TP_LIFE_HOST_LOGIN`
+is unset, the receipt records `unrecorded`. `receipt write` copies those
+fields from this checkout into the receipt. It does not run the oracle and
+it does not talk to `127.0.0.1`. Set `AK_TP_LIFE_HOST_LOGIN` to `claude`,
+`codex`, or `none` before you write.
 
 ## 1. Fixture
 
@@ -56,7 +56,10 @@ scripts/tp-life.sh receipt write --oracle-json /tmp/tp-life-oracle-v1.json --out
 
 The oracle must exit 1. The duplicate case fails. Keep
 `/tmp/tp-life-receipt-v1.json`. Receipts written from a saved report are
-marked unattested. The write command does not re-run the oracle.
+marked unattested. The write command does not re-run the oracle. Write
+receipts under `/tmp` or `research/tp-life/receipts/`. A `--out` inside the
+repo, outside that receipts directory, and not gitignored, stales the next
+snapshot. `receipt write` prints a warning when that happens.
 
 The clean fixture stands in for the implemented service. Red-to-green is
 restarting the fixture without `--broken`. Stop the v1 process, then:
@@ -119,8 +122,8 @@ scripts/tp-life.sh evidence
 
 The printed G4 verdict stays `not-run`. A human records G4. `oracle_sub_verdict`
 is computed from unattested receipts. It is `red-to-green` only when this head
-has one bound failed receipt where only `duplicate` failed and one bound passed
-receipt. Duplicate copies count once. Otherwise it is `incomplete`. Their origin
-and the head they ran on rest on the operator's word. Machine-checked covers
-only the per-case comparison inside each receipt. Steps 2, 3, 5 and 6 also rest
-on the operator's word.
+has one bound failed receipt where only `duplicate` failed, then a later bound
+passed receipt. Duplicate copies count once. Otherwise it is `incomplete`. Their
+origin and the head they ran on rest on the operator's word. Machine-checked
+covers only the per-case comparison inside each receipt. Steps 2, 3, 5 and 6
+also rest on the operator's word.

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { hostname, platform, release } from "node:os";
 import { readFileSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 
 import { git, takeSnapshot, type Snapshot } from "../lifecycle/gate.ts";
@@ -10,6 +10,7 @@ import { parseOracleReport, parseReceiptPayload } from "./parse.ts";
 import {
   ORACLE_ID,
   ORACLE_KIND,
+  RECEIPTS_REL,
   SNAPSHOT_IGNORE,
   type HostDetails,
   type Io,
@@ -29,6 +30,7 @@ interface BoundView {
   diff_hash: string;
   output_digest: string;
   excerpt: string;
+  created_at?: string;
 }
 
 const boundValidator: ValidateFunction<BoundRaw> = new Ajv2020({ strict: false }).compile({
@@ -41,6 +43,7 @@ const boundValidator: ValidateFunction<BoundRaw> = new Ajv2020({ strict: false }
     exit_status: { type: "integer" },
     output_digest: { type: "string", minLength: 1 },
     output_excerpt: { type: "string" },
+    created_at: { type: "string" },
     source_revision: {
       type: "object",
       required: ["repo", "revision", "diff_hash"],
@@ -60,6 +63,7 @@ interface BoundRaw {
   exit_status?: number;
   output_digest: string;
   output_excerpt?: string;
+  created_at?: string;
   source_revision: { repo: string; revision: string; diff_hash: string };
 }
 
@@ -79,6 +83,18 @@ export function resolveReceiptPath(repo: string, receiptPath: string): string {
   return isAbsolute(receiptPath) ? receiptPath : join(repo, receiptPath);
 }
 
+export function redactRepoUrl(url: string): string {
+  return url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^@/]+@/, "$1");
+}
+
+function outStaleWarning(repo: string, outFile: string): string | null {
+  const rel = relative(resolve(repo), resolve(outFile));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+  if (rel === RECEIPTS_REL || rel.startsWith(`${RECEIPTS_REL}/`)) return null;
+  if (git(repo, ["check-ignore", "-q", "--", rel]).code === 0) return null;
+  return `tp-life receipt write: warning: ${rel} is inside the repo and will stale the next snapshot\n`;
+}
+
 export function tpLifeSnapshot(repo: string): Snapshot | null {
   return asSnapshot(takeSnapshot(repo, { ignoreUntrackedDirs: SNAPSHOT_IGNORE }));
 }
@@ -94,6 +110,7 @@ function asBoundView(raw: BoundRaw): BoundView {
     diff_hash: raw.source_revision.diff_hash,
     output_digest: raw.output_digest,
     excerpt: raw.output_excerpt ?? "",
+    created_at: raw.created_at,
   };
 }
 
@@ -122,19 +139,23 @@ function boundFieldError(): string {
   return `${named} is invalid`;
 }
 
-function readPackageVersion(repo: string): string {
-  const raw = readFileSync(join(repo, "package.json"), "utf8");
-  const match = /"version": "([^"]+)"/.exec(raw);
-  const version = match?.[1];
-  return version === undefined || version.length === 0 ? "unrecorded" : version;
+function readPackageVersion(repo: string): string | null {
+  try {
+    const raw = readFileSync(join(repo, "package.json"), "utf8");
+    const match = /"version": "([^"]+)"/.exec(raw);
+    const version = match?.[1];
+    return version === undefined || version.length === 0 ? "unrecorded" : version;
+  } catch {
+    return null;
+  }
 }
 
-function hostDetails(repo: string, snap: Snapshot): HostDetails {
+function hostDetails(repo: string, snap: Snapshot, version: string): HostDetails {
   const status = git(repo, ["status", "--porcelain=v1"]);
   return {
     revision: snap.revision,
     porcelain: status.code === 0 ? status.text : "unrecorded",
-    version: readPackageVersion(repo),
+    version,
     hostname: hostname(),
     os: `${platform()} ${release()}`,
     host_login: process.env.AK_TP_LIFE_HOST_LOGIN ?? "unrecorded",
@@ -161,17 +182,23 @@ export function writeOracleReceipt(repo: string, oracleJsonPath: string, outPath
     io.err("tp-life receipt write: oracle JSON is not a complete case report\n");
     return 1;
   }
-  const payload: ReceiptPayload = { cases: report.cases, host: hostDetails(repo, snap) };
+  const version = readPackageVersion(repo);
+  if (version === null) {
+    io.err("tp-life receipt write: cannot read package.json\n");
+    return 1;
+  }
+  const repoUrl = redactRepoUrl(snap.repo);
+  const payload: ReceiptPayload = { cases: report.cases, host: hostDetails(repo, snap, version) };
   const passed = report.failed === 0;
   const receipt = {
     schema: "verification",
     schema_version: 1,
     id: ORACLE_ID,
-    project: { id: "agent-kit", repo: snap.repo },
+    project: { id: "agent-kit", repo: repoUrl },
     run_id: "tp-life-local",
     created_by: { role: "runner" },
     inputs: [],
-    source_revision: { repo: snap.repo, revision: snap.revision, diff_hash: snap.diff_hash },
+    source_revision: { repo: repoUrl, revision: snap.revision, diff_hash: snap.diff_hash },
     created_at: report.started_at,
     status: passed ? "passed" : "failed",
     kind: ORACLE_KIND,
@@ -200,6 +227,8 @@ export function writeOracleReceipt(repo: string, oracleJsonPath: string, outPath
     io.err(`tp-life receipt write: cannot write ${outPath}\n`);
     return 1;
   }
+  const stale = outStaleWarning(repo, outFile);
+  if (stale !== null) io.err(stale);
   io.out(`wrote ${outFile} status=${receipt.status} revision=${snap.revision} unattested\n`);
   return 0;
 }
@@ -242,7 +271,7 @@ export function readBoundReceipt(repo: string, receiptPath: string): BoundRead {
   if (!schemaOk) {
     return { code: 1, message: "tp-life receipt check: receipt failed schemas/verification.schema.json\n", view: null };
   }
-  if (bound.source_revision.repo !== snap.repo) {
+  if (redactRepoUrl(bound.source_revision.repo) !== redactRepoUrl(snap.repo)) {
     return {
       code: 2,
       message: `tp-life receipt check: refused ${basename(file)} bound to a different repo\n`,
@@ -284,6 +313,7 @@ export function oracleObservation(repo: string, receiptPath: string): OracleObse
     digest: result.view.output_digest,
     status: result.view.status,
     exit_status: result.view.exit_status,
+    created_at: result.view.created_at,
     cases: payload.cases,
   };
 }

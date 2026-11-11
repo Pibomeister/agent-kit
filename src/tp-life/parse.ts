@@ -165,6 +165,13 @@ export interface TakenFlag {
   rest: string[];
 }
 
+export function flagMissingValue(argv: readonly string[], name: string): boolean {
+  const index = argv.indexOf(name);
+  if (index < 0) return false;
+  const next = argv[index + 1];
+  return next === undefined || next.startsWith("--");
+}
+
 export function takeFlag(argv: readonly string[], name: string): TakenFlag {
   const index = argv.indexOf(name);
   if (index < 0) return { value: undefined, rest: [...argv] };
