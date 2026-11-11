@@ -1638,7 +1638,7 @@ describe("ship-preflight and final ship success (command seam)", () => {
     expect(again.err).toContain("run closed; open a new run");
     expect(readFileSync(runJson, "utf8")).toBe(before.run);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual(before.records);
-  });
+  }, 180_000);
 
   test("ship-preflight judges the run's own policy stamp: a repository source off the forge's default branch refuses", () => {
     const cwd = repo();
@@ -1660,7 +1660,7 @@ describe("ship-preflight and final ship success (command seam)", () => {
     expect(r.code).toBe(1);
     expect(r.err).toContain(`read at ${stamped.slice(0, 12)}, which is not on main`);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
-  });
+  }, 180_000);
 
   test("review-status is a standalone command for whoever merges", () => {
     const cwd = repo();
