@@ -473,8 +473,8 @@
     },
     "bundle/claude-code:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14330,
-      "tokens": 3583
+      "bytes": 14415,
+      "tokens": 3604
     },
     "bundle/claude-code:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -1348,8 +1348,8 @@
     },
     "bundle/codex:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14330,
-      "tokens": 3583
+      "bytes": 14415,
+      "tokens": 3604
     },
     "bundle/codex:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -2223,8 +2223,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14330,
-      "tokens": 3583
+      "bytes": 14415,
+      "tokens": 3604
     },
     "bundle/cursor:.cursor/references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -3098,8 +3098,8 @@
     },
     "bundle/droid:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14330,
-      "tokens": 3583
+      "bytes": 14415,
+      "tokens": 3604
     },
     "bundle/droid:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -3973,8 +3973,8 @@
     },
     "bundle/grok:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14330,
-      "tokens": 3583
+      "bytes": 14415,
+      "tokens": 3604
     },
     "bundle/grok:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -4848,8 +4848,8 @@
     },
     "bundle/kimi:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14330,
-      "tokens": 3583
+      "bytes": 14415,
+      "tokens": 3604
     },
     "bundle/kimi:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
