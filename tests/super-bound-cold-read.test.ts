@@ -78,11 +78,12 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("review.cold_read");
       expect(text).toContain("Off keeps the author type-check");
       expect(text).toContain("Shadow and on dispatch one cold reader");
-      expect(text).toContain("Dispatch is skipped only when the validator's exemption detector would exempt");
+      expect(text).toContain("Dispatch is skipped only when every Skip condition");
+      expect(text).toContain("otherwise dispatch");
+      expect(text).toContain("for Skip, the packet");
       expect(text).toContain("reshape it, or reclassify it");
-      expect(text).toContain("docs-markdown and four-file tickets skip `cold_read_ref`");
-      expect(text).toContain("still dispatches when on");
-      expect(text).toContain("The exemption is declaration-only");
+      expect(text).not.toContain("docs-markdown and four-file tickets skip `cold_read_ref`");
+      expect(text).not.toContain("implementation globs under");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
     }
   });
