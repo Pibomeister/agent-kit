@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/research/t7-pilot/evidence.schema.json",
+  "title": "T7 pilot evidence",
+  "description": "G5 / GAP-16. The command always emits not-run. A maintainer names the two repos. Humans record rework, cost and attention. Agent self-report is refused.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["procedure", "gate", "suite", "verdict", "reason", "human_steps", "pilot", "measures", "who_fills"],
+  "properties": {
+    "procedure": { "const": "T7-PILOT" },
+    "gate": { "const": "G5" },
+    "suite": { "const": "T7" },
+    "verdict": { "enum": ["not-run", "passed", "failed"] },
+    "reason": { "type": "string", "minLength": 1 },
+    "human_steps": { "type": "string", "minLength": 1 },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "pilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changes_required", "repos_required", "repos", "matched_baseline", "changes"],
+      "properties": {
+        "changes_required": { "const": 20 },
+        "repos_required": { "const": 2 },
+        "repos": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "matched_baseline": { "type": ["string", "null"], "minLength": 1 },
+        "changes": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "measures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rework", "cost", "attention"],
+      "properties": {
+        "rework": { "$ref": "#/$defs/human_measure" },
+        "cost": { "$ref": "#/$defs/human_measure" },
+        "attention": { "$ref": "#/$defs/human_measure" }
+      }
+    },
+    "who_fills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maintainer", "humans", "harness"],
+      "properties": {
+        "maintainer": { "type": "string", "minLength": 1 },
+        "humans": { "type": "string", "minLength": 1 },
+        "harness": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "human_measure": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["value", "recorder"],
+      "properties": {
+        "value": { "type": "number" },
+        "recorder": { "const": "human" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "not-run" } }, "required": ["verdict"] },
+      "then": {
+        "properties": {
+          "pilot": {
+            "properties": {
+              "repos": { "maxItems": 0 },
+              "matched_baseline": { "type": "null" },
+              "changes": { "maxItems": 0 }
+            }
+          },
+          "measures": {
+            "properties": {
+              "rework": { "type": "null" },
+              "cost": { "type": "null" },
+              "attention": { "type": "null" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "passed" } }, "required": ["verdict"] },
+      "then": {
+        "properties": {
+          "pilot": {
+            "properties": {
+              "repos": { "minItems": 2, "maxItems": 2 },
+              "matched_baseline": { "type": "string", "minLength": 1 },
+              "changes": { "minItems": 20 }
+            }
+          },
+          "measures": {
+            "properties": {
+              "rework": { "type": "object" },
+              "cost": { "type": "object" },
+              "attention": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
