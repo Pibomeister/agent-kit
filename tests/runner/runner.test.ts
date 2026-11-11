@@ -1052,6 +1052,32 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
   });
 
+  test("an audit tick stops when the recorded skill changes without a version bump", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    const upgraded = upgradeProcedure(f.kit, { version: false });
+    expect(readFileSync(upgraded.manifestPath, "utf8")).toBe(upgraded.originalManifest);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("an audit tick stops when only the recorded checkpoints procedure changes", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    const skillPath = join(f.kit, "skills/autopilot/SKILL.md");
+    const skillBefore = readFileSync(skillPath, "utf8");
+    const manifestPath = join(f.kit, "package.json");
+    const manifestBefore = readFileSync(manifestPath, "utf8");
+    const checkpointsPath = join(f.kit, "skills/autopilot/references/checkpoints.md");
+    writeFileSync(checkpointsPath, `${readFileSync(checkpointsPath, "utf8")}\n# upgraded checkpoints\n`);
+    expect(readFileSync(skillPath, "utf8")).toBe(skillBefore);
+    expect(readFileSync(manifestPath, "utf8")).toBe(manifestBefore);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
   test("an audit stop for a changed procedure does not rewrite blocked decisions or evidence", () => {
     const f = procedureKit();
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));

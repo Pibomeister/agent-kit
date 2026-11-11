@@ -20,9 +20,10 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
-import { entryBodyPath } from "../src/catalog/layout.ts";
+import { DIRECTORY_SECTIONS, entryBodyPath, entryDir } from "../src/catalog/layout.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
 import { extractRelativeLinks, relativeLinkBetween, resolveFromFile } from "../src/util/links.ts";
+import { linkMentions, mentionResolver, type MentionResolver } from "../src/packaging/mentions.ts";
 import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
@@ -84,12 +85,31 @@ function publishedSharedPath(resolved: string, host: HostId, includedSkills: Rea
   return relocateForHost(host, posix.join(SHARED_ROOT, resolved));
 }
 
+function catalogMentionResolver(): MentionResolver {
+  const { catalog } = loadCatalog(REPO);
+  if (catalog === null) throw new Error("repository has no catalog");
+  const bodies = new Map<string, string>();
+  for (const section of DIRECTORY_SECTIONS) {
+    if (section === "skills") continue;
+    for (const entry of catalog.bySection(section)) {
+      if (entry.status === "authored") bodies.set(entryDir(section, entry.id), entryBodyPath(section, entry.id));
+    }
+  }
+  return mentionResolver({
+    isFile: (path) => existsSync(join(REPO, path)) && statSync(join(REPO, path)).isFile(),
+    bodyOf: (dir) => bodies.get(dir.replace(/\/$/, "")) ?? null,
+    roleBody: (id) => bodies.get(entryDir("roles", id)) ?? null,
+    protocolBody: (id) => bodies.get(entryDir("protocols", id)) ?? null,
+  });
+}
+
 function expectedShippedReference(
   sourcePath: string,
   publishedPath: string,
   text: string,
   host: HostId,
   includedSkills: ReadonlySet<string>,
+  mentions: MentionResolver,
 ): string {
   let out = text;
   for (const link of extractRelativeLinks(text)) {
@@ -102,11 +122,10 @@ function expectedShippedReference(
     const anchor = link.anchor === undefined ? "" : `#${link.anchor}`;
     out = out.split(link.raw).join(link.raw.replace(`${link.target}${anchor}`, `${wanted}${anchor}`));
   }
-  return rewriteAkCommands(out, host, sourcePath);
-}
-
-function unwrapMentionLinks(text: string): string {
-  return text.replace(/\[(`[^`\n]+`)\]\([^)\s]+\)/g, "$1");
+  const linked = linkMentions(sourcePath, publishedPath, out, mentions, (source) =>
+    publishedSharedPath(source, host, includedSkills),
+  );
+  return rewriteAkCommands(linked.text, host, sourcePath);
 }
 
 /**
@@ -1248,6 +1267,8 @@ describe("bundle planning", () => {
     if (catalog === null) throw new Error("repository has no catalog");
     const authoredRefs = catalog.bySection("references").filter((entry) => entry.status === "authored");
     expect(authoredRefs).toHaveLength(10);
+    const mentions = catalogMentionResolver();
+    const delegationHref = "[`delegation_classes`](../../policies/authority-defaults.yaml)";
     for (const host of ["claude-code", "codex", "cursor"] as const) {
       const plan = planBundle({ root: REPO, catalog }, host, { profile: "core" });
       expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
@@ -1278,14 +1299,17 @@ describe("bundle planning", () => {
         const shipped = [...plan.files.values()].filter((file) => file.source === source);
         if (shipped.length === 0) missingRefs.push(source);
         for (const file of shipped) {
-          const normalised = unwrapMentionLinks(
-            expectedShippedReference(source, file.path, expected, host, includedSkills),
-          );
-          if (unwrapMentionLinks(file.contents) !== normalised) driftedRefs.push(source);
+          const normalised = expectedShippedReference(source, file.path, expected, host, includedSkills, mentions);
+          if (file.contents !== normalised) driftedRefs.push(source);
         }
       }
       expect({ host, missingRefs }).toEqual({ host, missingRefs: [] });
       expect({ host, driftedRefs }).toEqual({ host, driftedRefs: [] });
+      const delegation = [...plan.files.values()].find((file) => file.source === "references/delegation/REFERENCE.md");
+      expect({ host, hasDelegationHref: delegation?.contents.includes(delegationHref) }).toEqual({
+        host,
+        hasDelegationHref: true,
+      });
     }
   });
 
