@@ -53,6 +53,7 @@ function passedRecord(): T4Evidence {
     adjudication: { ...template().adjudication, records: [{ seat: "a1" }] },
     metrics: { material_recall: 0.5 },
     scores: { blinded: true },
+    hosts: ["host-a"],
   };
 }
 
@@ -82,8 +83,17 @@ describe("T4 held-out schema (GAP-14)", () => {
     expect(parseT4Evidence(JSON.stringify(passedRecord()))).not.toBeNull();
   });
 
+  test("a filled fail with curator location, records and scores validates", () => {
+    expect(parseT4Evidence(JSON.stringify({ ...passedRecord(), verdict: "failed", hosts: [] }))).not.toBeNull();
+  });
+
+  test("rejects an unfilled failed document", () => {
+    expect(parseT4Evidence(JSON.stringify({ ...template(), verdict: "failed" }))).toBeNull();
+  });
+
   test("rejects a pass with empty adjudication and a not-run with scores", () => {
     expect(parseT4Evidence(JSON.stringify({ ...template(), verdict: "passed" }))).toBeNull();
+    expect(parseT4Evidence(JSON.stringify({ ...passedRecord(), hosts: [] }))).toBeNull();
     expect(
       parseT4Evidence(
         JSON.stringify({ ...passedRecord(), adjudication: { ...passedRecord().adjudication, records: [] } }),

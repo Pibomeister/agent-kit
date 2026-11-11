@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/research/t7-pilot/evidence.schema.json",
   "title": "T7 pilot evidence",
-  "description": "G5 / GAP-16. The command always emits not-run. A maintainer names the two repos. Humans record rework, cost and attention. Agent self-report is refused.",
+  "description": "G5 / GAP-16. The command always emits not-run. A maintainer names the two repos. Humans record rework, cost and attention. Agent self-report is refused. This schema rejects a pass or fail with empty repos or measures. The passed record shape is provisional: no gate may treat parseT7Evidence plus verdict passed as proof until the maintainer names those keys.",
   "type": "object",
   "additionalProperties": false,
   "required": ["procedure", "gate", "suite", "verdict", "reason", "human_steps", "pilot", "measures", "who_fills"],
@@ -93,7 +93,7 @@
       }
     },
     {
-      "if": { "properties": { "verdict": { "const": "passed" } }, "required": ["verdict"] },
+      "if": { "properties": { "verdict": { "enum": ["passed", "failed"] } }, "required": ["verdict"] },
       "then": {
         "properties": {
           "pilot": {

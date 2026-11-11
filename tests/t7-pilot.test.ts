@@ -81,6 +81,14 @@ describe("T7 pilot schema (GAP-16)", () => {
     expect(parseT7Evidence(JSON.stringify(passedRecord()))).not.toBeNull();
   });
 
+  test("a filled fail with two repos, 20 changes and human measures validates", () => {
+    expect(parseT7Evidence(JSON.stringify({ ...passedRecord(), verdict: "failed" }))).not.toBeNull();
+  });
+
+  test("rejects an unfilled failed document", () => {
+    expect(parseT7Evidence(JSON.stringify({ ...template(), verdict: "failed" }))).toBeNull();
+  });
+
   test("rejects a pass with empty repos and an agent recorder", () => {
     expect(parseT7Evidence(JSON.stringify({ ...template(), verdict: "passed" }))).toBeNull();
     expect(

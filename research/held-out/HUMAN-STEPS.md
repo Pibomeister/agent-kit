@@ -48,4 +48,9 @@ guessing its key.
 
 A human sets `verdict` to `passed` or `failed` on a copy of the evidence
 that already has curator location, adjudication records, and scores.
+A `passed` copy also names at least one host in `hosts`.
 The command in this tree will not write that copy.
+
+The passed record shape is provisional. Plan section 10 does not name
+record or score keys. No gate may treat `parseT4Evidence` plus `verdict`
+passed as proof until the maintainer names those keys.

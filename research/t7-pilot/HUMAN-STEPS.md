@@ -42,3 +42,7 @@ Each measure's `recorder` is `human`. The schema refuses any other recorder.
 A human sets `verdict` to `passed` or `failed` on a copy that already has
 two named repos, a matched baseline, 20 changes, and human measures.
 The command in this tree will not write that copy.
+
+The passed record shape is provisional. Plan section 10 does not name
+change-record keys. No gate may treat `parseT7Evidence` plus `verdict`
+passed as proof until the maintainer names those keys.

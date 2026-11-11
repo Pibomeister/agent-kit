@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/research/held-out/evidence.schema.json",
   "title": "T4 held-out eval evidence",
-  "description": "G3 / GAP-14. The command always emits not-run. A human curator and two blind adjudicators fill scores. This schema rejects a pass with empty records.",
+  "description": "G3 / GAP-14. The command always emits not-run. A human curator and two blind adjudicators fill scores. This schema rejects a pass or fail with empty records. A pass also requires a non-empty hosts list. The passed record shape is provisional: no gate may treat parseT4Evidence plus verdict passed as proof until the maintainer names those keys.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -91,13 +91,22 @@
       }
     },
     {
-      "if": { "properties": { "verdict": { "const": "passed" } }, "required": ["verdict"] },
+      "if": { "properties": { "verdict": { "enum": ["passed", "failed"] } }, "required": ["verdict"] },
       "then": {
         "properties": {
           "corpus": { "properties": { "location": { "type": "string", "minLength": 1 } } },
           "adjudication": { "properties": { "records": { "minItems": 1 } } },
           "metrics": { "properties": { "material_recall": { "type": "number" } } },
           "scores": { "type": "object", "minProperties": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "passed" } }, "required": ["verdict"] },
+      "then": {
+        "required": ["hosts"],
+        "properties": {
+          "hosts": { "minItems": 1 }
         }
       }
     }
