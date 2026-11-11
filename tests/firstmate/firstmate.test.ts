@@ -589,7 +589,7 @@ describe("install and remove", () => {
     expect(existsSync(join(home, "config/.keep"))).toBe(true);
   });
 
-  test("the worker Stop command runs the semantic lint hook, quiet without a key, and carries no key or switch", () => {
+  test("the worker Stop command runs the semantic lint hook, quiet when disabled, and carries no key or switch", () => {
     const { home, opts } = env();
     // Settings written by the release before the Stop hook are still this installer's and are upgraded in place.
     const settingsPath = join(home, "config/agent-kit/worker-settings.json");
@@ -610,7 +610,7 @@ describe("install and remove", () => {
     expect(run.status).toBe(0);
     expect(JSON.parse(run.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],

@@ -507,8 +507,8 @@ describe("against the repository's own contract and defects file", () => {
   });
 
   test("an entry against the real §10 resolves, and the same entry with one word changed does not", () => {
-    // The paired control. The repository's Open section is empty, so the pass
-    // above examines nothing and is not evidence on its own; these two are.
+    // The paired control. The pass above depends on the current Open section
+    // contents rather than proving the section empty; these two are the evidence.
     const real = quotableFromSectionTen();
     expect(
       checkContractDefects(realCtx(defects(entry("real", "§10 requires:", real)))).filter(

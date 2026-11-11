@@ -55,10 +55,13 @@
 # point of the first refusal is that the subject must be the commit you
 # validated; a second gate measuring the working tree would undo it.
 #
-# It does NOT run `bun test`. The suite needs `.donors/`, which an extract does
-# not have, so it would report a failure that is a property of the extract and
-# not of the commit. A gate that cries wolf is a gate people pass --no-verify to,
-# and that would take the first refusal down with it.
+# It does NOT run `bun test`. CI runs that after clone.sh with AK_REQUIRE_DONORS.
+# This gate copies `.donors/` into the extract only when every lock pin is
+# present locally, so `ak build`'s validate step runs the pin check. A partial
+# or unpinned local clone is not copied: the gate warns and keeps the old skip
+# rather than refusing a commit for a property of the working tree. It still
+# does not run the test suite. A gate that cries wolf is a gate people pass
+# --no-verify to, and that would take the first refusal down with it.
 #
 # It measures the default install. A skill's packaged mode depends on
 # ak.install.yaml, which is gitignored and so never in an archive; the rm below
@@ -70,15 +73,49 @@
 #
 # It admits the push when it cannot run -- no node_modules, no bun, archive
 # fails. A gate that blocks on its own breakage teaches the bypass.
+#
+# The helper is resolved from the repository root, not from $0. A copy in
+# .git/hooks has no sibling, and sourcing a missing file under dash refuses
+# every push. If the helper is absent, warn and archive without .donors: both
+# refusals still run, and a feature-branch push still goes through.
+_ak_root=$(git rev-parse --show-toplevel 2>/dev/null) || _ak_root=
+_ak_extract=
+if [ -n "$_ak_root" ]; then
+  _ak_extract=$_ak_root/tools/hooks/pre-push-extract.sh
+fi
+if [ -n "$_ak_extract" ] && [ -f "$_ak_extract" ]; then
+  . "$_ak_extract"
+else
+  printf '%s\n' "pre-push: warning: tools/hooks/pre-push-extract.sh is missing; pin check skipped" >&2
+  extract_for_gate() {
+    _sha=$1
+    _dest=$2
+    _root=$3
+    git -C "$_root" cat-file -e "$_sha^{commit}" 2>/dev/null || return 1
+    git -C "$_root" archive "$_sha" 2>/dev/null | tar -x -C "$_dest" 2>/dev/null || return 1
+    rm -f "$_dest/ak.install.yaml"
+  }
+fi
+
 build_gate() {
   sha="$1"
   root=$(git rev-parse --show-toplevel) || return 0
   [ -d "$root/node_modules" ] || return 0
   tmp=$(mktemp -d) || return 0
-  git archive "$sha" 2>/dev/null | tar -x -C "$tmp" 2>/dev/null || { rm -rf "$tmp"; return 0; }
+  extract_for_gate "$sha" "$tmp" "$root" || {
+    rm -rf "$tmp"
+    printf '%s\n' "pre-push: warning: extract of $sha failed; build gate skipped" >&2
+    return 0
+  }
   ln -s "$root/node_modules" "$tmp/node_modules" 2>/dev/null || { rm -rf "$tmp"; return 0; }
-  rm -f "$tmp/ak.install.yaml"
-  out=$(cd "$tmp" && bun run ak build 2>&1)
+  out=$(
+    cd "$tmp" || exit 1
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+    GIT_NO_LAZY_FETCH=1
+    GIT_TERMINAL_PROMPT=0
+    export GIT_NO_LAZY_FETCH GIT_TERMINAL_PROMPT
+    bun run ak build 2>&1
+  )
   status=$?
   rm -rf "$tmp"
   [ "$status" -eq 0 ] && return 0

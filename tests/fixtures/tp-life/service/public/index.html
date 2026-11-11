@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<title>TP-LIFE fixture</title>
+<p id="status">idle</p>
+<button id="run" type="button">submit succeed</button>
+<script>
+  const statusEl = document.getElementById("status");
+  document.getElementById("run").onclick = async () => {
+    const created = await fetch("/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idempotency_key: "ui-1", op: "succeed" }),
+    });
+    const job = await created.json();
+    statusEl.textContent = job.status;
+    const poll = async () => {
+      const res = await fetch("/jobs/" + job.id);
+      const body = await res.json();
+      statusEl.textContent = body.status;
+      if (body.status === "pending") setTimeout(poll, 25);
+    };
+    poll();
+  };
+</script>

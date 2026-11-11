@@ -1272,7 +1272,9 @@ capabilities:
       No pinned donor implements this. Plan §10 scenarios 25 and 26 specify the behavior and plan
       §1.5 records that the report-derived material is attributed per file; those exact report
       citations live on the anchored-local rows in provenance/adaptations.d/delegation.yaml, not
-      in this locator.
+      in this locator. The unavailable on-mode green-to-yellow-agent raise is the captain's Q1
+      decision (GS-004k). The locator grammar admits G:L, plan §, arch § and amalgam, and has no
+      form for a captain decision.
 
   - id: structural-checks
     capability: Project-declared diff-scoped check commands and the receipt semantics for structural and test-strength evidence
