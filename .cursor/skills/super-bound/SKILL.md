@@ -144,12 +144,12 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     type-check. An implementer opening the ticket with an empty context window who still cannot do
     it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
     send it back. Off and shadow keep that action; on uses the independent read. When that read is
-    unavailable, the author check decides. Dispatch is skipped only when the validator's exemption detector would exempt
-    the ticket: implementation globs under `docs/**/*.md`, or exactly `README.md`, `CHANGELOG.md`, `NOTICE` or `LICENSE`, with the other existing conditions. In on mode docs-markdown and four-file tickets skip `cold_read_ref`; any other implementation ticket requires it. A light-route ticket that touches `skills/` or `references/` still dispatches when on.
-    The exemption is declaration-only: the write guard lifts tests protection and does not deny a write outside those globs. Shadow and on dispatch one cold reader
+    unavailable, the author check decides. Dispatch is skipped only when every Skip condition in
+    [the delegation reference](../../references/shared/references/delegation/REFERENCE.md) under "Independent cold
+    read of a ticket" holds; otherwise dispatch. Shadow and on dispatch one cold reader
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/shared/references/delegation/REFERENCE.md) under "Independent cold
-    read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,
+    read of a ticket" for Skip, the packet, claims, readiness observations, rewrite cap, shadow print,
     citation, unavailable handling and the green-to-yellow-agent raise.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
     ticket, no ticket carries an unfinished-content marker or a "same as the earlier ticket"
