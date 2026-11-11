@@ -280,8 +280,9 @@ function headCommit(root: string): string | null {
 
 /** The committed bytes at `path`, absent when not listed, or a failure when git cannot read them. */
 function committed(root: string, path: string, at?: { revision?: string; git?: GitFn }): CommittedContent {
-  const run = at?.git ?? git;
   const rev = at?.revision !== undefined && at.revision !== "" ? at.revision : "HEAD";
+  if (rev !== "HEAD" && at?.git === undefined) throw new Error("an explicit revision requires a git function");
+  const run = at?.git ?? git;
   if (commitAt(root, rev, run) === null) {
     return failed(
       "kb.unreadable",

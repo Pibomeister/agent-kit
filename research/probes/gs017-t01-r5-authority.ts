@@ -89,6 +89,8 @@ function attachKb(cwd: string, mode: "off" | "shadow" | "on", id = "example-proj
   git(kb, "add", "-A");
   git(kb, "commit", "-q", "-m", "project");
   writeFileSync(join(cwd, "ak.kb.yaml"), `backend: local-git\nproject: ${id}\nlocator:\n  knowledgebase: fixture-kb\n`);
+  git(cwd, "add", "ak.kb.yaml");
+  git(cwd, "commit", "-q", "-m", "bind");
   const registry = join(scratch, "registry.json");
   writeJson(registry, { knowledgebases: { "fixture-kb": { path: kb } } });
   return { registry, kb, project };
@@ -202,7 +204,7 @@ function ensureMainNoMistakes(cwd: string): void {
   git(cwd, "checkout", "-q", branch);
 }
 
-function writeCharter(charterPath: string, runId: string, ticket: JsonObject, projectId: string) {
+function writeCharter(charterPath: string, runId: string, ticket: JsonObject, projectId: string, baseBranch = "main") {
   const initial = {
     schema: "charter",
     schema_version: 1,
@@ -216,7 +218,7 @@ function writeCharter(charterPath: string, runId: string, ticket: JsonObject, pr
     status: "active",
     immutability: { immutable: true, worker_writable: false, hash: "", location: charterPath },
     work_source: { kind: "ticket", ref: { id: ticket.id, schema: "ticket", hash: artifactHash(ticket) } },
-    repos: [{ repo: projectId, base_branch: "main", paths: ["src/**"] }],
+    repos: [{ repo: projectId, base_branch: baseBranch, paths: ["src/**"] }],
     artifact_destinations: { kb_root: projectId, runs_path: "runs" },
     allowed_capabilities: [
       "repository-read",
@@ -289,7 +291,7 @@ function firstmateThenRunner(cwd: string, ticketFile: string, registry: string, 
   const runId = boundFm.binding.run_id;
   writeFileSync(join(privateDir, `${String(ticket.id)}.json`), `${JSON.stringify(ticket)}\n`);
   const charterPath = join(privateDir, "charter.json");
-  const hash = writeCharter(charterPath, runId, ticket, projectId);
+  const hash = writeCharter(charterPath, runId, ticket, projectId, git(cwd, "rev-parse", "--abbrev-ref", "HEAD"));
   const previous = process.env.AK_KB_REGISTRY;
   process.env.AK_KB_REGISTRY = registry;
   try {
@@ -411,6 +413,7 @@ function e1a_forgedParentCliOpen() {
     refused: true,
     reason: spawned.reason,
     premise_holds_if_opened: false,
+    expected: { opened: false, refused: true },
   };
 }
 
@@ -430,7 +433,14 @@ function e1b_pointerRemovalReseal() {
     registry: bound.registry,
     ledger: started.ledger,
   });
-  if (!spawned.ok) return { ok: true, refused: true, opened: false, reason: spawned.reason };
+  if (!spawned.ok)
+    return {
+      ok: true,
+      refused: true,
+      opened: false,
+      reason: spawned.reason,
+      expected: { refused: true, opened: false },
+    };
   const run = spawned.run.run_id;
   const runPath = join(started.evidence, "runs", run, "run.json");
   const doc = parseObject(readFileSync(runPath, "utf8"));
@@ -542,6 +552,7 @@ function e1c_realFirstmateBind() {
     err: spawned.ok ? "" : spawned.reason,
     opened: spawned.ok,
     refused_protected_record: !spawned.ok && spawned.reason.includes("protected runner"),
+    expected: { bind_ok: true, opened: false, refused_protected_record: true },
   };
 }
 
@@ -580,6 +591,7 @@ function e1_authenticFirstmateRunnerCli() {
         ? record.behavior.required_checks.length
         : undefined,
     handwritten_parent: false,
+    expected: { opened: false },
   };
 }
 
@@ -594,9 +606,9 @@ function e1_runnerStartThenToyBinding() {
   git(worker, "init", "-q", "-b", "main");
   git(worker, "add", "-A");
   git(worker, "commit", "-q", "-m", "init");
-  const revision = git(worker, "rev-parse", "HEAD");
   mkdirSync(join(worker, ".runner-requests"));
   const bound = attachKb(worker, "on", "toy");
+  const revision = git(worker, "rev-parse", "HEAD");
   const ticket = behaviorTicket("toy-ticket", "toy");
   writeJson(join(privateDir, "toy-ticket.json"), ticket);
   const path = join(privateDir, "charter.json");
@@ -710,6 +722,7 @@ function e1_runnerStartThenToyBinding() {
       opened: spawned.ok,
       reason: spawned.ok ? undefined : spawned.reason,
       note: "Runner.start is a real caller. The binding file is still hand-written at stateDir/evidence.",
+      expected: { opened: false, bypass: false },
     };
   } catch (cause) {
     return { runner_started: false, error: cause instanceof Error ? cause.message : String(cause) };
@@ -761,6 +774,7 @@ function e2_prefeatureCliCheck() {
     check_err: checked.err,
     treated_as_incomplete: checked.err.includes("new enabled run with no behavior policy snapshot"),
     allowed: checked.code === 0,
+    expected: { allowed: true, check_code: 0 },
   };
 }
 
@@ -841,7 +855,11 @@ function e3_ticketKindWithoutPrivateCopy() {
       controller: "firstmate",
       run_id: "toy-run",
     });
-    return { started: true, private_ticket_present: existsSync(join(privateDir, "toy-ticket.json")) };
+    return {
+      started: true,
+      private_ticket_present: existsSync(join(privateDir, "toy-ticket.json")),
+      expected: { started: true, private_ticket_present: false },
+    };
   } catch (cause) {
     return {
       started: false,
@@ -977,8 +995,8 @@ function caseFailed(value: unknown): boolean {
     expected?: Record<string, unknown>;
   };
   if (row.ran !== true) return true;
+  if (row.expected === undefined) return true;
   if (row.ok === false || row.bind_ok === false || row.bypass === true) return true;
-  if (row.expected === undefined) return false;
   return Object.entries(row.expected).some(([key, wanted]) => (row as Record<string, unknown>)[key] !== wanted);
 }
 

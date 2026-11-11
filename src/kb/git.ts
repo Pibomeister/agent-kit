@@ -37,25 +37,6 @@ export function git(root: string, args: readonly string[], input?: string): GitR
   return runGit(root, args, gitEnv(), input);
 }
 
-/**
- * Same as `git`, plus `GIT_NO_REPLACE_OBJECTS=1`, `GIT_GRAFT_FILE=/dev/null`,
- * `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1` so a worker cannot
- * retarget a blob, tree or merge-base at an explicit revision.
- */
-export function gitWithoutReplace(root: string, args: readonly string[], input?: string): GitRun {
-  return runGit(
-    root,
-    args,
-    gitEnv({
-      GIT_NO_REPLACE_OBJECTS: "1",
-      GIT_GRAFT_FILE: "/dev/null",
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_CONFIG_NOSYSTEM: "1",
-    }),
-    input,
-  );
-}
-
 /** Isolated git when `revision` is set. An explicit revision requires `gitFn`. */
 export function gitForRevision(revision: string | undefined, gitFn?: GitFn): GitFn {
   if (revision !== undefined && revision !== "") {

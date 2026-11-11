@@ -177,6 +177,8 @@ function attachKb(cwd: string, mode: "off" | "shadow" | "on", id = "example-proj
   git(kb, "add", "-A");
   git(kb, "commit", "-q", "-m", "project");
   writeFileSync(join(cwd, "ak.kb.yaml"), `backend: local-git\nproject: ${id}\nlocator:\n  knowledgebase: fixture-kb\n`);
+  git(cwd, "add", "ak.kb.yaml");
+  if (git(cwd, "status", "--porcelain", "--", "ak.kb.yaml") !== "") git(cwd, "commit", "-q", "-m", "bind");
   const registry = join(scratch, "registry.json");
   writeJson(registry, { knowledgebases: { "fixture-kb": { path: kb } } });
   return { registry, kb, project };
@@ -194,6 +196,8 @@ function attachEmptyKb(cwd: string, id = "example-project") {
   git(kb, "add", "-A");
   git(kb, "commit", "-q", "-m", "empty");
   writeFileSync(join(cwd, "ak.kb.yaml"), `backend: local-git\nproject: ${id}\nlocator:\n  knowledgebase: fixture-kb\n`);
+  git(cwd, "add", "ak.kb.yaml");
+  if (git(cwd, "status", "--porcelain", "--", "ak.kb.yaml") !== "") git(cwd, "commit", "-q", "-m", "bind");
   const registry = join(scratch, "registry.json");
   writeJson(registry, { knowledgebases: { "fixture-kb": { path: kb } } });
   return { registry };
@@ -411,7 +415,7 @@ function startMandatory(cwd: string, ticketFile: string, bound: BoundProject, wo
       work === "plan"
         ? { kind: "plan", ref: { id: "bv-plan", schema: "plan-record", hash: HASH } }
         : { kind: "ticket", ref: { id: ticket.id, schema: "ticket", hash: artifactHash(ticket) } },
-    repos: [{ repo: "example", base_branch: "main", paths: ["src/**"] }],
+    repos: [{ repo: "example", base_branch: git(cwd, "rev-parse", "--abbrev-ref", "HEAD"), paths: ["src/**"] }],
     artifact_destinations: { kb_root: "example", runs_path: "runs" },
     allowed_capabilities: [
       "repository-read",

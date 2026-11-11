@@ -150,18 +150,24 @@ function committedBindingText(projectRoot: string, revision?: string, gitFn?: Gi
  * (Runner.start's merge-base of the start revision and the charter base
  * branch), the committed binding at that revision wins over the working file.
  * That merge-base trusts the base ref, so it rests on host write isolation of
- * `.git`, the same as parent-run trust of the evidence store. When the
- * merge-base cannot be computed and the charter cites no ticket, Runner.start
- * does not pass a revision and does not read the working file; the project
- * record is unavailable and start stays allowed. `ak kb check/read/publish`
- * and `lifecycle open` omit the revision and read the working file. A nested
- * folder is read from that folder, not from the git top level. Fall back to
- * the working file only when an explicit revision has no committed binding.
+ * `.git`, the same as parent-run trust of the evidence store. Ticket charters
+ * never fall back to the working file. When the merge-base cannot be computed
+ * and the charter cites no ticket, Runner.start does not pass a revision and
+ * does not read the working file; the project is unbound and start stays
+ * allowed. `ak kb check/read/publish` and `lifecycle open` omit the revision
+ * and read the working file. A nested folder is read from that folder, not
+ * from the git top level. Fall back to the working file only when an explicit
+ * revision has no committed binding and the caller asked for that fallback.
  * An unresolvable explicit revision is an error. A confirmed miss of both is
  * a note, not an error: an unbound folder is the unconfigured case the
  * contract defines, not a malformed one.
  */
-export function loadKbBinding(projectRoot: string, revision?: string, gitFn?: GitFn): KbBindingResult {
+export function loadKbBinding(
+  projectRoot: string,
+  revision?: string,
+  gitFn?: GitFn,
+  workingFile = true,
+): KbBindingResult {
   const committed = committedBindingText(projectRoot, revision, gitFn);
   if (committed.unresolved !== undefined) {
     return {
@@ -169,7 +175,7 @@ export function loadKbBinding(projectRoot: string, revision?: string, gitFn?: Gi
       issues: [error("kb.revision-unresolved", BINDING_FILE, committed.unresolved)],
     };
   }
-  const text = committed.text ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
+  const text = committed.text ?? (workingFile ? readTextIfPresent(join(projectRoot, BINDING_FILE)) : null);
   if (text === null) {
     return {
       binding: null,
