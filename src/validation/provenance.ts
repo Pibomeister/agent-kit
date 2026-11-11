@@ -1009,6 +1009,19 @@ export function checkProvenance(ctx: CheckContext): Issue[] {
         `.donors/ is absent (gitignored and reproducible from upstream.lock.yaml). ${donorRows.length} donor row${donorRows.length === 1 ? "" : "s"} went unverified: no row's path was checked against the tree its pin names, so a row citing a path the pin does not contain reads exactly like one that checks out. Clone the donors and re-run before treating this run as provenance evidence.`,
       ),
     );
+  } else if (donorsPresent) {
+    for (const donor of donors.values()) {
+      if (isDir(join(root, donor.path))) continue;
+      if (!donorRows.some((row) => parseDonorSource(row.source)?.donor === donor.id)) continue;
+      issues.push(
+        skipped(
+          "provenance.donors-unavailable",
+          donor.path,
+          "donor paths at pin",
+          `${donor.path} is not a clone, so rows citing ${donor.id} went unverified against pin ${donor.commit}. Clone the donors and re-run before treating this run as provenance evidence.`,
+        ),
+      );
+    }
   }
 
   for (const row of rows) {
