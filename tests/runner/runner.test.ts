@@ -15,7 +15,7 @@ import {
   watch,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
 
@@ -1388,6 +1388,72 @@ describe("runner guards", () => {
     writeFileSync(join(f.worker, "vendor", "lib.ts"), "export const v = 2;\n");
     writeFileSync(join(f.worker, "vendor", "extra.ts"), "export const extra = true;\n");
     expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict cleanliness does not honor worker core.worktree", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      const sub = join(worker, "vendor");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "lib.ts"), "export const v = 1;\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "nested");
+      git(worker, "add", "vendor");
+      git(worker, "commit", "-qm", "add gitlink");
+    });
+    const decoy = join(f.privateDir, "decoy-worktree");
+    cpSync(f.worker, decoy, { recursive: true });
+    const decoyRoot = realpathSync(decoy);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "core.worktree", decoyRoot]).exitCode).toBe(0);
+    expect(
+      Bun.spawnSync(["git", "-C", join(f.worker, "vendor"), "config", "core.worktree", join(decoyRoot, "vendor")])
+        .exitCode,
+    ).toBe(0);
+    writeFileSync(join(f.worker, "loose.txt"), "untracked in real worktree\n");
+    writeFileSync(join(f.worker, "vendor", "loose.ts"), "untracked in gitlink\n");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict merge-tree scratch is outside the worker root", async () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const log = join(f.privateDir, "scratch-seen.log");
+    const child = Bun.spawn(
+      [
+        "bash",
+        "-c",
+        `home=$1; gitdir=$2; log=$3
+         : > "$log"
+         while [ ! -f "$log.stop" ]; do
+           for d in "$home"/ak-merge-*; do
+             [ -d "$d" ] && printf 'home %s\\n' "$d" >> "$log"
+           done
+           for d in "$gitdir"/ak-merge-*; do
+             [ -d "$d" ] && printf 'worker %s\\n' "$d" >> "$log"
+           done
+         done`,
+        "bash",
+        f.privateDir,
+        join(f.worker, ".git"),
+        log,
+      ],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+    try {
+      await Bun.sleep(20);
+      expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+    } finally {
+      writeFileSync(`${log}.stop`, "");
+      child.kill();
+      await child.exited;
+    }
+    const lines = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean) : [];
+    expect(lines.some((line) => line.startsWith("home "))).toBe(true);
+    expect(lines.some((line) => line.startsWith("worker "))).toBe(false);
+    const workerRoot = realpathSync(f.worker);
+    for (const line of lines) {
+      if (!line.startsWith("home ")) continue;
+      expect(relative(workerRoot, line.slice(5)).startsWith("..")).toBe(true);
+    }
   });
 
   test("verdict merge-tree does not honor worker merge.default union", () => {
