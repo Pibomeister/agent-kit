@@ -41132,10 +41132,10 @@ function patchIdentity(context, project, baseRef, head) {
 function ciConfigDrift(context, project, oldBase, newBase) {
   if (oldBase === newBase)
     return false;
+  const converterGuard = ["--no-ext-diff", "--no-textconv"];
   const changed = runnerGit(context, project, [
     "diff",
-    "--no-ext-diff",
-    "--no-textconv",
+    ...converterGuard,
     "--no-renames",
     "--name-only",
     "-z",
@@ -41145,6 +41145,9 @@ function ciConfigDrift(context, project, oldBase, newBase) {
   ]);
   if (changed.code !== 0)
     throw new Error(`cannot compare CI configuration: ${changed.stderr}`);
+  const converters = runnerGit(context, project, ["diff", ...converterGuard, "--exit-code", oldBase, newBase, "--"]);
+  if (converters.code > 1)
+    throw new Error(`cannot compare CI configuration: ${converters.stderr}`);
   return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path.startsWith(".github/workflows/") || path.startsWith(".github/actions/") || path.startsWith(".circleci/") || path.startsWith(".buildkite/") || [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"].includes(path));
 }
 function mergeTreeClean(context, project, baseRef, head) {
