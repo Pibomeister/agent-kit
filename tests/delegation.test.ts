@@ -392,6 +392,68 @@ test("ak delegation --stage merge prints the merge record for a changed shared s
   });
 });
 
+function sharedSurfaceRepo(): { root: string; git: (args: string[]) => string; merge: (base: string) => unknown } {
+  const root = makeTree({});
+  const git = (args: string[]) => gitIn(root, args);
+  git(["init", "-b", "main", "."]);
+  git(["config", "user.email", "t@example.invalid"]);
+  git(["config", "user.name", "T"]);
+  const project = {
+    ...validProject,
+    guidance: {
+      ...validProject.guidance,
+      delegation: {
+        ...validProject.guidance.delegation,
+        shared_surfaces: [{ path: "src/shared/**", class: "red", reason: "Every feature imports the shared helpers." }],
+      },
+    },
+  };
+  writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
+  writeFileSync(join(root, "project.json"), JSON.stringify(project));
+  mkdirSync(join(root, "src", "shared"), { recursive: true });
+  writeFileSync(join(root, "src", "shared", "util.ts"), "export const shared = 1;\nexport const other = 2;\n");
+  git(["add", "."]);
+  git(["commit", "-m", "base"]);
+  const merge = (base: string) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = runCli(
+      ["delegation", "ticket.json", "--project", "project.json", "--stage", "merge", "--base", base],
+      {
+        cwd: root,
+        io: { out: (line) => out.push(line), err: (line) => err.push(line) },
+      },
+    );
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    return JSON.parse(out.join("\n"));
+  };
+  return { root, git, merge };
+}
+
+test("ak delegation --stage merge counts a file renamed out of a shared surface", () => {
+  const { root, git, merge } = sharedSurfaceRepo();
+  const base = git(["rev-parse", "HEAD"]);
+  mkdirSync(join(root, "lib"), { recursive: true });
+  git(["mv", "src/shared/util.ts", "lib/util.ts"]);
+  git(["commit", "-m", "move"]);
+  expect(merge(base)).toMatchObject({ class: "red", floor: { shared_surfaces: ["src/shared/**"] } });
+});
+
+test("ak delegation --stage merge ignores shared-surface changes made only on the base branch", () => {
+  const { root, git, merge } = sharedSurfaceRepo();
+  git(["checkout", "-b", "feature"]);
+  writeFileSync(join(root, "notes.md"), "notes\n");
+  git(["add", "."]);
+  git(["commit", "-m", "feature"]);
+  git(["checkout", "main"]);
+  writeFileSync(join(root, "src", "shared", "util.ts"), "export const shared = 3;\n");
+  git(["commit", "-am", "main moves on"]);
+  git(["checkout", "feature"]);
+  const record = merge("main") as { floor: { shared_surfaces?: string[] } };
+  expect(record.floor.shared_surfaces ?? []).toEqual([]);
+});
+
 test("ak delegation names the block a record lacks", () => {
   const root = makeTree({});
   writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));

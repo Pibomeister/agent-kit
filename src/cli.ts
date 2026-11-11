@@ -330,9 +330,10 @@ function changedPaths(cwd: string, base: string, head: string): string[] {
     const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
     if (check.status !== 0) throw new Error(`cannot resolve revision ${revision}`);
   }
-  const diff = spawnSync("git", ["diff", "--name-only", base, head], { cwd, encoding: "utf8" });
-  if (diff.status !== 0) throw new Error(`git diff failed for ${base} ${head}: ${(diff.stderr ?? "").trim()}`);
-  return (diff.stdout ?? "").split("\n").filter((line) => line.length > 0);
+  const range = `${base}...${head}`;
+  const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
+  if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
+  return (diff.stdout ?? "").split("\0").filter((path) => path.length > 0);
 }
 
 function delegationCommand(parsed: Parsed, options: CliOptions): number {

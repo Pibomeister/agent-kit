@@ -137,7 +137,10 @@ ticket with no tests scores 0.
 | `verification` | Existing tests, the planned oracle and named verification path. | Receipts for tests, fail-before evidence, static checks and integration coverage. |
 
 A project declares its shared surfaces in the project record; where it declares none, the absence
-is recorded and no measurement is invented.
+is recorded and no measurement is invented. Each surface `path` is a glob matched against the whole
+repository-relative path, so a directory is declared as `src/core/**`, not `src/core`. The merge
+stage reads changed paths from the branch's own diff against the merge base, with renames split
+into the deleted source and the added destination.
 
 Hotspot overlap and prior-fix density are transparent evidence when a project can supply them. Their
 absence is recorded; a body does not invent either measurement.
