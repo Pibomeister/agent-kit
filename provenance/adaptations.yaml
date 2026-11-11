@@ -498,6 +498,9 @@ adaptations:
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The sample weights and cut points became explicitly advisory, project-calibrated delegation guidance.
   - path: schemas/project.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: review.behavior is the project policy Runner.start freezes onto an enabled run.
+  - path: schemas/project.schema.json
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L152-172
     rationale: Changed-line mutation and protected acceptance-test concepts became mutation commands and protected test paths in the project record.
   - path: schemas/project.schema.json
@@ -512,6 +515,9 @@ adaptations:
   - path: schemas/ticket.schema.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The report's evidenced factors and four-class rubric became the strict delegation record shape without adopting its sample cut points as catalog-wide gates.
+  - path: schemas/ticket.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Ticket verification.behavior names the frozen checks, property ids and property types.
   - path: schemas/ticket.schema.json
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
     rationale: The report's six readiness criteria and resolved-assumption procedure became per-criterion evidence and assumption records on tickets.
@@ -1398,17 +1404,26 @@ adaptations:
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L298-311
     rationale: The class join key for later outcome calibration became optional revision-bound gate evidence.
   - path: src/lifecycle/gate.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Open binds a snapshot for ordinary tickets and refuses enabled mandatory checks that only Runner.start may freeze.
+  - path: src/lifecycle/gate.ts
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
     rationale: The report's author-kind observation became model-free implementer authorship plus the host adapter on a gate record.
   - path: src/lifecycle/gate.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
     rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
+  - path: src/lifecycle/protected-start.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: The gate reuses Runner.start's charter checks so a weaker parent cannot skip ship-preflight.
   - path: src/review-isolation-probe/children.ts
     source: egm@403d8881d62022490637d740657b33f01e321ea8:tests/integration/test_claude.py
     rationale: Adapt native child-session discovery under the parent session's subagents directory and Agent-tool launch arguments (resume must be absent or false). Do not fall back to the parent session jsonl. Host spawn arguments are evidence; self-authored resume and fork fields are not.
   - path: src/review-isolation-probe/children.ts
     source: egm@403d8881d62022490637d740657b33f01e321ea8:tests/integration/test_codex.py
     rationale: Adapt child-thread joining from SubAgentActivity started agent_thread_id and spawn_agent fork_context/fork_turns inspection. Exclude the parent thread.started id. File reads remain CommandExecution, not a Read tool.
+  - path: src/runner/core.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Runner.start freezes mandatory behavior checks from the trusted start revision; lifecycle open refuses.
   - path: src/semantic-lint/client.ts
     source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/jev.ts
     rationale: Adapt the batched systemone wire contract and injectable transport. Replace environment credentials, aliases, pacing and broad retry loops with a pinned optional command child, private attempt receipts, cancellation, short deadlines and one retry.

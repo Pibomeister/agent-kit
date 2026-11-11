@@ -159,15 +159,40 @@ function spawnRunnerCli(
   };
 }
 
+async function reapLive(signal: NodeJS.Signals) {
+  for (const child of liveChildren) {
+    try {
+      child.kill(signal);
+    } catch {
+      // already gone
+    }
+  }
+  const waited = [...liveChildren].map((child) =>
+    Promise.race([
+      child.exited,
+      Bun.sleep(2_000).then(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // already gone
+        }
+        return child.exited;
+      }),
+    ]),
+  );
+  await Promise.allSettled(waited);
+  liveChildren.clear();
+}
+
 afterEach(async () => {
   for (const child of runnerCallChildren) child.kill("SIGKILL");
   await Promise.allSettled([...runnerCallChildren].map((child) => child.exited));
   runnerCallChildren.clear();
+  // SIGTERM so `ak runner serve` can killGroup its detached seats; SIGKILL skips that handler.
+  await reapLive("SIGTERM");
 });
 afterAll(async () => {
-  for (const child of liveChildren) child.kill("SIGKILL");
-  await Promise.allSettled([...liveChildren].map((child) => child.exited));
-  liveChildren.clear();
+  await reapLive("SIGTERM");
 });
 
 const transcript: string[] = [
@@ -375,6 +400,107 @@ function standing(f: ReturnType<typeof fixture>): StandingGrant {
     controller: "firstmate",
     run_id: "toy-run",
   };
+}
+
+const TOY_BINDING = "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n";
+const OTHER_BINDING = "backend: local-git\nproject: other\nlocator:\n  knowledgebase: other-kb\n";
+
+function enabledToyTicket(parsed: JsonObject): JsonObject {
+  const HASH = `sha256:${"a".repeat(64)}`;
+  return {
+    ...parsed,
+    acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+    verification: [
+      {
+        id: "project-check",
+        check: "Run the project check.",
+        kind: "command",
+        supports: ["AC-1"],
+        behavior: {
+          evidence_layer: "implementation",
+          property_ids: ["every-configured-directory-is-read"],
+          property_types: { "every-configured-directory-is-read": "safety" },
+          contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+        },
+      },
+    ],
+  };
+}
+
+function publishToyKb(ticket: JsonObject, mode: "off" | "shadow" | "on") {
+  const scratch = processScratch("ak-bv-runner-kb-");
+  const kb = join(scratch, "kb");
+  mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+  Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+  const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+  if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+  const project: JsonObject = parsedProject;
+  const identity = asJsonObject(project.identity) ? project.identity : {};
+  project.identity = { ...identity, id: "toy" };
+  project.review = { behavior: mode };
+  const projectHash = artifactHash(project);
+  const ticketHash = artifactHash(ticket);
+  writeFileSync(
+    join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+    `${JSON.stringify({
+      record: {
+        ref: "run:bootstrap/project/toy",
+        content_hash: projectHash,
+        idempotency_key: projectHash,
+        links: [],
+      },
+      artifact: project,
+    })}\n${JSON.stringify({
+      record: {
+        ref: "run:bootstrap/ticket/toy-ticket",
+        content_hash: ticketHash,
+        idempotency_key: ticketHash,
+        links: [],
+      },
+      artifact: ticket,
+    })}\n`,
+  );
+  Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
+  Bun.spawnSync([
+    "git",
+    "-C",
+    kb,
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@example.invalid",
+    "commit",
+    "-qm",
+    "project-and-ticket",
+  ]);
+  const registry = join(scratch, "registry.json");
+  writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+  return { registry, kb };
+}
+
+function retargetCharterTicket(f: ReturnType<typeof fixture>, ticket: JsonObject) {
+  writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+  f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+  f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+  const approval = f.charter.approvals[0];
+  if (approval === undefined) throw new Error("toy charter approval missing");
+  approval.artifact_hash = f.charter.immutability.hash;
+  writeFileSync(f.path, JSON.stringify(f.charter));
+}
+
+function workerHead(worker: string): string {
+  return Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+}
+
+function withRegistry<T>(registry: string, body: () => T): T {
+  const previous = process.env.AK_KB_REGISTRY;
+  process.env.AK_KB_REGISTRY = registry;
+  try {
+    return body();
+  } finally {
+    if (previous === undefined) delete process.env.AK_KB_REGISTRY;
+    else process.env.AK_KB_REGISTRY = previous;
+  }
 }
 
 function withAuditCadence(f: ReturnType<typeof fixture>) {
@@ -588,7 +714,7 @@ describe("runner guards", () => {
         const pending = decision;
         const serverState = server.exitCode === null ? "was still running" : `exited ${server.exitCode}`;
         pending?.kill("SIGKILL");
-        server.kill("SIGKILL");
+        server.kill("SIGTERM");
         const [[decided], serverErr, decisionErr] = await Promise.all([
           Promise.allSettled(pending === undefined ? [] : [pending.exited]),
           new Response(server.stderr).text(),
@@ -680,7 +806,7 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").behavior?.binding_hash).toBe(started.behavior?.binding_hash);
   });
 
-  test("start freezes the approved ticket and resume plus the gate consume that snapshot", () => {
+  test("start freezes the approved ticket and resume consumes that snapshot", () => {
     const f = fixture();
     const HASH = `sha256:${"a".repeat(64)}`;
     const ticket = {
@@ -886,9 +1012,7 @@ describe("runner guards", () => {
       writeFileSync(runnerPath, `${JSON.stringify(runnerDoc, null, 2)}\n`);
       const checked = lifecycle("check", "--dir", evidence, "--run", "toy-run");
       expect(checked.code).toBe(1);
-      expect(checked.err).toMatch(
-        /protected runner creation record|new enabled run|no complete behavior policy snapshot/,
-      );
+      expect(checked.err).toContain("no protected runner creation record");
       expect(checked.err).not.toContain("legacy");
     } finally {
       if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
@@ -1165,7 +1289,7 @@ describe("runner guards", () => {
       });
       expect(opened.ok).toBe(false);
       if (opened.ok) throw new Error("expected mandatory open refusal");
-      expect(opened.reason).toMatch(/only the protected runner can freeze them|cannot cancel those checks/);
+      expect(opened.reason).toContain("cannot cancel those checks");
       const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
       expect(resumed.behavior?.mode).toBe("on");
       expect(resumed.behavior?.required_checks).toHaveLength(1);
@@ -1362,6 +1486,100 @@ describe("runner guards", () => {
       if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
       else process.env.AK_KB_REGISTRY = previousRegistry;
     }
+  });
+
+  test("an uncommitted ak.kb.yaml retarget is ignored at start", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker commit that deletes or retargets ak.kb.yaml after start does not change resolution", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "retarget");
+    const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
+    expect(resumed.behavior?.mode).toBe("on");
+    expect(resumed.behavior?.binding_hash).toBe(started.behavior?.binding_hash);
+    git(f.worker, "rm", "-q", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "unbind");
+    const afterDelete = new Runner(f.privateDir, f.worker, root).status("toy-run");
+    expect(afterDelete.behavior?.mode).toBe("on");
+    expect(afterDelete.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a nested project binding is read from its own folder", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    const revision = workerHead(nested);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("Runner.load refuses a tampered behavior snapshot", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const revision = workerHead(f.worker);
+    withRegistry(planted.registry, () => f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)));
+    const path = join(f.privateDir, "toy-run.json");
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!asJsonObject(raw) || !asJsonObject(raw.behavior)) throw new Error("runner record has no behavior");
+    raw.behavior.binding_hash = `sha256:${"0".repeat(64)}`;
+    writeFileSync(path, JSON.stringify(raw));
+    expect(() => f.runner.status("toy-run")).toThrow("behavior policy snapshot is incomplete");
+    expect(() => f.runner.verify("toy-run", "e1")).toThrow("behavior policy snapshot is incomplete");
   });
 
   test("a charter cannot request unattended decisions without event-delivery authority", () => {

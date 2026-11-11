@@ -686,7 +686,7 @@ export class Runner {
       delegates: {},
       procedure: this.governingProcedure(),
       open_escalation: null,
-      behavior: this.bindBehavior(id, charter, hash, createdAt),
+      behavior: this.bindBehavior(id, charter, hash, createdAt, revision),
     };
     this.save(run);
     this.persistBehaviorEvidence(run);
@@ -695,7 +695,7 @@ export class Runner {
 
   private persistBehaviorEvidence(run: Run): void {
     if (run.behavior === undefined) return;
-    const work = this.tryWorkTicket(run.charter);
+    const work = this.tryWorkTicket(run.charter, run.revision);
     if (work === undefined) return;
     const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
     if (ticketId === undefined) throw new Error("approved ticket is unnamed");
@@ -717,14 +717,14 @@ export class Runner {
     );
   }
 
-  private tryWorkTicket(charter: Charter) {
+  private tryWorkTicket(charter: Charter, revision: string) {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket") return undefined;
-    return this.loadTicket(charter);
+    return this.loadTicket(charter, revision);
   }
 
-  private loadTicket(charter: Charter) {
+  private loadTicket(charter: Charter, revision: string) {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket") throw new Error("run work source is not an approved ticket");
@@ -749,14 +749,14 @@ export class Runner {
         throw new Error("approved ticket does not match the charter work source");
       return { ticket: parsed, hash };
     }
-    return this.loadCommittedTicket(ticketId, expected);
+    return this.loadCommittedTicket(ticketId, expected, revision);
   }
 
-  private loadCommittedTicket(ticketId: string, expected: string | undefined) {
+  private loadCommittedTicket(ticketId: string, expected: string | undefined, revision: string) {
     const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot);
+    const loaded = loadKbBinding(projectRoot, revision);
     if (loaded.binding === null) return undefined;
-    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
     if (resolved.resolved === null || resolved.state !== "available")
       throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
     const looked =
@@ -773,9 +773,9 @@ export class Runner {
     return { ticket: looked.artifact, hash };
   }
 
-  private projectLookup(projectId: string) {
+  private projectLookup(projectId: string, revision?: string) {
     const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot);
+    const loaded = loadKbBinding(projectRoot, revision);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined) throw new Error(bindingError.message);
     if (loaded.binding === null) {
@@ -784,7 +784,7 @@ export class Runner {
       const first = loaded.issues[0];
       throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
     }
-    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
     if (resolved.resolved === null || resolved.state !== "available") return { lookup: "unavailable" as const };
     const published = lookupPublishedProject(resolved.resolved, projectId);
     if (published.status === "unavailable") return { lookup: "unavailable" as const };
@@ -796,9 +796,9 @@ export class Runner {
     };
   }
 
-  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string) {
-    const work = this.tryWorkTicket(charter);
-    const looked = this.projectLookup(charter.project.id);
+  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string, revision: string) {
+    const work = this.tryWorkTicket(charter, revision);
+    const looked = this.projectLookup(charter.project.id, revision);
     const raw: unknown = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
     let ticketResolution: "unresolved" | undefined;

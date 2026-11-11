@@ -109,6 +109,7 @@ import {
   type JsonObject,
   type ProjectLookup,
 } from "./behavior-policy.ts";
+import { charterAllowsProtectedStart } from "./protected-start.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
 
@@ -567,13 +568,7 @@ function charterWorkHash(charter: JsonObject): string | undefined {
 }
 
 function humanBoundHash(charter: JsonObject, hash: string): boolean {
-  const approvals = Array.isArray(charter.approvals) ? charter.approvals : [];
-  return approvals.some((row) => {
-    const approval = object(row);
-    if (approval === undefined) return false;
-    const who = nonempty(approval.role) ? approval.role : nonempty(approval.by) ? approval.by : undefined;
-    return who === "human" && approval.artifact_hash === hash;
-  });
+  return charterAllowsProtectedStart(charter, hash);
 }
 
 /** Charter digest: `immutability.hash` blanked, then `artifactHash` (which strips `approvals`). */
@@ -620,7 +615,11 @@ function loadProtectedParentRun(runId: string, evidenceDir: string, project?: st
 function validatedBoundParent(run: RunRecord | undefined, evidenceDir: string, project?: string): boolean {
   if (run?.binding_run_id === undefined || run.binding_evidence_location === undefined) return false;
   if (resolve(run.binding_evidence_location) !== resolve(evidenceDir)) return false;
-  return loadProtectedParentRun(run.binding_run_id, evidenceDir, project) !== undefined;
+  const parent = loadProtectedParentRun(run.binding_run_id, evidenceDir, project);
+  if (parent === undefined) return false;
+  if (parent.ticket_hash !== run.ticket.hash) return false;
+  if (!asJsonObject(run)) return false;
+  return classifyFromParent(run, run, parent, creationTicketForRun(evidenceDir, run)).kind === "bound";
 }
 
 function runnerOwnedEvidence(evidenceDir: string): boolean {
@@ -3256,9 +3255,10 @@ export function main(
     // close, merge or publish) until the pre-ship gates hold for the exact head. Runs with no
     // task-bound record, and opened runs whose ticket declares no criteria or named verification,
     // keep the routes they had.
-    // A Firstmate-bound run whose binding_run_id names a parent that passes the same protected
-    // runner validation as open is audited by `firstmate status`; that audit, not this record,
-    // is its merge boundary. A forged binding_run_id is not a parent, so the re-check still runs.
+    // A Firstmate-bound run whose binding_run_id names a parent that passes Runner.start's
+    // charter checks, and whose child classifies as bound against that parent with a matching
+    // ticket hash, is audited by `firstmate status`; that audit, not this record, is its merge
+    // boundary. A forged or weaker parent is not a skip, so the re-check still runs.
     if (
       policy === undefined &&
       gate === "ship-preflight" &&

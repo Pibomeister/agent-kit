@@ -1821,6 +1821,45 @@ function coldRead(extra: Doc = {}): Doc {
   });
 }
 
+describe("ticket.behavior-property-id-has-type", () => {
+  test("a property_id without a property_types entry is an error", () => {
+    const doc = ticket({
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+          },
+        },
+      ],
+    });
+    expect(rulesOf(run(doc))).toContain("ticket.behavior-property-id-has-type");
+  });
+
+  test("a matching property_types entry is not that error", () => {
+    const doc = ticket({
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+          },
+        },
+      ],
+    });
+    expect(rulesOf(run(doc))).not.toContain("ticket.behavior-property-id-has-type");
+  });
+});
+
 describe("ticket.cold-read-ref-required-when-on", () => {
   test("a missing review object equals off and does not require cold_read_ref", () => {
     expect(rulesOf(run(ticket(), [project()]))).not.toContain(RULE_COLD_REF);

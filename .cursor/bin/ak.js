@@ -16990,7 +16990,7 @@ var init_project_schema = __esm(() => {
         }
       },
       review: {
-        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
+        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
         type: "object",
         additionalProperties: false,
         properties: {
@@ -17132,7 +17132,8 @@ var init_ticket_schema = __esm(() => {
                   type: "array",
                   minItems: 1,
                   uniqueItems: true,
-                  items: { $ref: "common.schema.json#/$defs/kebab_id" }
+                  items: { $ref: "common.schema.json#/$defs/kebab_id" },
+                  "x-validator-rule": "ticket.behavior-property-id-has-type"
                 },
                 property_types: {
                   type: "object",
@@ -18191,7 +18192,7 @@ var init_behavior_contract_schema = __esm(() => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://agent-kit.local/schemas/behavior-contract.schema.json",
     title: "Behavior contract",
-    description: "Intent-backed behavior for one selected subsystem. Requirements carry a stable property id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
+    description: "Intent-backed behavior for one selected subsystem. Requirements carry a stable requirement id, a plain-language statement, acceptance-criterion links and intent sources, classified accepted, proposed or unresolved. Properties cite those requirement ids. Observed implementation notes are a separate list and cannot become accepted intent. The contract view is a model of intended behavior; rendering it does not prove correspondence to code or a checker result. GS-017 / BV-T01.",
     type: "object",
     required: ["identity", "requirements", "structure", "properties", "assumptions", "correspondence", "limits"],
     properties: {
@@ -24007,12 +24008,16 @@ import { dirname as dirname3, isAbsolute as isAbsolute3, join as join7, relative
 function describe2(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
-function committedBindingText(projectRoot) {
-  const shown = git2(projectRoot, ["show", `HEAD:${BINDING_FILE2}`]);
+function committedBindingText(projectRoot, revision) {
+  const rev = revision !== undefined && revision !== "" ? revision : "HEAD";
+  const prefix = git2(projectRoot, ["rev-parse", "--show-prefix"]);
+  if (prefix.status !== 0)
+    return null;
+  const shown = git2(projectRoot, ["show", `${rev}:${prefix.stdout.trim()}${BINDING_FILE2}`]);
   return shown.status === 0 ? shown.stdout : null;
 }
-function loadKbBinding(projectRoot) {
-  const text = committedBindingText(projectRoot) ?? readTextIfPresent(join7(projectRoot, BINDING_FILE2));
+function loadKbBinding(projectRoot, revision) {
+  const text = committedBindingText(projectRoot, revision) ?? readTextIfPresent(join7(projectRoot, BINDING_FILE2));
   if (text === null) {
     return {
       binding: null,
@@ -24142,8 +24147,8 @@ function registerKnowledgebase(file, id, path, cwd) {
 `);
   return [];
 }
-function resolveKnowledgebase(projectRoot, registryFile) {
-  const loaded = loadKbBinding(projectRoot);
+function resolveKnowledgebase(projectRoot, registryFile, revision) {
+  const loaded = loadKbBinding(projectRoot, revision);
   if (loaded.binding === null) {
     const unbound = loaded.issues.every((issue) => issue.rule === "kb.unbound");
     return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
@@ -42642,7 +42647,7 @@ class Runner {
       delegates: {},
       procedure: this.governingProcedure(),
       open_escalation: null,
-      behavior: this.bindBehavior(id, charter, hash, createdAt)
+      behavior: this.bindBehavior(id, charter, hash, createdAt, revision)
     };
     this.save(run2);
     this.persistBehaviorEvidence(run2);
@@ -42651,7 +42656,7 @@ class Runner {
   persistBehaviorEvidence(run2) {
     if (run2.behavior === undefined)
       return;
-    const work = this.tryWorkTicket(run2.charter);
+    const work = this.tryWorkTicket(run2.charter, run2.revision);
     if (work === undefined)
       return;
     const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
@@ -42668,15 +42673,15 @@ class Runner {
       behavior: run2.behavior
     }, ticketBytes);
   }
-  tryWorkTicket(charter) {
+  tryWorkTicket(charter, revision) {
     if (!asJsonObject(charter))
       throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket")
       return;
-    return this.loadTicket(charter);
+    return this.loadTicket(charter, revision);
   }
-  loadTicket(charter) {
+  loadTicket(charter, revision) {
     if (!asJsonObject(charter))
       throw new Error("charter is not an object");
     const source = charter.work_source;
@@ -42705,14 +42710,14 @@ class Runner {
         throw new Error("approved ticket does not match the charter work source");
       return { ticket: parsed, hash };
     }
-    return this.loadCommittedTicket(ticketId, expected);
+    return this.loadCommittedTicket(ticketId, expected, revision);
   }
-  loadCommittedTicket(ticketId, expected) {
+  loadCommittedTicket(ticketId, expected, revision) {
     const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot);
+    const loaded = loadKbBinding(projectRoot, revision);
     if (loaded.binding === null)
       return;
-    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
     if (resolved.resolved === null || resolved.state !== "available")
       throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
     const looked = expected === undefined ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket" }) : lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", hash: expected });
@@ -42727,9 +42732,9 @@ class Runner {
       throw new Error("approved ticket does not match the charter work source");
     return { ticket: looked.artifact, hash };
   }
-  projectLookup(projectId) {
+  projectLookup(projectId, revision) {
     const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot);
+    const loaded = loadKbBinding(projectRoot, revision);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined)
       throw new Error(bindingError.message);
@@ -42740,7 +42745,7 @@ class Runner {
       const first = loaded.issues[0];
       throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
     }
-    const resolved = resolveKnowledgebase(projectRoot, registryPath());
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
     if (resolved.resolved === null || resolved.state !== "available")
       return { lookup: "unavailable" };
     const published = lookupPublishedProject(resolved.resolved, projectId);
@@ -42754,9 +42759,9 @@ class Runner {
       projectHash: projectHashOf(published.project)
     };
   }
-  bindBehavior(id, charter, charterHash, createdAt) {
-    const work = this.tryWorkTicket(charter);
-    const looked = this.projectLookup(charter.project.id);
+  bindBehavior(id, charter, charterHash, createdAt, revision) {
+    const work = this.tryWorkTicket(charter, revision);
+    const looked = this.projectLookup(charter.project.id, revision);
     const raw = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
     let ticketResolution;

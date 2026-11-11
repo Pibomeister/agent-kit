@@ -17,12 +17,7 @@ import { error, type Issue } from "./types.ts";
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { asJsonObject } from "../lifecycle/behavior-policy.ts";
 import { loadArtifacts } from "./artifacts.ts";
-import {
-  behaviorContractIntentProblems,
-  RULE_ACCEPTED_INTENT,
-  RULE_PROPOSED_INTENT,
-  type IntentLookup,
-} from "./behavior-contract-intent.ts";
+import { behaviorContractIntentProblems, RULE_PROPOSED_INTENT, type IntentLookup } from "./behavior-contract-intent.ts";
 
 const REMOTE_SIDE_EFFECTS = new Set([
   "remote-push",
@@ -1459,7 +1454,27 @@ function verificationRules(rc: RuleContext): void {
 
 // --------------------------------------------------------------------- ticket
 
+function ticketBehaviorPropertyTypes(rc: RuleContext): void {
+  const RULE = "ticket.behavior-property-id-has-type";
+  for (const [i, row] of arr(rc.doc["verification"]).entries()) {
+    const check = obj(row);
+    if (check === null) continue;
+    const behavior = obj(check["behavior"]);
+    if (behavior === null) continue;
+    const types = obj(behavior["property_types"]) ?? {};
+    const checkId = str(check["id"]) ?? `verification[${i}]`;
+    for (const value of arr(behavior["property_ids"])) {
+      const id = str(value);
+      if (id === null) continue;
+      const kind = str(types[id]);
+      if (kind !== "safety" && kind !== "liveness")
+        fail(rc, RULE, `${checkId} property ${id} has no property_types entry`);
+    }
+  }
+}
+
 function ticketRules(rc: RuleContext): void {
+  ticketBehaviorPropertyTypes(rc);
   const RULE = "ticket.cold-read-ref-required-when-on";
   const { doc } = rc;
   if (str(doc["type"]) !== "implementation") return;
@@ -1593,11 +1608,9 @@ function indexIntentLookup(index: DocIndex): IntentLookup {
 function behaviorContractRules(rc: RuleContext): void {
   if (!asJsonObject(rc.doc)) return;
   for (const problem of behaviorContractIntentProblems(rc.doc, indexIntentLookup(rc.index))) {
-    if (problem.startsWith(`${RULE_ACCEPTED_INTENT}: `))
-      fail(rc, RULE_ACCEPTED_INTENT, problem.slice(RULE_ACCEPTED_INTENT.length + 2));
-    else if (problem.startsWith(`${RULE_PROPOSED_INTENT}: `))
-      fail(rc, RULE_PROPOSED_INTENT, problem.slice(RULE_PROPOSED_INTENT.length + 2));
-    else fail(rc, RULE_PROPOSED_INTENT, problem);
+    const sep = problem.indexOf(": ");
+    if (sep === -1) fail(rc, RULE_PROPOSED_INTENT, problem);
+    else fail(rc, problem.slice(0, sep), problem.slice(sep + 2));
   }
 }
 

@@ -907,7 +907,7 @@ describe("ak lifecycle check, standalone", () => {
     );
     const shipped = ak(dir, "record", "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
-    expect(shipped.err).toMatch(/refused:/);
+    expect(shipped.err).toContain("has no current evidence");
     expect(readRecords(evidence, run, "ship-preflight")).toEqual([]);
   });
 

@@ -126,21 +126,30 @@ function describe(validate: ValidateFunction): string {
     .join("; ");
 }
 
-/** The committed `HEAD:ak.kb.yaml`. Null when git cannot show that path. */
-function committedBindingText(projectRoot: string): string | null {
-  const shown = git(projectRoot, ["show", `HEAD:${BINDING_FILE}`]);
+/**
+ * The committed binding at `revision` (or HEAD), relative to `projectRoot`.
+ * Uses `git rev-parse --show-prefix` so a nested folder is not read as the
+ * repo-root `ak.kb.yaml`. Null when git cannot show that path.
+ */
+function committedBindingText(projectRoot: string, revision?: string): string | null {
+  const rev = revision !== undefined && revision !== "" ? revision : "HEAD";
+  const prefix = git(projectRoot, ["rev-parse", "--show-prefix"]);
+  if (prefix.status !== 0) return null;
+  const shown = git(projectRoot, ["show", `${rev}:${prefix.stdout.trim()}${BINDING_FILE}`]);
   return shown.status === 0 ? shown.stdout : null;
 }
 
 /**
- * Parse and shape-check the folder's binding. A committed `HEAD:ak.kb.yaml`
- * wins over uncommitted working-file edits. A committed binding on the worker
- * HEAD still steers lookup. With no committed binding, the working file is
- * used. A confirmed miss of both is a note, not an error: an unbound folder is
- * the unconfigured case the contract defines, not a malformed one.
+ * Parse and shape-check the folder's binding. A committed binding at the given
+ * revision (HEAD when omitted) wins over the working file. Runner.start passes
+ * the start revision so a later worker commit cannot retarget lookup. A nested
+ * folder is read from that folder, not from the git top level. Fall back to the
+ * working file only when no committed binding exists at that revision. A
+ * confirmed miss of both is a note, not an error: an unbound folder is the
+ * unconfigured case the contract defines, not a malformed one.
  */
-export function loadKbBinding(projectRoot: string): KbBindingResult {
-  const text = committedBindingText(projectRoot) ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
+export function loadKbBinding(projectRoot: string, revision?: string): KbBindingResult {
+  const text = committedBindingText(projectRoot, revision) ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
   if (text === null) {
     return {
       binding: null,
@@ -326,8 +335,8 @@ export function registerKnowledgebase(file: string, id: string, path: string, cw
  * Resolve the binding of the project at `projectRoot` to a knowledgebase this
  * machine can reach, or say which of the two ways it cannot.
  */
-export function resolveKnowledgebase(projectRoot: string, registryFile: string): KbResolution {
-  const loaded = loadKbBinding(projectRoot);
+export function resolveKnowledgebase(projectRoot: string, registryFile: string, revision?: string): KbResolution {
+  const loaded = loadKbBinding(projectRoot, revision);
   if (loaded.binding === null) {
     const unbound = loaded.issues.every((issue) => issue.rule === "kb.unbound");
     return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
