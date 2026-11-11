@@ -1467,6 +1467,19 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(unavailable.reason).toBe(
       "the authoritative project record is unavailable; missing project cannot turn this run off",
     );
+    const plain = plainTicket(dir, "bind-unavailable-plain");
+    const unavailablePlain = bindBehaviorPolicy({
+      runId: "r1-plain",
+      ticket: plain,
+      ticketHash: artifactHash(plain),
+      lookup: "unavailable",
+      capturedAt,
+    });
+    expect(unavailablePlain.ok).toBe(false);
+    if (unavailablePlain.ok) throw new Error("expected unavailable refusal for a ticket with no behavior checks");
+    expect(unavailablePlain.reason).toBe(
+      "the authoritative project record is unavailable; missing project cannot turn this run off",
+    );
     const unbound = bindBehaviorPolicy({
       runId: "r2",
       ticket,
