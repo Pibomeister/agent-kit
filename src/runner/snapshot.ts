@@ -1,8 +1,18 @@
 /** Raw runner snapshots avoid worker-configured Git hooks, filters and text conversion. */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
-import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
+import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
@@ -34,6 +44,8 @@ function failedGit(stderr: string): GitResult {
 }
 
 function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
+  // Residue: a partial or blobless clone may still promisor-fetch through worker
+  // core.sshCommand / credential.helper in the repository config. No refusal.
   return {
     PATH: context.path,
     HOME: context.home,
@@ -56,6 +68,10 @@ function isolationArgs(project: string): string[] {
     "core.hooksPath=/dev/null",
     "-c",
     "core.excludesFile=/dev/null",
+    "-c",
+    "merge.default=",
+    "-c",
+    "merge.renormalize=false",
   ];
 }
 
@@ -92,12 +108,13 @@ export function gitProcess(
   args: readonly string[],
   timeoutMs = 10_000,
   input?: Uint8Array,
+  extraEnv?: NodeJS.ProcessEnv,
 ): GitResult {
   const empty = emptyTreeId(context, project, timeoutMs);
   if (empty.code !== 0) return empty;
   const proc = spawnSync(context.binary, [...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
     cwd: project,
-    env: gitEnv(context),
+    env: { ...gitEnv(context), ...extraEnv },
     input,
     maxBuffer: 1 << 30,
     timeout: timeoutMs,
@@ -187,6 +204,7 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
     "diff",
     "--no-ext-diff",
     "--no-textconv",
+    "--no-renames",
     "--name-only",
     "-z",
     oldBase,
@@ -208,20 +226,56 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
 }
 
 export function mergeTreeClean(context: RunnerGitContext, project: string, baseRef: string, head: string): boolean {
-  const result = runnerGit(context, project, ["merge-tree", "--write-tree", baseRef, head]);
-  if (result.code > 1) throw new Error(`cannot inspect merge tree: ${result.stderr}`);
-  return result.code === 0;
+  const left = resolvedRevision(context, project, baseRef);
+  const right = resolvedRevision(context, project, head);
+  const gitDir = runnerGit(context, project, ["rev-parse", "--absolute-git-dir"]);
+  if (gitDir.code !== 0) throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
+  const objectDir = realpathSync(join(gitDir.text, "objects"));
+  const scratch = mkdtempSync(join(gitDir.text, "ak-merge-"));
+  try {
+    const init = spawnSync(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q"], {
+      cwd: scratch,
+      env: gitEnv(context),
+      timeout: 10_000,
+      killSignal: "SIGKILL",
+    });
+    if (init.error !== undefined) {
+      if ("code" in init.error && init.error.code === "ETIMEDOUT")
+        throw new Error("cannot inspect merge tree: runner git timed out after 10 seconds");
+      throw new Error(`cannot inspect merge tree: ${init.error.message}`);
+    }
+    if ((init.status ?? -1) !== 0)
+      throw new Error(`cannot inspect merge tree: ${(init.stderr ?? "").toString().trim() || "init failed"}`);
+    const result = gitProcess(context, project, ["merge-tree", "--write-tree", left, right], 10_000, undefined, {
+      GIT_DIR: scratch,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir,
+    });
+    if (result.code > 1) throw new Error(`cannot inspect merge tree: ${result.stderr}`);
+    return result.code === 0;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 function gitBlobId(bytes: Uint8Array, blob: string): string {
+  // In-process: git 2.43 hash-object --stdin-paths has no -z and follows symlinks.
   const algorithm = blob.length === 64 ? "sha256" : "sha1";
   return createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+}
+
+function escapesWorktree(path: string, rel: string): boolean {
+  // `..foo` is a filename inside the worktree; only `..` and `../` escape.
+  return path === "" || isAbsolute(path) || rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 }
 
 /**
  * Worktree bytes must equal the committed blob bytes. Autocrlf or eol=crlf that
  * rewrites the checkout is dirty. There is no conversion path. Nested gitlinks
  * are inspected the same way after their HEAD matches the gitlink blob.
+ * Residues, documented with no behavior change: CRLF/eol/ident/LFS stay
+ * fail-closed on raw bytes; ENOENT, sparse-checkout and skip-worktree stay
+ * fail-closed (stricter than porcelain); ignored untracked files follow
+ * ls-files --exclude-standard, matching main.
  */
 export function cleanCommittedTree(context: RunnerGitContext, project: string): boolean {
   return treeIsClean(context, project, new Set());
@@ -255,7 +309,7 @@ function treeIsClean(context: RunnerGitContext, project: string, seen: Set<strin
     if (stage !== "0") return false;
     const at = resolve(project, path);
     const rel = relative(root, at);
-    if (isAbsolute(path) || rel === "" || rel.startsWith("..") || isAbsolute(rel)) return false;
+    if (escapesWorktree(path, rel)) return false;
     try {
       const stat = lstatSync(at);
       if (mode === "160000") {
@@ -270,6 +324,7 @@ function treeIsClean(context: RunnerGitContext, project: string, seen: Set<strin
         if (!stat.isSymbolicLink()) return false;
         bytes = Buffer.from(readlinkSync(at));
       } else if (mode === "100644" || mode === "100755") {
+        // Any of owner/group/other, not the owner bit alone.
         const executable = (stat.mode & 0o111) !== 0;
         if (!stat.isFile() || executable !== (mode === "100755")) return false;
         bytes = readFileSync(at);
@@ -359,8 +414,7 @@ function treeHash(
   for (const path of [...paths.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve(project, path);
     const rel = relative(root, at);
-    if (path === "" || isAbsolute(path) || rel === "" || rel.startsWith("..") || isAbsolute(rel))
-      return "runner index contains a path outside the worker root";
+    if (escapesWorktree(path, rel)) return "runner index contains a path outside the worker root";
     digest.update(JSON.stringify([path, paths.get(path)?.toSorted(), rawFile(context, project, path)]));
     digest.update("\n");
   }
