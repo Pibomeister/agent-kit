@@ -11,7 +11,7 @@ import { isAbsolute, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { attach, formatAttachResult } from "./attach/index.ts";
-import { scoreDelegationFiles } from "./delegation.ts";
+import { scoreDelegationFiles, scoreMergeDelegationFiles } from "./delegation.ts";
 import { runFirstmate } from "./firstmate/cli.ts";
 import { readGuardStdin, runGuard } from "./guard/cli.ts";
 import { main as runLifecycle } from "./lifecycle/gate.ts";
@@ -58,7 +58,7 @@ const USAGE = [
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
   "  ak build [--check] [--profile <id>|all] [--project <record>] [--host <id>] [--out <dir>]  emit dist/<host> for all hosts, or one host to --out (relative --out is from the current directory)",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
-  "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
+  "  ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]]  compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
   "  ak firstmate <subcommand> …                stock Firstmate tools; patched binding commands deprecated",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
@@ -100,7 +100,7 @@ const COMMANDS = [
   "council",
 ];
 
-const VALUE_FLAGS = new Set(["profile", "host", "project", "out"]);
+const VALUE_FLAGS = new Set(["profile", "host", "project", "out", "stage", "base", "head", "evidence"]);
 
 function parse(argv: readonly string[]): Parsed {
   const positional: string[] = [];
@@ -325,6 +325,16 @@ function attachCommand(parsed: Parsed, options: CliOptions): number {
   return 0;
 }
 
+function changedPaths(cwd: string, base: string, head: string): string[] {
+  for (const revision of [base, head]) {
+    const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+    if (check.status !== 0) throw new Error(`cannot resolve revision ${revision}`);
+  }
+  const diff = spawnSync("git", ["diff", "--name-only", base, head], { cwd, encoding: "utf8" });
+  if (diff.status !== 0) throw new Error(`git diff failed for ${base} ${head}: ${(diff.stderr ?? "").trim()}`);
+  return (diff.stdout ?? "").split("\n").filter((line) => line.length > 0);
+}
+
 function delegationCommand(parsed: Parsed, options: CliOptions): number {
   const ticket = parsed.positional[0];
   const project = parsed.flags.get("project");
@@ -333,8 +343,27 @@ function delegationCommand(parsed: Parsed, options: CliOptions): number {
     for (const line of USAGE) options.io.err(line);
     return 2;
   }
+  const stage = parsed.values.get("stage");
+  const base = parsed.values.get("base");
+  const head = parsed.values.get("head") ?? "HEAD";
+  const evidence = parsed.values.get("evidence");
+  if (stage !== undefined && stage !== "ticket" && stage !== "merge") {
+    options.io.err("ak delegation: --stage must be ticket or merge");
+    return 1;
+  }
+  if (stage !== "merge" && (base !== undefined || parsed.values.has("head") || evidence !== undefined)) {
+    options.io.err("ak delegation: --base, --head and --evidence require --stage merge");
+    return 1;
+  }
+  if (stage === "merge" && base === undefined) {
+    options.io.err("ak delegation: --stage merge requires --base <rev>");
+    return 1;
+  }
   try {
-    const record = scoreDelegationFiles(ticket, project, options.cwd);
+    const record =
+      stage === "merge" && base !== undefined
+        ? scoreMergeDelegationFiles(ticket, project, changedPaths(options.cwd, base, head), evidence, options.cwd)
+        : scoreDelegationFiles(ticket, project, options.cwd);
     options.io.out(JSON.stringify(record, null, 2));
     return 0;
   } catch (cause) {

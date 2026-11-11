@@ -16759,7 +16759,21 @@ var init_project_schema = __esm(() => {
                   red: { type: "number", minimum: 0 }
                 }
               },
-              enforcement: { const: "advisory" }
+              enforcement: { const: "advisory" },
+              shared_surfaces: {
+                description: "Paths many features depend on. Each declared path sets a floor the scorer adds when a record lists it; a floor at green is no floor, so green is not allowed.",
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["path", "class", "reason"],
+                  properties: {
+                    path: { $ref: "common.schema.json#/$defs/nonempty_string" },
+                    class: { enum: ["yellow-agent", "yellow-owner", "red"] },
+                    reason: { $ref: "common.schema.json#/$defs/nonempty_string" }
+                  }
+                }
+              }
             }
           },
           exceptions: {
@@ -17182,6 +17196,11 @@ var init_ticket_schema = __esm(() => {
                 type: "array",
                 uniqueItems: true,
                 items: { $ref: "common.schema.json#/$defs/sensitive_action" }
+              },
+              shared_surfaces: {
+                type: "array",
+                uniqueItems: true,
+                items: { $ref: "common.schema.json#/$defs/nonempty_string" }
               }
             }
           },
@@ -38207,8 +38226,15 @@ var CLASS_RANK = { green: 0, "yellow-agent": 1, "yellow-owner": 2, red: 3 };
 function highest(...classes) {
   return classes.reduce((left, right) => CLASS_RANK[right] > CLASS_RANK[left] ? right : left, "green");
 }
-function floorClass(floor) {
-  return highest(...floor.packs.map((pack) => PACK_FLOORS.get(pack) ?? "green"), ...floor.sensitive_actions.map((action) => ACTION_FLOORS.get(action) ?? "yellow-owner"));
+function floorClass(floor, declared) {
+  const surfaces = new Map((declared ?? []).map((surface) => [surface.path, surface.class]));
+  const shared = (floor.shared_surfaces ?? []).map((path) => {
+    const declaredClass = surfaces.get(path);
+    if (declaredClass === undefined)
+      throw new Error(`ticket names a shared surface the project record does not declare: ${path}`);
+    return declaredClass;
+  });
+  return highest(...floor.packs.map((pack) => PACK_FLOORS.get(pack) ?? "green"), ...floor.sensitive_actions.map((action) => ACTION_FLOORS.get(action) ?? "yellow-owner"), ...shared);
 }
 function scoreDelegation(ticket, project) {
   const guidance = project.guidance.delegation;
@@ -38225,7 +38251,7 @@ function scoreDelegation(ticket, project) {
   const { weights } = guidance;
   const total = Math.round((factors.reversibility.score * weights.reversibility + factors.size.score * weights.size + factors.complexity.score * weights.complexity + factors.spec.score * weights.spec + (3 - factors.verification.score) * weights.verification) * 1e9) / 1e9;
   const scored = total >= red ? "red" : total >= yellowOwner ? "yellow-owner" : total >= yellowAgent ? "yellow-agent" : "green";
-  const floor = floorClass(source.floor);
+  const floor = floorClass(source.floor, guidance.shared_surfaces);
   const fresh = highest(scored, floor);
   const lowering = source.lowered_by;
   if (lowering === null)
@@ -38235,28 +38261,37 @@ function scoreDelegation(ticket, project) {
   }
   return { ...source, class: highest(source.class, floor) };
 }
+function schemaDetail(errors2) {
+  return (errors2 ?? []).slice(0, 4).map((error2) => `${error2.instancePath || "(root)"} ${error2.message ?? "is invalid"}`).join("; ");
+}
 function readDocument(path, validate, label) {
   const text = readFileSync2(path, "utf8");
   const parsed = JSON.parse(text);
-  if (!validate(parsed)) {
-    const detail = (validate.errors ?? []).slice(0, 4).map((error2) => `${error2.instancePath || "(root)"} ${error2.message ?? "is invalid"}`).join("; ");
-    throw new Error(`${label} does not match its schema: ${detail}`);
-  }
+  if (!validate(parsed))
+    throw new Error(`${label} does not match its schema: ${schemaDetail(validate.errors)}`);
   return parsed;
 }
-function scoreDelegationFiles(ticketInput, projectInput, cwd = process.cwd()) {
+function makeValidation() {
+  const validation = new import__20203.default({ strict: false, allErrors: true, validateFormats: true });
+  import_ajv_formats2.default(validation);
+  validation.addSchema(common_schema_default);
+  validation.addSchema(verification_recipe_schema_default);
+  return validation;
+}
+function loadDocuments(ticketInput, projectInput, cwd) {
   const ticketPath = resolve(cwd, ticketInput);
   const projectPath = resolve(cwd, projectInput);
   if (!existsSync3(ticketPath))
     throw new Error(`ticket does not exist: ${ticketInput}`);
   if (!existsSync3(projectPath))
     throw new Error(`project record does not exist: ${projectInput}`);
-  const validation = new import__20203.default({ strict: false, allErrors: true, validateFormats: true });
-  import_ajv_formats2.default(validation);
-  validation.addSchema(common_schema_default);
-  validation.addSchema(verification_recipe_schema_default);
+  const validation = makeValidation();
   const ticket = readDocument(ticketPath, validation.compile(ticket_schema_default), "ticket");
   const project = readDocument(projectPath, validation.compile(project_schema_default), "project");
+  return { ticket, project };
+}
+function scoreDelegationFiles(ticketInput, projectInput, cwd = process.cwd()) {
+  const { ticket, project } = loadDocuments(ticketInput, projectInput, cwd);
   return scoreDelegation(ticket, project);
 }
 

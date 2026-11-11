@@ -29,6 +29,10 @@
  * covered by the surface lint in `graders.ts`, not by this file.
  */
 
+import { globToRegExp } from "../util/glob.ts";
+
+export { globToRegExp };
+
 /** One tool call as the host records it: the tool's name and its input object. */
 export interface ToolCall {
   readonly name: string;
@@ -73,29 +77,6 @@ export function callMatches(call: ToolCall, ref: ToolRef): boolean {
   if (call.name !== ref.tool) return false;
   if (ref.input_match !== undefined) return new RegExp(ref.input_match).test(inputText(call));
   return true;
-}
-
-/** The host's glob-to-RegExp conversion for `file_exists`. */
-export function globToRegExp(glob: string): RegExp {
-  const special = new Set(".+^${}()|[]\\");
-  let out = "^";
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob.charAt(i);
-    if (ch === "*") {
-      if (glob.charAt(i + 1) === "*") {
-        if (glob.charAt(i + 2) === "/") {
-          out += "(?:.*/)?";
-          i += 2;
-        } else {
-          out += ".*";
-          i += 1;
-        }
-      } else out += "[^/]*";
-    } else if (ch === "?") out += ".";
-    else if (special.has(ch)) out += `\\${ch}`;
-    else out += ch;
-  }
-  return new RegExp(`${out}$`);
 }
 
 /** The text a `regex` grader reads for its `target`, or null for a surface this evaluator does not model. */
