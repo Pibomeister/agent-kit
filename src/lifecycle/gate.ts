@@ -2846,9 +2846,7 @@ export function main(
     };
     if (policy !== undefined) {
       recordArgs.policy =
-        opened?.policy?.supervisor !== undefined && policy.supervisor === undefined
-          ? { ...policy, supervisor: opened.policy.supervisor }
-          : policy;
+        opened?.policy?.supervisor === undefined ? policy : { ...policy, supervisor: opened.policy.supervisor };
       recordArgs.command = command;
     }
     const r = recordGate(recordArgs);

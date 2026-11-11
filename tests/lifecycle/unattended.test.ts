@@ -848,6 +848,13 @@ describe("selection and start (command seam)", () => {
         supervisor: "firstmate",
       });
 
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "crew2" });
+    expect(
+      ak(cwd, "record", "--gate", "verify", "--receipt", receiptFile(cwd, run, ticketFile(cwd)), "--", ...ok).code,
+    ).toBe(0);
+    expect(recordsOf(cwd, run, "verify").map((record) => record.policy?.supervisor)).toEqual(["firstmate"]);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+
     const decisionCheck = ak(cwd, "check", "--json");
     expect(decisionCheck.code).toBe(0);
     expect(JSON.parse(decisionCheck.out)).toMatchObject({
