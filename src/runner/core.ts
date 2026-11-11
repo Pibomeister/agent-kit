@@ -646,11 +646,22 @@ export class Runner {
     const createdAt = new Date().toISOString();
     const gitFn = this.kbGit();
     const bindingRevision = this.bindingBaseRevision(charter, revision);
-    const work = this.tryWorkTicket(charter, bindingRevision ?? undefined, gitFn);
+    const ticketSource = asJsonObject(charter) && asJsonObject(charter.work_source) ? charter.work_source : undefined;
+    const ticketCharter = ticketSource !== undefined && ticketSource.kind === "ticket";
+    if (ticketCharter && bindingRevision !== null) {
+      const tip = this.charterBaseCommit(charter);
+      if (
+        tip !== undefined &&
+        this.hasCommittedBinding(tip, gitFn) &&
+        !this.hasCommittedBinding(bindingRevision, gitFn)
+      )
+        throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+    }
+    const work = bindingRevision === null ? undefined : this.tryWorkTicket(charter, bindingRevision, gitFn);
     const looked =
       bindingRevision === null
-        ? { lookup: "unavailable" as const }
-        : this.projectLookup(charter.project.id, bindingRevision, gitFn);
+        ? { lookup: "unbound" as const }
+        : this.projectLookup(charter.project.id, bindingRevision, gitFn, !ticketCharter);
     const run: Run = {
       id,
       charter_path: source,
@@ -693,31 +704,51 @@ export class Runner {
   }
 
   /**
-   * Merge-base of the validated start revision and the charter base branch.
-   * Origin wins when that ref exists. The merge-base trusts the base ref, so it
-   * rests on host write isolation of `.git`. A worker that can move
-   * `refs/heads/<base>` or `refs/remotes/origin/<base>` can make the merge-base
-   * equal the start revision. Pinning a base SHA is a captain follow-up.
-   * An uncomputable merge-base is refused only when the charter cites a ticket.
-   * Otherwise start is allowed and the project record is unavailable; the
-   * working `ak.kb.yaml` is not read.
+   * Merge-base of the validated start revision and the charter base branch,
+   * resolved as `refs/remotes/origin/<branch>` then `refs/heads/<branch>`.
+   * The merge-base trusts the base ref, so it rests on host write isolation of
+   * `.git`. A worker that can move those refs can make the merge-base equal the
+   * start revision. Pinning a base SHA is a captain follow-up.
+   * An uncomputable merge-base, a missing base branch, or an unresolvable base
+   * ref is refused when the charter cites a ticket. Otherwise start is allowed
+   * as unbound and the working `ak.kb.yaml` is not read.
    */
-  private bindingBaseRevision(charter: Charter, revision: string): string | null | undefined {
+  private charterBaseCommit(charter: Charter): string | undefined {
+    const branch = charter.repos[0]?.base_branch;
+    if (branch === undefined || branch === "") return undefined;
+    const origin = runnerGit(this.gitContext, this.workerRoot, [
+      "rev-parse",
+      "--verify",
+      `refs/remotes/origin/${branch}^{commit}`,
+    ]);
+    if (origin.code === 0 && origin.text !== "") return origin.text;
+    const local = runnerGit(this.gitContext, this.workerRoot, [
+      "rev-parse",
+      "--verify",
+      `refs/heads/${branch}^{commit}`,
+    ]);
+    if (local.code === 0 && local.text !== "") return local.text;
+    return undefined;
+  }
+
+  private hasCommittedBinding(revision: string, gitFn: GitFn): boolean {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
+  }
+
+  private bindingBaseRevision(charter: Charter, revision: string): string | null {
     const raw: unknown = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
     const needed = source !== undefined && source.kind === "ticket";
     const branch = charter.repos[0]?.base_branch;
     if (branch === undefined || branch === "") {
       if (needed) throw new Error("charter names no base branch for the knowledgebase binding");
-      return undefined;
+      return null;
     }
-    const origin = `origin/${branch}`;
-    const originOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${origin}^{commit}`]);
-    const localOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${branch}^{commit}`]);
-    const base = originOk.code === 0 ? origin : localOk.code === 0 ? branch : undefined;
+    const base = this.charterBaseCommit(charter);
     if (base === undefined) {
       if (needed) throw new Error(`cannot resolve charter base branch ${branch}`);
-      return undefined;
+      return null;
     }
     const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", revision, base]);
     if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
@@ -792,7 +823,7 @@ export class Runner {
     gitFn: GitFn,
   ) {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
-    const loaded = loadKbBinding(projectRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, false);
     if (loaded.binding === null) return undefined;
     const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null || resolved.state !== "available")
@@ -816,9 +847,9 @@ export class Runner {
     return { ticket: looked.artifact, hash };
   }
 
-  private projectLookup(projectId: string, revision: string | undefined, gitFn: GitFn) {
+  private projectLookup(projectId: string, revision: string | undefined, gitFn: GitFn, workingFile = true) {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
-    const loaded = loadKbBinding(projectRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, workingFile);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined) throw new Error(bindingError.message);
     if (loaded.binding === null) {

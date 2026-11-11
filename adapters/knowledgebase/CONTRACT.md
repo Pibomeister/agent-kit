@@ -385,12 +385,14 @@ locator: { <key>: <value> }      # how the backend finds the knowledgebase; the 
 that every checkout of the project binds the same knowledgebase: a task copy made as a git work
 tree carries the file because it carries the commit, and needs no setup of its own. Runner.start
 resolves that committed file at the merge-base of the validated start revision and the charter's
-`repos[0].base_branch` (`origin/<branch>` when that ref exists, else the local branch). The
-committed binding at that explicit revision wins over the working file. Fall back to the working
-file only when that revision has no committed `ak.kb.yaml`. When the merge-base cannot be computed
-and the charter cites no ticket, start is allowed and the project record is unavailable; the
-working `ak.kb.yaml` is not read. When the charter cites a ticket, an uncomputable merge-base is
-refused. That merge-base trusts the base ref, so it rests on host write isolation of `.git`. An
+`repos[0].base_branch`, using the full ref `refs/remotes/origin/<branch>` when that exists, else
+`refs/heads/<branch>`. The committed binding at that explicit revision wins over the working file.
+Ticket charters never fall back to the working file. They refuse when the resolved base tip has
+the binding and the merge-base does not. Fall back to the working file only when a non-ticket
+start's revision has no committed `ak.kb.yaml`. When the merge-base cannot be computed, the base
+branch is missing, or the base ref cannot be resolved, and the charter cites no ticket, start is
+allowed as unbound; the working `ak.kb.yaml` is not read. When the charter cites a ticket, those
+cases are refused. That merge-base trusts the base ref, so it rests on host write isolation of `.git`. An
 `in-repo` backend's own availability check is separate: it reads pages at the merge-base of `HEAD`
 and `refs/remotes/origin/HEAD`. `ak kb check`, `read`, `publish`, and `lifecycle open` do not pass
 a revision and read the working `ak.kb.yaml`. The **project folder** is the nearest directory at or

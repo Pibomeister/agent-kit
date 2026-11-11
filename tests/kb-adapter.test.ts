@@ -33,7 +33,7 @@ import {
   resolveKnowledgebase,
 } from "../src/kb/binding.ts";
 import { EXIT_UNAVAILABLE, runKb } from "../src/kb/cli.ts";
-import { gitWithoutReplace } from "../src/kb/git.ts";
+import { git as kbGit } from "../src/kb/git.ts";
 import { KB_KINDS } from "../src/kb/local-git.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -381,7 +381,7 @@ describe("an explicit revision never falls back to the working binding", () => {
   test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
     const fx = fixture();
     writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
-    const loaded = loadKbBinding(fx.project, "not-a-commit", gitWithoutReplace);
+    const loaded = loadKbBinding(fx.project, "not-a-commit", kbGit);
     expect(loaded.binding).toBe(null);
     expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
   });

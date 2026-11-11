@@ -17788,7 +17788,7 @@ function bindBehaviorPolicy(args) {
   if ("reason" in checks)
     return { ok: false, reason: checks.reason };
   const ticketWantsBehavior = checks.length > 0;
-  if (args.lookup === "unavailable" && ticketWantsBehavior)
+  if (args.lookup === "unavailable")
     return {
       ok: false,
       reason: "the authoritative project record is unavailable; missing project cannot turn this run off"
@@ -23197,8 +23197,10 @@ function headCommit(root) {
   return commitAt(root, "HEAD", git2);
 }
 function committed(root, path, at) {
-  const run = at?.git ?? git2;
   const rev = at?.revision !== undefined && at.revision !== "" ? at.revision : "HEAD";
+  if (rev !== "HEAD" && at?.git === undefined)
+    throw new Error("an explicit revision requires a git function");
+  const run = at?.git ?? git2;
   if (commitAt(root, rev, run) === null) {
     return failed("kb.unreadable", rev === "HEAD" ? "the knowledgebase has no commits" : `revision ${rev} cannot be resolved`);
   }
@@ -24051,7 +24053,7 @@ function committedBindingText(projectRoot, revision, gitFn) {
   const shown = run(projectRoot, ["show", `${revision}:${prefix.stdout.trim()}${BINDING_FILE2}`]);
   return { text: shown.status === 0 ? shown.stdout : null };
 }
-function loadKbBinding(projectRoot, revision, gitFn) {
+function loadKbBinding(projectRoot, revision, gitFn, workingFile = true) {
   const committed2 = committedBindingText(projectRoot, revision, gitFn);
   if (committed2.unresolved !== undefined) {
     return {
@@ -24059,7 +24061,7 @@ function loadKbBinding(projectRoot, revision, gitFn) {
       issues: [error("kb.revision-unresolved", BINDING_FILE2, committed2.unresolved)]
     };
   }
-  const text = committed2.text ?? readTextIfPresent(join7(projectRoot, BINDING_FILE2));
+  const text = committed2.text ?? (workingFile ? readTextIfPresent(join7(projectRoot, BINDING_FILE2)) : null);
   if (text === null) {
     return {
       binding: null,
@@ -42018,6 +42020,10 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     "core.hooksPath=/dev/null",
     "-c",
     "core.excludesFile=/dev/null",
+    "-c",
+    "core.commitGraph=false",
+    "-c",
+    "advice.graftFileDeprecated=false",
     ...args
   ], { cwd: project, env, input, maxBuffer: 1 << 30, timeout: timeoutMs, killSignal: "SIGKILL" });
   if (proc.error !== undefined) {
@@ -42727,8 +42733,15 @@ class Runner {
     const createdAt = new Date().toISOString();
     const gitFn = this.kbGit();
     const bindingRevision = this.bindingBaseRevision(charter, revision);
-    const work = this.tryWorkTicket(charter, bindingRevision ?? undefined, gitFn);
-    const looked = bindingRevision === null ? { lookup: "unavailable" } : this.projectLookup(charter.project.id, bindingRevision, gitFn);
+    const ticketSource = asJsonObject(charter) && asJsonObject(charter.work_source) ? charter.work_source : undefined;
+    const ticketCharter = ticketSource !== undefined && ticketSource.kind === "ticket";
+    if (ticketCharter && bindingRevision !== null) {
+      const tip = this.charterBaseCommit(charter);
+      if (tip !== undefined && this.hasCommittedBinding(tip, gitFn) && !this.hasCommittedBinding(bindingRevision, gitFn))
+        throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+    }
+    const work = bindingRevision === null ? undefined : this.tryWorkTicket(charter, bindingRevision, gitFn);
+    const looked = bindingRevision === null ? { lookup: "unbound" } : this.projectLookup(charter.project.id, bindingRevision, gitFn, !ticketCharter);
     const run2 = {
       id,
       charter_path: source,
@@ -42767,6 +42780,30 @@ class Runner {
       };
     };
   }
+  charterBaseCommit(charter) {
+    const branch = charter.repos[0]?.base_branch;
+    if (branch === undefined || branch === "")
+      return;
+    const origin = runnerGit(this.gitContext, this.workerRoot, [
+      "rev-parse",
+      "--verify",
+      `refs/remotes/origin/${branch}^{commit}`
+    ]);
+    if (origin.code === 0 && origin.text !== "")
+      return origin.text;
+    const local = runnerGit(this.gitContext, this.workerRoot, [
+      "rev-parse",
+      "--verify",
+      `refs/heads/${branch}^{commit}`
+    ]);
+    if (local.code === 0 && local.text !== "")
+      return local.text;
+    return;
+  }
+  hasCommittedBinding(revision, gitFn) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
+  }
   bindingBaseRevision(charter, revision) {
     const raw = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
@@ -42775,16 +42812,13 @@ class Runner {
     if (branch === undefined || branch === "") {
       if (needed)
         throw new Error("charter names no base branch for the knowledgebase binding");
-      return;
+      return null;
     }
-    const origin = `origin/${branch}`;
-    const originOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${origin}^{commit}`]);
-    const localOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${branch}^{commit}`]);
-    const base2 = originOk.code === 0 ? origin : localOk.code === 0 ? branch : undefined;
+    const base2 = this.charterBaseCommit(charter);
     if (base2 === undefined) {
       if (needed)
         throw new Error(`cannot resolve charter base branch ${branch}`);
-      return;
+      return null;
     }
     const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", revision, base2]);
     if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
@@ -42854,7 +42888,7 @@ class Runner {
   }
   loadCommittedTicket(ticketId, expected, revision, gitFn) {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
-    const loaded = loadKbBinding(projectRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, false);
     if (loaded.binding === null)
       return;
     const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
@@ -42877,9 +42911,9 @@ class Runner {
       throw new Error("approved ticket does not match the charter work source");
     return { ticket: looked.artifact, hash };
   }
-  projectLookup(projectId, revision, gitFn) {
+  projectLookup(projectId, revision, gitFn, workingFile = true) {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
-    const loaded = loadKbBinding(projectRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, workingFile);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined)
       throw new Error(bindingError.message);

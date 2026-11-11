@@ -13,7 +13,7 @@
  *
  * Parent-run trust for a Firstmate skip rests on host write isolation of the
  * evidence store. The recorded start_authority must be a standing grant with a
- * grant. A cancelled or failed parent does not skip. A home-ledger check is a
+ * grant. A cancelled, failed or cap-reached parent does not skip. A home-ledger check is a
  * follow-up, not this gate.
  *
  * Recording `ship-preflight` in the legacy policy is judged the same way when the run is opened

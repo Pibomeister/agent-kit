@@ -878,12 +878,14 @@ describe("runner guards", () => {
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
     );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
     const registry = join(scratch, "registry.json");
     writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
     const previousRegistry = process.env.AK_KB_REGISTRY;
     process.env.AK_KB_REGISTRY = registry;
     try {
-      const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
       expect(started.behavior?.mode).toBe("on");
       expect(started.behavior?.required_checks.map((check) => check.id)).toEqual(["project-check"]);
       const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
@@ -974,6 +976,8 @@ describe("runner guards", () => {
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
     );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
     const registry = join(scratch, "registry.json");
     writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
     const previousRegistry = process.env.AK_KB_REGISTRY;
@@ -988,7 +992,7 @@ describe("runner guards", () => {
       return { code, out: out.join("\n"), err: err.join("\n") };
     };
     try {
-      f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
       const evidence = join(f.privateDir, "evidence");
       for (const gate of ["build-checks", "review-full", "review-readiness"] as const)
         expect(lifecycle("record", "--dir", evidence, "--run", "toy-run", "--gate", gate).code).toBe(0);
@@ -1016,7 +1020,11 @@ describe("runner guards", () => {
   test("a malformed knowledgebase binding fails closed at start", () => {
     const f = fixture();
     writeFileSync(join(f.worker, "ak.kb.yaml"), "this is not: [valid\n");
-    expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow("Not valid YAML");
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "malformed bind");
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "Not valid YAML",
+    );
   });
 
   test("an off charter with a non-ticket work source still starts", () => {
@@ -1131,15 +1139,18 @@ describe("runner guards", () => {
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
     );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
     const registry = join(scratch, "registry.json");
     writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
     const previousRegistry = process.env.AK_KB_REGISTRY;
     process.env.AK_KB_REGISTRY = registry;
     try {
-      f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      const revision = workerHead(f.worker);
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f));
       const source = join(f.privateDir, "source.txt");
       writeFileSync(source, "approved source");
-      f.runner.collect("toy-run", "e1", source, f.revision, "source");
+      f.runner.collect("toy-run", "e1", source, revision, "source");
       for (const [id, operation, covers] of [
         ["align", "align.run", "align-answer"],
         ["bound", "bound.run", "spec-approval"],
@@ -1150,7 +1161,7 @@ describe("runner guards", () => {
       }
       const verification = join(f.privateDir, "verification.txt");
       writeFileSync(verification, "tests passed at current revision");
-      f.runner.collect("toy-run", "verify", verification, f.revision, "verify");
+      f.runner.collect("toy-run", "verify", verification, revision, "verify");
       writeFileSync(join(f.worker, "ak.kb.yaml"), "");
       const verified = new Runner(f.privateDir, f.worker, root).verify("toy-run", "verify");
       expect(verified.run_state).toBe("verifying");
@@ -1222,12 +1233,14 @@ describe("runner guards", () => {
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
     );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
     const registry = join(scratch, "registry.json");
     writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
     const previousRegistry = process.env.AK_KB_REGISTRY;
     process.env.AK_KB_REGISTRY = registry;
     try {
-      const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
       expect(started.behavior?.required_checks).toHaveLength(1);
       const weaker = { ...project, review: { behavior: "off" } };
       const weakerHash = artifactHash(weaker);
@@ -1326,12 +1339,14 @@ describe("runner guards", () => {
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
     );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
     const registry = join(scratch, "registry.json");
     writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
     const previousRegistry = process.env.AK_KB_REGISTRY;
     process.env.AK_KB_REGISTRY = registry;
     try {
-      const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
       expect(started.behavior?.mode).toBe("off");
       expect(started.behavior?.ticket_hash).toBe(hash);
     } finally {
@@ -1655,6 +1670,126 @@ describe("runner guards", () => {
     );
     expect(started.behavior?.mode).toBe("on");
     expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker branched before the binding existed cannot start unbound", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind after fork");
+    git(f.worker, "checkout", "feature");
+    if (existsSync(join(f.worker, "ak.kb.yaml"))) unlinkSync(join(f.worker, "ak.kb.yaml"));
+    let started: ReturnType<Runner["start"]> | undefined;
+    let error: string | undefined;
+    try {
+      started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    }
+    expect(error).toBe("the charter base tip has a knowledgebase binding the merge-base does not");
+    expect(started).toBeUndefined();
+  });
+
+  test("a local branch named origin/main cannot retarget the merge-base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    const mainSha = workerHead(f.worker);
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    git(f.worker, "checkout", "--orphan", "forge");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "forged bind");
+    const forged = workerHead(f.worker);
+    git(f.worker, "checkout", "-q", "feature");
+    git(f.worker, "update-ref", "refs/heads/origin/main", forged);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+    expect(mainSha).not.toBe(forged);
+  });
+
+  test("a planted commit-graph file does not retarget the merge-base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    mkdirSync(join(f.worker, ".git", "objects", "info"), { recursive: true });
+    writeFileSync(join(f.worker, ".git", "objects", "info", "commit-graph"), "forged-commit-graph\n");
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a non-ticket charter with a committed binding and an unregistered knowledgebase is refused", () => {
+    const f = fixture();
+    if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({
+      ...f.charter,
+      immutability: { ...f.charter.immutability, hash: "" },
+    });
+    const planApproval = f.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the authoritative project record is unavailable; missing project cannot turn this run off",
+    );
+  });
+
+  test("an unresolvable base branch does not record a planted working binding", () => {
+    const f = fixture();
+    if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.repos = [{ repo: "toy", base_branch: "missing-base", paths: ["src/**"] }];
+    f.charter.immutability.hash = artifactHash({
+      ...f.charter,
+      immutability: { ...f.charter.immutability, hash: "" },
+    });
+    const planApproval = f.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    expect(started.run_state).toBe("created");
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.policy_id).toBe(null);
+    expect(started.behavior?.required_checks).toEqual([]);
   });
 
   test("an uncomputable merge-base does not record a planted working binding", () => {
