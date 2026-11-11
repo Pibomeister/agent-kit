@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { findDuplicateFunctions, simplifyDuplicates } from "../src/validation/simplify-duplicates.ts";
+import { extractFunctions, findDuplicateFunctions, simplifyDuplicates } from "../src/validation/simplify-duplicates.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures/simplify");
 const DUPLICATE_HELPER = join(FIXTURES, "duplicate-helper");
@@ -53,5 +53,17 @@ describe("simplify paired fixtures (FR-05 / AT-06 / AT-07)", () => {
       ),
     ).toBe(false);
     expect(hits.some((hit) => cites(hit, "src/lib/dates.js", "formatDate"))).toBe(false);
+  });
+
+  test("function f(a = {}) uses the body brace, not the default object", () => {
+    const source = "function f(a = {}) {\n  return a;\n}\n";
+    const fns = extractFunctions("src/f.js", source);
+    expect(fns).toHaveLength(1);
+    expect(fns[0]?.name).toBe("f");
+    expect(fns[0]?.body).toBe("{ return a; }");
+  });
+
+  test("an arrow function is outside the supported subset", () => {
+    expect(extractFunctions("src/a.js", "const f = (a = {}) => a;\n")).toEqual([]);
   });
 });

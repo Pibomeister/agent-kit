@@ -2,7 +2,8 @@
 case: GAP-01-filename-trap
 fr: [FR-01]
 at: [AT-20]
-expected: plan
+expected: requirements
+filename_trap: plan.md
 status: ready-for-implementation
 ---
 

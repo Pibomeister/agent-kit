@@ -1,13 +1,24 @@
 /**
- * Predecessor reconciliation oracle for doc-review (FR-02 / AT-03).
+ * Reference oracle for GAP-04 (FR-02 / AT-03).
+ *
+ * Status: partial. Deterministic reference only, product behavior unverified.
+ * This module is not wired into doc-review, docrules, or any product path.
  *
  * A successor is checked against a named predecessor for seed omission,
- * contradiction, and material addition. Alternatives are seeds like any other:
- * dropping one is an omission. Findings cite artifact id, seed id and line,
- * not the surrounding prose.
+ * changed statement text, and material addition. `changed` means the same
+ * seed id has different collapsed text. Whether that change is a contradiction
+ * is a semantic-layer judgment, not this oracle's. Alternatives are seeds like
+ * any other: dropping one is an omission. Findings cite artifact id, seed id
+ * and line, not the surrounding prose.
+ *
+ * Seeds are collected only under the seed sections Decisions, Requirements and
+ * Alternatives. Frontmatter and fenced lines are skipped with fenceAfter.
  */
 
+import { fenceAfter, headingTitle, type FenceState } from "./headings.ts";
+
 const SEED_LINE = /^(?:[-*] |\d+\. )?(R|D|ALT)(\d+[a-z]?)\.\s+(.*)$/;
+const SEED_SECTIONS = new Set(["decisions", "requirements", "alternatives"]);
 
 export type SeedKind = "requirement" | "decision" | "alternative";
 
@@ -24,7 +35,7 @@ export type SeedRef = {
   readonly line: number;
 };
 
-export type ReconcileKind = "omission" | "contradiction" | "material-addition";
+export type ReconcileKind = "omission" | "changed" | "material-addition";
 
 export type ReconcileFinding = {
   readonly kind: ReconcileKind;
@@ -43,15 +54,46 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function normalizeNewlines(text: string): string {
+  return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
+
 function ref(artifact: string, seed: Seed): SeedRef {
   return { artifact, seed: seed.id, line: seed.line };
 }
 
-/** ID-bearing seeds in document order. Heading-like wrapping is not a seed. */
+type FrontmatterSkip = {
+  readonly start: number;
+  readonly fence: FenceState | null;
+};
+
+function skipFrontmatter(lines: readonly string[]): FrontmatterSkip {
+  if ((lines[0] ?? "") !== "---") return { start: 0, fence: null };
+  for (let i = 1; i < lines.length; i++) {
+    if ((lines[i] ?? "") === "---") return { start: i + 1, fence: null };
+  }
+  return { start: lines.length, fence: null };
+}
+
+/** ID-bearing seeds under seed sections, in document order. */
 export function parseSeeds(markdown: string): readonly Seed[] {
+  const lines = normalizeNewlines(markdown).split("\n");
   const seeds: Seed[] = [];
-  for (const [index, raw] of markdown.split("\n").entries()) {
-    const match = SEED_LINE.exec((raw ?? "").trim());
+  let { start, fence } = skipFrontmatter(lines);
+  let inSeedSection = false;
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const next = fenceAfter(line, fence);
+    const skip = fence !== null || next !== null;
+    fence = next;
+    if (skip) continue;
+    const title = headingTitle(line);
+    if (title !== null) {
+      inSeedSection = SEED_SECTIONS.has(title.toLowerCase());
+      continue;
+    }
+    if (!inSeedSection) continue;
+    const match = SEED_LINE.exec(line.trim());
     if (match === null) continue;
     const prefix = match[1] ?? "";
     const number = match[2] ?? "";
@@ -61,7 +103,7 @@ export function parseSeeds(markdown: string): readonly Seed[] {
       id: `${prefix}${number}`,
       kind: kindOf(prefix),
       statement,
-      line: index + 1,
+      line: i + 1,
     });
   }
   return seeds;
@@ -102,7 +144,7 @@ export function reconcilePredecessor(
     }
     if (later.statement !== seed.statement) {
       findings.push({
-        kind: "contradiction",
+        kind: "changed",
         seed: id,
         predecessor: ref(predecessorId, seed),
         successor: ref(successorId, later),

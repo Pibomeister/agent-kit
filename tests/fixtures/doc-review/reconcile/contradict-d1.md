@@ -2,7 +2,7 @@
 case: GAP-04-contradiction
 fr: [FR-02]
 at: [AT-03]
-defect: contradiction
+defect: changed
 seed: D1
 ---
 

@@ -1,9 +1,22 @@
 /**
- * Paired simplify oracles for FR-05 / AT-06 / AT-07.
+ * Reference oracle for GAP-05 (FR-05 / AT-06 / AT-07).
  *
- * Duplicate helpers are defects. A duplicated security check at a privileged
- * edge is a boundary to keep, not a helper to merge. Findings cite file and
- * line. They do not use a count as the verdict.
+ * Status: partial. Deterministic reference only, product behavior unverified.
+ * This module is not wired into simplify, docrules, or any product path.
+ *
+ * Duplicate helpers in the fixture repos are defects. A duplicated
+ * security-boundary pair is retained, not offered as cleanup. Findings cite
+ * file and line. They do not use a count as the verdict.
+ *
+ * Security-boundary detection is a fixture-pinning keyword heuristic, not a
+ * policy. A pair is tagged `security-boundary` when a name matches
+ * require/assert/deny/check/enforce plus auth/session/permission/role/token,
+ * or a body matches 401, 403, unauthenticated, unauthorized or forbidden.
+ *
+ * Supported function forms are `function name(...) { ... }` and
+ * `export function name(...) { ... }`, including a default-parameter object
+ * such as `function f(a = {}) { ... }`. Arrow functions, methods,
+ * `async function`, generators and `const x = function` are not extracted.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -42,8 +55,26 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Index just after the matching `)` of the parameter list starting at `from`. */
+function afterParams(source: string, from: number): number | null {
+  const open = source.indexOf("(", from);
+  if (open === -1) return null;
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    const char = source[i];
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return null;
+}
+
 function braceBody(source: string, from: number): string | null {
-  const open = source.indexOf("{", from);
+  const paramsEnd = afterParams(source, from);
+  if (paramsEnd === null) return null;
+  const open = source.indexOf("{", paramsEnd);
   if (open === -1) return null;
   let depth = 0;
   for (let i = open; i < source.length; i++) {
@@ -134,7 +165,7 @@ export function findDuplicateFunctions(root: string): readonly DuplicateHit[] {
   return hits;
 }
 
-/** Helpers simplify should clean. Security-boundary pairs are omitted, not counted. */
+/** Helpers the fixture oracle would clean. Security-boundary pairs are omitted, not counted. */
 export function simplifyDuplicates(root: string): readonly DuplicateHit[] {
   return findDuplicateFunctions(root).filter((hit) => hit.kind === "helper");
 }

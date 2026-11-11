@@ -1,24 +1,23 @@
 /**
- * Document-kind oracle for doc-review (FR-01 / AT-20).
+ * Reference oracle for GAP-01 (FR-01 / AT-20).
  *
- * A page that only states a product contract is requirements. Any
- * implementation-planning heading makes it a plan. Classification reads the
- * document body, never the filename, never a readiness label, and never YAML
- * frontmatter (those are labels, not content). Heading-like lines inside
- * fenced code are not headings.
+ * Status: partial. Deterministic reference only, product behavior unverified.
+ * This module is not wired into doc-review, docrules, or any product path.
+ *
+ * It only pins the fixtures under tests/fixtures/doc-review/classify/. It does
+ * not define document classification. A page in that set with an
+ * implementation-planning heading is `plan`; the others are `requirements`.
+ * Filename, readiness labels and YAML frontmatter are not signals.
  */
 
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
 
 import { sha256Hex } from "../util/hash.ts";
-import { fenceAfter, type FenceState } from "./headings.ts";
+import { fenceAfter, headingTitle, type FenceState } from "./headings.ts";
 
 export type DocumentKind = "requirements" | "plan";
 
-const HEADING = /^#{1,6}\s+(.*?)\s*#*\s*$/;
-
-/** Section titles that are implementation planning, compared case-insensitively. */
+/** Section titles that the fixtures treat as implementation planning. */
 const IMPLEMENTATION_HEADINGS = new Set([
   "implementation",
   "approach",
@@ -29,15 +28,16 @@ const IMPLEMENTATION_HEADINGS = new Set([
   "technical design",
 ]);
 
-function stripFrontmatter(text: string): string {
-  if (!text.startsWith("---\n")) return text;
-  const end = text.indexOf("\n---\n", 4);
-  if (end === -1) return text;
-  return text.slice(end + 5);
+function normalizeNewlines(text: string): string {
+  return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
 }
 
-function headingTitle(line: string): string | null {
-  return HEADING.exec(line)?.[1] ?? null;
+function stripFrontmatter(text: string): string {
+  const body = normalizeNewlines(text);
+  if (!body.startsWith("---\n")) return body;
+  const end = body.indexOf("\n---\n", 4);
+  if (end === -1) return body;
+  return body.slice(end + 5);
 }
 
 /** ATX headings in the body, skipping YAML frontmatter and fenced regions. */
@@ -61,12 +61,8 @@ export function documentIdentity(content: string): string {
   return `sha256:${sha256Hex(content)}`;
 }
 
-/**
- * Classify a document from its body. `filename` is accepted so a caller that
- * has a path cannot claim the oracle never saw it; the oracle still ignores it.
- */
-export function classifyDocumentKind(content: string, filename = ""): DocumentKind {
-  void basename(filename);
+/** Classify fixture bytes. Not a product classifier. */
+export function classifyDocumentKind(content: string): DocumentKind {
   for (const title of documentHeadings(content)) {
     if (IMPLEMENTATION_HEADINGS.has(title.toLowerCase())) return "plan";
   }
@@ -75,5 +71,5 @@ export function classifyDocumentKind(content: string, filename = ""): DocumentKi
 
 /** Read a file and classify its bytes. The path's basename is not a signal. */
 export function classifyDocumentFile(path: string): DocumentKind {
-  return classifyDocumentKind(readFileSync(path, "utf8"), basename(path));
+  return classifyDocumentKind(readFileSync(path, "utf8"));
 }

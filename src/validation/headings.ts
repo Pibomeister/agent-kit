@@ -29,7 +29,8 @@ export function normalizeHeading(text: string): string {
     .replace(/\s+/g, " ");
 }
 
-function headingTitle(line: string): string | null {
+/** ATX heading title on this line, or null. Shared by the reference oracles. */
+export function headingTitle(line: string): string | null {
   return HEADING.exec(line)?.[1] ?? null;
 }
 

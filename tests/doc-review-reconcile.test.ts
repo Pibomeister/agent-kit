@@ -32,15 +32,26 @@ describe("doc-review predecessor reconciliation (FR-02 / AT-03)", () => {
     expect(r2).toBeDefined();
     expect(r2?.predecessor).toEqual({ artifact: PREDECESSOR_ID, seed: "R2", line: 19 });
     expect(r2?.successor).toBeNull();
-    expect(findingsOfKind(findings, "contradiction")).toEqual([]);
+    expect(findingsOfKind(findings, "changed")).toEqual([]);
     expect(findingsOfKind(findings, "material-addition")).toEqual([]);
     expect(omissions.find((finding) => finding.seed === "ALT1")).toBeUndefined();
   });
 
-  test("contradicting D1 cites both predecessor and successor lines", () => {
+  test("omitting ALT1 cites the predecessor alternative", () => {
+    const findings = against("omit-alt1.md");
+    const omissions = findingsOfKind(findings, "omission");
+    const alt1 = omissions.find((finding) => finding.seed === "ALT1");
+    expect(alt1).toBeDefined();
+    expect(alt1?.predecessor).toEqual({ artifact: PREDECESSOR_ID, seed: "ALT1", line: 23 });
+    expect(alt1?.successor).toBeNull();
+    expect(findingsOfKind(findings, "changed")).toEqual([]);
+    expect(findingsOfKind(findings, "material-addition")).toEqual([]);
+  });
+
+  test("a changed D1 cites both predecessor and successor lines", () => {
     const findings = against("contradict-d1.md");
-    const contradictions = findingsOfKind(findings, "contradiction");
-    const d1 = contradictions.find((finding) => finding.seed === "D1");
+    const changed = findingsOfKind(findings, "changed");
+    const d1 = changed.find((finding) => finding.seed === "D1");
     expect(d1).toBeDefined();
     expect(d1?.predecessor).toEqual({ artifact: PREDECESSOR_ID, seed: "D1", line: 14 });
     expect(d1?.successor).toEqual({ artifact: SUCCESSOR_ID, seed: "D1", line: 15 });
@@ -59,11 +70,31 @@ describe("doc-review predecessor reconciliation (FR-02 / AT-03)", () => {
     expect(parseSeeds(load("add-r3.md")).some((seed) => seed.id === "ALT1")).toBe(true);
   });
 
-  test("the valid control raises no omission, contradiction or addition", () => {
+  test("the valid control raises no omission, changed seed or addition", () => {
     const findings = against("valid-control.md");
     expect(findingsOfKind(findings, "omission")).toEqual([]);
-    expect(findingsOfKind(findings, "contradiction")).toEqual([]);
+    expect(findingsOfKind(findings, "changed")).toEqual([]);
     expect(findingsOfKind(findings, "material-addition")).toEqual([]);
     expect(parseSeeds(load("valid-control.md")).map((seed) => seed.id)).toEqual(["D1", "R1", "R2", "ALT1"]);
+  });
+
+  test("seeds in frontmatter, fences and non-seed sections are ignored", () => {
+    const text = [
+      "---",
+      "R0. not a seed",
+      "---",
+      "",
+      "## Product contract",
+      "R9. not in a seed section.",
+      "",
+      "## Requirements",
+      "R1. real.",
+      "",
+      "```",
+      "R8. fenced.",
+      "```",
+      "",
+    ].join("\n");
+    expect(parseSeeds(text).map((seed) => seed.id)).toEqual(["R1"]);
   });
 });

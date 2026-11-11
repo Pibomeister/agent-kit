@@ -23,11 +23,19 @@ describe("doc-review classifier (FR-01 / AT-20)", () => {
     const path = join(FIXTURES, "plan.md");
     expect(basename(path)).toBe("plan.md");
     const content = readFileSync(path, "utf8");
-    expect(content).toContain("expected: plan");
+    expect(content).toContain("expected: requirements");
+    expect(content).toContain("filename_trap: plan.md");
     expect(content).toContain("status: ready-for-implementation");
     expect(content).not.toContain("## Rollout");
     expect(classifyDocumentFile(path)).toBe("requirements");
-    expect(classifyDocumentKind(content, basename(path))).toBe("requirements");
+    expect(classifyDocumentKind(content)).toBe("requirements");
+  });
+
+  test("CRLF frontmatter is stripped the same as LF", () => {
+    const lf = readFileSync(join(FIXTURES, "requirements-only.md"), "utf8");
+    const crlf = lf.replaceAll("\n", "\r\n");
+    expect(classifyDocumentKind(crlf)).toBe("requirements");
+    expect(classifyDocumentKind(crlf)).toBe(classifyDocumentKind(lf));
   });
 
   test("changed bytes change identity", () => {
