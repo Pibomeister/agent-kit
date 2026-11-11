@@ -1457,16 +1457,9 @@ function ticketRules(rc: RuleContext): void {
   const { doc } = rc;
   if (str(doc["type"]) !== "implementation") return;
 
-  // Envelope `project` is a `{ id }` object on real artifacts and a string in some fixtures.
-  const projectField = doc["project"];
-  const projectRecord = obj(projectField);
-  const wanted = projectRecord === null ? str(projectField) : str(projectRecord["id"]);
   const matches: IndexedDoc[] = [];
-  if (wanted !== null) {
-    for (const entry of rc.index.all) {
-      if (entry.schema !== "project") continue;
-      if (str(obj(entry.doc["identity"])?.["id"]) === wanted) matches.push(entry);
-    }
+  for (const entry of rc.index.all) {
+    if (entry.schema === "project") matches.push(entry);
   }
   // Missing review object, missing key, and unknown values are off: the default, and no behaviour change.
   if (matches.length === 0) return;
@@ -1479,7 +1472,7 @@ function ticketRules(rc: RuleContext): void {
     fail(
       rc,
       RULE,
-      `ticket project ${wanted} matches ${matches.length} project records; identity.id must be unique when review.cold_read is on`,
+      `the checkout has ${matches.length} indexed project records; identity.id must be unique when review.cold_read is on`,
     );
     return;
   }
