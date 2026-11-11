@@ -150,12 +150,12 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     type-check. An implementer opening the ticket with an empty context window who still cannot do
     it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
     send it back. Off and shadow keep that action; on uses the independent read. When that read is
-    unavailable, the author check decides. A ticket on the text-only single-slice light route skips
-    the dispatch. In on mode the GS-004g validator still requires `cold_read_ref`, so a light-route
-    implementation ticket cannot be published until GS-004j. Shadow and on dispatch one cold reader
+    unavailable, the author check decides. Dispatch is skipped only when every Skip condition in
+    [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
+    read of a ticket" holds; otherwise dispatch. Shadow and on dispatch one cold reader
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
-    read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,
+    read of a ticket" for Skip, the packet, claims, readiness observations, rewrite cap, shadow print,
     citation, unavailable handling and the green-to-yellow-agent raise.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
     ticket, no ticket carries an unfinished-content marker or a "same as the earlier ticket"
@@ -248,7 +248,7 @@ skill enters, not a skill it starts:
 - `ticket` (`schemas/ticket.schema.json`), `type: implementation`, id `bound-<spec>-<slice>` — one
   per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
   `assumptions` and the exact ticket-time `delegation` output, or, unscored under a delegation coverage limit, no `delegation` block and the unscored assumption. When `review.cold_read` is on, it
-  cites `cold_read_ref`.
+  cites `cold_read_ref`, except a ticket the detector exempts.
 - `cold-read` (`schemas/cold-read.schema.json`) — a run artifact per implementation ticket when
   `review.cold_read` is shadow or on, published under a `run-artifact` placement. Off stores none.
 - `ticket`, `type: decision` — emitted for an open fork, with the three evidence blocks persisted in
@@ -271,7 +271,7 @@ performed is `failed`, never complete.
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
   ticket, every implementation ticket carries the three evidence blocks (an unscored ticket under a delegation coverage limit carries readiness and assumptions, with no `delegation` block), every on-mode
-  implementation ticket cites a finished cold read, or an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise, and
+  implementation ticket that is not a light-route ticket under the detector cites a finished cold read, or an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise, and
   every published artifact's read-back matched what was sent.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different

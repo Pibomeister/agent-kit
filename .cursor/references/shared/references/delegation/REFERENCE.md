@@ -220,7 +220,10 @@ role, protocol, test and tooling surfaces stay excluded, and the exclusions alwa
 prose cannot amend a rule by calling itself clarification, and a disputed or uncertain restatement
 takes the normal path. Extension alone and a green class alone never establish eligibility, and
 doubt takes the normal path. A restated rule needs the exact pinned settled-source quote with its
-context and a no-looser comparison.
+context and a no-looser comparison. The cold-read skip is narrower than this route: step 13 skips
+only when the validator's exemption detector would exempt the ticket. Explanatory `skills/` or
+`references/` prose may still take this route and still dispatches a cold read when
+`review.cold_read` is on.
 
 **The claim.** The claim is written before review, in existing ticket, specification, readiness
 and verification fields only: the per-path semantic explanations, the integration owner named in
@@ -245,8 +248,8 @@ review's `inputs` as provenance of the frozen second hash; it is not presented t
 recorded context, and no seat is promised ticket text that is not in the specification. Both exact
 specification and ticket hashes are frozen at the snapshot; steps 10 to 13 then only check the
 already-prepared content, any semantic change they would need takes the normal fallback, and any
-later ticket edit invalidates eligibility normally. Step 13 skips the independent cold read on
-this route.
+later ticket edit invalidates eligibility normally. Step 13 skips the independent cold read only
+when the validator's exemption detector would exempt the ticket.
 
 **Exits.** The route is left on any verdict other than approved, any non-empty Proposed fixes or
 Decisions bucket, any unavailable required lane, any reported finding in any bucket including FYI,
@@ -282,9 +285,18 @@ review object, a missing key, an unknown value, a missing project, or an unindex
 off. Off dispatches nothing, stores nothing, and leaves the author's type-check as the
 zero-context gate.
 
-**Skip.** A ticket on the text-only single-slice light route above skips this dispatch. When the
-mode is on, the validator still requires a cited read, so do not publish that implementation
-ticket on this route.
+**Skip.** Dispatch is skipped only when the validator's exemption detector would exempt the ticket.
+A ticket is exempt from `cold_read_ref` only when every declared write
+glob (`allowed_changes.files`, `write_ownership.paths` and `write_ownership.generated_artifacts`) is
+documentation markdown under `docs/` (`docs/**/*.md`), or exactly `README.md`, `CHANGELOG.md`,
+`NOTICE` or `LICENSE`, `allowed_changes.symbols` is empty, `work_source.ref.id` is present, and no
+other indexed ticket shares that id. `docs/**` is refused; a glob containing `{` is refused; a
+markdown last segment is required. A literal glob that resolves through a symlink is refused when
+the checkout is present. Wildcard
+globs over a symlinked tree are not checked. A note or approval does not exempt. The exemption is
+declaration-only: the write guard lifts tests protection and does not deny a write outside those
+globs. A light-route ticket that touches `skills/` or `references/` still dispatches when on. Any
+other implementation ticket still requires a cited read.
 
 **Dispatch.** In shadow and on, dispatch one cold reader per remaining implementation ticket, in
 parallel, each in its own context. Give the reader the ticket and a read-only checkout at the
