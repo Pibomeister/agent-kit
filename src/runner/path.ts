@@ -1,5 +1,10 @@
 import { lstatSync, realpathSync } from "node:fs";
-import { delimiter, dirname, isAbsolute, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+
+/** `..foo` is a descendant. Only `..` and `../` leave the root. */
+export function relativeInsideRoot(rel: string): boolean {
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
 
 export function workerControlledPath(path: string, workerRoot: string): boolean {
   if (!isAbsolute(path)) return true;
@@ -16,8 +21,7 @@ export function workerControlledPath(path: string, workerRoot: string): boolean 
     }
   }
   try {
-    const rel = relative(workerRoot, realpathSync(existing));
-    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    return relativeInsideRoot(relative(workerRoot, realpathSync(existing)));
   } catch {
     return true;
   }

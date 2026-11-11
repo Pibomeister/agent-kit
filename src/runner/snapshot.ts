@@ -12,10 +12,10 @@ import {
   realpathSync,
   rmSync,
 } from "node:fs";
-import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
-import { workerControlledPath, workerFreePath } from "./path.ts";
+import { relativeInsideRoot, workerControlledPath, workerFreePath } from "./path.ts";
 
 export interface RunnerGitContext {
   binary: string;
@@ -271,8 +271,7 @@ function gitBlobId(bytes: Uint8Array, blob: string): string {
 }
 
 function escapesWorktree(path: string, rel: string): boolean {
-  // `..foo` is a filename inside the worktree; only `..` and `../` escape.
-  return path === "" || isAbsolute(path) || rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  return path === "" || isAbsolute(path) || rel === "" || !relativeInsideRoot(rel);
 }
 
 /**

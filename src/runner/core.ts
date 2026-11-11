@@ -1,7 +1,7 @@
 /** Runner-owned state. Only the service process imports this module for mutations. */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
 
@@ -12,6 +12,7 @@ import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
 import { sharesLineage } from "./lineage.ts";
+import { relativeInsideRoot } from "./path.ts";
 import { vetoRefusal, type VetoRecord } from "../council/rule.ts";
 import { isVersionManifest } from "./wire.ts";
 import {
@@ -120,8 +121,7 @@ const ACTION_FOR = new Map([
 type DecisionDocument = { schema: string; id: string; checkpoint: string };
 
 function inside(path: string, root: string): boolean {
-  const rel = relative(root, path);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  return relativeInsideRoot(relative(root, path));
 }
 
 function canonicalFuturePath(path: string): string {
