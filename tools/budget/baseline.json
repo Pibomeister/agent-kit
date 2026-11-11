@@ -153,8 +153,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 24143,
-      "tokens": 6030
+      "bytes": 24643,
+      "tokens": 6155
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -748,8 +748,8 @@
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27832,
-      "tokens": 6948
+      "bytes": 28078,
+      "tokens": 7010
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -1028,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 24143,
-      "tokens": 6030
+      "bytes": 24643,
+      "tokens": 6155
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1623,8 +1623,8 @@
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27950,
-      "tokens": 6978
+      "bytes": 28196,
+      "tokens": 7039
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -1903,8 +1903,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 24203,
-      "tokens": 6045
+      "bytes": 24703,
+      "tokens": 6170
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2493,8 +2493,8 @@
     },
     "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27940,
-      "tokens": 6975
+      "bytes": 28186,
+      "tokens": 7037
     },
     "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -2778,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 24143,
-      "tokens": 6030
+      "bytes": 24643,
+      "tokens": 6155
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3373,8 +3373,8 @@
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27938,
-      "tokens": 6975
+      "bytes": 28184,
+      "tokens": 7036
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -3653,8 +3653,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 24143,
-      "tokens": 6030
+      "bytes": 24643,
+      "tokens": 6155
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4248,8 +4248,8 @@
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27820,
-      "tokens": 6945
+      "bytes": 28066,
+      "tokens": 7007
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
@@ -4528,8 +4528,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 24143,
-      "tokens": 6030
+      "bytes": 24643,
+      "tokens": 6155
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -5123,8 +5123,8 @@
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 27962,
-      "tokens": 6981
+      "bytes": 28208,
+      "tokens": 7042
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",

@@ -78,9 +78,10 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("review.cold_read");
       expect(text).toContain("Off keeps the author type-check");
       expect(text).toContain("Shadow and on dispatch one cold reader");
-      expect(text).toContain("text-only single-slice light route skips the dispatch");
+      expect(text).toContain("Dispatch is skipped only when the validator's exemption detector would exempt");
       expect(text).toContain("reshape it, or reclassify it");
       expect(text).toContain("exempts that ticket from `cold_read_ref`");
+      expect(text).toContain("still dispatches when on");
       expect(text).toContain("The exemption is declaration-only");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
     }
@@ -100,11 +101,16 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(note).toContain(
       "for that ticket only, the author's empty-context check decides whether it publishes, is reshaped, or is reclassified `type: decision` and sent back",
     );
-    expect(note).toContain("Step 13 skips the independent cold read on this route");
+    expect(note).toContain(
+      "Step 13 skips the independent cold read only when the validator's exemption detector would exempt the ticket",
+    );
     expect(note).toContain("A note or approval does not exempt");
     expect(note).toContain("is refused; a markdown last segment is required");
+    expect(note).toContain("A literal glob that resolves through a symlink is refused");
+    expect(note).toContain("Wildcard globs over a symlinked tree are not checked");
     expect(note).toContain("The exemption is declaration-only");
     expect(note).toContain("no other indexed ticket shares that id");
+    expect(note).toContain("still dispatches a cold read when");
     expect(note).toContain("(phase 1b, GS-004i)");
   });
 

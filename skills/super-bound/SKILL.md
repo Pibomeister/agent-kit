@@ -150,8 +150,8 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     type-check. An implementer opening the ticket with an empty context window who still cannot do
     it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
     send it back. Off and shadow keep that action; on uses the independent read. When that read is
-    unavailable, the author check decides. A ticket on the text-only single-slice light route skips
-    the dispatch. In on mode the validator exempts that ticket from `cold_read_ref`; any other
+    unavailable, the author check decides. Dispatch is skipped only when the validator's exemption detector would exempt
+    the ticket: implementation globs under `docs/**/*.md`, or exactly `README.md`, `CHANGELOG.md`, `NOTICE` or `LICENSE`, with the other existing conditions. A light-route ticket that touches `skills/` or `references/` still dispatches when on. In on mode the validator exempts that ticket from `cold_read_ref`; any other
     implementation ticket still requires it. The exemption is declaration-only: the write guard lifts tests protection and does not deny a write outside those globs. Shadow and on dispatch one cold reader
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
@@ -248,7 +248,7 @@ skill enters, not a skill it starts:
 - `ticket` (`schemas/ticket.schema.json`), `type: implementation`, id `bound-<spec>-<slice>` — one
   per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
   `assumptions` and the exact ticket-time `delegation` output, or, unscored under a delegation coverage limit, no `delegation` block and the unscored assumption. When `review.cold_read` is on, it
-  cites `cold_read_ref`, except a text-only single-slice ticket.
+  cites `cold_read_ref`, except a ticket the detector exempts.
 - `cold-read` (`schemas/cold-read.schema.json`) — a run artifact per implementation ticket when
   `review.cold_read` is shadow or on, published under a `run-artifact` placement. Off stores none.
 - `ticket`, `type: decision` — emitted for an open fork, with the three evidence blocks persisted in
