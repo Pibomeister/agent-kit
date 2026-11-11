@@ -448,6 +448,35 @@ function enabledToyTicket(parsed: JsonObject): JsonObject {
   };
 }
 
+function freezeRejectingToyTicket(parsed: JsonObject): JsonObject {
+  const enabled = enabledToyTicket(parsed);
+  const verification = Array.isArray(enabled.verification) ? [...enabled.verification] : [];
+  verification.push({
+    id: "broken-check",
+    check: "A freezeCheck reject.",
+    kind: "command",
+    supports: ["AC-1"],
+    behavior: { evidence_layer: "implementation" },
+  });
+  return { ...enabled, verification };
+}
+
+function rewordedCheckToyTicket(parsed: JsonObject): JsonObject {
+  const enabled = enabledToyTicket(parsed);
+  const first = Array.isArray(enabled.verification) ? enabled.verification[0] : undefined;
+  if (!asJsonObject(first) || !asJsonObject(first.behavior)) throw new Error("enabled ticket has no check");
+  return {
+    ...enabled,
+    verification: [
+      {
+        ...first,
+        check: "Run the project check with a different freeze.",
+        behavior: first.behavior,
+      },
+    ],
+  };
+}
+
 function publishToyKb(ticket: JsonObject, mode: "off" | "shadow" | "on") {
   const scratch = processScratch("ak-bv-runner-kb-");
   const kb = join(scratch, "kb");
@@ -2030,6 +2059,52 @@ describe("runner guards", () => {
     const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
     expect(started.behavior?.mode).toBe("on");
     expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker branched before the base added a freezeCheck reject cannot start with an unknown tip freeze", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = parsed;
+    const newer = freezeRejectingToyTicket(parsed);
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  for (const tipMode of ["off", "shadow"] as const) {
+    test(`a tip in ${tipMode} whose freeze fails still starts from the merge-base record`, () => {
+      const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+      const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+      if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+      const older = enabledToyTicket(parsed);
+      unlinkStoreTicket(f, older);
+      const atO = publishToyKb(older, "on");
+      const atT = publishToyKb(older, tipMode);
+      forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+      expect(started.behavior?.mode).toBe("on");
+      expect(started.behavior?.required_checks).toHaveLength(1);
+    });
+  }
+
+  test("a worker branched before the base reworded a frozen check cannot start with the weaker freeze", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = enabledToyTicket(parsed);
+    const newer = rewordedCheckToyTicket(parsed);
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
   });
 
   test("approved ticket is absent from the runner store under W1 on", () => {

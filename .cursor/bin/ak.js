@@ -42821,7 +42821,7 @@ class Runner {
     return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
   }
   committedKbView(projectId, ticketId, revision, gitFn) {
-    const none = this.frozenRequiredChecks({}, undefined);
+    const none = [];
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
     const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null)
@@ -42852,12 +42852,17 @@ class Runner {
       lookup: project === undefined ? "absent" : "resolved",
       capturedAt: "1970-01-01T00:00:00Z"
     });
-    return bound2.ok ? bound2.binding.required_checks : [];
+    if (bound2.ok)
+      return bound2.binding.required_checks;
+    return reviewMode(project) === "on" ? "unknown" : [];
   }
   tipRecordsDiverge(projectId, ticketId, tip, mergeBase, gitFn) {
     const atTip = this.committedKbView(projectId, ticketId, tip, gitFn);
     const atBase = this.committedKbView(projectId, ticketId, mergeBase, gitFn);
-    const baseChecks = new Set(atBase.required_checks.map((check2) => canonicalJson(check2)));
+    if (atTip.required_checks === "unknown")
+      return true;
+    const baseList = atBase.required_checks === "unknown" ? [] : atBase.required_checks;
+    const baseChecks = new Set(baseList.map((check2) => canonicalJson(check2)));
     return atTip.mode === "on" && atBase.mode !== "on" || atTip.project && !atBase.project || atTip.ticket && !atBase.ticket || atTip.required_checks.some((check2) => !baseChecks.has(canonicalJson(check2)));
   }
   bindingBaseRevision(charter, revision) {

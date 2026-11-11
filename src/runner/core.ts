@@ -742,7 +742,7 @@ export class Runner {
 
   /** Committed project and ticket at `revision`. Missing KB, project or ticket is absent, not a throw. */
   private committedKbView(projectId: string, ticketId: string, revision: string, gitFn: GitFn) {
-    const none = this.frozenRequiredChecks({}, undefined);
+    const none: FrozenBehaviorCheck[] = [];
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
     const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null) return { mode: "absent", project: false, ticket: false, required_checks: none };
@@ -766,8 +766,12 @@ export class Runner {
     };
   }
 
-  /** Checks bindBehaviorPolicy would freeze for this ticket at the committed project. */
-  private frozenRequiredChecks(ticket: JsonObject, project: JsonObject | undefined): FrozenBehaviorCheck[] {
+  /**
+   * Checks bindBehaviorPolicy would freeze for this ticket at the committed
+   * project. A bind failure at mode `on` is unknown, not an empty freeze.
+   * Off and shadow still map a bind failure to an empty list.
+   */
+  private frozenRequiredChecks(ticket: JsonObject, project: JsonObject | undefined): FrozenBehaviorCheck[] | "unknown" {
     const bound = bindBehaviorPolicy({
       runId: "floor",
       ticket,
@@ -776,14 +780,15 @@ export class Runner {
       lookup: project === undefined ? "absent" : "resolved",
       capturedAt: "1970-01-01T00:00:00Z",
     });
-    return bound.ok ? bound.binding.required_checks : [];
+    if (bound.ok) return bound.binding.required_checks;
+    return reviewMode(project) === "on" ? "unknown" : [];
   }
 
   /**
    * True when the charter base tip's committed project mode is `on` and the
    * merge-base's is not, or when the tip has the project or ticket and the
    * merge-base does not, or when a required check frozen from the tip ticket
-   * is absent from the merge-base freeze.
+   * is absent from the merge-base freeze, or when the tip freeze is unknown.
    */
   private tipRecordsDiverge(
     projectId: string,
@@ -794,7 +799,9 @@ export class Runner {
   ): boolean {
     const atTip = this.committedKbView(projectId, ticketId, tip, gitFn);
     const atBase = this.committedKbView(projectId, ticketId, mergeBase, gitFn);
-    const baseChecks = new Set(atBase.required_checks.map((check) => canonicalJson(check)));
+    if (atTip.required_checks === "unknown") return true;
+    const baseList = atBase.required_checks === "unknown" ? [] : atBase.required_checks;
+    const baseChecks = new Set(baseList.map((check) => canonicalJson(check)));
     return (
       (atTip.mode === "on" && atBase.mode !== "on") ||
       (atTip.project && !atBase.project) ||
