@@ -55,17 +55,25 @@ function uniqueObservations(observations: readonly OracleObservation[]): OracleO
   return unique;
 }
 
+function timestampMs(value: string): number | undefined {
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return undefined;
+  return ms;
+}
+
 export function oracleSubVerdict(observations: readonly OracleObservation[]): OracleSubVerdict {
-  const failedAt: string[] = [];
-  const passedAt: string[] = [];
+  const failedAt: number[] = [];
+  const passedAt: number[] = [];
   for (const row of observations) {
     const at = row.created_at;
     if (at === undefined) continue;
+    const ms = timestampMs(at);
+    if (ms === undefined) continue;
     if (row.status === "failed" && row.exit_status === 1 && isDuplicateOnlyFail(row.cases)) {
-      failedAt.push(at);
+      failedAt.push(ms);
     }
     if (row.status === "passed" && row.exit_status === 0 && isAllPass(row.cases)) {
-      passedAt.push(at);
+      passedAt.push(ms);
     }
   }
   for (const failed of failedAt) {
@@ -81,7 +89,7 @@ function reasonFor(sub: OracleSubVerdict, bound: number): string {
   if (sub === "red-to-green") {
     return `Oracle sub-verdict red-to-green from unattested receipts bound to this HEAD. ${OPERATOR_WORD}`;
   }
-  return `Oracle sub-verdict incomplete. Need one bound failed receipt where only duplicate failed and one bound passed receipt. ${OPERATOR_WORD}`;
+  return `Oracle sub-verdict incomplete. Need one bound failed receipt where only duplicate failed and a later bound passed receipt. ${OPERATOR_WORD}`;
 }
 
 export function decideEvidence(template: EvidenceRecord, observations: readonly OracleObservation[]): EvidenceRecord {

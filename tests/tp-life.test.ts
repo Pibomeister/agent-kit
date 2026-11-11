@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 
 import { decideEvidence, TEMPLATE_REL } from "../src/tp-life/evidence.ts";
 import { parseEvidenceRecord, parseOracleReport } from "../src/tp-life/parse.ts";
+import { redactRepoUrl } from "../src/tp-life/receipt.ts";
 import { CASE_IDS, type CaseResult, type OracleObservation } from "../src/tp-life/types.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -162,6 +163,23 @@ function observation(
     cases: allCases(failId),
   };
 }
+
+const OLD_REDACT = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^@/]+@/;
+
+const REDACT_ROWS: { input: string; output: string }[] = [
+  { input: "https://user:pass@host/repo", output: "https://host/repo" },
+  { input: "https://token@host/repo", output: "https://host/repo" },
+  { input: "ssh://git@host/repo", output: "ssh://host/repo" },
+  { input: "HTTPS://x:y@host/repo", output: "HTTPS://host/repo" },
+  { input: "git+https://x:y@host/repo", output: "git+https://host/repo" },
+  { input: "https://user:p%40ss@host/repo", output: "https://host/repo" },
+  { input: "https://user:p@ss@host/repo", output: "https://host/repo" },
+  { input: "https://evil?@github.com/o/r", output: "https://evil?@github.com/o/r" },
+  { input: "https://evil#@github.com/o/r", output: "https://evil#@github.com/o/r" },
+  { input: "https://github.com/o/r", output: "https://github.com/o/r" },
+  { input: "https://github.com/o/@r", output: "https://github.com/o/@r" },
+  { input: "git@host:o/r", output: "git@host:o/r" },
+];
 
 function isConnRefused(err: Error): boolean {
   let cur: Error | undefined = err;
@@ -344,6 +362,50 @@ describe("bound receipts", () => {
     expect(raw.includes("https://example.invalid/repo.git")).toBe(true);
     const check = runScript(["receipt", "check", "--cwd", work, out]);
     expect(check.status).toBe(0);
+  });
+
+  test("redactRepoUrl covers the userinfo table", () => {
+    for (const row of REDACT_ROWS) {
+      expect(redactRepoUrl(row.input)).toBe(row.output);
+    }
+  });
+
+  test("the previous userinfo regex fails the redaction table", () => {
+    let failed = 0;
+    for (const row of REDACT_ROWS) {
+      if (row.input.replace(OLD_REDACT, "$1") !== row.output) failed += 1;
+    }
+    expect(failed > 0).toBe(true);
+  });
+
+  test("receipt write redacts base_url userinfo and allowlists host_login", async () => {
+    const base = await startFixture();
+    const dir = processScratch("ak-tp-life-login-");
+    const oracleJson = join(dir, "report.oracle.json");
+    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    const parsed = parseOracleReport(readFileSync(oracleJson, "utf8"));
+    expect(parsed === null).toBe(false);
+    if (parsed === null) return;
+    parsed.base_url = "http://x:tok_d42@127.0.0.1:9";
+    writeFileSync(oracleJson, `${JSON.stringify(parsed, null, 2)}\n`);
+    const prev = process.env.AK_TP_LIFE_HOST_LOGIN;
+    process.env.AK_TP_LIFE_HOST_LOGIN = "not-a-host";
+    try {
+      const out = join(dir, "receipt.json");
+      const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", out]);
+      expect(written.status).toBe(0);
+      const raw = readFileSync(out, "utf8");
+      expect(raw.includes("tok_d42")).toBe(false);
+      expect(raw.includes("http://127.0.0.1:9")).toBe(true);
+      expect(raw.includes('\\"host_login\\":\\"unrecorded\\"')).toBe(true);
+      process.env.AK_TP_LIFE_HOST_LOGIN = "claude";
+      const allowed = join(dir, "receipt-claude.json");
+      expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", allowed]).status).toBe(0);
+      expect(readFileSync(allowed, "utf8").includes('\\"host_login\\":\\"claude\\"')).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.AK_TP_LIFE_HOST_LOGIN;
+      else process.env.AK_TP_LIFE_HOST_LOGIN = prev;
+    }
   });
 
   test("a relative --out inside the repo prints a stale-snapshot warning", async () => {
@@ -716,6 +778,7 @@ describe("G4 evidence", () => {
     ]);
     expect(printed.verdict).toBe("not-run");
     expect(printed.oracle_sub_verdict).toBe("incomplete");
+    expect(printed.reason.includes("a later bound passed receipt")).toBe(true);
   });
 
   test("failed duplicate-only before a passed receipt is red-to-green", () => {
@@ -737,8 +800,8 @@ describe("G4 evidence", () => {
     expect(template === null).toBe(false);
     if (template === null) return;
     const printed = decideEvidence(template, [
-      observation("failed.json", "sha256:a", "failed", 0, "duplicate"),
-      observation("passed.json", "sha256:b", "passed", 0),
+      observation("failed.json", "sha256:a", "failed", 0, "duplicate", "2026-01-01T00:00:01.000Z"),
+      observation("passed.json", "sha256:b", "passed", 0, undefined, "2026-01-01T00:00:02.000Z"),
     ]);
     expect(printed.verdict).toBe("not-run");
     expect(printed.oracle_sub_verdict).toBe("incomplete");
@@ -750,11 +813,47 @@ describe("G4 evidence", () => {
     expect(template === null).toBe(false);
     if (template === null) return;
     const printed = decideEvidence(template, [
-      observation("failed.json", "sha256:a", "failed", 1, "duplicate"),
-      observation("passed.json", "sha256:b", "passed", 1),
+      observation("failed.json", "sha256:a", "failed", 1, "duplicate", "2026-01-01T00:00:01.000Z"),
+      observation("passed.json", "sha256:b", "passed", 1, undefined, "2026-01-01T00:00:02.000Z"),
     ]);
     expect(printed.verdict).toBe("not-run");
     expect(printed.oracle_sub_verdict).toBe("incomplete");
+  });
+
+  test("equal timestamps leave oracle_sub_verdict incomplete", () => {
+    const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
+    const template = parseEvidenceRecord(raw);
+    expect(template === null).toBe(false);
+    if (template === null) return;
+    const printed = decideEvidence(template, [
+      observation("failed.json", "sha256:a", "failed", 1, "duplicate", "2026-01-01T00:00:01.000Z"),
+      observation("passed.json", "sha256:b", "passed", 0, undefined, "2026-01-01T00:00:01.000Z"),
+    ]);
+    expect(printed.oracle_sub_verdict).toBe("incomplete");
+  });
+
+  test("a non-ISO created_at is skipped", () => {
+    const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
+    const template = parseEvidenceRecord(raw);
+    expect(template === null).toBe(false);
+    if (template === null) return;
+    const printed = decideEvidence(template, [
+      observation("failed.json", "sha256:a", "failed", 1, "duplicate", "not-a-date"),
+      observation("passed.json", "sha256:b", "passed", 0, undefined, "2026-01-01T00:00:02.000Z"),
+    ]);
+    expect(printed.oracle_sub_verdict).toBe("incomplete");
+  });
+
+  test("an offset created_at is ordered by instant", () => {
+    const raw = readFileSync(join(REPO, TEMPLATE_REL), "utf8");
+    const template = parseEvidenceRecord(raw);
+    expect(template === null).toBe(false);
+    if (template === null) return;
+    const printed = decideEvidence(template, [
+      observation("failed.json", "sha256:a", "failed", 1, "duplicate", "2026-01-01T10:00:00.000Z"),
+      observation("passed.json", "sha256:b", "passed", 0, undefined, "2026-01-01T06:00:00-05:00"),
+    ]);
+    expect(printed.oracle_sub_verdict).toBe("red-to-green");
   });
 
   test("a receipt of the wrong kind is not counted", async () => {

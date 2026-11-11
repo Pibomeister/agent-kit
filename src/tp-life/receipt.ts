@@ -84,7 +84,7 @@ export function resolveReceiptPath(repo: string, receiptPath: string): string {
 }
 
 export function redactRepoUrl(url: string): string {
-  return url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^@/]+@/, "$1");
+  return url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/?#]*@/, "$1");
 }
 
 function outStaleWarning(repo: string, outFile: string): string | null {
@@ -150,6 +150,12 @@ function readPackageVersion(repo: string): string | null {
   }
 }
 
+function recordedHostLogin(): string {
+  const value = process.env.AK_TP_LIFE_HOST_LOGIN;
+  if (value === "claude" || value === "codex" || value === "none") return value;
+  return "unrecorded";
+}
+
 function hostDetails(repo: string, snap: Snapshot, version: string): HostDetails {
   const status = git(repo, ["status", "--porcelain=v1"]);
   return {
@@ -158,7 +164,7 @@ function hostDetails(repo: string, snap: Snapshot, version: string): HostDetails
     version,
     hostname: hostname(),
     os: `${platform()} ${release()}`,
-    host_login: process.env.AK_TP_LIFE_HOST_LOGIN ?? "unrecorded",
+    host_login: recordedHostLogin(),
   };
 }
 
@@ -204,7 +210,7 @@ export function writeOracleReceipt(repo: string, oracleJsonPath: string, outPath
     kind: ORACLE_KIND,
     check: ORACLE_ID,
     command: {
-      argv: ["scripts/tp-life.sh", "oracle", "--base-url", report.base_url],
+      argv: ["scripts/tp-life.sh", "oracle", "--base-url", redactRepoUrl(report.base_url)],
       cwd: ".",
       started_at: report.started_at,
       duration_ms: report.duration_ms,
