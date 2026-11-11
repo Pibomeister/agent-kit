@@ -453,8 +453,12 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
   expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
 }
 
-function patchVerdictFixture(autonomous = false, ship = true) {
+function patchVerdictFixture(autonomous = false, ship = true, setup?: (worker: string) => void) {
   const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+  if (setup !== undefined) {
+    setup(f.worker);
+    f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  }
   if (autonomous) withAuditCadence(f);
   f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
   const receipt = join(f.privateDir, "source.txt");
@@ -1299,6 +1303,52 @@ describe("runner guards", () => {
     writeFileSync(join(f.worker, ".git", "info", "exclude"), ".gitattributes\n");
     writeFileSync(join(f.worker, ".gitattributes"), "feature.txt filter=lie\n");
     expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness recurses into a dirty gitlink", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      const sub = join(worker, "vendor");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "lib.ts"), "export const v = 1;\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "nested");
+      git(worker, "add", "vendor");
+      git(worker, "commit", "-qm", "add gitlink");
+    });
+    writeFileSync(join(f.worker, "vendor", "lib.ts"), "export const v = 2;\n");
+    writeFileSync(join(f.worker, "vendor", "extra.ts"), "export const extra = true;\n");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict merge-tree does not run a worker merge driver", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      writeFileSync(join(worker, "README.md"), "toy worktree\nfeature line\n");
+      writeFileSync(join(worker, ".gitattributes"), "README.md merge=lie\n");
+      git(worker, "add", "README.md", ".gitattributes");
+      git(worker, "commit", "-qm", "feature readme");
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, "README.md"), "main line\ntoy worktree\n");
+      writeFileSync(join(worker, ".gitattributes"), "README.md merge=lie\n");
+      git(worker, "add", "README.md", ".gitattributes");
+      git(worker, "commit", "-qm", "main readme");
+      git(worker, "checkout", "feature");
+    });
+    const marker = join(f.privateDir, "merge-driver.marker");
+    const script = join(f.privateDir, "merge-driver.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(
+      0,
+    );
     let failed = false;
     try {
       f.runner.bindVerdict("toy-run");
