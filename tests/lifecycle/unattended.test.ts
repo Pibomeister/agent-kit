@@ -879,15 +879,23 @@ describe("selection and start (command seam)", () => {
     });
     expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
 
-    // Wrong or missing supervisor in PR disclosure is refused when the run recorded a supervisor.
+    // The supervisor is a record only: a plain disclosure passes the final append, and no disclosure is refused.
+    const shippedCompare = {
+      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+    };
+    stubGh(withFixtures(shippedCompare));
+    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
     stubGh(
       withFixtures({
-        [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+        ...shippedCompare,
+        [`repos/${REPO}/pulls/7`]: {
+          body: { number: 7, base: { ref: "main", sha: BASE }, head: { sha: HEAD }, body: "Change." },
+        },
       }),
     );
-    const wrongDisclosure = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
-    expect(wrongDisclosure.code).toBe(1);
-    expect(wrongDisclosure.err).toContain("disclosure");
+    const noDisclosure = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
+    expect(noDisclosure.code).toBe(1);
+    expect(noDisclosure.err).toContain("disclosure");
 
     // Standalone review-status without AK_LIFECYCLE_SUPERVISOR still accepts a supervised disclosure.
     setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined });

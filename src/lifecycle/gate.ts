@@ -2214,7 +2214,6 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     repo.repo,
     pr,
     checkMergeGate(forge, repo.repo, { identity: true, policySource: source }),
-    supervisor,
   );
   if (status.state !== "pass") {
     say(status.failures, status.notes);

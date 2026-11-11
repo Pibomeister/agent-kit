@@ -599,10 +599,8 @@ function identityFailures(reviewer: Json | undefined, config: LifecycleConfig): 
   return out;
 }
 
-function carriesDisclosure(body: string, supervisor?: string): boolean {
+function carriesDisclosure(body: string): boolean {
   const text = visibleText(body);
-  const who = supervisor?.trim();
-  if (who !== undefined && who !== "") return text.includes(unattendedDisclosure(who));
   if (text.includes(DISCLOSURE)) return true;
   const escaped = DISCLOSURE_TAIL.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
@@ -611,13 +609,7 @@ function carriesDisclosure(body: string, supervisor?: string): boolean {
 }
 
 /** Validates the independent review posted on the pull request's current head. */
-export function checkReviewStatus(
-  io: GateIo,
-  repo: string,
-  pr: number,
-  gate: MergeGate,
-  supervisor?: string,
-): ReviewStatus {
+export function checkReviewStatus(io: GateIo, repo: string, pr: number, gate: MergeGate): ReviewStatus {
   const failures = [...gate.failures];
   const notes = [...gate.notes];
   const pullRead = io.forge(`repos/${repo}/pulls/${pr}`);
@@ -634,7 +626,7 @@ export function checkReviewStatus(
     failures.push(
       `pull request ${pr} targets ${nonEmpty(field(base, "ref")) ?? "an unknown base"}, not ${gate.defaultBranch ?? "the default branch"}`,
     );
-  if (!carriesDisclosure(nonEmpty(field(pull, "body")) ?? "", supervisor))
+  if (!carriesDisclosure(nonEmpty(field(pull, "body")) ?? ""))
     failures.push(`pull request ${pr}'s text does not carry the unattended disclosure outside HTML comments`);
   const { config, reviewAppId: app } = gate;
   if (config === undefined || app === undefined) return { state: "refused", failures, notes, head };
