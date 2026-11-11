@@ -201,7 +201,7 @@ stop_conditions:
   - complete when the specification is approved at its hash, every acceptance criterion is covered
     by a ticket, every implementation ticket carries its three evidence blocks (an unscored ticket
     under a delegation coverage limit carries readiness and assumptions, with no delegation block), every on-mode
-    implementation ticket cites a finished cold read, or an unavailable read with its reason and,
+    implementation ticket that is not a light-route ticket under the detector cites a finished cold read, or an unavailable read with its reason and,
     where the ticket is scored and its computed class was green, carries `yellow-agent` or the live
     named-human lowering that supersedes the raise, and
     every published artifact's read-back matched what was sent.

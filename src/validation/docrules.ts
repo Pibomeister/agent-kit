@@ -9,8 +9,8 @@
  * cross-document or recomputed half is what actually bites.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
@@ -1453,7 +1453,7 @@ function verificationRules(rc: RuleContext): void {
 // --------------------------------------------------------------------- ticket
 
 const LIGHT_ROUTE_FILES = new Set(["README.md", "CHANGELOG.md", "NOTICE", "LICENSE"]);
-const LIGHT_ROUTE_PREFIXES = ["docs/", "references/", "skills/"] as const;
+const LIGHT_ROUTE_PREFIXES = ["docs/"] as const;
 
 function lastPathSegment(pattern: string): string {
   const parts = pattern.split("/");
@@ -1461,7 +1461,7 @@ function lastPathSegment(pattern: string): string {
 }
 
 function isMarkdownSegment(name: string): boolean {
-  return name === "*.md" || name === "*.txt" || name.endsWith(".md") || name.endsWith(".txt");
+  return name === "*.md" || name.endsWith(".md");
 }
 
 /** A glob the light-route detector can treat as documentation-only. Exclusions always win. */
@@ -1472,6 +1472,20 @@ function isLightRouteGlob(pattern: string): boolean {
   const rest = pattern.slice(pattern.indexOf("/") + 1);
   if (rest === "" || rest === "**" || rest === "*") return false;
   return isMarkdownSegment(lastPathSegment(pattern));
+}
+
+/** Literal globs only. A wildcard cannot be observed, so it is not refused here. */
+function globResolvesThroughSymlink(root: string, pattern: string): boolean {
+  if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) return false;
+  let cur = root;
+  for (const part of pattern.split("/")) {
+    if (part === "" || part === ".") continue;
+    cur = join(cur, part);
+    const st = lstatSync(cur, { throwIfNoEntry: false });
+    if (st?.isSymbolicLink()) return true;
+    if (st === undefined) return false;
+  }
+  return false;
 }
 
 function workSourceId(doc: IndexedDoc["doc"]): string | null {
@@ -1492,10 +1506,12 @@ function writeGlobs(doc: IndexedDoc["doc"]): string[] | null {
   if (out.length === 0) return null;
   const ownership = obj(doc["write_ownership"]);
   if (ownership !== null) {
-    for (const item of arr(ownership["paths"])) {
-      const glob = str(item);
-      if (glob === null) return null;
-      out.push(glob);
+    for (const key of ["paths", "generated_artifacts"] as const) {
+      for (const item of arr(ownership[key])) {
+        const glob = str(item);
+        if (glob === null) return null;
+        out.push(glob);
+      }
     }
   }
   return out;
@@ -1503,14 +1519,15 @@ function writeGlobs(doc: IndexedDoc["doc"]): string[] | null {
 
 /**
  * Text-only single-slice from declared write globs and indexed peers, not from a note or approval.
- * A missing work_source, a code glob, or a second implementation ticket on the same work_source
+ * A missing work_source, a code glob, a symlink glob, or any other ticket on the same work_source
  * is not the light route.
  */
-function isLightRouteTicket(doc: IndexedDoc["doc"], index: DocIndex): boolean {
+function isLightRouteTicket(doc: IndexedDoc["doc"], index: DocIndex, root?: string): boolean {
   const globs = writeGlobs(doc);
   if (globs === null) return false;
   for (const glob of globs) {
     if (!isLightRouteGlob(glob)) return false;
+    if (root !== undefined && globResolvesThroughSymlink(root, glob)) return false;
   }
   const symbols = obj(doc["allowed_changes"])?.["symbols"];
   if (Array.isArray(symbols) && symbols.length > 0) return false;
@@ -1519,7 +1536,6 @@ function isLightRouteTicket(doc: IndexedDoc["doc"], index: DocIndex): boolean {
   const thisId = str(doc["id"]);
   for (const entry of index.all) {
     if (entry.schema !== "ticket") continue;
-    if (str(entry.doc["type"]) !== "implementation") continue;
     if (str(entry.doc["id"]) === thisId) continue;
     if (workSourceId(entry.doc) === source) return false;
   }
@@ -1558,7 +1574,7 @@ function ticketRules(rc: RuleContext): void {
     return;
   }
 
-  if (isLightRouteTicket(doc, rc.index)) return;
+  if (isLightRouteTicket(doc, rc.index, rc.ctx?.root)) return;
 
   const ref = obj(doc["cold_read_ref"]);
   const refId = ref === null ? null : str(ref["id"]);

@@ -81,6 +81,7 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("text-only single-slice light route skips the dispatch");
       expect(text).toContain("reshape it, or reclassify it");
       expect(text).toContain("exempts that ticket from `cold_read_ref`");
+      expect(text).toContain("The exemption is declaration-only");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
     }
   });
@@ -101,6 +102,9 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     );
     expect(note).toContain("Step 13 skips the independent cold read on this route");
     expect(note).toContain("A note or approval does not exempt");
+    expect(note).toContain("is refused; a markdown last segment is required");
+    expect(note).toContain("The exemption is declaration-only");
+    expect(note).toContain("no other indexed ticket shares that id");
     expect(note).toContain("(phase 1b, GS-004i)");
   });
 
@@ -112,7 +116,8 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
   });
 
   test("complete admits a cited unavailable on-mode read", () => {
-    const phrase = "cites a finished cold read, or an unavailable read with its reason";
+    const phrase =
+      "every on-mode implementation ticket that is not a light-route ticket under the detector cites a finished cold read, or an unavailable read with its reason";
     expect(skill.replace(/\s+/g, " ")).toContain(phrase);
     expect(contract.replace(/\s+/g, " ")).toContain(phrase);
     expect(packagedBody().replace(/\s+/g, " ")).toContain(phrase);

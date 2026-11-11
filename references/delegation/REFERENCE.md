@@ -284,10 +284,13 @@ zero-context gate.
 
 **Skip.** A ticket on the text-only single-slice light route above skips this dispatch. When the
 mode is on, the validator exempts that ticket from `cold_read_ref` only when every declared write
-glob is documentation markdown under `docs/`, `references/` or `skills/`, or exactly `README.md`,
-`CHANGELOG.md`, `NOTICE` or `LICENSE`, `allowed_changes.symbols` is empty, `work_source.ref.id` is
-present, and no other indexed implementation ticket shares that id. A note or approval does not
-exempt. Any other implementation ticket still requires a cited read.
+glob (`allowed_changes.files`, `write_ownership.paths` and `write_ownership.generated_artifacts`) is
+documentation markdown under `docs/`, or exactly `README.md`, `CHANGELOG.md`, `NOTICE` or `LICENSE`,
+`allowed_changes.symbols` is empty, `work_source.ref.id` is present, and no other indexed ticket
+shares that id. `docs/**` is refused; a markdown last segment is required. A glob that resolves
+through a symlink is refused when the checkout is present. A note or approval does not exempt. The
+exemption is declaration-only: the write guard lifts tests protection and does not deny a write
+outside those globs. Any other implementation ticket still requires a cited read.
 
 **Dispatch.** In shadow and on, dispatch one cold reader per remaining implementation ticket, in
 parallel, each in its own context. Give the reader the ticket and a read-only checkout at the
