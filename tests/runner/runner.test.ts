@@ -1273,6 +1273,42 @@ describe("runner guards", () => {
     expect(reverted.verdict?.reused_from).toBeUndefined();
   });
 
+  test("verdict patch identity does not run worker diff.external", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "diff-external.marker");
+    const script = join(f.privateDir, "diff-external.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.external", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness does not run worker clean filters", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "clean-filter.marker");
+    const script = join(f.privateDir, "clean-filter.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "exclude"), ".gitattributes\n");
+    writeFileSync(join(f.worker, ".gitattributes"), "feature.txt filter=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
   test(
     "charter-bound live smoke wakes through an event and reaches a local ready branch",
     async () => {
