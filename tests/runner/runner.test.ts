@@ -11,6 +11,7 @@ import {
   rmSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
   watch,
   writeFileSync,
 } from "node:fs";
@@ -475,6 +476,17 @@ function trunkCommit(f: ReturnType<typeof patchVerdictFixture>, path: string, te
   git(f.worker, "add", path);
   git(f.worker, "commit", "-qm", `trunk changes ${path}`);
   git(f.worker, "checkout", "feature");
+}
+
+function conflictingReadme(worker: string) {
+  writeFileSync(join(worker, "README.md"), "feature\n");
+  git(worker, "add", "README.md");
+  git(worker, "commit", "-qm", "feature readme");
+  git(worker, "checkout", "main");
+  writeFileSync(join(worker, "README.md"), "main\n");
+  git(worker, "add", "README.md");
+  git(worker, "commit", "-qm", "main readme");
+  git(worker, "checkout", "feature");
 }
 
 function shipCard(f: ReturnType<typeof patchVerdictFixture>) {
@@ -1139,6 +1151,28 @@ describe("runner guards", () => {
     expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
   });
 
+  test("renaming a CI workflow off the CI path voids a verdict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      mkdirSync(join(worker, ".github", "workflows"), { recursive: true });
+      writeFileSync(join(worker, ".github", "workflows", "ci.yml"), "name: ci\n");
+      git(worker, "add", ".github/workflows/ci.yml");
+      git(worker, "commit", "-qm", "add CI");
+      git(worker, "checkout", "feature");
+      git(worker, "rebase", "main");
+    });
+    f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, "docs"), { recursive: true });
+    git(f.worker, "mv", ".github/workflows/ci.yml", "docs/ci.yml");
+    git(f.worker, "commit", "-qm", "rename CI off path");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
   test("an unattended ship requires a current verdict and rechecks trunk before its ruling", () => {
     const f = patchVerdictFixture(true, false);
     const prepareShip = () =>
@@ -1277,6 +1311,24 @@ describe("runner guards", () => {
     expect(reverted.verdict?.reused_from).toBeUndefined();
   });
 
+  test("verdict patch identity does not run worker textconv", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "textconv.marker");
+    const script = join(f.privateDir, "textconv.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "attributes"), "feature.txt diff=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
   test("verdict patch identity does not run worker diff.external", () => {
     const f = patchVerdictFixture();
     const marker = join(f.privateDir, "diff-external.marker");
@@ -1303,6 +1355,15 @@ describe("runner guards", () => {
     writeFileSync(join(f.worker, ".git", "info", "exclude"), ".gitattributes\n");
     writeFileSync(join(f.worker, ".gitattributes"), "feature.txt filter=lie\n");
     expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    const feature = join(f.worker, "feature.txt");
+    const past = new Date("2020-01-01T00:00:00Z");
+    utimesSync(feature, past, past);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "update-index", "--refresh"]).exitCode).toBe(0);
+    if (existsSync(marker)) unlinkSync(marker);
+    writeFileSync(feature, readFileSync(feature));
+    Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]);
+    expect(existsSync(marker)).toBe(true);
+    unlinkSync(marker);
     let failed = false;
     try {
       f.runner.bindVerdict("toy-run");
@@ -1327,6 +1388,18 @@ describe("runner guards", () => {
     writeFileSync(join(f.worker, "vendor", "lib.ts"), "export const v = 2;\n");
     writeFileSync(join(f.worker, "vendor", "extra.ts"), "export const extra = true;\n");
     expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict merge-tree does not honor worker merge.default union", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.default", "union"]).exitCode).toBe(0);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor .git/info/attributes merge=union", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    writeFileSync(join(f.worker, ".git", "info", "attributes"), "README.md merge=union\n");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
   });
 
   test("verdict merge-tree does not run a worker merge driver", () => {
@@ -1377,6 +1450,21 @@ describe("runner guards", () => {
     }
     expect(existsSync(marker)).toBe(false);
     expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness treats a group-exec worktree bit as executable", () => {
+    const f = patchVerdictFixture();
+    chmodSync(join(f.worker, "feature.txt"), 0o650);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict cleanliness allows a tracked ..foo path", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      writeFileSync(join(worker, "..foo"), "inside\n");
+      git(worker, "add", "--", "..foo");
+      git(worker, "commit", "-qm", "dotdotfoo");
+    });
+    expect(f.runner.bindVerdict("toy-run").head_revision).toBe(f.revision);
   });
 
   test("verdict cleanliness treats eol=crlf checkout bytes that differ from the blob as dirty", () => {
