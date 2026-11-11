@@ -16990,7 +16990,7 @@ var init_project_schema = __esm(() => {
         }
       },
       review: {
-        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is off. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
+        description: "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is off, except as review.behavior states. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
         type: "object",
         additionalProperties: false,
         properties: {
@@ -24009,15 +24009,28 @@ function describe2(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
 function committedBindingText(projectRoot, revision) {
-  const rev = revision !== undefined && revision !== "" ? revision : "HEAD";
+  const explicit = revision !== undefined && revision !== "";
+  const rev = explicit ? revision : "HEAD";
+  if (explicit) {
+    const verified = git2(projectRoot, ["rev-parse", "--verify", `${rev}^{commit}`]);
+    if (verified.status !== 0)
+      return { text: null, unresolved: `revision ${rev} cannot be resolved` };
+  }
   const prefix = git2(projectRoot, ["rev-parse", "--show-prefix"]);
   if (prefix.status !== 0)
-    return null;
+    return { text: null };
   const shown = git2(projectRoot, ["show", `${rev}:${prefix.stdout.trim()}${BINDING_FILE2}`]);
-  return shown.status === 0 ? shown.stdout : null;
+  return { text: shown.status === 0 ? shown.stdout : null };
 }
 function loadKbBinding(projectRoot, revision) {
-  const text = committedBindingText(projectRoot, revision) ?? readTextIfPresent(join7(projectRoot, BINDING_FILE2));
+  const committed2 = committedBindingText(projectRoot, revision);
+  if (committed2.unresolved !== undefined) {
+    return {
+      binding: null,
+      issues: [error("kb.revision-unresolved", BINDING_FILE2, committed2.unresolved)]
+    };
+  }
+  const text = committed2.text ?? readTextIfPresent(join7(projectRoot, BINDING_FILE2));
   if (text === null) {
     return {
       binding: null,
@@ -38652,7 +38665,7 @@ init_common_schema();
 var import_ajv17 = __toESM(require_ajv(), 1);
 var import__202014 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync6 } from "child_process";
-import { existsSync as existsSync42, readFileSync as readFileSync42, realpathSync as realpathSync18 } from "fs";
+import { existsSync as existsSync42, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
 import { homedir as homedir6 } from "os";
 import { basename as basename23, isAbsolute as isAbsolute18, join as join54, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
@@ -41517,7 +41530,7 @@ function resolveLink(absolute) {
 // src/runner/cli.ts
 init_hash();
 import { timingSafeEqual } from "crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync36, realpathSync as realpathSync16, unlinkSync } from "fs";
+import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync36, realpathSync as realpathSync17, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
 import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
 
@@ -41525,7 +41538,7 @@ import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative1
 init_dist();
 init_hash();
 import { createHash as createHash12 } from "crypto";
-import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync12, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
+import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync13, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
 import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
@@ -41568,8 +41581,65 @@ init_binding();
 init_local_git();
 init_behavior_policy();
 
+// src/lifecycle/protected-start.ts
+init_behavior_policy();
+import { realpathSync as realpathSync9 } from "fs";
+var STANDING_CAPABILITIES = ["runner-grants", "trusted-evidence", "independent-context"];
+function isText4(value) {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+function text4(value) {
+  return isText4(value) && value !== "" ? value : undefined;
+}
+function locationMatches(charter, charterPath) {
+  const immutability = asJsonObject(charter.immutability) ? charter.immutability : undefined;
+  const location = immutability === undefined ? undefined : text4(immutability.location);
+  if (location === undefined)
+    return false;
+  try {
+    return realpathSync9(location) === realpathSync9(charterPath);
+  } catch {
+    return false;
+  }
+}
+function charterAllowsProtectedStart(charter, hash, extras = {}) {
+  const immutability = asJsonObject(charter.immutability) ? charter.immutability : undefined;
+  const declared = immutability === undefined ? undefined : text4(immutability.hash);
+  if (charter.status !== "active" || declared !== hash || extras.charterPath !== undefined && !locationMatches(charter, extras.charterPath))
+    return { ok: false, reason: "charter is inactive, moved or has a mismatched hash" };
+  const approvals = Array.isArray(charter.approvals) ? charter.approvals : [];
+  const human = approvals.some((row) => asJsonObject(row) && row.by === "human" && row.authority === "explicit" && row.artifact_hash === hash);
+  if (!human)
+    return { ok: false, reason: "active charter lacks a human approval bound to its hash" };
+  const grants = Array.isArray(charter.sensitive_grants) ? charter.sensitive_grants : [];
+  for (const row of grants) {
+    const grant = asJsonObject(row) ? row : undefined;
+    const approval = grant !== undefined && asJsonObject(grant.approval) ? grant.approval : undefined;
+    if (approval === undefined || approval.artifact_hash !== hash || approval.by !== "human" || approval.authority !== "explicit")
+      return { ok: false, reason: "sensitive grant lacks human approval bound to this charter" };
+  }
+  if (extras.runId !== undefined && charter.run_id !== extras.runId)
+    return { ok: false, reason: "run id does not match charter" };
+  const capabilities = Array.isArray(charter.allowed_capabilities) ? charter.allowed_capabilities : [];
+  if (!STANDING_CAPABILITIES.every((capability) => capabilities.includes(capability)))
+    return {
+      ok: false,
+      reason: "standing start requires charter-approved runner grants, trusted evidence and independent context"
+    };
+  const standing = Array.isArray(charter.standing_grants) ? charter.standing_grants : [];
+  const listed = standing.some((row) => asJsonObject(row) && row.covers === "autopilot.start" && row.controller === "firstmate");
+  if (!listed)
+    return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
+  const granted = extras.standingGrant;
+  if (granted !== undefined) {
+    if (granted.charter_hash !== hash || extras.runId !== undefined && granted.run_id !== extras.runId || granted.covers !== "autopilot.start" || granted.controller !== "firstmate")
+      return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
+  }
+  return { ok: true };
+}
+
 // src/runner/evidence.ts
-import { mkdirSync as mkdirSync24, readFileSync as readFileSync31, realpathSync as realpathSync9, writeFileSync as writeFileSync15 } from "fs";
+import { mkdirSync as mkdirSync24, readFileSync as readFileSync31, realpathSync as realpathSync10, writeFileSync as writeFileSync15 } from "fs";
 import { isAbsolute as isAbsolute11, join as join44, relative as relative9 } from "path";
 
 class PrivateFileEvidenceStore {
@@ -41577,7 +41647,7 @@ class PrivateFileEvidenceStore {
   constructor(stateDir) {
     this.root = join44(stateDir, "evidence");
     mkdirSync24(this.root, { recursive: true, mode: 448 });
-    const resolved = realpathSync9(this.root);
+    const resolved = realpathSync10(this.root);
     const rel = relative9(stateDir, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence store escapes runner state directory");
@@ -41588,7 +41658,7 @@ class PrivateFileEvidenceStore {
     return ref;
   }
   read(ref) {
-    const resolved = realpathSync9(ref);
+    const resolved = realpathSync10(ref);
     const rel = relative9(this.root, resolved);
     if (rel === "" || rel.startsWith("..") || isAbsolute11(rel))
       throw new Error("evidence ref escapes runner store");
@@ -41839,11 +41909,11 @@ var isEffectConfig = ajv6.compile({
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync4 } from "child_process";
 import { createHash as createHash11 } from "crypto";
-import { accessSync, constants, existsSync as existsSync39, lstatSync as lstatSync5, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync11 } from "fs";
+import { accessSync, constants, existsSync as existsSync39, lstatSync as lstatSync5, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
 import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
 
 // src/runner/path.ts
-import { lstatSync as lstatSync4, realpathSync as realpathSync10 } from "fs";
+import { lstatSync as lstatSync4, realpathSync as realpathSync11 } from "fs";
 import { delimiter as delimiter4, dirname as dirname21, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
 function workerControlledPath(path, workerRoot) {
   if (!isAbsolute12(path))
@@ -41863,7 +41933,7 @@ function workerControlledPath(path, workerRoot) {
     }
   }
   try {
-    const rel = relative10(workerRoot, realpathSync10(existing));
+    const rel = relative10(workerRoot, realpathSync11(existing));
     return rel === "" || !rel.startsWith("..") && !isAbsolute12(rel);
   } catch {
     return true;
@@ -41881,7 +41951,7 @@ function resolveRunnerGit(workerRoot) {
     const candidate = join45(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
-      const binary = realpathSync11(candidate);
+      const binary = realpathSync12(candidate);
       if (!workerControlledPath(binary, workerRoot))
         return { binary, path, workerRoot, home: "/dev/null" };
     } catch {}
@@ -41904,7 +41974,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
   };
   const proc = spawnSync4(context.binary, [
     "-c",
-    `safe.directory=${realpathSync11(project)}`,
+    `safe.directory=${realpathSync12(project)}`,
     "-c",
     "core.fsmonitor=false",
     "-c",
@@ -42077,7 +42147,7 @@ function treeHash(context, project, ignoreUntrackedDirs) {
     paths2.set(path, ["untracked"]);
   }
   const digest = createHash11("sha256");
-  const root = realpathSync11(project);
+  const root = realpathSync12(project);
   for (const path of [...paths2.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve15(project, path);
     const rel = relative11(root, at);
@@ -42171,7 +42241,7 @@ function canonicalFuturePath(path) {
     missing2.unshift(basename20(existing));
     existing = dirname22(existing);
   }
-  return join46(realpathSync12(existing), ...missing2);
+  return join46(realpathSync13(existing), ...missing2);
 }
 function digest(bytes) {
   return `sha256:${createHash12("sha256").update(bytes).digest("hex")}`;
@@ -42224,8 +42294,8 @@ class Runner {
   evidenceStore;
   constructor(stateDir, workerRoot, kitRoot, enforceSnapshot = false) {
     const requestedStateDir = canonicalFuturePath(stateDir);
-    this.workerRoot = realpathSync12(workerRoot);
-    this.kitRoot = realpathSync12(kitRoot);
+    this.workerRoot = realpathSync13(workerRoot);
+    this.kitRoot = realpathSync13(kitRoot);
     if (inside(this.kitRoot, this.workerRoot))
       throw new Error("runner bundle is worker-writable");
     this.enforceSnapshot = enforceSnapshot;
@@ -42233,13 +42303,13 @@ class Runner {
       throw new Error("runner state is worker-writable");
     const gitContext = resolveRunnerGit(this.workerRoot);
     const commonDir2 = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
-    this.sharedGitDir = commonDir2.code === 0 ? realpathSync12(isAbsolute14(commonDir2.text) ? commonDir2.text : join46(this.workerRoot, commonDir2.text)) : null;
+    this.sharedGitDir = commonDir2.code === 0 ? realpathSync13(isAbsolute14(commonDir2.text) ? commonDir2.text : join46(this.workerRoot, commonDir2.text)) : null;
     if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
       throw new Error("runner bundle cannot use the shared git common directory");
     if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
       throw new Error("runner state cannot use the shared git common directory");
     mkdirSync25(requestedStateDir, { recursive: true, mode: 448 });
-    this.stateDir = realpathSync12(requestedStateDir);
+    this.stateDir = realpathSync13(requestedStateDir);
     if (inside(this.stateDir, this.workerRoot))
       throw new Error("runner state resolves into worker root");
     if (this.sharedGitDir !== null && inside(this.stateDir, this.sharedGitDir))
@@ -42594,29 +42664,22 @@ class Runner {
     const observed = this.observedSnapshot();
     if (observed !== null && observed.revision !== revision)
       throw new Error("start revision differs from worker checkout");
-    const source = realpathSync12(charterPath);
+    const source = realpathSync13(charterPath);
     this.assertPrivatePath(source);
     const charterValue = JSON.parse(readFileSync33(source, "utf8"));
     if (!this.validateCharter(charterValue))
       throw new Error(`invalid charter: ${JSON.stringify(this.validateCharter.errors)}`);
     const charter = charterValue;
-    const immutable = charter.immutability;
     const hash = charterDigest(charter);
-    if (charter.status !== "active" || immutable.hash !== hash || realpathSync12(immutable.location) !== source)
-      throw new Error("charter is inactive, moved or has a mismatched hash");
-    if (!charter.approvals.some((a) => a.by === "human" && a.authority === "explicit" && a.artifact_hash === hash))
-      throw new Error("active charter lacks a human approval bound to its hash");
-    for (const sensitive of charter.sensitive_grants ?? []) {
-      const approval = sensitive.approval;
-      if (approval.artifact_hash !== hash || approval.by !== "human" || approval.authority !== "explicit")
-        throw new Error("sensitive grant lacks human approval bound to this charter");
-    }
-    if (charter.run_id !== id)
-      throw new Error("run id does not match charter");
-    if (!["runner-grants", "trusted-evidence", "independent-context"].every((capability) => charter.allowed_capabilities.includes(capability)))
-      throw new Error("standing start requires charter-approved runner grants, trusted evidence and independent context");
-    if (standingGrant.charter_hash !== hash || standingGrant.run_id !== id || standingGrant.covers !== "autopilot.start" || standingGrant.controller !== "firstmate" || !charter.standing_grants?.some((entry) => entry.covers === standingGrant.covers && entry.controller === standingGrant.controller))
-      throw new Error("standing grant is absent, forged or unbound to the approved charter");
+    if (!asJsonObject(charter))
+      throw new Error("charter is not an object");
+    const allowed = charterAllowsProtectedStart(charter, hash, {
+      charterPath: source,
+      runId: id,
+      standingGrant
+    });
+    if (!allowed.ok)
+      throw new Error(allowed.reason);
     try {
       this.load(id);
       throw new Error("run already exists");
@@ -42625,6 +42688,9 @@ class Runner {
         throw cause;
     }
     const createdAt = new Date().toISOString();
+    const bindingRevision = this.bindingBaseRevision(charter);
+    const work = this.tryWorkTicket(charter, bindingRevision);
+    const looked = this.projectLookup(charter.project.id, bindingRevision);
     const run2 = {
       id,
       charter_path: source,
@@ -42647,16 +42713,30 @@ class Runner {
       delegates: {},
       procedure: this.governingProcedure(),
       open_escalation: null,
-      behavior: this.bindBehavior(id, charter, hash, createdAt, revision)
+      behavior: this.bindBehavior(id, charter, hash, createdAt, work, looked)
     };
     this.save(run2);
-    this.persistBehaviorEvidence(run2);
+    this.persistBehaviorEvidence(run2, work);
     return run2;
   }
-  persistBehaviorEvidence(run2) {
+  bindingBaseRevision(charter) {
+    const branch = charter.repos[0]?.base_branch;
+    if (branch === undefined || branch === "")
+      throw new Error("charter names no base branch for the knowledgebase binding");
+    const origin = `origin/${branch}`;
+    const originOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${origin}^{commit}`]);
+    const localOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${branch}^{commit}`]);
+    const base2 = originOk.code === 0 ? origin : localOk.code === 0 ? branch : undefined;
+    if (base2 === undefined)
+      throw new Error(`cannot resolve charter base branch ${branch}`);
+    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", "HEAD", base2]);
+    if (mergeBase.code !== 0 || mergeBase.text.trim() === "")
+      throw new Error("cannot compute merge-base of HEAD and the charter base branch");
+    return mergeBase.text.trim();
+  }
+  persistBehaviorEvidence(run2, work) {
     if (run2.behavior === undefined)
       return;
-    const work = this.tryWorkTicket(run2.charter, run2.revision);
     if (work === undefined)
       return;
     const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
@@ -42759,9 +42839,7 @@ class Runner {
       projectHash: projectHashOf(published.project)
     };
   }
-  bindBehavior(id, charter, charterHash, createdAt, revision) {
-    const work = this.tryWorkTicket(charter, revision);
-    const looked = this.projectLookup(charter.project.id, revision);
+  bindBehavior(id, charter, charterHash, createdAt, work, looked) {
     const raw = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
     let ticketResolution;
@@ -42799,7 +42877,7 @@ class Runner {
       throw new Error("run is stopped; no new gate evidence can be collected");
     if (!ID.test(evidenceId))
       throw new Error("invalid evidence id");
-    const source = realpathSync12(sourcePath);
+    const source = realpathSync13(sourcePath);
     try {
       this.assertPrivatePath(source);
     } catch {
@@ -43524,7 +43602,7 @@ class Runner {
 
 // src/council/config.ts
 var import__202012 = __toESM(require_2020(), 1);
-import { readFileSync as readFileSync34, realpathSync as realpathSync13, statSync as statSync18 } from "fs";
+import { readFileSync as readFileSync34, realpathSync as realpathSync14, statSync as statSync18 } from "fs";
 var DEFAULT_TIMEOUT_MS = 900000;
 var ajv7 = new import__202012.default({ strict: false });
 var nonEmpty = { type: "string", minLength: 1 };
@@ -43581,7 +43659,7 @@ function rosterProblems(seats) {
   return problems;
 }
 function readCouncilConfig(path) {
-  const real = realpathSync13(path);
+  const real = realpathSync14(path);
   const stat = statSync18(real);
   if (!stat.isFile())
     throw new Error("council configuration is not a regular file");
@@ -43598,7 +43676,7 @@ function readCouncilConfig(path) {
 
 // src/council/outbound.ts
 init_secrets();
-import { realpathSync as realpathSync14 } from "fs";
+import { realpathSync as realpathSync15 } from "fs";
 import { basename as basename21 } from "path";
 var DEFAULT_MAX_BYTES = 262144;
 var BUILT_IN_DENY = [
@@ -43646,7 +43724,7 @@ function deniedBy(path) {
   if (given !== null)
     return given;
   try {
-    return deniedSegment(realpathSync14(path));
+    return deniedSegment(realpathSync15(path));
   } catch {
     return null;
   }
@@ -43660,9 +43738,9 @@ var JSON_ESCAPED = new Map([
   ["r", "\r"],
   ["t", "\t"]
 ]);
-function jsonDecoded(text4) {
-  const once = text4.replace(JSON_ESCAPE, (_, hex2, char) => hex2 === undefined ? JSON_ESCAPED.get(char) ?? char : String.fromCharCode(Number.parseInt(hex2, 16)));
-  return once === text4 ? text4 : jsonDecoded(once);
+function jsonDecoded(text5) {
+  const once = text5.replace(JSON_ESCAPE, (_, hex2, char) => hex2 === undefined ? JSON_ESCAPED.get(char) ?? char : String.fromCharCode(Number.parseInt(hex2, 16)));
+  return once === text5 ? text5 : jsonDecoded(once);
 }
 function checkOutbound(items2, sent) {
   const refusals = [];
@@ -43751,11 +43829,11 @@ function chainFailures(seat2, attempts) {
 }
 
 // src/runner/token.ts
-import { readFileSync as readFileSync35, realpathSync as realpathSync15, statSync as statSync19 } from "fs";
+import { readFileSync as readFileSync35, realpathSync as realpathSync16, statSync as statSync19 } from "fs";
 import { dirname as dirname23, isAbsolute as isAbsolute15, relative as relative13 } from "path";
 function readAdminToken(path, forbiddenRoot) {
-  const at = realpathSync15(path);
-  const root = realpathSync15(forbiddenRoot);
+  const at = realpathSync16(path);
+  const root = realpathSync16(forbiddenRoot);
   const rel = relative13(root, at);
   const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
   const probe = gitProcess(resolveRunnerGit(root), dirname23(at), [
@@ -44067,7 +44145,7 @@ async function serve(argv, io) {
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
   if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error("serve needs --socket, --state-dir, --worker-root, --run-id, --admin-token-file, a 32+ character AK_RUNNER_WORKER_TOKEN, and socket mode 600 or 660");
-  const workerRoot = realpathSync16(worker);
+  const workerRoot = realpathSync17(worker);
   const socketPath = resolve17(socket);
   const relativeSocket = relative14(workerRoot, socketPath);
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
@@ -44091,12 +44169,12 @@ async function serve(argv, io) {
     if (existsSync41(socketPath))
       unlinkSync(socketPath);
   }
-  const socketParent = realpathSync16(dirname24(socketPath));
+  const socketParent = realpathSync17(dirname24(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
   if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
   const entry = process.argv[1];
-  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve17(import.meta.dir, "..", "..") : resolve17(realpathSync16(entry), "..", ".."));
+  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve17(import.meta.dir, "..", "..") : resolve17(realpathSync17(entry), "..", ".."));
   const runner = new Runner(state, workerRoot, kitRoot, true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
@@ -44105,7 +44183,7 @@ async function serve(argv, io) {
     throw new Error("admin and worker tokens must differ");
   let launchers = [];
   if (seatConfigPath !== undefined) {
-    const configPath = realpathSync16(seatConfigPath);
+    const configPath = realpathSync17(seatConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isSeatConfig(configValue))
@@ -44118,7 +44196,7 @@ async function serve(argv, io) {
   }
   let council = null;
   if (councilConfigPath !== undefined) {
-    runner.assertPrivatePath(realpathSync16(councilConfigPath));
+    runner.assertPrivatePath(realpathSync17(councilConfigPath));
     council = readCouncilConfig(councilConfigPath);
     if (council.pair !== undefined)
       throw new Error("the runner's supervisor pair comes from --seat-config; a council configuration names the veto only");
@@ -44129,7 +44207,7 @@ async function serve(argv, io) {
   }
   let verifyCommand = null;
   if (verifyConfigPath !== undefined) {
-    const configPath = realpathSync16(verifyConfigPath);
+    const configPath = realpathSync17(verifyConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isVerifyConfig(configValue))
@@ -44139,7 +44217,7 @@ async function serve(argv, io) {
   let eventCommand = null;
   let eventTimeoutMs = null;
   if (eventConfigPath !== undefined) {
-    const configPath = realpathSync16(eventConfigPath);
+    const configPath = realpathSync17(eventConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isEventConfig(configValue))
@@ -44150,7 +44228,7 @@ async function serve(argv, io) {
   let loopCommand = null;
   let loopTimeoutMs = null;
   if (loopConfigPath !== undefined) {
-    const configPath = realpathSync16(loopConfigPath);
+    const configPath = realpathSync17(loopConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isEventConfig(configValue))
@@ -44160,7 +44238,7 @@ async function serve(argv, io) {
   }
   const effectAdapters = new Map;
   if (effectConfigPath !== undefined) {
-    const configPath = realpathSync16(effectConfigPath);
+    const configPath = realpathSync17(effectConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue = JSON.parse(readFileSync36(configPath, "utf8"));
     if (!isEffectConfig(configValue))
@@ -44424,8 +44502,8 @@ var isCouncilCard = new import__202013.default({ strict: false }).compile({
     approve: { type: "string", minLength: 1 }
   }
 });
-function sha2562(text4) {
-  return `sha256:${createHash13("sha256").update(text4).digest("hex")}`;
+function sha2562(text5) {
+  return `sha256:${createHash13("sha256").update(text5).digest("hex")}`;
 }
 function seatEntry(role, seat2, result2) {
   if (!result2.ok)
@@ -44580,12 +44658,12 @@ ${entry.text}` }))
     grants: [],
     note: "This record grants no authority. It approves no checkpoint, ticket, merge or deploy."
   };
-  const text4 = `${JSON.stringify(record, null, 2)}
+  const text5 = `${JSON.stringify(record, null, 2)}
 `;
   if (args.out === undefined)
-    io.out(text4.trimEnd());
+    io.out(text5.trimEnd());
   else {
-    writeFileSync17(args.out, text4, { mode: 384 });
+    writeFileSync17(args.out, text5, { mode: 384 });
     io.out(`council ${record.outcome}: ${args.out}`);
   }
   return record.outcome === "approve" || record.outcome === "decline" ? 0 : 1;
@@ -44849,9 +44927,9 @@ function taken(cause) {
   return cause instanceof Error && "code" in cause && cause.code === "EEXIST";
 }
 function current(path) {
-  const text4 = readFileSync39(path, "utf8");
+  const text5 = readFileSync39(path, "utf8");
   try {
-    const raw = JSON.parse(text4);
+    const raw = JSON.parse(text5);
     if (isRecord(raw))
       return raw;
   } catch {}
@@ -44907,7 +44985,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync40, realpathSync as realpathSync17 } from "fs";
+import { lstatSync as lstatSync7, readFileSync as readFileSync40, realpathSync as realpathSync18 } from "fs";
 import { isAbsolute as isAbsolute17, join as join50, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
@@ -44926,7 +45004,7 @@ function collectInput(cwd) {
   const top = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 1500 });
   if (top.code !== 0)
     throw new Error("repository");
-  const root = realpathSync17(top.stdout.trim());
+  const root = realpathSync18(top.stdout.trim());
   const changed = run(["git", "diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR", "--"], {
     cwd: root,
     timeoutMs: 1500
@@ -44946,7 +45024,7 @@ function collectInput(cwd) {
     else {
       try {
         const stat = lstatSync7(absolute);
-        const rel = relative15(root, realpathSync17(absolute));
+        const rel = relative15(root, realpathSync18(absolute));
         if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
           reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
@@ -45149,9 +45227,9 @@ function captureHostVersion(binaries, versionArgs, options) {
   if (options.requireZeroExit && (spawnTimedOut(result2.error) || result2.status !== 0)) {
     return hostVersionNoOutput(bin);
   }
-  const text4 = (result2.stdout ?? "").trim() || (result2.stderr ?? "").trim();
-  return text4 === "" ? hostVersionNoOutput(bin) : text4.split(`
-`)[0] ?? text4;
+  const text5 = (result2.stdout ?? "").trim() || (result2.stderr ?? "").trim();
+  return text5 === "" ? hostVersionNoOutput(bin) : text5.split(`
+`)[0] ?? text5;
 }
 
 // src/review-isolation-probe/hosts.ts
@@ -45401,7 +45479,7 @@ function jsonCommand(binary2, args, cwd = process.cwd()) {
 }
 function projectRoot() {
   const top = command("git", ["rev-parse", "--show-toplevel"]);
-  return realpathSync18(top.ok ? top.output : process.cwd());
+  return realpathSync19(top.ok ? top.output : process.cwd());
 }
 function inProject(row, root) {
   if (row.projectEnabled === true)
@@ -45409,7 +45487,7 @@ function inProject(row, root) {
   if (row.projectPath === undefined)
     return true;
   try {
-    return realpathSync18(row.projectPath) === root;
+    return realpathSync19(row.projectPath) === root;
   } catch {
     return false;
   }
@@ -45545,13 +45623,13 @@ function checkLinearis(root, backend) {
   if (!root || backend !== "linear-linearis")
     return finding("WARN", "linearis", "no linear-linearis binding to check", "Add the binding if this repo uses Linear.");
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
-  const top = topResult.ok ? realpathSync18(topResult.output) : realpathSync18(root);
+  const top = topResult.ok ? realpathSync19(topResult.output) : realpathSync19(root);
   for (const base2 of new Set([root, top])) {
     const binary2 = join54(base2, "node_modules", ".bin", "linearis");
     if (!existsSync42(binary2))
       continue;
-    const target = realpathSync18(binary2);
-    if ([root, top].every((folder) => relative16(join54(realpathSync18(folder), "node_modules"), target).startsWith("..")))
+    const target = realpathSync19(binary2);
+    if ([root, top].every((folder) => relative16(join54(realpathSync19(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")

@@ -857,11 +857,6 @@ export function lookupPublishedProject(
   return { status: "found", project: found };
 }
 
-export function readPublishedProject(kb: ResolvedKb, projectId: string): JsonObject | undefined {
-  const looked = lookupPublishedProject(kb, projectId);
-  return looked.status === "found" ? looked.project : undefined;
-}
-
 /** Latest committed run artifact whose envelope id is `id`, optionally pinned to schema and hash. */
 export function lookupCommittedArtifact(
   kb: ResolvedKb,

@@ -11,6 +11,9 @@
  * An opened run has no fork-point bound and prints no note. A run never closed by `ship-preflight`
  * stays the branch's default until a new `open`, so every new task opens a new run.
  *
+ * Parent-run trust for a Firstmate skip rests on host write isolation of the
+ * evidence store. A home-ledger check is a follow-up, not this gate.
+ *
  * Recording `ship-preflight` in the legacy policy is judged the same way when the run is opened
  * and unbound: it runs the pre-ship check for the exact head first and records nothing on a
  * refusal. A run with no task-bound record, a Firstmate-bound run whose `binding_run_id` names a
@@ -567,10 +570,6 @@ function charterWorkHash(charter: JsonObject): string | undefined {
   return ref !== undefined && nonempty(ref.hash) ? ref.hash : undefined;
 }
 
-function humanBoundHash(charter: JsonObject, hash: string): boolean {
-  return charterAllowsProtectedStart(charter, hash);
-}
-
 /** Charter digest: `immutability.hash` blanked, then `artifactHash` (which strips `approvals`). */
 function charterContentHash(charter: JsonObject): string {
   const cloned: unknown = JSON.parse(JSON.stringify(charter));
@@ -599,7 +598,23 @@ function loadRunnerBinding(path: string, runId: string, project?: string): Behav
   const recomputed = charterContentHash(charter);
   const declared = object(charter.immutability)?.hash;
   if (!nonempty(declared) || declared !== recomputed || raw.charter_hash !== recomputed) return undefined;
-  if (!humanBoundHash(charter, recomputed)) return undefined;
+  if (!asJsonObject(charter)) return undefined;
+  const authority = object(raw.start_authority);
+  const grant = authority === undefined ? undefined : object(authority.grant);
+  const allowed = charterAllowsProtectedStart(charter, recomputed, {
+    charterPath,
+    runId,
+    standingGrant:
+      grant === undefined
+        ? undefined
+        : {
+            charter_hash: grant.charter_hash,
+            run_id: grant.run_id,
+            covers: grant.covers,
+            controller: grant.controller,
+          },
+  });
+  if (!allowed.ok) return undefined;
   const binding = parseBehaviorBinding(asJsonObject(raw.behavior) ? raw.behavior : undefined);
   if (binding === undefined || binding.run_id !== runId) return undefined;
   const workHash = charterWorkHash(charter);
@@ -617,6 +632,7 @@ function validatedBoundParent(run: RunRecord | undefined, evidenceDir: string, p
   if (resolve(run.binding_evidence_location) !== resolve(evidenceDir)) return false;
   const parent = loadProtectedParentRun(run.binding_run_id, evidenceDir, project);
   if (parent === undefined) return false;
+  // Defense in depth: classifyFromParent also checks ticket_hash; keep this match anyway.
   if (parent.ticket_hash !== run.ticket.hash) return false;
   if (!asJsonObject(run)) return false;
   return classifyFromParent(run, run, parent, creationTicketForRun(evidenceDir, run)).kind === "bound";

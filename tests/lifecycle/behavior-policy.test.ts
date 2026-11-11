@@ -32,7 +32,14 @@ import {
   type Json,
   type JsonObject,
 } from "../../src/lifecycle/behavior-policy.ts";
-import { defaultEvidenceDir, openRun, readRecords, takeSnapshot, type Snapshot } from "../../src/lifecycle/gate.ts";
+import {
+  defaultEvidenceDir,
+  openRun,
+  PRE_SHIP_GATES,
+  readRecords,
+  takeSnapshot,
+  type Snapshot,
+} from "../../src/lifecycle/gate.ts";
 import { persistFrozenRun } from "../../src/lifecycle/persist-run.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { Runner } from "../../src/runner/core.ts";
@@ -71,7 +78,7 @@ function gitEnv(cwd: string): NodeJS.ProcessEnv {
 }
 
 function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(["git", ...args], { cwd, env: gitEnv(cwd) });
+  const p = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], { cwd, env: gitEnv(cwd) });
   if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
   return p.stdout.toString().trim();
 }
@@ -1463,7 +1470,9 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     });
     expect(unavailable.ok).toBe(false);
     if (unavailable.ok) throw new Error("expected unavailable refusal");
-    expect(unavailable.reason).toContain("authoritative project record is unavailable");
+    expect(unavailable.reason).toBe(
+      "the authoritative project record is unavailable; missing project cannot turn this run off",
+    );
     const unbound = bindBehaviorPolicy({
       runId: "r2",
       ticket,
@@ -1473,7 +1482,9 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     });
     expect(unbound.ok).toBe(false);
     if (unbound.ok) throw new Error("expected unbound refusal");
-    expect(unbound.reason).toContain("enabled behavior checks need an authoritative project record");
+    expect(unbound.reason).toBe(
+      "enabled behavior checks need an authoritative project record; missing project cannot turn this run off",
+    );
     const off = bindBehaviorPolicy({
       runId: "r3",
       ticket,
@@ -1485,7 +1496,245 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     });
     expect(off.ok).toBe(false);
     if (off.ok) throw new Error("expected off-with-checks refusal");
-    expect(off.reason).toContain("cannot cancel those checks");
+    expect(off.reason).toBe(
+      "review.behavior is off while the ticket names mandatory behavior checks; modes cannot cancel those checks",
+    );
+    const absent = bindBehaviorPolicy({
+      runId: "r4",
+      ticket,
+      ticketHash: artifactHash(ticket),
+      lookup: "absent",
+      capturedAt,
+    });
+    expect(absent.ok).toBe(false);
+    if (absent.ok) throw new Error("expected absent refusal");
+    expect(absent.reason).toBe(
+      "enabled behavior checks need an authoritative project record; missing project cannot turn this run off",
+    );
+    const callerUnbound = bindBehaviorPolicy({
+      runId: "r5",
+      ticket: {},
+      ticketHash: HASH,
+      lookup: "unbound",
+      callerProjectHash: HASH,
+      capturedAt,
+    });
+    expect(callerUnbound.ok).toBe(false);
+    if (callerUnbound.ok) throw new Error("expected caller-unbound refusal");
+    expect(callerUnbound.reason).toBe("caller-supplied project record is not the authoritative KB or runner binding");
+    const missing = bindBehaviorPolicy({
+      runId: "r6",
+      ticket: {},
+      ticketHash: HASH,
+      lookup: "resolved",
+      capturedAt,
+    });
+    expect(missing.ok).toBe(false);
+    if (missing.ok) throw new Error("expected missing project refusal");
+    expect(missing.reason).toBe(
+      "the authoritative project record is missing; missing project cannot turn this run off",
+    );
+    const mismatch = bindBehaviorPolicy({
+      runId: "r7",
+      ticket,
+      ticketHash: artifactHash(ticket),
+      project: projectDoc("on"),
+      projectHash: HASH,
+      lookup: "resolved",
+      callerProjectHash: `sha256:${"0".repeat(64)}`,
+      capturedAt,
+    });
+    expect(mismatch.ok).toBe(false);
+    if (mismatch.ok) throw new Error("expected caller mismatch refusal");
+    expect(mismatch.reason).toBe("caller-supplied project record does not match the authoritative binding");
+    const notProject = bindBehaviorPolicy({
+      runId: "r8",
+      ticket: {},
+      ticketHash: HASH,
+      project: { identity: { id: "example-project" } },
+      lookup: "resolved",
+      capturedAt,
+    });
+    expect(notProject.ok).toBe(false);
+    if (notProject.ok) throw new Error("expected schema refusal");
+    expect(notProject.reason).toBe("the project record is not schema project");
+    const noIdentity = bindBehaviorPolicy({
+      runId: "r9",
+      ticket: {},
+      ticketHash: HASH,
+      project: { schema: "project" },
+      lookup: "resolved",
+      capturedAt,
+    });
+    expect(noIdentity.ok).toBe(false);
+    if (noIdentity.ok) throw new Error("expected identity refusal");
+    expect(noIdentity.reason).toBe("the project record has no identity.id");
+    const projectMismatch = bindBehaviorPolicy({
+      runId: "r10",
+      ticket,
+      ticketHash: artifactHash(ticket),
+      project: projectDoc("on", "other-project"),
+      lookup: "resolved",
+      capturedAt,
+    });
+    expect(projectMismatch.ok).toBe(false);
+    if (projectMismatch.ok) throw new Error("expected project id refusal");
+    expect(projectMismatch.reason).toBe("ticket project example-project does not match project identity other-project");
+    const invalidMode = bindBehaviorPolicy({
+      runId: "r11",
+      ticket: {},
+      ticketHash: HASH,
+      project: { schema: "project", identity: { id: "example-project" }, review: { behavior: "maybe" } },
+      lookup: "resolved",
+      capturedAt,
+    });
+    expect(invalidMode.ok).toBe(false);
+    if (invalidMode.ok) throw new Error("expected invalid mode refusal");
+    expect(invalidMode.reason).toBe("review.behavior is not off, shadow or on");
+    const shadow = bindBehaviorPolicy({
+      runId: "r12",
+      ticket,
+      ticketHash: artifactHash(ticket),
+      project: projectDoc("shadow"),
+      projectHash: projectHashOf(projectDoc("shadow")),
+      lookup: "resolved",
+      capturedAt,
+    });
+    expect(shadow.ok).toBe(false);
+    if (shadow.ok) throw new Error("expected shadow-with-checks refusal");
+    expect(shadow.reason).toBe(
+      "review.behavior is shadow while the ticket names mandatory behavior checks; that conflict needs the authorized resolution path",
+    );
+    const badId = bindBehaviorPolicy({
+      runId: "r13",
+      ticket: {
+        verification: [{ id: "NotKebab", check: "x", behavior: { evidence_layer: "model", property_ids: ["p"] } }],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(badId.ok).toBe(false);
+    if (badId.ok) throw new Error("expected kebab id refusal");
+    expect(badId.reason).toBe("behavior check is missing a kebab id");
+    const noText = bindBehaviorPolicy({
+      runId: "r14",
+      ticket: {
+        verification: [{ id: "project-check", check: "", behavior: { evidence_layer: "model", property_ids: ["p"] } }],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(noText.ok).toBe(false);
+    if (noText.ok) throw new Error("expected check text refusal");
+    expect(noText.reason).toBe("behavior check project-check is missing its check text");
+    const layer = bindBehaviorPolicy({
+      runId: "r15",
+      ticket: {
+        verification: [
+          { id: "project-check", check: "Run it.", behavior: { evidence_layer: "guess", property_ids: ["ok-id"] } },
+        ],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(layer.ok).toBe(false);
+    if (layer.ok) throw new Error("expected layer refusal");
+    expect(layer.reason).toBe("check project-check evidence_layer is not model or implementation");
+    const noProps = bindBehaviorPolicy({
+      runId: "r16",
+      ticket: {
+        verification: [
+          { id: "project-check", check: "Run it.", behavior: { evidence_layer: "model", property_ids: [] } },
+        ],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(noProps.ok).toBe(false);
+    if (noProps.ok) throw new Error("expected property_ids refusal");
+    expect(noProps.reason).toBe("check project-check has no property_ids");
+    const propKebab = bindBehaviorPolicy({
+      runId: "r17",
+      ticket: {
+        verification: [
+          { id: "project-check", check: "Run it.", behavior: { evidence_layer: "model", property_ids: ["NotKebab"] } },
+        ],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(propKebab.ok).toBe(false);
+    if (propKebab.ok) throw new Error("expected property kebab refusal");
+    expect(propKebab.reason).toBe("check project-check has a property id that is not kebab-case");
+    const propType = bindBehaviorPolicy({
+      runId: "r18",
+      ticket: {
+        verification: [
+          {
+            id: "project-check",
+            check: "Run it.",
+            behavior: { evidence_layer: "model", property_ids: ["ok-id"], property_types: { "ok-id": "maybe" } },
+          },
+        ],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(propType.ok).toBe(false);
+    if (propType.ok) throw new Error("expected property type refusal");
+    expect(propType.reason).toBe("check project-check property ok-id has no safety or liveness type");
+    const contract = bindBehaviorPolicy({
+      runId: "r19",
+      ticket: {
+        verification: [
+          {
+            id: "project-check",
+            check: "Run it.",
+            behavior: {
+              evidence_layer: "model",
+              property_ids: ["ok-id"],
+              property_types: { "ok-id": "safety" },
+              contract: { id: "c", schema: "ticket" },
+            },
+          },
+        ],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(contract.ok).toBe(false);
+    if (contract.ok) throw new Error("expected contract refusal");
+    expect(contract.reason).toBe("check project-check contract is not a behavior-contract artifact ref");
+    const manifest = bindBehaviorPolicy({
+      runId: "r20",
+      ticket: {
+        verification: [
+          {
+            id: "project-check",
+            check: "Run it.",
+            behavior: {
+              evidence_layer: "model",
+              property_ids: ["ok-id"],
+              property_types: { "ok-id": "safety" },
+              input_manifest: { id: "m" },
+            },
+          },
+        ],
+      },
+      ticketHash: HASH,
+      lookup: "unbound",
+      capturedAt,
+    });
+    expect(manifest.ok).toBe(false);
+    if (manifest.ok) throw new Error("expected input_manifest refusal");
+    expect(manifest.reason).toBe("check project-check input_manifest is not an artifact ref");
   });
 
   test("mode on and shadow with an unresolved ticket stay incomplete", () => {
@@ -1557,7 +1806,11 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(checked.err).toContain("no protected runner creation record");
     const shipped = ak(dir, "record", "--dir", started.evidence, "--run", child.run.run_id, "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
-    expect(shipped.err).toContain("refused:");
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run ${child.run.run_id} in ${started.evidence})`,
+      );
+    }
   });
 
   test("a child opened before Runner.start does not skip the ship-preflight re-check", () => {
@@ -1605,7 +1858,11 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     if (!child.ok) throw new Error(child.reason);
     const shipped = ak(dir, "record", "--dir", evidence, "--run", child.run.run_id, "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
-    expect(shipped.err).toContain("refused:");
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run ${child.run.run_id} in ${evidence})`,
+      );
+    }
     expect(readRecords(evidence, child.run.run_id, "ship-preflight")).toEqual([]);
   });
 
@@ -1638,7 +1895,11 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     writeFileSync(childPath, `${JSON.stringify(childDoc, null, 2)}\n`);
     const shipped = ak(dir, "record", "--dir", started.evidence, "--run", "child-b", "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
-    expect(shipped.err).toContain("refused:");
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run child-b in ${started.evidence})`,
+      );
+    }
     expect(readRecords(started.evidence, "child-b", "ship-preflight")).toEqual([]);
   });
 
@@ -1655,7 +1916,11 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     plantBoundChild(started, ticket, "child-role");
     const shipped = ak(dir, "record", "--dir", started.evidence, "--run", "child-role", "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
-    expect(shipped.err).toContain("refused:");
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run child-role in ${started.evidence})`,
+      );
+    }
     expect(readRecords(started.evidence, "child-role", "ship-preflight")).toEqual([]);
   });
 
@@ -1681,8 +1946,22 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     plantBoundChild(started, ticket, "child-inactive");
     const shipped = ak(dir, "record", "--dir", started.evidence, "--run", "child-inactive", "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
-    expect(shipped.err).toContain("refused:");
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run child-inactive in ${started.evidence})`,
+      );
+    }
     expect(readRecords(started.evidence, "child-inactive", "ship-preflight")).toEqual([]);
+  });
+
+  test("a valid Runner-started parent with a matching bound child skips the ship-preflight re-check", () => {
+    const dir = repo();
+    const ticket = behaviorTicket(dir, "skip-parent");
+    const started = startMandatory(dir, ticketPath(dir, "skip-parent"), attachKb(dir, "on"));
+    plantBoundChild(started, ticket, "child-skip");
+    const shipped = ak(dir, "record", "--dir", started.evidence, "--run", "child-skip", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(0);
+    expect(readRecords(started.evidence, "child-skip", "ship-preflight")).toHaveLength(1);
   });
 });
 

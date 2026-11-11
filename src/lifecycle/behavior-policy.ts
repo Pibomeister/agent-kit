@@ -384,11 +384,6 @@ export function parseBehaviorBinding(value: Json | undefined): BehaviorBinding |
   return { ...unsigned, binding_hash: value.binding_hash };
 }
 
-export function ticketCarriesBehaviorChecks(ticket: JsonObject): boolean {
-  const frozen = behaviorChecks(ticket, ticketSurfaces(ticket));
-  return !("reason" in frozen) && frozen.length > 0;
-}
-
 export function classifyRun(record: JsonObject, runId: string, ticket?: JsonObject): BehaviorClass {
   const frozen = ticket === undefined ? undefined : behaviorChecks(ticket, ticketSurfaces(ticket));
   const ticketWants = frozen !== undefined && !("reason" in frozen) && frozen.length > 0;

@@ -61,7 +61,11 @@ const PAGE = "# Queue the exports\n\nExports run on a queue, because a request c
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env, maxBuffer: Infinity });
+  return execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], {
+    encoding: "utf8",
+    env,
+    maxBuffer: Infinity,
+  });
 }
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
@@ -374,6 +378,14 @@ describe("a configured knowledgebase that cannot be used is failed", () => {
   test("the binding names no machine path", () => {
     const fx = fixture(`backend: local-git\nproject: example-project\nlocator:\n  knowledgebase: /Users/someone/kb\n`);
     expect(loadKbBinding(fx.project).issues.map((issue) => issue.rule)).toEqual(["kb.binding-invalid"]);
+  });
+
+  test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
+    const fx = fixture();
+    writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
+    const loaded = loadKbBinding(fx.project, "not-a-commit");
+    expect(loaded.binding).toBe(null);
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
   });
 
   test("a registered checkout that is gone or is not a repository", () => {

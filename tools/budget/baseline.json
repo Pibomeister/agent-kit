@@ -18,8 +18,8 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25992,
-      "tokens": 6452
+      "bytes": 26318,
+      "tokens": 6534
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -448,8 +448,8 @@
     },
     "bundle/claude-code:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 24423,
-      "tokens": 6106
+      "bytes": 24457,
+      "tokens": 6114
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -893,8 +893,8 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25992,
-      "tokens": 6452
+      "bytes": 26318,
+      "tokens": 6534
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -1323,8 +1323,8 @@
     },
     "bundle/codex:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 24423,
-      "tokens": 6106
+      "bytes": 24457,
+      "tokens": 6114
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -1768,8 +1768,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26064,
-      "tokens": 6470
+      "bytes": 26390,
+      "tokens": 6552
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -2198,8 +2198,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 24423,
-      "tokens": 6106
+      "bytes": 24457,
+      "tokens": 6114
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -2643,8 +2643,8 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25992,
-      "tokens": 6452
+      "bytes": 26318,
+      "tokens": 6534
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -3073,8 +3073,8 @@
     },
     "bundle/droid:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 24423,
-      "tokens": 6106
+      "bytes": 24457,
+      "tokens": 6114
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -3518,8 +3518,8 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25992,
-      "tokens": 6452
+      "bytes": 26318,
+      "tokens": 6534
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -3948,8 +3948,8 @@
     },
     "bundle/grok:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 24423,
-      "tokens": 6106
+      "bytes": 24457,
+      "tokens": 6114
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -4393,8 +4393,8 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25992,
-      "tokens": 6452
+      "bytes": 26318,
+      "tokens": 6534
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -4823,8 +4823,8 @@
     },
     "bundle/kimi:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 24423,
-      "tokens": 6106
+      "bytes": 24457,
+      "tokens": 6114
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",

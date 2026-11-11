@@ -26,6 +26,7 @@ import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { openRun, takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { asJsonObject, classifyRun, RUN_SCHEMA_VERSION, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
+import { charterAllowsProtectedStart } from "../../src/lifecycle/protected-start.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 import { parseJson } from "../helpers/json.ts";
@@ -105,7 +106,7 @@ function callRunnerCli(
   timeoutMs = RUNNER_CALL_TIMEOUT_MS,
 ) {
   const child = nodeSpawnSync(
-    "bun",
+    process.execPath,
     [join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
     {
       cwd: root,
@@ -135,7 +136,7 @@ function spawnRunnerCli(
   timeoutMs = RUNNER_CALL_TIMEOUT_MS,
 ) {
   const child = spawnLive(
-    ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
+    [process.execPath, join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
     { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: token }, stdout: "pipe", stderr: "pipe" },
   );
   runnerCallChildren.add(child);
@@ -210,7 +211,18 @@ afterAll(() => {
 
 function git(cwd: string, ...args: string[]) {
   expect(
-    Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Toy", "-c", "user.email=toy@example.invalid", ...args]).exitCode,
+    Bun.spawnSync([
+      "git",
+      "-C",
+      cwd,
+      "-c",
+      "user.name=Toy",
+      "-c",
+      "user.email=toy@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ]).exitCode,
   ).toBe(0);
 }
 
@@ -262,21 +274,10 @@ const WORKER_TEMPLATE = (() => {
   const worker = mkdtempSync(join(scratchRoot, "ak-runner-seed-"));
   writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
   writeFileSync(join(worker, "README.md"), "toy worktree\n");
-  Bun.spawnSync(["git", "init", "-q", worker]);
-  Bun.spawnSync(["git", "-C", worker, "add", "."]);
-  Bun.spawnSync([
-    "git",
-    "-C",
-    worker,
-    "-c",
-    "user.name=Toy",
-    "-c",
-    "user.email=toy@example.invalid",
-    "commit",
-    "-qm",
-    "Create toy charter worktree",
-  ]);
-  const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  git(worker, "init", "-q", "-b", "main");
+  git(worker, "add", ".");
+  git(worker, "commit", "-qm", "Create toy charter worktree");
+  const revision = workerHead(worker);
   mkdirSync(join(worker, ".runner-requests"));
   return { worker, revision };
 })();
@@ -289,7 +290,7 @@ const FEATURE_WORKER_TEMPLATE = (() => {
   writeFileSync(join(worker, "feature.txt"), "feature\n");
   git(worker, "add", "feature.txt");
   git(worker, "commit", "-qm", "add feature");
-  const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  const revision = workerHead(worker);
   return { worker, revision };
 })();
 
@@ -431,7 +432,7 @@ function publishToyKb(ticket: JsonObject, mode: "off" | "shadow" | "on") {
   const scratch = processScratch("ak-bv-runner-kb-");
   const kb = join(scratch, "kb");
   mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-  Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+  git(kb, "init", "-q", "-b", "main");
   const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
   if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
   const project: JsonObject = parsedProject;
@@ -460,19 +461,8 @@ function publishToyKb(ticket: JsonObject, mode: "off" | "shadow" | "on") {
       artifact: ticket,
     })}\n`,
   );
-  Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-  Bun.spawnSync([
-    "git",
-    "-C",
-    kb,
-    "-c",
-    "user.name=t",
-    "-c",
-    "user.email=t@example.invalid",
-    "commit",
-    "-qm",
-    "project-and-ticket",
-  ]);
+  git(kb, "add", "-A");
+  git(kb, "commit", "-qm", "project-and-ticket");
   const registry = join(scratch, "registry.json");
   writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
   return { registry, kb };
@@ -489,7 +479,9 @@ function retargetCharterTicket(f: ReturnType<typeof fixture>, ticket: JsonObject
 }
 
 function workerHead(worker: string): string {
-  return Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  const parsed = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]);
+  expect(parsed.exitCode).toBe(0);
+  return parsed.stdout.toString().trim();
 }
 
 function withRegistry<T>(registry: string, body: () => T): T {
@@ -686,7 +678,7 @@ describe("runner guards", () => {
     );
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -757,7 +749,7 @@ describe("runner guards", () => {
         ...standing(f),
         charter_hash: `sha256:${"0".repeat(64)}`,
       }),
-    ).toThrow("standing grant");
+    ).toThrow("standing grant is absent, forged or unbound to the approved charter");
     const { standing_grants: omitted, ...withoutStanding } = f.charter;
     expect(omitted).toHaveLength(1);
     withoutStanding.immutability.hash = artifactHash({
@@ -773,7 +765,7 @@ describe("runner guards", () => {
         ...standing(f),
         charter_hash: withoutStanding.immutability.hash,
       }),
-    ).toThrow("standing grant");
+    ).toThrow("standing grant is absent, forged or unbound to the approved charter");
     const g = fixture();
     g.charter.allowed_capabilities = ["repository-read"];
     g.charter.immutability.hash = artifactHash({ ...g.charter, immutability: { ...g.charter.immutability, hash: "" } });
@@ -782,7 +774,7 @@ describe("runner guards", () => {
     gApproval.artifact_hash = g.charter.immutability.hash;
     writeFileSync(g.path, JSON.stringify(g.charter));
     expect(() => g.runner.start("toy-run", g.path, "implementer-1", g.revision, standing(g))).toThrow(
-      "standing start requires charter-approved",
+      "standing start requires charter-approved runner grants, trusted evidence and independent context",
     );
     transcript.push(
       "Refusal: Firstmate start with a forged standing-grant hash, no standing entry or missing runner capabilities → no run created.",
@@ -841,7 +833,7 @@ describe("runner guards", () => {
     const scratch = processScratch("ak-bv-runner-kb-");
     const kb = join(scratch, "kb");
     mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    git(kb, "init", "-q", "-b", "main");
     const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
     if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
     const project: JsonObject = parsedProject;
@@ -861,19 +853,8 @@ describe("runner guards", () => {
         artifact: project,
       })}\n`,
     );
-    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-    Bun.spawnSync([
-      "git",
-      "-C",
-      kb,
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "commit",
-      "-qm",
-      "project",
-    ]);
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
     writeFileSync(
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
@@ -889,6 +870,10 @@ describe("runner guards", () => {
       const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
       expect(resumed.behavior?.binding_hash).toBe(started.behavior?.binding_hash);
       expect(resumed.behavior?.required_checks).toEqual(started.behavior?.required_checks);
+      expect(resumed.behavior?.mode).toBe("on");
+      expect(resumed.behavior?.ticket_hash).toBe(artifactHash(ticket));
+      expect(resumed.behavior?.ticket_resolution).toBeUndefined();
+      expect(resumed.run_state).toBe("created");
       const classified = classifyRun(
         {
           run_id: "toy-run",
@@ -944,7 +929,7 @@ describe("runner guards", () => {
     const scratch = processScratch("ak-bv-runner-cli-strip-");
     const kb = join(scratch, "kb");
     mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    git(kb, "init", "-q", "-b", "main");
     const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
     if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
     const project: JsonObject = parsedProject;
@@ -964,19 +949,8 @@ describe("runner guards", () => {
         artifact: project,
       })}\n`,
     );
-    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-    Bun.spawnSync([
-      "git",
-      "-C",
-      kb,
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "commit",
-      "-qm",
-      "project",
-    ]);
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
     writeFileSync(
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
@@ -1112,7 +1086,7 @@ describe("runner guards", () => {
     const scratch = processScratch("ak-bv-runner-verify-kb-");
     const kb = join(scratch, "kb");
     mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    git(kb, "init", "-q", "-b", "main");
     const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
     if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
     const project: JsonObject = parsedProject;
@@ -1132,19 +1106,8 @@ describe("runner guards", () => {
         artifact: project,
       })}\n`,
     );
-    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-    Bun.spawnSync([
-      "git",
-      "-C",
-      kb,
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "commit",
-      "-qm",
-      "project",
-    ]);
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
     writeFileSync(
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
@@ -1214,7 +1177,7 @@ describe("runner guards", () => {
     const scratch = processScratch("ak-bv-runner-delegated-kb-");
     const kb = join(scratch, "kb");
     mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    git(kb, "init", "-q", "-b", "main");
     const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
     if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
     const project: JsonObject = parsedProject;
@@ -1234,19 +1197,8 @@ describe("runner guards", () => {
         artifact: project,
       })}\n`,
     );
-    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-    Bun.spawnSync([
-      "git",
-      "-C",
-      kb,
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "commit",
-      "-qm",
-      "project",
-    ]);
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
     writeFileSync(
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
@@ -1267,19 +1219,8 @@ describe("runner guards", () => {
           artifact: weaker,
         })}\n`,
       );
-      Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-      Bun.spawnSync([
-        "git",
-        "-C",
-        kb,
-        "-c",
-        "user.name=t",
-        "-c",
-        "user.email=t@example.invalid",
-        "commit",
-        "-qm",
-        "weaken",
-      ]);
+      git(kb, "add", "-A");
+      git(kb, "commit", "-qm", "weaken");
       writeFileSync(join(f.worker, "delegated.json"), JSON.stringify(ticket));
       const opened = openRun({
         dir: join(f.privateDir, "evidence"),
@@ -1351,7 +1292,7 @@ describe("runner guards", () => {
     const scratch = processScratch("ak-bv-runner-committed-ticket-");
     const kb = join(scratch, "kb");
     mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    git(kb, "init", "-q", "-b", "main");
     const hash = artifactHash(ticket);
     writeFileSync(
       join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
@@ -1360,19 +1301,8 @@ describe("runner guards", () => {
         artifact: ticket,
       })}\n`,
     );
-    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-    Bun.spawnSync([
-      "git",
-      "-C",
-      kb,
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "commit",
-      "-qm",
-      "ticket",
-    ]);
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "ticket");
     writeFileSync(
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
@@ -1424,7 +1354,7 @@ describe("runner guards", () => {
     const scratch = processScratch("ak-bv-runner-deleted-yaml-");
     const kb = join(scratch, "kb");
     mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
-    Bun.spawnSync(["git", "init", "-q", "-b", "main"], { cwd: kb });
+    git(kb, "init", "-q", "-b", "main");
     const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
     if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
     const project: JsonObject = parsedProject;
@@ -1453,19 +1383,8 @@ describe("runner guards", () => {
         artifact: ticket,
       })}\n`,
     );
-    Bun.spawnSync(["git", "add", "-A"], { cwd: kb });
-    Bun.spawnSync([
-      "git",
-      "-C",
-      kb,
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.invalid",
-      "commit",
-      "-qm",
-      "project-and-ticket",
-    ]);
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project-and-ticket");
     writeFileSync(
       join(f.worker, "ak.kb.yaml"),
       "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
@@ -1473,7 +1392,7 @@ describe("runner guards", () => {
     git(f.worker, "add", "ak.kb.yaml");
     git(f.worker, "commit", "-qm", "bind");
     unlinkSync(join(f.worker, "ak.kb.yaml"));
-    const revision = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: f.worker }).stdout.toString().trim();
+    const revision = workerHead(f.worker);
     const registry = join(scratch, "registry.json");
     writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
     const previousRegistry = process.env.AK_KB_REGISTRY;
@@ -1547,9 +1466,10 @@ describe("runner guards", () => {
     const planted = publishToyKb(ticket, "on");
     const nested = join(f.worker, "app");
     mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
     writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
     writeFileSync(join(nested, "nested.txt"), "nested\n");
-    git(f.worker, "add", "app");
+    git(f.worker, "add", "ak.kb.yaml", "app");
     git(f.worker, "commit", "-qm", "nested bind");
     const revision = workerHead(nested);
     const runner = new Runner(f.privateDir, nested, root);
@@ -1558,6 +1478,212 @@ describe("runner guards", () => {
     );
     expect(started.behavior?.mode).toBe("on");
     expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker commit before start that deletes ak.kb.yaml still uses the base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    git(f.worker, "rm", "-q", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "delete bind");
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker commit before start that retargets ak.kb.yaml still uses the base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "retarget bind");
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("approved ticket is absent from the runner store under W1 on", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    const planted = publishToyKb(ticket, "on");
+    const jsonl = readFileSync(join(planted.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8");
+    const projectLine = jsonl
+      .split("\n")
+      .find((line) => line.includes('"schema":"project"') || line.includes('"schema": "project"'));
+    if (projectLine === undefined) throw new Error("published kb has no project record");
+    writeFileSync(join(planted.kb, "projects", "toy", "runs", "artifacts.jsonl"), `${projectLine}\n`);
+    git(planted.kb, "add", "-A");
+    git(planted.kb, "commit", "-qm", "drop ticket");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    expect(() =>
+      withRegistry(planted.registry, () =>
+        f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+      ),
+    ).toThrow("approved ticket is absent from the runner store");
+  });
+
+  test("Runner.start refusals name the exact charter and binding failures", () => {
+    const f = fixture();
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", "not-a-revision", standing(f))).toThrow(
+      "revision must be a full version-control object id",
+    );
+    expect(() =>
+      new Runner(f.privateDir, f.worker, root, true).start(
+        "toy-run",
+        f.path,
+        "implementer-1",
+        "a".repeat(40),
+        standing(f),
+      ),
+    ).toThrow("start revision differs from worker checkout");
+    f.charter.status = "revoked";
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const revokedApproval = f.charter.approvals[0];
+    if (revokedApproval === undefined) throw new Error("toy charter approval missing");
+    revokedApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow(
+      "charter is inactive, moved or has a mismatched hash",
+    );
+    const moved = fixture();
+    const elsewhere = join(moved.privateDir, "elsewhere.json");
+    writeFileSync(elsewhere, readFileSync(moved.path));
+    expect(() => moved.runner.start("toy-run", elsewhere, "implementer-1", moved.revision, standing(moved))).toThrow(
+      "charter is inactive, moved or has a mismatched hash",
+    );
+    const humanFixture = fixture();
+    const humanParsed: unknown = JSON.parse(readFileSync(humanFixture.path, "utf8"));
+    if (!asJsonObject(humanParsed)) throw new Error("toy charter is not an object");
+    humanParsed.approvals = [];
+    expect(charterAllowsProtectedStart(humanParsed, humanFixture.charter.immutability.hash)).toEqual({
+      ok: false,
+      reason: "active charter lacks a human approval bound to its hash",
+    });
+    const sensitive = fixture();
+    const sensitiveParsed: unknown = JSON.parse(readFileSync(sensitive.path, "utf8"));
+    if (!asJsonObject(sensitiveParsed)) throw new Error("toy charter is not an object");
+    const sensitiveCharter = sensitiveParsed;
+    sensitiveCharter.sensitive_grants = [
+      {
+        action: "merge",
+        scope: "this toy run only",
+        approval: {
+          artifact_hash: `sha256:${"0".repeat(64)}`,
+          by: "human",
+          authority: "explicit",
+          at: "2026-10-01T00:00:00Z",
+        },
+      },
+    ];
+    if (!asJsonObject(sensitiveCharter.immutability)) throw new Error("charter immutability missing");
+    const sensitiveHash = artifactHash({
+      ...sensitiveCharter,
+      immutability: { ...sensitiveCharter.immutability, hash: "" },
+    });
+    sensitiveCharter.immutability.hash = sensitiveHash;
+    const sensitiveApproval = Array.isArray(sensitiveCharter.approvals) ? sensitiveCharter.approvals[0] : undefined;
+    if (!asJsonObject(sensitiveApproval)) throw new Error("toy charter approval missing");
+    sensitiveApproval.artifact_hash = sensitiveHash;
+    writeFileSync(sensitive.path, JSON.stringify(sensitiveCharter));
+    const sensitiveStanding = { ...standing(sensitive), charter_hash: sensitiveHash };
+    expect(() =>
+      sensitive.runner.start("toy-run", sensitive.path, "implementer-1", sensitive.revision, sensitiveStanding),
+    ).toThrow("sensitive grant lacks human approval bound to this charter");
+    const runId = fixture();
+    expect(() => runId.runner.start("other-run", runId.path, "implementer-1", runId.revision, standing(runId))).toThrow(
+      "run id does not match charter",
+    );
+    const exists = fixture();
+    exists.runner.start("toy-run", exists.path, "implementer-1", exists.revision, standing(exists));
+    expect(() =>
+      exists.runner.start("toy-run", exists.path, "implementer-1", exists.revision, standing(exists)),
+    ).toThrow("run already exists");
+    const base = fixture();
+    base.charter.repos = [{ repo: "toy", base_branch: "missing-base", paths: ["src/**"] }];
+    base.charter.immutability.hash = artifactHash({
+      ...base.charter,
+      immutability: { ...base.charter.immutability, hash: "" },
+    });
+    const baseApproval = base.charter.approvals[0];
+    if (baseApproval === undefined) throw new Error("toy charter approval missing");
+    baseApproval.artifact_hash = base.charter.immutability.hash;
+    writeFileSync(base.path, JSON.stringify(base.charter));
+    expect(() => base.runner.start("toy-run", base.path, "implementer-1", base.revision, standing(base))).toThrow(
+      "cannot resolve charter base branch missing-base",
+    );
+    const orphan = fixture();
+    git(orphan.worker, "checkout", "--orphan", "orphan");
+    git(orphan.worker, "commit", "--allow-empty", "-qm", "orphan");
+    expect(() =>
+      orphan.runner.start("toy-run", orphan.path, "implementer-1", workerHead(orphan.worker), standing(orphan)),
+    ).toThrow("cannot compute merge-base of HEAD and the charter base branch");
+    const mismatch = fixture();
+    if (!asJsonObject(mismatch.charter.work_source) || !asJsonObject(mismatch.charter.work_source.ref))
+      throw new Error("toy work source is missing");
+    mismatch.charter.work_source.ref.hash = `sha256:${"0".repeat(64)}`;
+    mismatch.charter.immutability.hash = artifactHash({
+      ...mismatch.charter,
+      immutability: { ...mismatch.charter.immutability, hash: "" },
+    });
+    const mismatchApproval = mismatch.charter.approvals[0];
+    if (mismatchApproval === undefined) throw new Error("toy charter approval missing");
+    mismatchApproval.artifact_hash = mismatch.charter.immutability.hash;
+    writeFileSync(mismatch.path, JSON.stringify(mismatch.charter));
+    expect(() =>
+      mismatch.runner.start("toy-run", mismatch.path, "implementer-1", mismatch.revision, standing(mismatch)),
+    ).toThrow("approved ticket does not match the charter work source");
+    const malformed = fixture();
+    writeFileSync(join(malformed.privateDir, "toy-ticket.json"), "{");
+    expect(() =>
+      malformed.runner.start("toy-run", malformed.path, "implementer-1", malformed.revision, standing(malformed)),
+    ).toThrow("approved ticket is malformed");
+    const unavailable = fixture();
+    writeFileSync(join(unavailable.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(unavailable.worker, "add", "ak.kb.yaml");
+    git(unavailable.worker, "commit", "-qm", "bind");
+    expect(() =>
+      unavailable.runner.start(
+        "toy-run",
+        unavailable.path,
+        "implementer-1",
+        workerHead(unavailable.worker),
+        standing(unavailable),
+      ),
+    ).toThrow("the authoritative project record is unavailable; missing project cannot turn this run off");
   });
 
   test("Runner.load refuses a tampered behavior snapshot", () => {
@@ -1645,7 +1771,7 @@ describe("runner guards", () => {
       JSON.stringify({
         timeout_ms: 10_000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const e=JSON.parse(await Bun.stdin.text()); const t=process.argv[1]+'.tmp'; await Bun.write(t, JSON.stringify(e)); (await import('node:fs')).renameSync(t, process.argv[1]); console.log(JSON.stringify({run:e.run,key:e.key}));",
           log,
@@ -1654,7 +1780,7 @@ describe("runner guards", () => {
     );
     const service = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -1720,7 +1846,7 @@ describe("runner guards", () => {
     );
     const service = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -1791,20 +1917,23 @@ describe("runner guards", () => {
     const workerToken = "b".repeat(48);
     writeFileSync(tokenFile, adminToken, { mode: 0o600 });
     // The first consumer never answers, so its timeout fails delivery however long the host takes to start it.
-    writeFileSync(eventConfig, JSON.stringify({ timeout_ms: 100, command: ["bun", "-e", "await Bun.sleep(60_000);"] }));
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({ timeout_ms: 100, command: [process.execPath, "-e", "await Bun.sleep(60_000);"] }),
+    );
     writeFileSync(
       loopConfig,
       JSON.stringify({
         timeout_ms: 1000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const x=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
         ],
       }),
     );
     const launch = [
-      "bun",
+      process.execPath,
       "src/cli.ts",
       "runner",
       "serve",
@@ -1850,7 +1979,7 @@ describe("runner guards", () => {
         JSON.stringify({
           timeout_ms: 10_000,
           command: [
-            "bun",
+            process.execPath,
             "-e",
             "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1], e.key); console.log(JSON.stringify({run:e.run,key:e.key}));",
             delivered,
@@ -1931,7 +2060,7 @@ describe("runner guards", () => {
       JSON.stringify({
         timeout_ms: 10_000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const e=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({run:e.run,key:e.key}));",
         ],
@@ -1942,7 +2071,7 @@ describe("runner guards", () => {
       JSON.stringify({
         timeout_ms: 10_000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const x=JSON.parse(await Bun.stdin.text()); if(x.action==='probe') console.log(JSON.stringify({probed:x.delegates,progress:[]})); else { await Bun.write(process.argv[1],JSON.stringify(x)); console.log(JSON.stringify({stood_down:true,replacement:'owner-2',expected_runtime_seconds:10,key:x.key})); }",
           replacementLog,
@@ -1951,7 +2080,7 @@ describe("runner guards", () => {
     );
     const service = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -2160,7 +2289,7 @@ describe("runner guards", () => {
     writeFileSync(join(f.worker, "feature.txt"), "amended feature\n");
     git(f.worker, "commit", "-q", "--amend", "-am", "amend feature");
     expect(runner().syncRevision("toy-run").verdict?.invalidated_by).toBe("patch-changed");
-    f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    f.revision = workerHead(f.worker);
     const verification = join(f.privateDir, "verification-2.txt");
     writeFileSync(verification, "tests passed on the amended patch");
     f.runner.collect("toy-run", "verify-2", verification, f.revision, "verify");
@@ -2202,7 +2331,7 @@ describe("runner guards", () => {
       writeFileSync(join(f.worker, "feature.txt"), "ready branch\n");
       git(f.worker, "add", "feature.txt");
       git(f.worker, "commit", "-qm", "prepare feature");
-      const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      const head = workerHead(f.worker);
       const socket = join(f.privateDir, "runner.sock");
       const tokenFile = join(f.privateDir, "admin.token");
       const eventConfig = join(f.privateDir, "event.json");
@@ -2223,22 +2352,25 @@ describe("runner guards", () => {
             actor: `supervisor-${seat}`,
             lineage: [`supervisor-${seat}`],
             command: [
-              "bun",
+              process.execPath,
               "-e",
               "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'charter and evidence agree'}));",
             ],
           })),
         }),
       );
-      writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('scratch behavior passed')"] }));
+      writeFileSync(
+        verifyConfig,
+        JSON.stringify({ command: [process.execPath, "-e", "console.log('scratch behavior passed')"] }),
+      );
       writeFileSync(
         eventConfig,
         JSON.stringify({
           timeout_ms: LIVE_SMOKE_WAIT_MS,
           command: [
-            "bun",
+            process.execPath,
             "-e",
-            "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync(['bun',process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
+            "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync([process.execPath,process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
             consumerRequest,
             cliEntry,
           ],
@@ -2249,7 +2381,7 @@ describe("runner guards", () => {
         JSON.stringify({
           timeout_ms: LIVE_SMOKE_WAIT_MS,
           command: [
-            "bun",
+            process.execPath,
             "-e",
             "const x=JSON.parse(await Bun.stdin.text());if(x.action!=='probe')process.exit(2);await Bun.write(process.argv[1],JSON.stringify(x));console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
             loopLog,
@@ -2258,7 +2390,7 @@ describe("runner guards", () => {
       );
       const service = spawnLive(
         [
-          "bun",
+          process.execPath,
           cliEntry,
           "runner",
           "serve",
@@ -2406,18 +2538,21 @@ describe("runner guards", () => {
             seat: "seat-a",
             actor: "supervisor-1",
             lineage: ["supervisor-1"],
-            command: ["bun", "-e", judgeScript, launches],
+            command: [process.execPath, "-e", judgeScript, launches],
           },
           {
             seat: "seat-b",
             actor: "supervisor-2",
             lineage: ["supervisor-2"],
-            command: ["bun", "-e", judgeScript, launches],
+            command: [process.execPath, "-e", judgeScript, launches],
           },
         ],
       }),
     );
-    writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('verification passed')"] }));
+    writeFileSync(
+      verifyConfig,
+      JSON.stringify({ command: [process.execPath, "-e", "console.log('verification passed')"] }),
+    );
     writeFileSync(
       effectConfig,
       JSON.stringify({
@@ -2425,12 +2560,18 @@ describe("runner guards", () => {
           {
             effect: "pr-open",
             read_back: [
-              "bun",
+              process.execPath,
               "-e",
               "const f=process.argv[1]; if (await Bun.file(f).exists()) process.stdout.write(await Bun.file(f).text());",
               remote,
             ],
-            perform: ["bun", "-e", "await Bun.write(process.argv[1], process.argv[2]);", remote, "{input_hash}"],
+            perform: [
+              process.execPath,
+              "-e",
+              "await Bun.write(process.argv[1], process.argv[2]);",
+              remote,
+              "{input_hash}",
+            ],
           },
         ],
       }),
@@ -2440,7 +2581,7 @@ describe("runner guards", () => {
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const launch = [
-      "bun",
+      process.execPath,
       "src/cli.ts",
       "runner",
       "serve",
@@ -2621,7 +2762,7 @@ describe("runner guards", () => {
           effect: "pr-open",
           target: "toy/pr",
           input_hash: inputHash,
-          perform: ["bun", "-e", "process.exit(1)"],
+          perform: [process.execPath, "-e", "process.exit(1)"],
         }),
       );
       expect(call("effect", adminToken).exitCode).toBe(1);
@@ -3119,7 +3260,7 @@ describe("runner guards", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -3235,7 +3376,7 @@ describe("runner guards", () => {
     git(f.worker, "add", "sub");
     git(f.worker, "commit", "-qm", "Add gitlink");
     const other = nested("other");
-    const revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const revision = workerHead(f.worker);
     const runner = new Runner(f.privateDir, f.worker, root, true);
     const before = runner.start("toy-run", f.path, "implementer-1", revision, standing(f)).diff_hash;
     writeFileSync(join(sub, "lib.ts"), "export const v = 2;\n");
@@ -4080,7 +4221,7 @@ describe("runner guards", () => {
           seat,
           actor: `supervisor-${seat}`,
           lineage: [`supervisor-${seat}`],
-          command: ["bun", seatScript, seat],
+          command: [process.execPath, seatScript, seat],
         })),
       }),
     );
@@ -4090,7 +4231,7 @@ describe("runner guards", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -4166,7 +4307,9 @@ describe("runner guards", () => {
       const fakeBun = join(workerBin, "bun");
       writeFileSync(fakeBun, '#!/bin/sh\nprintf \'%s\\n\' \'{"choice":"yes","rationale":"worker path"}\'\n');
       chmodSync(fakeBun, 0o755);
-      expect(Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]).stdout.toString()).toBe("");
+      const status = Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]);
+      expect(status.exitCode).toBe(0);
+      expect(status.stdout.toString()).toBe("");
       expect(prepare("after-attack", "c").exitCode).toBe(0);
       const second = call("decide", workerToken, { ...run, card_id: "after-attack" });
       expect(JSON.parse(second.stdout.toString())).toMatchObject({
@@ -4203,7 +4346,7 @@ describe("runner guards", () => {
             actor: "supervisor-1",
             lineage: ["supervisor-1"],
             command: [
-              "bun",
+              process.execPath,
               "-e",
               "await Bun.stdin.text(); console.log(JSON.stringify({choice:'yes',rationale:'ok'}));",
             ],
@@ -4213,7 +4356,7 @@ describe("runner guards", () => {
             actor: "supervisor-2",
             lineage: ["supervisor-2"],
             command: [
-              "bun",
+              process.execPath,
               "-e",
               "require('node:fs').appendFileSync(process.argv[1], 'crash\\n'); console.error('seat crashed'); process.exit(7);",
               crashes,
@@ -4224,7 +4367,7 @@ describe("runner guards", () => {
     );
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -4354,7 +4497,7 @@ describe("runner guards", () => {
 
 describe("unknown runner selectors", () => {
   test("the installed command exposes the runner service entrypoint", () => {
-    const command = Bun.spawnSync(["bun", "src/maintenance/cli.ts", "runner"], { cwd: root });
+    const command = Bun.spawnSync([process.execPath, "src/maintenance/cli.ts", "runner"], { cwd: root });
     expect(command.exitCode).toBe(2);
     expect(command.stderr.toString()).toContain("ak runner serve");
   });
@@ -4577,7 +4720,7 @@ describe("council blind veto", () => {
           actor: `supervisor-${seat}`,
           lineage: [`supervisor-${seat}`],
           command: [
-            "bun",
+            process.execPath,
             "-e",
             "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'agree'}));",
           ],
@@ -4593,11 +4736,16 @@ describe("council blind veto", () => {
             {
               actor: "veto-1",
               lineage: ["veto-1"],
-              command: ["bun", "-e", "process.exit(3)"],
+              command: [process.execPath, "-e", "process.exit(3)"],
               requested: "first-label",
             },
-            { actor: "veto-2", lineage: ["veto-2"], command: ["bun", "-e", answer("yes")], requested: "second-label" },
-            { actor: "veto-3", lineage: ["veto-3"], command: ["bun", "-e", answer("no")] },
+            {
+              actor: "veto-2",
+              lineage: ["veto-2"],
+              command: [process.execPath, "-e", answer("yes")],
+              requested: "second-label",
+            },
+            { actor: "veto-3", lineage: ["veto-3"], command: [process.execPath, "-e", answer("no")] },
           ],
         },
       }),
@@ -4609,7 +4757,7 @@ describe("council blind veto", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -4742,7 +4890,7 @@ describe("council blind veto", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -4828,7 +4976,7 @@ describe("council blind veto", () => {
     writeFileSync(adminTokenFile, "a".repeat(48), { mode: 0o600 });
     const server = Bun.spawnSync(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",

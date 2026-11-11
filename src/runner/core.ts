@@ -21,6 +21,7 @@ import {
   reviewMode,
   RUN_SCHEMA_VERSION,
 } from "../lifecycle/behavior-policy.ts";
+import { charterAllowsProtectedStart } from "../lifecycle/protected-start.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
 import { sharesLineage } from "./lineage.ts";
@@ -627,36 +628,14 @@ export class Runner {
     if (!this.validateCharter(charterValue))
       throw new Error(`invalid charter: ${JSON.stringify(this.validateCharter.errors)}`);
     const charter = charterValue;
-    const immutable = charter.immutability;
     const hash = charterDigest(charter);
-    if (charter.status !== "active" || immutable.hash !== hash || realpathSync(immutable.location) !== source)
-      throw new Error("charter is inactive, moved or has a mismatched hash");
-    if (!charter.approvals.some((a) => a.by === "human" && a.authority === "explicit" && a.artifact_hash === hash))
-      throw new Error("active charter lacks a human approval bound to its hash");
-    for (const sensitive of charter.sensitive_grants ?? []) {
-      const approval = sensitive.approval;
-      if (approval.artifact_hash !== hash || approval.by !== "human" || approval.authority !== "explicit")
-        throw new Error("sensitive grant lacks human approval bound to this charter");
-    }
-    if (charter.run_id !== id) throw new Error("run id does not match charter");
-    if (
-      !["runner-grants", "trusted-evidence", "independent-context"].every((capability) =>
-        charter.allowed_capabilities.includes(capability),
-      )
-    )
-      throw new Error(
-        "standing start requires charter-approved runner grants, trusted evidence and independent context",
-      );
-    if (
-      standingGrant.charter_hash !== hash ||
-      standingGrant.run_id !== id ||
-      standingGrant.covers !== "autopilot.start" ||
-      standingGrant.controller !== "firstmate" ||
-      !charter.standing_grants?.some(
-        (entry) => entry.covers === standingGrant.covers && entry.controller === standingGrant.controller,
-      )
-    )
-      throw new Error("standing grant is absent, forged or unbound to the approved charter");
+    if (!asJsonObject(charter)) throw new Error("charter is not an object");
+    const allowed = charterAllowsProtectedStart(charter, hash, {
+      charterPath: source,
+      runId: id,
+      standingGrant,
+    });
+    if (!allowed.ok) throw new Error(allowed.reason);
     try {
       this.load(id);
       throw new Error("run already exists");
@@ -664,6 +643,9 @@ export class Runner {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
     }
     const createdAt = new Date().toISOString();
+    const bindingRevision = this.bindingBaseRevision(charter);
+    const work = this.tryWorkTicket(charter, bindingRevision);
+    const looked = this.projectLookup(charter.project.id, bindingRevision);
     const run: Run = {
       id,
       charter_path: source,
@@ -686,16 +668,31 @@ export class Runner {
       delegates: {},
       procedure: this.governingProcedure(),
       open_escalation: null,
-      behavior: this.bindBehavior(id, charter, hash, createdAt, revision),
+      behavior: this.bindBehavior(id, charter, hash, createdAt, work, looked),
     };
     this.save(run);
-    this.persistBehaviorEvidence(run);
+    this.persistBehaviorEvidence(run, work);
     return run;
   }
 
-  private persistBehaviorEvidence(run: Run): void {
+  /** Merge-base of HEAD and the charter base branch. Origin wins when that ref exists. */
+  private bindingBaseRevision(charter: Charter): string {
+    const branch = charter.repos[0]?.base_branch;
+    if (branch === undefined || branch === "")
+      throw new Error("charter names no base branch for the knowledgebase binding");
+    const origin = `origin/${branch}`;
+    const originOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${origin}^{commit}`]);
+    const localOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${branch}^{commit}`]);
+    const base = originOk.code === 0 ? origin : localOk.code === 0 ? branch : undefined;
+    if (base === undefined) throw new Error(`cannot resolve charter base branch ${branch}`);
+    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", "HEAD", base]);
+    if (mergeBase.code !== 0 || mergeBase.text.trim() === "")
+      throw new Error("cannot compute merge-base of HEAD and the charter base branch");
+    return mergeBase.text.trim();
+  }
+
+  private persistBehaviorEvidence(run: Run, work: ReturnType<Runner["tryWorkTicket"]>): void {
     if (run.behavior === undefined) return;
-    const work = this.tryWorkTicket(run.charter, run.revision);
     if (work === undefined) return;
     const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
     if (ticketId === undefined) throw new Error("approved ticket is unnamed");
@@ -796,9 +793,14 @@ export class Runner {
     };
   }
 
-  private bindBehavior(id: string, charter: Charter, charterHash: string, createdAt: string, revision: string) {
-    const work = this.tryWorkTicket(charter, revision);
-    const looked = this.projectLookup(charter.project.id, revision);
+  private bindBehavior(
+    id: string,
+    charter: Charter,
+    charterHash: string,
+    createdAt: string,
+    work: ReturnType<Runner["tryWorkTicket"]>,
+    looked: ReturnType<Runner["projectLookup"]>,
+  ) {
     const raw: unknown = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
     let ticketResolution: "unresolved" | undefined;

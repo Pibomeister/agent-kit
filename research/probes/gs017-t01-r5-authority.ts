@@ -57,7 +57,7 @@ function gitEnv(cwd: string): NodeJS.ProcessEnv {
 }
 
 function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(["git", ...args], { cwd, env: gitEnv(cwd) });
+  const p = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], { cwd, env: gitEnv(cwd) });
   if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
   return p.stdout.toString().trim();
 }
@@ -400,30 +400,25 @@ function e1a_forgedParentCliOpen() {
   const ticket = behaviorTicket("forged-parent");
   writeJson(join(dir, "forged-parent.json"), ticket);
   const bound = attachKb(dir, "on");
-  const { bindingPath, parentDir } = forgedParentBinding(ticket, bound.project);
+  const { bindingPath, parentDir, ledger } = forgedParentBinding(ticket, bound.project);
   const evidence = join(parentDir, "evidence");
-  const spawned = spawnCli(
-    dir,
-    bound.registry,
-    "open",
-    "--ticket",
-    join(dir, "forged-parent.json"),
-    "--binding",
-    bindingPath,
-    "--project",
-    dir,
-    "--dir",
-    evidence,
-  );
-  if (spawned.code === 0) throw new Error("e1a expected CLI open of a forged /tmp parent to refuse");
+  const spawned = openRun({
+    dir: evidence,
+    project: dir,
+    ticket: join(dir, "forged-parent.json"),
+    binding: bindingPath,
+    registry: bound.registry,
+    ledger,
+  });
+  if (spawned.ok) throw new Error("e1a expected open of a forged parent to refuse");
   return {
-    cli: "bun src/cli.ts lifecycle open --binding (home ledger only)",
-    code: spawned.code,
-    err: spawned.err,
+    ok: true,
+    cli: "openRun with injected temp ledger",
     opened: false,
     parent_was_two_handwritten_files: true,
     charter_path: true,
     refused: true,
+    reason: spawned.reason,
     premise_holds_if_opened: false,
   };
 }
@@ -435,7 +430,7 @@ function e1b_pointerRemovalReseal() {
   writeJson(join(dir, "reseal.json"), ticket);
   const bound = attachKb(dir, "on", projectId);
   const started = firstmateThenRunner(dir, join(dir, "reseal.json"), bound.registry, projectId);
-  if (!started.ok) return { opened: false, reason: started.errors.join("\n") };
+  if (!started.ok) return { ok: false, opened: false, reason: started.errors.join("\n") };
   const spawned = openRun({
     dir: started.evidence,
     project: dir,
@@ -444,7 +439,7 @@ function e1b_pointerRemovalReseal() {
     registry: bound.registry,
     ledger: started.ledger,
   });
-  if (!spawned.ok) return { opened: false, reason: spawned.reason };
+  if (!spawned.ok) return { ok: true, refused: true, opened: false, reason: spawned.reason };
   const run = spawned.run.run_id;
   const runPath = join(started.evidence, "runs", run, "run.json");
   const doc = parseObject(readFileSync(runPath, "utf8"));
@@ -530,7 +525,7 @@ function e1c_realFirstmateBind() {
     { akRoot: ROOT, bundleDir: makeBundle(), pinsDir: makeDir(), ledgerDir, upstream, now: FIXED_NOW },
   );
   if (!result.ok || result.binding === undefined) {
-    return { bind_ok: false, errors: result.errors, opened: false };
+    return { ok: false, bind_ok: false, errors: result.errors, opened: false };
   }
   const spawned = openRun({
     dir: evidence,
@@ -566,7 +561,7 @@ function e1_authenticFirstmateRunnerCli() {
   writeJson(join(dir, "fm-auth.json"), ticket);
   const bound = attachKb(dir, "on", projectId);
   const started = firstmateThenRunner(dir, join(dir, "fm-auth.json"), bound.registry, projectId);
-  if (!started.ok) return { bind_ok: false, errors: started.errors, opened: false };
+  if (!started.ok) return { ok: false, bind_ok: false, errors: started.errors, opened: false };
   const spawned = openRun({
     dir: started.evidence,
     project: dir,
@@ -698,28 +693,31 @@ function e1_runnerStartThenToyBinding() {
       project: { id: "toy" },
     });
     writeJson(join(worker, "delegated.json"), ticket);
-    const spawned = spawnCli(
-      worker,
-      bound.registry,
-      "open",
-      "--ticket",
-      join(worker, "delegated.json"),
-      "--binding",
-      bindingPath,
-      "--project",
-      worker,
-      "--dir",
-      evidence,
-    );
+    const ledger = mkdtempSync(join(tmpdir(), "ak-bv-r5-auth-ledger-"));
+    const at = realpathSync(bindingPath);
+    writeJson(join(ledger, "toy-run.json"), {
+      binding_path: at,
+      binding_sha256: `sha256:${createHash("sha256").update(readFileSync(bindingPath)).digest("hex")}`,
+    });
+    const spawned = openRun({
+      dir: evidence,
+      project: worker,
+      ticket: join(worker, "delegated.json"),
+      binding: bindingPath,
+      registry: bound.registry,
+      ledger,
+    });
     return {
+      ok: true,
+      refused: !spawned.ok,
+      bypass: spawned.ok,
       runner_started: true,
       runner_mode: started.behavior?.mode,
       runner_checks: started.behavior?.required_checks.length,
       private_run_exists: existsSync(join(privateDir, "toy-run.json")),
       binding_handwritten_aiming_at_statedir_evidence: true,
-      code: spawned.code,
-      err: spawned.err,
-      opened: spawned.code === 0,
+      opened: spawned.ok,
+      reason: spawned.ok ? undefined : spawned.reason,
       note: "Runner.start is a real caller. The binding file is still hand-written at stateDir/evidence.",
     };
   } catch (cause) {
@@ -896,7 +894,7 @@ function w1_retainOnlyHidesOrdinaryFail() {
   const bound = attachKb(dir, "shadow");
   const opened = ak(dir, bound.registry, "open", "--ticket", join(dir, "retain-fail.json"));
   const run = openedLine(opened.out);
-  if (run === undefined) return { opened: false, err: opened.err };
+  if (run === undefined) return { ok: false, opened: false, err: opened.err };
   recordPhases(dir, bound.registry);
   const pass = receipt(dir, run, ticket);
   ak(dir, bound.registry, "record", "--gate", "verify", "--receipt", pass);
@@ -975,7 +973,13 @@ const report = {
   },
 };
 
-process.exitCode = Object.values(report.cases).some((value) => value.ran === false) ? 1 : 0;
+function caseFailed(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as { ran?: boolean; ok?: boolean; bind_ok?: boolean; bypass?: boolean };
+  return row.ran === false || row.ok === false || row.bind_ok === false || row.bypass === true;
+}
+
+process.exitCode = Object.values(report.cases).some(caseFailed) ? 1 : 0;
 const reportPath = join(mkdtempSync(join(tmpdir(), "ak-bv-r5-report-")), "gs017-t01-r5-exploit-after.json");
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ ...report, report_path: reportPath }, null, 2));
