@@ -1967,6 +1967,37 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(readRecords(started.evidence, "child-no-grant", "ship-preflight")).toEqual([]);
   });
 
+  test("a parent whose start_authority kind is wrong still refuses even with a grant", () => {
+    const dir = repo();
+    const ticket = behaviorTicket(dir, "wrong-kind-parent");
+    const started = startMandatory(dir, ticketPath(dir, "wrong-kind-parent"), attachKb(dir, "on"));
+    const runnerPath = join(started.privateDir, `${started.runId}.json`);
+    const runnerDoc = parseObject(readFileSync(runnerPath, "utf8"));
+    const authority = asJsonObject(runnerDoc.start_authority) ? runnerDoc.start_authority : undefined;
+    const grant = authority !== undefined && asJsonObject(authority.grant) ? authority.grant : undefined;
+    if (grant === undefined) throw new Error("runner start_authority grant missing");
+    runnerDoc.start_authority = { kind: "human", grant };
+    writeFileSync(runnerPath, JSON.stringify(runnerDoc));
+    plantBoundChild(started, ticket, "child-wrong-kind");
+    const shipped = ak(
+      dir,
+      "record",
+      "--dir",
+      started.evidence,
+      "--run",
+      "child-wrong-kind",
+      "--gate",
+      "ship-preflight",
+    );
+    expect(shipped.code).toBe(1);
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run child-wrong-kind in ${started.evidence})`,
+      );
+    }
+    expect(readRecords(started.evidence, "child-wrong-kind", "ship-preflight")).toEqual([]);
+  });
+
   test("a parent standing grant with no grant record does not skip the ship-preflight re-check", () => {
     const dir = repo();
     const ticket = behaviorTicket(dir, "empty-grant-parent");
@@ -1995,8 +2026,8 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     expect(readRecords(started.evidence, "child-empty-grant", "ship-preflight")).toEqual([]);
   });
 
-  test("a cancelled or failed parent does not skip the ship-preflight re-check", () => {
-    for (const state of ["cancelled", "failed"] as const) {
+  test("a cancelled, failed or cap-reached parent does not skip the ship-preflight re-check", () => {
+    for (const state of ["cancelled", "failed", "cap-reached"] as const) {
       const dir = repo();
       const ticket = behaviorTicket(dir, `${state}-parent`);
       const started = startMandatory(dir, ticketPath(dir, `${state}-parent`), attachKb(dir, "on"));

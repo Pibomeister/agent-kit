@@ -33,6 +33,7 @@ import {
   resolveKnowledgebase,
 } from "../src/kb/binding.ts";
 import { EXIT_UNAVAILABLE, runKb } from "../src/kb/cli.ts";
+import { gitWithoutReplace } from "../src/kb/git.ts";
 import { KB_KINDS } from "../src/kb/local-git.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -361,6 +362,36 @@ describe("no knowledgebase configured", () => {
   });
 });
 
+describe("ak kb check reads the working binding", () => {
+  test("ak kb check reads an uncommitted ak.kb.yaml edit", () => {
+    const fx = registered();
+    writeFileSync(
+      join(fx.project, BINDING_FILE),
+      "backend: local-git\nproject: edited-project\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    const loaded = loadKbBinding(fx.project);
+    expect(loaded.binding?.project).toBe("edited-project");
+    const check = kb(fx, fx.project, "check");
+    expect(check.code).toBe(0);
+    expect(check.out).toContain("project 'edited-project'");
+  });
+});
+
+describe("an explicit revision never falls back to the working binding", () => {
+  test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
+    const fx = fixture();
+    writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
+    const loaded = loadKbBinding(fx.project, "not-a-commit", gitWithoutReplace);
+    expect(loaded.binding).toBe(null);
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
+  });
+
+  test("an explicit revision requires a git function", () => {
+    const fx = fixture();
+    expect(() => loadKbBinding(fx.project, "HEAD")).toThrow("an explicit revision requires a git function");
+  });
+});
+
 describe("a configured knowledgebase that cannot be used is failed", () => {
   test("a binding that does not parse or match its schema", () => {
     const invalid = fixture("backend: local-git\nproject: example-project\nlocator:\n  path: /somewhere\n");
@@ -378,27 +409,6 @@ describe("a configured knowledgebase that cannot be used is failed", () => {
   test("the binding names no machine path", () => {
     const fx = fixture(`backend: local-git\nproject: example-project\nlocator:\n  knowledgebase: /Users/someone/kb\n`);
     expect(loadKbBinding(fx.project).issues.map((issue) => issue.rule)).toEqual(["kb.binding-invalid"]);
-  });
-
-  test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
-    const fx = fixture();
-    writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
-    const loaded = loadKbBinding(fx.project, "not-a-commit");
-    expect(loaded.binding).toBe(null);
-    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
-  });
-
-  test("ak kb check reads an uncommitted ak.kb.yaml edit", () => {
-    const fx = registered();
-    writeFileSync(
-      join(fx.project, BINDING_FILE),
-      "backend: local-git\nproject: edited-project\nlocator:\n  knowledgebase: fixture-kb\n",
-    );
-    const loaded = loadKbBinding(fx.project);
-    expect(loaded.binding?.project).toBe("edited-project");
-    const check = kb(fx, fx.project, "check");
-    expect(check.code).toBe(0);
-    expect(check.out).toContain("project 'edited-project'");
   });
 
   test("a registered checkout that is gone or is not a repository", () => {

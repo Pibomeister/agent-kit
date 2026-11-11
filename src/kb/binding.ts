@@ -132,7 +132,7 @@ function describe(validate: ValidateFunction): string {
  * `git rev-parse --show-prefix` so a nested folder is not read as the
  * repo-root `ak.kb.yaml`. An explicit revision that `rev-parse --verify` cannot
  * resolve is an error, not a miss. A confirmed miss of the path is null.
- * Reads at an explicit revision ignore `refs/replace`.
+ * Reads at an explicit revision ignore `refs/replace` and grafts, and require a git function.
  */
 function committedBindingText(projectRoot: string, revision?: string, gitFn?: GitFn) {
   if (revision === undefined || revision === "") return { text: null };
@@ -150,13 +150,16 @@ function committedBindingText(projectRoot: string, revision?: string, gitFn?: Gi
  * (Runner.start's merge-base of the start revision and the charter base
  * branch), the committed binding at that revision wins over the working file.
  * That merge-base trusts the base ref, so it rests on host write isolation of
- * `.git`, the same as parent-run trust of the evidence store. `ak kb
- * check/read/publish` and `lifecycle open` omit the revision and read the
- * working file. A nested folder is read from that folder, not from the git top
- * level. Fall back to the working file only when an explicit revision has no
- * committed binding. An unresolvable explicit revision is an error. A
- * confirmed miss of both is a note, not an error: an unbound folder is the
- * unconfigured case the contract defines, not a malformed one.
+ * `.git`, the same as parent-run trust of the evidence store. When the
+ * merge-base cannot be computed and the charter cites no ticket, Runner.start
+ * does not pass a revision and does not read the working file; the project
+ * record is unavailable and start stays allowed. `ak kb check/read/publish`
+ * and `lifecycle open` omit the revision and read the working file. A nested
+ * folder is read from that folder, not from the git top level. Fall back to
+ * the working file only when an explicit revision has no committed binding.
+ * An unresolvable explicit revision is an error. A confirmed miss of both is
+ * a note, not an error: an unbound folder is the unconfigured case the
+ * contract defines, not a malformed one.
  */
 export function loadKbBinding(projectRoot: string, revision?: string, gitFn?: GitFn): KbBindingResult {
   const committed = committedBindingText(projectRoot, revision, gitFn);

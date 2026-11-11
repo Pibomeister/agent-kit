@@ -48,6 +48,7 @@ export function gitProcess(
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C",
   };
   const proc = spawnSync(
@@ -113,10 +114,15 @@ function checkGitControls(context: RunnerGitContext, project: string): GitResult
   return null;
 }
 
-export function runnerGit(context: RunnerGitContext, project: string, args: readonly string[]): GitResult {
+export function runnerGit(
+  context: RunnerGitContext,
+  project: string,
+  args: readonly string[],
+  input?: Uint8Array,
+): GitResult {
   const controls = checkGitControls(context, project);
   if (controls !== null) return controls;
-  return gitProcess(context, project, args);
+  return gitProcess(context, project, args, 10_000, input);
 }
 
 /** Stable identity for the complete committed change relative to its current merge base. */

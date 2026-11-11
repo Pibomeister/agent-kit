@@ -1,8 +1,9 @@
 /**
  * The complete charter predicate Runner.start applies, reused by the gate so a
  * Firstmate parent cannot skip ship-preflight with a weaker record. The gate
- * path requires the recorded standing grant (`requireGrant`). Parent-run trust
- * still rests on host write isolation of the evidence store.
+ * requires a standing-grant start_authority with its grant, and a parent that
+ * is not cancelled, failed or cap-reached. Parent-run trust still rests on
+ * host write isolation of the evidence store.
  */
 import { realpathSync } from "node:fs";
 import { asJsonObject, type Json, type JsonObject } from "./behavior-policy.ts";
@@ -18,8 +19,6 @@ export interface ProtectedStartExtras {
   charterPath?: string;
   runId?: string;
   standingGrant?: ProtectedStartGrant;
-  /** Gate path: a parent without a standing grant cannot skip ship-preflight. */
-  requireGrant?: boolean;
 }
 
 const STANDING_CAPABILITIES = ["runner-grants", "trusted-evidence", "independent-context"] as const;
@@ -88,8 +87,6 @@ export function charterAllowsProtectedStart(
   );
   if (!listed) return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
   const granted = extras.standingGrant;
-  if (extras.requireGrant === true && granted === undefined)
-    return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
   if (granted !== undefined) {
     if (
       granted.charter_hash !== hash ||

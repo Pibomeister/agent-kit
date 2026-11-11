@@ -17608,17 +17608,13 @@ function runGit(root, args, env, input) {
 function git2(root, args, input) {
   return runGit(root, args, gitEnv(), input);
 }
-function gitWithoutReplace(root, args, input) {
-  return runGit(root, args, gitEnv({
-    GIT_NO_REPLACE_OBJECTS: "1",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_CONFIG_NOSYSTEM: "1"
-  }), input);
-}
 function gitForRevision(revision, gitFn) {
-  if (gitFn !== undefined)
+  if (revision !== undefined && revision !== "") {
+    if (gitFn === undefined)
+      throw new Error("an explicit revision requires a git function");
     return gitFn;
-  return revision !== undefined && revision !== "" ? gitWithoutReplace : git2;
+  }
+  return gitFn ?? git2;
 }
 function workTreeTop(dir) {
   const top = git2(dir, ["rev-parse", "--show-toplevel"]);
@@ -17792,7 +17788,7 @@ function bindBehaviorPolicy(args) {
   if ("reason" in checks)
     return { ok: false, reason: checks.reason };
   const ticketWantsBehavior = checks.length > 0;
-  if (args.lookup === "unavailable")
+  if (args.lookup === "unavailable" && ticketWantsBehavior)
     return {
       ok: false,
       reason: "the authoritative project record is unavailable; missing project cannot turn this run off"
@@ -41671,8 +41667,6 @@ function charterAllowsProtectedStart(charter, hash, extras = {}) {
   if (!listed)
     return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
   const granted = extras.standingGrant;
-  if (extras.requireGrant === true && granted === undefined)
-    return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
   if (granted !== undefined) {
     if (granted.charter_hash !== hash || extras.runId !== undefined && granted.run_id !== extras.runId || granted.covers !== "autopilot.start" || granted.controller !== "firstmate")
       return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
@@ -42012,6 +42006,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C"
   };
   const proc = spawnSync4(context.binary, [
@@ -42079,11 +42074,11 @@ function checkGitControls(context, project) {
   }
   return null;
 }
-function runnerGit(context, project, args) {
+function runnerGit(context, project, args, input) {
   const controls = checkGitControls(context, project);
   if (controls !== null)
     return controls;
-  return gitProcess(context, project, args);
+  return gitProcess(context, project, args, 1e4, input);
 }
 function patchIdentity(context, project, baseRef, head) {
   const base2 = runnerGit(context, project, ["merge-base", baseRef, head]);
@@ -42732,8 +42727,8 @@ class Runner {
     const createdAt = new Date().toISOString();
     const gitFn = this.kbGit();
     const bindingRevision = this.bindingBaseRevision(charter, revision);
-    const work = this.tryWorkTicket(charter, bindingRevision, gitFn);
-    const looked = this.projectLookup(charter.project.id, bindingRevision, gitFn);
+    const work = this.tryWorkTicket(charter, bindingRevision ?? undefined, gitFn);
+    const looked = bindingRevision === null ? { lookup: "unavailable" } : this.projectLookup(charter.project.id, bindingRevision, gitFn);
     const run2 = {
       id,
       charter_path: source,
@@ -42763,8 +42758,8 @@ class Runner {
     return run2;
   }
   kbGit() {
-    return (root, args) => {
-      const result2 = runnerGit(this.gitContext, root, args);
+    return (root, args, input) => {
+      const result2 = runnerGit(this.gitContext, root, args, input === undefined ? undefined : Buffer.from(input));
       return {
         status: result2.code,
         stdout: new TextDecoder().decode(result2.stdout),
@@ -42795,7 +42790,7 @@ class Runner {
     if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
       if (needed)
         throw new Error("cannot compute merge-base of the start revision and the charter base branch");
-      return;
+      return null;
     }
     return mergeBase.text.trim();
   }
@@ -42912,10 +42907,10 @@ class Runner {
   bindBehavior(id, charter, charterHash, createdAt, work, looked) {
     const raw = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    if (looked.lookup === "unavailable" && source !== undefined && source.kind === "ticket")
+      throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
     let ticketResolution;
     if (work === undefined && source !== undefined && source.kind === "ticket") {
-      if (looked.lookup === "unavailable")
-        throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
       if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
         throw new Error("approved ticket is absent from the runner store");
       const ref = asJsonObject(source.ref) ? source.ref : undefined;

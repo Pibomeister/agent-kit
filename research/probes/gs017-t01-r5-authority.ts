@@ -1,6 +1,7 @@
 /**
- * GS-017-01 round 5. Discriminating CLI probe of the worker-pointer premise.
- * Measured on the current working tree. Exit 1 when a case could not run.
+ * GS-017-01. Discriminating CLI probe of the worker-pointer premise.
+ * Measured on the current working tree. Exit 1 when a case could not run or
+ * missed its expected verdict.
  *
  * Usage, from the repository root:
  *   bun research/probes/gs017-t01-r5-authority.ts
@@ -874,6 +875,7 @@ function e4_requirementsSelfCite() {
     issues,
     cited_self: true,
     cited_requirement_intent: "the contract is active; the cited requirement is proposed",
+    expected: { admitted: false },
   };
 }
 
@@ -902,6 +904,7 @@ function w1_retainOnlyHidesOrdinaryFail() {
     failed_in_refs: refs.some((ref) => ref.id === failedId),
     hidden: checked.code === 0 && !refs.some((ref) => ref.id === failedId),
     ordinary_named_check: "project-check",
+    expected: { hidden: false },
   };
 }
 
@@ -933,6 +936,7 @@ function w3_missingProjectRecord() {
     code: spawned.code,
     err: spawned.err,
     refused_as_unavailable: spawned.err.includes("unavailable") || spawned.err.includes("missing"),
+    expected: { refused_as_unavailable: false, code: 0 },
   };
 }
 
@@ -970,21 +974,12 @@ function caseFailed(value: unknown): boolean {
     ok?: boolean;
     bind_ok?: boolean;
     bypass?: boolean;
-    admitted?: boolean;
-    hidden?: boolean;
-    refused?: boolean;
-    gate_changed?: boolean;
+    expected?: Record<string, unknown>;
   };
-  return (
-    row.ran === false ||
-    row.ok === false ||
-    row.bind_ok === false ||
-    row.bypass === true ||
-    row.admitted === true ||
-    row.hidden === true ||
-    row.refused === false ||
-    row.gate_changed === true
-  );
+  if (row.ran !== true) return true;
+  if (row.ok === false || row.bind_ok === false || row.bypass === true) return true;
+  if (row.expected === undefined) return false;
+  return Object.entries(row.expected).some(([key, wanted]) => (row as Record<string, unknown>)[key] !== wanted);
 }
 
 process.exitCode = Object.values(report.cases).some(caseFailed) ? 1 : 0;

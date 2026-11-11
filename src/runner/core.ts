@@ -646,8 +646,11 @@ export class Runner {
     const createdAt = new Date().toISOString();
     const gitFn = this.kbGit();
     const bindingRevision = this.bindingBaseRevision(charter, revision);
-    const work = this.tryWorkTicket(charter, bindingRevision, gitFn);
-    const looked = this.projectLookup(charter.project.id, bindingRevision, gitFn);
+    const work = this.tryWorkTicket(charter, bindingRevision ?? undefined, gitFn);
+    const looked =
+      bindingRevision === null
+        ? { lookup: "unavailable" as const }
+        : this.projectLookup(charter.project.id, bindingRevision, gitFn);
     const run: Run = {
       id,
       charter_path: source,
@@ -677,10 +680,10 @@ export class Runner {
     return run;
   }
 
-  /** Isolated git for start-time reads at an explicit revision. Ignores refs/replace. */
+  /** Isolated git for start-time reads at an explicit revision. Ignores refs/replace and grafts. */
   private kbGit(): GitFn {
-    return (root, args) => {
-      const result = runnerGit(this.gitContext, root, args);
+    return (root, args, input) => {
+      const result = runnerGit(this.gitContext, root, args, input === undefined ? undefined : Buffer.from(input));
       return {
         status: result.code,
         stdout: new TextDecoder().decode(result.stdout),
@@ -696,8 +699,10 @@ export class Runner {
    * `refs/heads/<base>` or `refs/remotes/origin/<base>` can make the merge-base
    * equal the start revision. Pinning a base SHA is a captain follow-up.
    * An uncomputable merge-base is refused only when the charter cites a ticket.
+   * Otherwise start is allowed and the project record is unavailable; the
+   * working `ak.kb.yaml` is not read.
    */
-  private bindingBaseRevision(charter: Charter, revision: string): string | undefined {
+  private bindingBaseRevision(charter: Charter, revision: string): string | null | undefined {
     const raw: unknown = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
     const needed = source !== undefined && source.kind === "ticket";
@@ -717,7 +722,7 @@ export class Runner {
     const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", revision, base]);
     if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
       if (needed) throw new Error("cannot compute merge-base of the start revision and the charter base branch");
-      return undefined;
+      return null;
     }
     return mergeBase.text.trim();
   }
@@ -844,10 +849,10 @@ export class Runner {
   ) {
     const raw: unknown = charter;
     const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    if (looked.lookup === "unavailable" && source !== undefined && source.kind === "ticket")
+      throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
     let ticketResolution: "unresolved" | undefined;
     if (work === undefined && source !== undefined && source.kind === "ticket") {
-      if (looked.lookup === "unavailable")
-        throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
       if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
         throw new Error("approved ticket is absent from the runner store");
       const ref = asJsonObject(source.ref) ? source.ref : undefined;

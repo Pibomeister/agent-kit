@@ -1601,6 +1601,93 @@ describe("runner guards", () => {
     expect(started.behavior?.required_checks).toHaveLength(1);
   });
 
+  test("git grafts cannot retarget the merge-base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const featureSha = workerHead(f.worker);
+    const mainSha = gitText(f.worker, ["rev-parse", "main"]);
+    git(f.worker, "checkout", "--orphan", "forge");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "forged bind");
+    const forged = workerHead(f.worker);
+    git(f.worker, "checkout", "-q", "feature");
+    mkdirSync(join(f.worker, ".git", "info"), { recursive: true });
+    writeFileSync(join(f.worker, ".git", "info", "grafts"), `${featureSha} ${forged}\n${mainSha} ${forged}\n`);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("an uncommitted nested ak.kb.yaml does not override the committed root binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "root bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(nested, "ak.kb.yaml"), OTHER_BINDING);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", workerHead(nested), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("an uncomputable merge-base does not record a planted working binding", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    const planted = publishToyKb(ticket, "on");
+    if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({
+      ...f.charter,
+      immutability: { ...f.charter.immutability, hash: "" },
+    });
+    const planApproval = f.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "checkout", "--orphan", "orphan");
+    git(f.worker, "commit", "--allow-empty", "-qm", "orphan");
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.run_state).toBe("created");
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.policy_id).toBe(null);
+    expect(started.behavior?.required_checks).toEqual([]);
+  });
+
   test("an in-repo worker commit that flips behavior still uses the base record", () => {
     const f = fixture(3, FEATURE_WORKER_TEMPLATE);
     const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));

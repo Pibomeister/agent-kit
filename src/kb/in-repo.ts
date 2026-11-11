@@ -29,9 +29,12 @@ import {
  *
  * The revision read is the merge-base of the checkout's HEAD and the remote's
  * default branch (refs/remotes/origin/HEAD), never a branch the binding names: a
- * binding is committed on the branch, so a branch could name itself. A page a
- * branch commits, or a status it sets, is not knowledge until it is merged: the same rule local-git keeps by reading only
- * what its own repository committed.
+ * binding is committed on the branch, so a branch could name itself. That
+ * availability check is not Runner.start's binding revision, which is the
+ * merge-base of the validated start revision and the charter base branch. A
+ * page a branch commits, or a status it sets, is not knowledge until it is
+ * merged: the same rule local-git keeps by reading only what its own
+ * repository committed.
  */
 export const IN_REPO = "in-repo";
 

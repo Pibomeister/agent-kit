@@ -600,24 +600,20 @@ function loadRunnerBinding(path: string, runId: string, project?: string): Behav
   const recomputed = charterContentHash(charter);
   const declared = object(charter.immutability)?.hash;
   if (!nonempty(declared) || declared !== recomputed || raw.charter_hash !== recomputed) return undefined;
-  if (!asJsonObject(charter)) return undefined;
-  if (raw.run_state === "cancelled" || raw.run_state === "failed") return undefined;
+  if (raw.run_state === "cancelled" || raw.run_state === "failed" || raw.run_state === "cap-reached") return undefined;
   const authority = object(raw.start_authority);
   if (authority === undefined || authority.kind !== "standing-grant") return undefined;
   const grant = object(authority.grant);
+  if (grant === undefined) return undefined;
   const allowed = charterAllowsProtectedStart(charter, recomputed, {
     charterPath,
     runId,
-    requireGrant: true,
-    standingGrant:
-      grant === undefined
-        ? undefined
-        : {
-            charter_hash: grant.charter_hash,
-            run_id: grant.run_id,
-            covers: grant.covers,
-            controller: grant.controller,
-          },
+    standingGrant: {
+      charter_hash: grant.charter_hash,
+      run_id: grant.run_id,
+      covers: grant.covers,
+      controller: grant.controller,
+    },
   });
   if (!allowed.ok) return undefined;
   const binding = parseBehaviorBinding(asJsonObject(raw.behavior) ? raw.behavior : undefined);
