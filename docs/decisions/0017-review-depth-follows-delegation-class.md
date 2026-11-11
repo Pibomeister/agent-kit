@@ -49,14 +49,15 @@ R12 of the review-routing specification are:
    means the class is scored again before selection.
 4. **The merge-stage class comes first.** Before selection, the first pass takes the approved
    ticket's class as the seed, re-evidences the factors and the floor from the actual diff, and
-   runs the scorer in merge stage. The scorer only raises the seed. Only a named human lowers it,
-   and never across a floor.
-5. **No class evidence means `full`.** The depth is `full` when routing is off, the change has no
-   ticket delegation block, the project has no `guidance.delegation`, the scorer or the depth
-   command fails, or the run's build record carries no class. The review record names the reason.
+   runs the scorer in merge stage. The scorer only raises the seed. A named human may lower the
+   merge-stage class below the ticket-stage class, and that lowering never crosses a floor.
+5. **No class evidence means `full`.** The depth is `full` when there is no ticket delegation
+   block, no project `guidance.delegation`, no successful scorer run, a failed depth command, or no
+   class in the run's build record. The review record names the reason.
 6. **Deeper, never shallower.** A seat's evidence of a higher class is an escalation signal, not a
    finding. The run scores again and seats the baseline seats the new depth adds, over the same
-   snapshot. A run never moves to a shallower depth.
+   snapshot. A run never moves to a shallower depth after it starts. A named human may lower the
+   merge-stage class below the ticket-stage class, and that lowering never crosses a floor.
 7. **Shared surfaces set a floor.** A project may declare paths that many features depend on, each
    with a class. A change that touches one has that class as a floor. This is a third floor source
    beside packs and sensitive actions. No factor, weight or cut point changes.

@@ -1504,7 +1504,9 @@ conflicts:
       Red sits today's selection. Every conditional and stack seat that the artifact evidence
       activates sits at every depth, and the security and adversarial seats stay required once
       activated. Absent class evidence, the depth is full. A run may move to a deeper depth and
-      never to a shallower one. The class stays an authority input and is never a finding.
+      never moves to a shallower one after it starts. A named human may lower the merge-stage
+      class below the ticket-stage class, and that lowering never crosses a floor. The class stays
+      an authority input and is never a finding.
     discharged_in: [inputs, workflow]
     binds:
       policies: [review]

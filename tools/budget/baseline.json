@@ -78,13 +78,13 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95397,
-      "tokens": 23821
+      "bytes": 95548,
+      "tokens": 23859
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31126,
-      "tokens": 7768
+      "bytes": 31177,
+      "tokens": 7780
     },
     "bundle/claude-code:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -953,13 +953,13 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95397,
-      "tokens": 23821
+      "bytes": 95548,
+      "tokens": 23859
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31126,
-      "tokens": 7768
+      "bytes": 31177,
+      "tokens": 7780
     },
     "bundle/codex:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1828,13 +1828,13 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95421,
-      "tokens": 23827
+      "bytes": 95572,
+      "tokens": 23865
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31126,
-      "tokens": 7768
+      "bytes": 31177,
+      "tokens": 7780
     },
     "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -2703,13 +2703,13 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95397,
-      "tokens": 23821
+      "bytes": 95548,
+      "tokens": 23859
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31126,
-      "tokens": 7768
+      "bytes": 31177,
+      "tokens": 7780
     },
     "bundle/droid:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -3578,13 +3578,13 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95397,
-      "tokens": 23821
+      "bytes": 95548,
+      "tokens": 23859
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31126,
-      "tokens": 7768
+      "bytes": 31177,
+      "tokens": 7780
     },
     "bundle/grok:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -4453,13 +4453,13 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95397,
-      "tokens": 23821
+      "bytes": 95548,
+      "tokens": 23859
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31126,
-      "tokens": 7768
+      "bytes": 31177,
+      "tokens": 7780
     },
     "bundle/kimi:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
