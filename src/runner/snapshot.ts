@@ -124,7 +124,15 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
   const base = runnerGit(context, project, ["merge-base", baseRef, head]);
   if (base.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(base.text))
     throw new Error(`cannot resolve verdict base: ${base.stderr || base.text}`);
-  const diff = runnerGit(context, project, ["diff", "--binary", base.text, head, "--"]);
+  const diff = runnerGit(context, project, [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--binary",
+    base.text,
+    head,
+    "--",
+  ]);
   if (diff.code !== 0) throw new Error(`cannot read committed patch: ${diff.stderr}`);
   if (diff.stdout.length === 0) return null;
   const patch = gitProcess(context, project, ["patch-id", "--stable"], 10_000, diff.stdout);
@@ -137,7 +145,16 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
 /** Only trunk-side CI configuration changes invalidate an otherwise identical patch. */
 export function ciConfigDrift(context: RunnerGitContext, project: string, oldBase: string, newBase: string): boolean {
   if (oldBase === newBase) return false;
-  const changed = runnerGit(context, project, ["diff", "--name-only", "-z", oldBase, newBase, "--"]);
+  const changed = runnerGit(context, project, [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--name-only",
+    "-z",
+    oldBase,
+    newBase,
+    "--",
+  ]);
   if (changed.code !== 0) throw new Error(`cannot compare CI configuration: ${changed.stderr}`);
   return new TextDecoder()
     .decode(changed.stdout)
@@ -159,9 +176,51 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
 }
 
 export function cleanCommittedTree(context: RunnerGitContext, project: string): boolean {
-  const status = runnerGit(context, project, ["status", "--porcelain", "-z", "--untracked-files=all"]);
-  if (status.code !== 0) throw new Error(`cannot inspect committed worktree: ${status.stderr}`);
-  return status.stdout.length === 0;
+  const untracked = runnerGit(context, project, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (untracked.code !== 0) throw new Error(`cannot inspect committed worktree: ${untracked.stderr}`);
+  if (untracked.stdout.length > 0) return false;
+  const cached = runnerGit(context, project, ["diff-index", "--cached", "--quiet", "HEAD", "--"]);
+  if (cached.code > 1) throw new Error(`cannot inspect committed worktree: ${cached.stderr}`);
+  if (cached.code !== 0) return false;
+  const tracked = runnerGit(context, project, ["ls-files", "-s", "-z"]);
+  if (tracked.code !== 0) throw new Error(`cannot inspect committed worktree: ${tracked.stderr}`);
+  const root = realpathSync(project);
+  for (const row of new TextDecoder().decode(tracked.stdout).split("\0")) {
+    if (row === "") continue;
+    const tab = row.indexOf("\t");
+    if (tab < 0) throw new Error("cannot inspect committed worktree: invalid index entry");
+    const [mode, blob, stage] = row.slice(0, tab).split(" ");
+    const path = row.slice(tab + 1);
+    if (mode === undefined || blob === undefined || stage === undefined || path === "")
+      throw new Error("cannot inspect committed worktree: invalid index entry");
+    if (stage !== "0") return false;
+    const at = resolve(project, path);
+    const rel = relative(root, at);
+    if (isAbsolute(path) || rel === "" || rel.startsWith("..") || isAbsolute(rel)) return false;
+    try {
+      const stat = lstatSync(at);
+      if (mode === "160000") {
+        if (!stat.isDirectory()) return false;
+        const head = runnerGit(context, at, ["rev-parse", "--verify", "HEAD"]);
+        if (head.code !== 0 || head.text !== blob) return false;
+        continue;
+      }
+      let bytes: Uint8Array;
+      if (mode === "120000") {
+        if (!stat.isSymbolicLink()) return false;
+        bytes = Buffer.from(readlinkSync(at));
+      } else if (mode === "100644" || mode === "100755") {
+        const executable = (stat.mode & 0o111) !== 0;
+        if (!stat.isFile() || executable !== (mode === "100755")) return false;
+        bytes = readFileSync(at);
+      } else return false;
+      const hashed = gitProcess(context, project, ["hash-object", "--stdin", "--no-filters"], 10_000, bytes);
+      if (hashed.code !== 0 || hashed.text !== blob) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function resolvedRevision(context: RunnerGitContext, project: string, ref: string): string {
