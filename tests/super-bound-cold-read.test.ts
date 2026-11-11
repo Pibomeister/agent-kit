@@ -80,7 +80,7 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("Shadow and on dispatch one cold reader");
       expect(text).toContain("text-only single-slice light route skips the dispatch");
       expect(text).toContain("reshape it, or reclassify it");
-      expect(text).toContain("cannot be published until GS-004j");
+      expect(text).toContain("exempts that ticket from `cold_read_ref`");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
     }
   });
@@ -100,6 +100,7 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       "for that ticket only, the author's empty-context check decides whether it publishes, is reshaped, or is reclassified `type: decision` and sent back",
     );
     expect(note).toContain("Step 13 skips the independent cold read on this route");
+    expect(note).toContain("A note or approval does not exempt");
     expect(note).toContain("(phase 1b, GS-004i)");
   });
 

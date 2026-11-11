@@ -151,8 +151,8 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
     send it back. Off and shadow keep that action; on uses the independent read. When that read is
     unavailable, the author check decides. A ticket on the text-only single-slice light route skips
-    the dispatch. In on mode the GS-004g validator still requires `cold_read_ref`, so a light-route
-    implementation ticket cannot be published until GS-004j. Shadow and on dispatch one cold reader
+    the dispatch. In on mode the validator exempts that ticket from `cold_read_ref`; any other
+    implementation ticket still requires it. Shadow and on dispatch one cold reader
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
     read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,
@@ -248,7 +248,7 @@ skill enters, not a skill it starts:
 - `ticket` (`schemas/ticket.schema.json`), `type: implementation`, id `bound-<spec>-<slice>` — one
   per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
   `assumptions` and the exact ticket-time `delegation` output, or, unscored under a delegation coverage limit, no `delegation` block and the unscored assumption. When `review.cold_read` is on, it
-  cites `cold_read_ref`.
+  cites `cold_read_ref`, except a text-only single-slice ticket.
 - `cold-read` (`schemas/cold-read.schema.json`) — a run artifact per implementation ticket when
   `review.cold_read` is shadow or on, published under a `run-artifact` placement. Off stores none.
 - `ticket`, `type: decision` — emitted for an open fork, with the three evidence blocks persisted in

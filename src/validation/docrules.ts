@@ -1452,6 +1452,80 @@ function verificationRules(rc: RuleContext): void {
 
 // --------------------------------------------------------------------- ticket
 
+const LIGHT_ROUTE_FILES = new Set(["README.md", "CHANGELOG.md", "NOTICE", "LICENSE"]);
+const LIGHT_ROUTE_PREFIXES = ["docs/", "references/", "skills/"] as const;
+
+function lastPathSegment(pattern: string): string {
+  const parts = pattern.split("/");
+  return parts[parts.length - 1] ?? "";
+}
+
+function isMarkdownSegment(name: string): boolean {
+  return name === "*.md" || name === "*.txt" || name.endsWith(".md") || name.endsWith(".txt");
+}
+
+/** A glob the light-route detector can treat as documentation-only. Exclusions always win. */
+function isLightRouteGlob(pattern: string): boolean {
+  if (pattern.includes("\\") || pattern.startsWith("/") || pattern.includes("..")) return false;
+  if (LIGHT_ROUTE_FILES.has(pattern)) return true;
+  if (!LIGHT_ROUTE_PREFIXES.some((prefix) => pattern.startsWith(prefix))) return false;
+  const rest = pattern.slice(pattern.indexOf("/") + 1);
+  if (rest === "" || rest === "**" || rest === "*") return false;
+  return isMarkdownSegment(lastPathSegment(pattern));
+}
+
+function workSourceId(doc: IndexedDoc["doc"]): string | null {
+  const ref = obj(obj(doc["work_source"])?.["ref"]);
+  return ref === null ? null : str(ref["id"]);
+}
+
+/** Declared write globs, or null when the ticket does not name a usable write set. */
+function writeGlobs(doc: IndexedDoc["doc"]): string[] | null {
+  const allowed = obj(doc["allowed_changes"]);
+  const files = allowed === null ? [] : arr(allowed["files"]);
+  const out: string[] = [];
+  for (const item of files) {
+    const glob = str(item);
+    if (glob === null) return null;
+    out.push(glob);
+  }
+  if (out.length === 0) return null;
+  const ownership = obj(doc["write_ownership"]);
+  if (ownership !== null) {
+    for (const item of arr(ownership["paths"])) {
+      const glob = str(item);
+      if (glob === null) return null;
+      out.push(glob);
+    }
+  }
+  return out;
+}
+
+/**
+ * Text-only single-slice from declared write globs and indexed peers, not from a note or approval.
+ * A missing work_source, a code glob, or a second implementation ticket on the same work_source
+ * is not the light route.
+ */
+function isLightRouteTicket(doc: IndexedDoc["doc"], index: DocIndex): boolean {
+  const globs = writeGlobs(doc);
+  if (globs === null) return false;
+  for (const glob of globs) {
+    if (!isLightRouteGlob(glob)) return false;
+  }
+  const symbols = obj(doc["allowed_changes"])?.["symbols"];
+  if (Array.isArray(symbols) && symbols.length > 0) return false;
+  const source = workSourceId(doc);
+  if (source === null) return false;
+  const thisId = str(doc["id"]);
+  for (const entry of index.all) {
+    if (entry.schema !== "ticket") continue;
+    if (str(entry.doc["type"]) !== "implementation") continue;
+    if (str(entry.doc["id"]) === thisId) continue;
+    if (workSourceId(entry.doc) === source) return false;
+  }
+  return true;
+}
+
 function ticketRules(rc: RuleContext): void {
   const RULE = "ticket.cold-read-ref-required-when-on";
   const { doc } = rc;
@@ -1483,6 +1557,8 @@ function ticketRules(rc: RuleContext): void {
     );
     return;
   }
+
+  if (isLightRouteTicket(doc, rc.index)) return;
 
   const ref = obj(doc["cold_read_ref"]);
   const refId = ref === null ? null : str(ref["id"]);
