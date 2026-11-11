@@ -38,6 +38,7 @@ import {
   type GateIo,
   type Json,
   type JsonObject,
+  resolvePolicy,
   unattendedDisclosure,
 } from "../../src/lifecycle/unattended.ts";
 import { artifactHash } from "../../src/util/hash.ts";
@@ -920,6 +921,71 @@ describe("selection and start (command seam)", () => {
     stubGh(withFixtures({}));
     expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
   }, 180_000);
+
+  test("resolvePolicy refuses an AK_LIFECYCLE_SUPERVISOR containing LF, CR, ESC or DEL after trimming, and a non-string or control-character supervisor in run.json is omitted", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "\n firstmate \r\n" });
+    const trimmed = ak(cwd, "unattended", "check", "--phase", "super-align");
+    expect(trimmed.code).toBe(0);
+    expect(JSON.parse(trimmed.out)).toMatchObject({ supervisor: "firstmate" });
+
+    for (const bad of ["firstmate\ncrew", "firstmate\rcrew", "firstmate\x1b[31mcrew", "firstmate\x7fcrew"]) {
+      expect(resolvePolicy(cwd, { AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad })).toEqual({
+        ok: false,
+        reason: "AK_LIFECYCLE_SUPERVISOR must not contain control characters",
+      });
+      expect(unattendedDisclosure(bad)).toBe(DISCLOSURE);
+      setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad });
+      const checked = ak(cwd, "unattended", "check", "--phase", "super-align");
+      expect(checked.code).toBe(2);
+      expect(checked.err).toContain("AK_LIFECYCLE_SUPERVISOR");
+      expect(checked.err).toContain("must not contain control characters");
+      expect(checked.err).not.toContain("crew");
+      expect(checked.out).toBe("");
+      const recorded = ak(cwd, "record", "--gate", "align", "--", ...ok);
+      expect(recorded.code).toBe(2);
+      expect(recorded.err).toContain("AK_LIFECYCLE_SUPERVISOR must not contain control characters");
+      expect(recorded.err).not.toContain("crew");
+      expect(recordsOf(cwd, "feature", "align")).toEqual([]);
+    }
+
+    setEnv({
+      AK_LIFECYCLE_POLICY: "unattended",
+      AK_LIFECYCLE_SUPERVISOR: "firstmate",
+      AK_UNATTENDED_READ_TOKEN: "read-token",
+    });
+    const run = fullRun(cwd);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: undefined });
+    const runPath = join(store(cwd), "runs", run, "run.json");
+    const originalRunText = readFileSync(runPath, "utf8");
+    stubGh(withFixtures({}));
+    for (const storedSupervisor of [42, ["firstmate"], "firstmate\ncrew", "firstmate\rcrew", "firstmate\x1b[31m"]) {
+      writeFileSync(
+        runPath,
+        originalRunText.replace('"supervisor": "firstmate"', `"supervisor": ${JSON.stringify(storedSupervisor)}`),
+      );
+      expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
+      expect(recordsOf(cwd, run, "build-checks").at(-1)?.policy).toEqual({
+        name: "unattended",
+        source: "environment",
+      });
+      const checked = ak(cwd, "check", "--json");
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out)).toMatchObject({
+        outcome: "allowed",
+        policy: { name: "unattended", source: "environment" },
+      });
+      expect(checked.out).not.toContain('"supervisor"');
+      const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(preflight.code).toBe(0);
+      expect(preflight.out).toContain(DISCLOSURE);
+      expect(preflight.out).not.toContain("supervisor:");
+      expect(recordsOf(cwd, run, "ship-preflight").at(-1)?.policy).toEqual({
+        name: "unattended",
+        source: "environment",
+      });
+    }
+  });
 
   test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
     const rootConfig = readFileSync(join(import.meta.dir, "../../ak.lifecycle.json"), "utf8");

@@ -27,10 +27,18 @@ const DISCLOSURE_TAIL =
   " approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.";
 export const DISCLOSURE = `Unattended lifecycle policy: no human${DISCLOSURE_TAIL}`;
 
+const hasControlChar = (text: string): boolean => {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+};
+
 /** The unattended disclosure for a pull request, naming the supervisor when one was recorded in place of a human. */
 export function unattendedDisclosure(supervisor?: string): string {
-  const who = supervisor?.trim();
-  return who === undefined || who === ""
+  const who = nonEmpty(supervisor)?.trim();
+  return who === undefined || hasControlChar(who)
     ? DISCLOSURE
     : `Unattended lifecycle policy (supervisor: ${who}, in place of a human): no human${DISCLOSURE_TAIL}`;
 }
@@ -97,6 +105,8 @@ export function resolvePolicy(
 ): { ok: true; policy?: Policy } | { ok: false; reason: string } {
   const rawSupervisor = env[SUPERVISOR_ENV]?.trim();
   const supervisor = rawSupervisor !== undefined && rawSupervisor !== "" ? rawSupervisor : undefined;
+  if (supervisor !== undefined && hasControlChar(supervisor))
+    return { ok: false, reason: `${SUPERVISOR_ENV} must not contain control characters` };
   const stamp = (source: string): Policy =>
     supervisor === undefined ? { name: UNATTENDED, source } : { name: UNATTENDED, source, supervisor };
   const value = env[POLICY_ENV];

@@ -473,6 +473,17 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
   const ticket = value.ticket as Record<string, unknown>;
   if (typeof ticket.id !== "string" || typeof ticket.hash !== "string") return undefined;
   if (value.closed_at !== undefined && typeof value.closed_at !== "string") return undefined;
+  const policy = object(value.policy);
+  if (policy !== undefined && "supervisor" in policy) {
+    const raw = nonempty(policy.supervisor) ? policy.supervisor.trim() : "";
+    let valid = raw !== "";
+    for (let i = 0; valid && i < raw.length; i += 1) {
+      const code = raw.charCodeAt(i);
+      if (code < 0x20 || code === 0x7f) valid = false;
+    }
+    if (valid) policy.supervisor = raw;
+    else Reflect.deleteProperty(policy, "supervisor");
+  }
   return value as unknown as RunRecord;
 }
 
