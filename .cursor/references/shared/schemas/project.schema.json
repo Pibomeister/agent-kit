@@ -407,7 +407,7 @@
       }
     },
     "review": {
-      "description": "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+      "description": "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is off, except as review.behavior states. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -418,6 +418,11 @@
         },
         "cold_read": {
           "description": "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable and a non-empty envelope run_id. The id is not yet checked against a run ledger, so a non-empty forged id is a known residue. An unavailable read still satisfies the status requirement. A draft or missing status does not. When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening). A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "enum": ["off", "shadow", "on"],
+          "default": "off"
+        },
+        "behavior": {
+          "description": "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the Runner.start freeze; open refuses. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
           "enum": ["off", "shadow", "on"],
           "default": "off"
         }

@@ -186,6 +186,15 @@ adaptations:
   - path: src/lifecycle/gate.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
     rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
+  - path: schemas/project.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: review.behavior is the project policy Runner.start freezes onto an enabled run.
+  - path: schemas/ticket.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Ticket verification.behavior names the frozen checks, property ids and property types.
+  - path: src/lifecycle/gate.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Open binds a snapshot for ordinary tickets and refuses enabled mandatory checks that only Runner.start may freeze.
   - path: tests/lifecycle/check.test.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
     rationale: Lifecycle tests exercise prose-only green claims, self-verification, stale recipes, missing kinds, unattested seats and artifact tampering.

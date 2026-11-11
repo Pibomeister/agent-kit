@@ -131,7 +131,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 38
+  catalog: 39
   expansions:
     - ids: [case]
       reason: >-
@@ -211,6 +211,12 @@ schemas:
         An independent ticket cold read needs a declared run-artifact shape so a project that
         turns review.cold_read on can cite the record from the implementation ticket.
       commits: [82646648]
+    - ids: [behavior-contract]
+      reason: >-
+        Behavior verification needs a declared run-artifact shape so accepted intent stays
+        distinct from proposed, unresolved and observed notes, and so Runner.start can
+        freeze complete required-check definitions.
+      commits: [edd98c50ee81b4f19b06eb3b90de87d0e23a10dc]
 
 profiles:
   baseline: 4

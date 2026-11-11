@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.117
+
+GS-017-01 T01 behavior-policy. Runner.start freezes mandatory checks at the start revision.
+
+## 0.1.116
+
+Donor pins. Pre-push and receipts see `.donors/` at lock pins (GAP-19 partial).
+
 ## 0.1.114
 
 The semantic-lint Stop hook is opt-in. It no longer POSTs changed files just because

@@ -1,4 +1,5 @@
 import type { VetoRecord } from "../council/rule.ts";
+import type { BehaviorBinding } from "../lifecycle/behavior-policy.ts";
 
 export interface Grant {
   charter_hash: string;
@@ -172,6 +173,8 @@ export interface Run {
   open_escalation: Escalation | null;
   cancellation?: { by: string; rationale: string; at: string };
   resume?: { run_state: string; next_permitted_action: string | null };
+  /** Frozen behavior policy; written at start from the KB/runner project binding. */
+  behavior?: BehaviorBinding;
 }
 
 export interface RunLedger {

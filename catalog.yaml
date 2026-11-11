@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.124
+  version: 0.1.125
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -955,7 +955,7 @@ references:
       read before ship and the operator setup it rests on.
 
 # ---------------------------------------------------------------------------
-# Schemas — 38. `common` holds shared $defs and validates no document itself.
+# Schemas — 39. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1016,6 +1016,13 @@ schemas:
     summary: >-
       An independent read of one implementation ticket: the reader's paraphrase, open decisions,
       unresolved terms, exists-or-proposed claims, and one observation per readiness criterion.
+  - id: behavior-contract
+    batch: 17
+    status: authored
+    summary: >-
+      Intent-backed behavior for one subsystem: classified requirements, states, events,
+      properties and assumptions. Accepted intent is distinct from proposed, unresolved and
+      observed behavior.
   - id: verification
     batch: 1
     status: authored

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -18,12 +18,16 @@ import { dirname, join } from "node:path";
 
 import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
 
+import { runCli } from "../../src/cli.ts";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
+import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
-import { takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { openRun, takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { asJsonObject, classifyRun, RUN_SCHEMA_VERSION, type JsonObject } from "../../src/lifecycle/behavior-policy.ts";
+import { charterAllowsProtectedStart } from "../../src/lifecycle/protected-start.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 import { parseJson } from "../helpers/json.ts";
@@ -103,7 +107,7 @@ function callRunnerCli(
   timeoutMs = RUNNER_CALL_TIMEOUT_MS,
 ) {
   const child = nodeSpawnSync(
-    "bun",
+    process.execPath,
     [join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
     {
       cwd: root,
@@ -133,7 +137,7 @@ function spawnRunnerCli(
   timeoutMs = RUNNER_CALL_TIMEOUT_MS,
 ) {
   const child = spawnLive(
-    ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
+    [process.execPath, join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
     { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: token }, stdout: "pipe", stderr: "pipe" },
   );
   runnerCallChildren.add(child);
@@ -157,15 +161,40 @@ function spawnRunnerCli(
   };
 }
 
+async function reapLive(signal: NodeJS.Signals) {
+  for (const child of liveChildren) {
+    try {
+      child.kill(signal);
+    } catch {
+      // already gone
+    }
+  }
+  const waited = [...liveChildren].map((child) =>
+    Promise.race([
+      child.exited,
+      Bun.sleep(2_000).then(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // already gone
+        }
+        return child.exited;
+      }),
+    ]),
+  );
+  await Promise.allSettled(waited);
+  liveChildren.clear();
+}
+
 afterEach(async () => {
   for (const child of runnerCallChildren) child.kill("SIGKILL");
   await Promise.allSettled([...runnerCallChildren].map((child) => child.exited));
   runnerCallChildren.clear();
+  // SIGTERM so `ak runner serve` can killGroup its detached seats; SIGKILL skips that handler.
+  await reapLive("SIGTERM");
 });
 afterAll(async () => {
-  for (const child of liveChildren) child.kill("SIGKILL");
-  await Promise.allSettled([...liveChildren].map((child) => child.exited));
-  liveChildren.clear();
+  await reapLive("SIGTERM");
 });
 
 const transcript: string[] = [
@@ -182,9 +211,31 @@ afterAll(() => {
 });
 
 function git(cwd: string, ...args: string[]) {
-  expect(
-    Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Toy", "-c", "user.email=toy@example.invalid", ...args]).exitCode,
-  ).toBe(0);
+  expect(gitProc(cwd, args).exitCode).toBe(0);
+}
+
+function gitProc(cwd: string, args: readonly string[], stdin?: string) {
+  return Bun.spawnSync(
+    [
+      "git",
+      "-C",
+      cwd,
+      "-c",
+      "user.name=Toy",
+      "-c",
+      "user.email=toy@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
+    stdin === undefined ? {} : { stdin: Buffer.from(stdin) },
+  );
+}
+
+function gitText(cwd: string, args: readonly string[], stdin?: string): string {
+  const result = gitProc(cwd, args, stdin);
+  expect(result.exitCode).toBe(0);
+  return result.stdout.toString().trim();
 }
 
 function waitForPath(path: string, owner: { exited: Promise<number> }) {
@@ -235,21 +286,10 @@ const WORKER_TEMPLATE = (() => {
   const worker = mkdtempSync(join(scratchRoot, "ak-runner-seed-"));
   writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
   writeFileSync(join(worker, "README.md"), "toy worktree\n");
-  Bun.spawnSync(["git", "init", "-q", worker]);
-  Bun.spawnSync(["git", "-C", worker, "add", "."]);
-  Bun.spawnSync([
-    "git",
-    "-C",
-    worker,
-    "-c",
-    "user.name=Toy",
-    "-c",
-    "user.email=toy@example.invalid",
-    "commit",
-    "-qm",
-    "Create toy charter worktree",
-  ]);
-  const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  git(worker, "init", "-q", "-b", "main");
+  git(worker, "add", ".");
+  git(worker, "commit", "-qm", "Create toy charter worktree");
+  const revision = workerHead(worker);
   mkdirSync(join(worker, ".runner-requests"));
   return { worker, revision };
 })();
@@ -262,7 +302,7 @@ const FEATURE_WORKER_TEMPLATE = (() => {
   writeFileSync(join(worker, "feature.txt"), "feature\n");
   git(worker, "add", "feature.txt");
   git(worker, "commit", "-qm", "add feature");
-  const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  const revision = workerHead(worker);
   return { worker, revision };
 })();
 
@@ -275,6 +315,16 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
   const { revision } = template;
   const requestDir = join(worker, ".runner-requests");
   const path = join(privateDir, "charter.json");
+  const toyTicket = {
+    schema: "ticket",
+    schema_version: 1,
+    id: "toy-ticket",
+    project: { id: "toy" },
+    acceptance_criteria: [{ id: "AC-1", text: "Toy work is done." }],
+    verification: [{ id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] }],
+    approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+  };
+  writeFileSync(join(privateDir, "toy-ticket.json"), JSON.stringify(toyTicket));
   const initialCharter = {
     schema: "charter",
     schema_version: 1,
@@ -287,7 +337,7 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
     created_at: "2026-10-01T00:00:00Z",
     status: "active",
     immutability: { immutable: true, worker_writable: false, hash: "", location: path },
-    work_source: { kind: "ticket", ref: { id: "toy-ticket", hash: `sha256:${"a".repeat(64)}` } },
+    work_source: { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(toyTicket) } },
     repos: [{ repo: "toy", base_branch: "main", paths: ["src/**"] }],
     artifact_destinations: { kb_root: "toy", runs_path: "runs" },
     allowed_capabilities: [
@@ -363,6 +413,184 @@ function standing(f: ReturnType<typeof fixture>): StandingGrant {
     controller: "firstmate",
     run_id: "toy-run",
   };
+}
+
+const TOY_BINDING = "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n";
+const OTHER_BINDING = "backend: local-git\nproject: other\nlocator:\n  knowledgebase: other-kb\n";
+const IN_REPO_BINDING = `backend: in-repo
+project: toy
+locator:
+  knowledgebase: fixture-kb
+  path: wiki
+  kinds:
+    adr: adr
+`;
+
+function enabledToyTicket(parsed: JsonObject): JsonObject {
+  const HASH = `sha256:${"a".repeat(64)}`;
+  return {
+    ...parsed,
+    acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+    verification: [
+      {
+        id: "project-check",
+        check: "Run the project check.",
+        kind: "command",
+        supports: ["AC-1"],
+        behavior: {
+          evidence_layer: "implementation",
+          property_ids: ["every-configured-directory-is-read"],
+          property_types: { "every-configured-directory-is-read": "safety" },
+          contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+        },
+      },
+    ],
+  };
+}
+
+function freezeRejectingToyTicket(parsed: JsonObject): JsonObject {
+  const enabled = enabledToyTicket(parsed);
+  const verification = Array.isArray(enabled.verification) ? [...enabled.verification] : [];
+  verification.push({
+    id: "broken-check",
+    check: "A freezeCheck reject.",
+    kind: "command",
+    supports: ["AC-1"],
+    behavior: { evidence_layer: "implementation" },
+  });
+  return { ...enabled, verification };
+}
+
+function rewordedCheckToyTicket(parsed: JsonObject): JsonObject {
+  const enabled = enabledToyTicket(parsed);
+  const first = Array.isArray(enabled.verification) ? enabled.verification[0] : undefined;
+  if (!asJsonObject(first) || !asJsonObject(first.behavior)) throw new Error("enabled ticket has no check");
+  return {
+    ...enabled,
+    verification: [
+      {
+        ...first,
+        check: "Run the project check with a different freeze.",
+        behavior: first.behavior,
+      },
+    ],
+  };
+}
+
+function publishToyKb(ticket: JsonObject, mode: "off" | "shadow" | "on") {
+  const scratch = processScratch("ak-bv-runner-kb-");
+  const kb = join(scratch, "kb");
+  mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+  git(kb, "init", "-q", "-b", "main");
+  const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+  if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+  const project: JsonObject = parsedProject;
+  const identity = asJsonObject(project.identity) ? project.identity : {};
+  project.identity = { ...identity, id: "toy" };
+  project.review = { behavior: mode };
+  const projectHash = artifactHash(project);
+  const ticketHash = artifactHash(ticket);
+  writeFileSync(
+    join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+    `${JSON.stringify({
+      record: {
+        ref: "run:bootstrap/project/toy",
+        content_hash: projectHash,
+        idempotency_key: projectHash,
+        links: [],
+      },
+      artifact: project,
+    })}\n${JSON.stringify({
+      record: {
+        ref: "run:bootstrap/ticket/toy-ticket",
+        content_hash: ticketHash,
+        idempotency_key: ticketHash,
+        links: [],
+      },
+      artifact: ticket,
+    })}\n`,
+  );
+  git(kb, "add", "-A");
+  git(kb, "commit", "-qm", "project-and-ticket");
+  const registry = join(scratch, "registry.json");
+  writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+  return { registry, kb };
+}
+
+function projectOnlyJsonl(kb: string): string {
+  const jsonl = readFileSync(join(kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8");
+  const projectLine = jsonl
+    .split("\n")
+    .find((line) => line.includes('"schema":"project"') || line.includes('"schema": "project"'));
+  if (projectLine === undefined) throw new Error("published kb has no project record");
+  return `${projectLine}\n`;
+}
+
+function artifactsJsonl(kb: string): string {
+  return readFileSync(join(kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8");
+}
+
+function commitInRepoKb(worker: string, jsonl: string | null, message: string) {
+  mkdirSync(join(worker, "wiki", "adr"), { recursive: true });
+  writeFileSync(join(worker, "wiki", "adr", ".gitkeep"), "");
+  writeFileSync(join(worker, "ak.kb.yaml"), IN_REPO_BINDING);
+  const artifacts = join(worker, "projects", "toy", "runs", "artifacts.jsonl");
+  if (jsonl === null) {
+    if (existsSync(artifacts)) unlinkSync(artifacts);
+  } else {
+    mkdirSync(join(worker, "projects", "toy", "runs"), { recursive: true });
+    writeFileSync(artifacts, jsonl);
+  }
+  git(worker, "add", "-A");
+  git(worker, "commit", "-qm", message);
+  const sha = workerHead(worker);
+  git(worker, "update-ref", "refs/remotes/origin/main", sha);
+  git(worker, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  return sha;
+}
+
+function forkFeatureFromOlderKb(f: ReturnType<typeof fixture>, atO: string | null, atT: string) {
+  git(f.worker, "checkout", "main");
+  commitInRepoKb(f.worker, atO, "kb at O");
+  git(f.worker, "checkout", "feature");
+  git(f.worker, "merge", "-q", "-m", "take O", "main");
+  git(f.worker, "checkout", "main");
+  commitInRepoKb(f.worker, atT, "kb at T");
+  git(f.worker, "checkout", "feature");
+  git(f.worker, "commit", "--allow-empty", "-qm", "worker");
+}
+
+function unlinkStoreTicket(f: ReturnType<typeof fixture>, ticket: JsonObject) {
+  unlinkSync(join(f.privateDir, "toy-ticket.json"));
+  retargetCharterTicket(f, ticket);
+  unlinkSync(join(f.privateDir, "toy-ticket.json"));
+}
+
+function retargetCharterTicket(f: ReturnType<typeof fixture>, ticket: JsonObject) {
+  writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+  f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+  f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+  const approval = f.charter.approvals[0];
+  if (approval === undefined) throw new Error("toy charter approval missing");
+  approval.artifact_hash = f.charter.immutability.hash;
+  writeFileSync(f.path, JSON.stringify(f.charter));
+}
+
+function workerHead(worker: string): string {
+  const parsed = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]);
+  expect(parsed.exitCode).toBe(0);
+  return parsed.stdout.toString().trim();
+}
+
+function withRegistry<T>(registry: string, body: () => T): T {
+  const previous = process.env.AK_KB_REGISTRY;
+  process.env.AK_KB_REGISTRY = registry;
+  try {
+    return body();
+  } finally {
+    if (previous === undefined) delete process.env.AK_KB_REGISTRY;
+    else process.env.AK_KB_REGISTRY = previous;
+  }
 }
 
 function withAuditCadence(f: ReturnType<typeof fixture>) {
@@ -548,7 +776,7 @@ describe("runner guards", () => {
     );
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -576,7 +804,7 @@ describe("runner guards", () => {
         const pending = decision;
         const serverState = server.exitCode === null ? "was still running" : `exited ${server.exitCode}`;
         pending?.kill("SIGKILL");
-        server.kill("SIGKILL");
+        server.kill("SIGTERM");
         const [[decided], serverErr, decisionErr] = await Promise.all([
           Promise.allSettled(pending === undefined ? [] : [pending.exited]),
           new Response(server.stderr).text(),
@@ -619,7 +847,7 @@ describe("runner guards", () => {
         ...standing(f),
         charter_hash: `sha256:${"0".repeat(64)}`,
       }),
-    ).toThrow("standing grant");
+    ).toThrow("standing grant is absent, forged or unbound to the approved charter");
     const { standing_grants: omitted, ...withoutStanding } = f.charter;
     expect(omitted).toHaveLength(1);
     withoutStanding.immutability.hash = artifactHash({
@@ -635,7 +863,7 @@ describe("runner guards", () => {
         ...standing(f),
         charter_hash: withoutStanding.immutability.hash,
       }),
-    ).toThrow("standing grant");
+    ).toThrow("standing grant is absent, forged or unbound to the approved charter");
     const g = fixture();
     g.charter.allowed_capabilities = ["repository-read"];
     g.charter.immutability.hash = artifactHash({ ...g.charter, immutability: { ...g.charter.immutability, hash: "" } });
@@ -644,7 +872,7 @@ describe("runner guards", () => {
     gApproval.artifact_hash = g.charter.immutability.hash;
     writeFileSync(g.path, JSON.stringify(g.charter));
     expect(() => g.runner.start("toy-run", g.path, "implementer-1", g.revision, standing(g))).toThrow(
-      "standing start requires charter-approved",
+      "standing start requires charter-approved runner grants, trusted evidence and independent context",
     );
     transcript.push(
       "Refusal: Firstmate start with a forged standing-grant hash, no standing entry or missing runner capabilities → no run created.",
@@ -661,7 +889,1437 @@ describe("runner guards", () => {
     if (approval === undefined) throw new Error("toy charter approval missing");
     approval.artifact_hash = f.charter.immutability.hash;
     writeFileSync(f.path, JSON.stringify(f.charter));
-    expect(f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f)).run_state).toBe("created");
+    const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    expect(started.run_state).toBe("created");
+    expect(started.behavior?.run_id).toBe("toy-run");
+    expect(started.behavior?.mode).toBe("off");
+    expect(f.runner.status("toy-run").behavior?.binding_hash).toBe(started.behavior?.binding_hash);
+  });
+
+  test("start freezes the approved ticket and resume consumes that snapshot", () => {
+    const f = fixture();
+    const HASH = `sha256:${"a".repeat(64)}`;
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: "toy-ticket",
+      project: { id: "toy" },
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+            contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+          },
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+    };
+    writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+    f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const scratch = processScratch("ak-bv-runner-kb-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    git(kb, "init", "-q", "-b", "main");
+    const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+    if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+    const project: JsonObject = parsedProject;
+    const identity = asJsonObject(project.identity) ? project.identity : {};
+    project.identity = { ...identity, id: "toy" };
+    project.review = { behavior: "on" };
+    const projectHash = artifactHash(project);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/project/toy",
+          content_hash: projectHash,
+          idempotency_key: projectHash,
+          links: [],
+        },
+        artifact: project,
+      })}\n`,
+    );
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+      expect(started.behavior?.mode).toBe("on");
+      expect(started.behavior?.required_checks.map((check) => check.id)).toEqual(["project-check"]);
+      const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
+      expect(resumed.behavior?.binding_hash).toBe(started.behavior?.binding_hash);
+      expect(resumed.behavior?.required_checks).toEqual(started.behavior?.required_checks);
+      expect(resumed.behavior?.mode).toBe("on");
+      expect(resumed.behavior?.ticket_hash).toBe(artifactHash(ticket));
+      expect(resumed.behavior?.ticket_resolution).toBeUndefined();
+      expect(resumed.run_state).toBe("created");
+      const classified = classifyRun(
+        {
+          run_id: "toy-run",
+          ticket: { id: "toy-ticket", hash: artifactHash(ticket) },
+          opened_at: "2026-09-29T00:00:00Z",
+          branch: "feature",
+          base: f.revision,
+        },
+        "toy-run",
+        ticket,
+      );
+      expect(classified.kind).toBe("incomplete");
+      expect(classified.kind === "incomplete" ? classified.reason : "").toContain("new enabled run");
+      expect(classified.kind === "incomplete" ? classified.reason : "").not.toContain("legacy");
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("CLI check refuses after stripping the freeze from a Runner.start store", () => {
+    const f = fixture();
+    const HASH = `sha256:${"a".repeat(64)}`;
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: "toy-ticket",
+      project: { id: "toy" },
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+            contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+          },
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+    };
+    writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+    f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const scratch = processScratch("ak-bv-runner-cli-strip-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    git(kb, "init", "-q", "-b", "main");
+    const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+    if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+    const project: JsonObject = parsedProject;
+    const identity = asJsonObject(project.identity) ? project.identity : {};
+    project.identity = { ...identity, id: "toy" };
+    project.review = { behavior: "on" };
+    const projectHash = artifactHash(project);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/project/toy",
+          content_hash: projectHash,
+          idempotency_key: projectHash,
+          links: [],
+        },
+        artifact: project,
+      })}\n`,
+    );
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    const lifecycle = (...argv: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = runCli(["lifecycle", ...argv], {
+        cwd: f.worker,
+        io: { out: (l) => out.push(l), err: (l) => err.push(l) },
+      });
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    try {
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+      const evidence = join(f.privateDir, "evidence");
+      for (const gate of ["build-checks", "review-full", "review-readiness"] as const)
+        expect(lifecycle("record", "--dir", evidence, "--run", "toy-run", "--gate", gate).code).toBe(0);
+      const runPath = join(evidence, "runs", "toy-run", "run.json");
+      const runDoc: unknown = JSON.parse(readFileSync(runPath, "utf8"));
+      if (!asJsonObject(runDoc)) throw new Error("run.json is not an object");
+      delete runDoc.behavior;
+      delete runDoc.schema_version;
+      writeFileSync(runPath, `${JSON.stringify(runDoc, null, 2)}\n`);
+      const runnerPath = join(f.privateDir, "toy-run.json");
+      const runnerDoc: unknown = JSON.parse(readFileSync(runnerPath, "utf8"));
+      if (!asJsonObject(runnerDoc)) throw new Error("runner record is not an object");
+      delete runnerDoc.behavior;
+      writeFileSync(runnerPath, `${JSON.stringify(runnerDoc, null, 2)}\n`);
+      const checked = lifecycle("check", "--dir", evidence, "--run", "toy-run");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain("no protected runner creation record");
+      expect(checked.err).not.toContain("legacy");
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("a malformed knowledgebase binding fails closed at start", () => {
+    const f = fixture();
+    writeFileSync(join(f.worker, "ak.kb.yaml"), "this is not: [valid\n");
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "malformed bind");
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "Not valid YAML",
+    );
+  });
+
+  test("an off charter with a non-ticket work source still starts", () => {
+    const f = fixture();
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.required_checks).toEqual([]);
+  });
+
+  test("verify of a pre-feature run does not fail closed on a missing knowledgebase", () => {
+    const f = fixture();
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const source = join(f.privateDir, "source.txt");
+    writeFileSync(source, "approved source");
+    f.runner.collect("toy-run", "e1", source, f.revision, "source");
+    for (const [id, operation, covers] of [
+      ["align", "align.run", "align-answer"],
+      ["bound", "bound.run", "spec-approval"],
+      ["build", "build.dispatch", "build-go"],
+    ] as const) {
+      card(f, id, operation, covers);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    const verification = join(f.privateDir, "verification.txt");
+    writeFileSync(verification, "tests passed at current revision");
+    f.runner.collect("toy-run", "verify", verification, f.revision, "verify");
+    const path = join(f.privateDir, "toy-run.json");
+    const stored: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!asJsonObject(stored)) throw new Error("runner state is not an object");
+    delete stored.behavior;
+    writeFileSync(path, `${JSON.stringify(stored)}\n`);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), "this is not: [valid\n");
+    expect(() => new Runner(f.privateDir, f.worker, root).verify("toy-run", "verify")).not.toThrow();
+  });
+
+  test("verify keeps a frozen on-mode binding when the worker-writable project file is gone", () => {
+    const f = fixture();
+    const HASH = `sha256:${"a".repeat(64)}`;
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: "toy-ticket",
+      project: { id: "toy" },
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+            contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+          },
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+    };
+    writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+    f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const scratch = processScratch("ak-bv-runner-verify-kb-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    git(kb, "init", "-q", "-b", "main");
+    const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+    if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+    const project: JsonObject = parsedProject;
+    const identity = asJsonObject(project.identity) ? project.identity : {};
+    project.identity = { ...identity, id: "toy" };
+    project.review = { behavior: "on" };
+    const projectHash = artifactHash(project);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/project/toy",
+          content_hash: projectHash,
+          idempotency_key: projectHash,
+          links: [],
+        },
+        artifact: project,
+      })}\n`,
+    );
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const revision = workerHead(f.worker);
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f));
+      const source = join(f.privateDir, "source.txt");
+      writeFileSync(source, "approved source");
+      f.runner.collect("toy-run", "e1", source, revision, "source");
+      for (const [id, operation, covers] of [
+        ["align", "align.run", "align-answer"],
+        ["bound", "bound.run", "spec-approval"],
+        ["build", "build.dispatch", "build-go"],
+      ] as const) {
+        card(f, id, operation, covers);
+        expect(f.runner.decide("toy-run", id).status).toBe("complete");
+      }
+      const verification = join(f.privateDir, "verification.txt");
+      writeFileSync(verification, "tests passed at current revision");
+      f.runner.collect("toy-run", "verify", verification, revision, "verify");
+      writeFileSync(join(f.worker, "ak.kb.yaml"), "");
+      const verified = new Runner(f.privateDir, f.worker, root).verify("toy-run", "verify");
+      expect(verified.run_state).toBe("verifying");
+      expect(verified.behavior?.required_checks.map((check) => check.id)).toEqual(["project-check"]);
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("lifecycle open refuses a Runner.start mandatory freeze; the freeze stays after live KB off", () => {
+    const f = fixture();
+    const HASH = `sha256:${"a".repeat(64)}`;
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: "toy-ticket",
+      project: { id: "toy" },
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+            contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+          },
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-10-01T00:00:00Z" }],
+    };
+    writeFileSync(join(f.privateDir, "toy-ticket.json"), JSON.stringify(ticket));
+    f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const scratch = processScratch("ak-bv-runner-delegated-kb-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    git(kb, "init", "-q", "-b", "main");
+    const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+    if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+    const project: JsonObject = parsedProject;
+    const identity = asJsonObject(project.identity) ? project.identity : {};
+    project.identity = { ...identity, id: "toy" };
+    project.review = { behavior: "on" };
+    const projectHash = artifactHash(project);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/project/toy",
+          content_hash: projectHash,
+          idempotency_key: projectHash,
+          links: [],
+        },
+        artifact: project,
+      })}\n`,
+    );
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project");
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+      expect(started.behavior?.required_checks).toHaveLength(1);
+      const weaker = { ...project, review: { behavior: "off" } };
+      const weakerHash = artifactHash(weaker);
+      writeFileSync(
+        join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+        `${JSON.stringify({
+          record: { ref: "run:weaken/project/toy", content_hash: weakerHash, idempotency_key: weakerHash, links: [] },
+          artifact: weaker,
+        })}\n`,
+      );
+      git(kb, "add", "-A");
+      git(kb, "commit", "-qm", "weaken");
+      writeFileSync(join(f.worker, "delegated.json"), JSON.stringify(ticket));
+      const opened = openRun({
+        dir: join(f.privateDir, "evidence"),
+        project: f.worker,
+        ticket: join(f.worker, "delegated.json"),
+        registry,
+      });
+      expect(opened.ok).toBe(false);
+      if (opened.ok) throw new Error("expected mandatory open refusal");
+      expect(opened.reason).toContain("cannot cancel those checks");
+      const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
+      expect(resumed.behavior?.mode).toBe("on");
+      expect(resumed.behavior?.required_checks).toHaveLength(1);
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("ordinary ticket-kind start proceeds without a private ticket file when no project is bound", () => {
+    const f = fixture();
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    const spy = spyOn(process.stderr, "write");
+    let started;
+    let warning = "";
+    try {
+      started = f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      warning = spy.mock.calls.map((call) => String(call[0])).join("");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(warning).toContain("Runner.start: ticket toy-ticket is unresolved");
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.required_checks).toEqual([]);
+    expect(started.behavior?.ticket_resolution).toBe("unresolved");
+    const later = {
+      schema: "ticket",
+      id: "toy-ticket",
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+          },
+        },
+      ],
+    };
+    if (!asJsonObject(later)) throw new Error("later ticket is not an object");
+    const record: unknown = JSON.parse(
+      JSON.stringify({ schema_version: RUN_SCHEMA_VERSION, behavior: started.behavior }),
+    );
+    if (!asJsonObject(record)) throw new Error("run record is not an object");
+    const classified = classifyRun(record, "toy-run", later);
+    expect(classified.kind).toBe("incomplete");
+    expect(classified.kind === "incomplete" ? classified.reason : "").toContain("not frozen-clean");
+  });
+
+  test("ticket-kind start reads a committed KB ticket when the private file is absent", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = parsed;
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    const scratch = processScratch("ak-bv-runner-committed-ticket-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    git(kb, "init", "-q", "-b", "main");
+    const hash = artifactHash(ticket);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: { ref: "run:bootstrap/ticket/toy-ticket", content_hash: hash, idempotency_key: hash, links: [] },
+        artifact: ticket,
+      })}\n`,
+    );
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "ticket");
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+      expect(started.behavior?.mode).toBe("off");
+      expect(started.behavior?.ticket_hash).toBe(hash);
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("start freezes an on ticket from the knowledgebase after the worker deletes ak.kb.yaml", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const HASH = `sha256:${"a".repeat(64)}`;
+    const ticket = {
+      ...parsed,
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified.", surface: "none" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+            contract: { id: "example-behavior-contract-1", schema: "behavior-contract", hash: HASH },
+          },
+        },
+      ],
+    };
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    f.charter.work_source = { kind: "ticket", ref: { id: "toy-ticket", schema: "ticket", hash: artifactHash(ticket) } };
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    const scratch = processScratch("ak-bv-runner-deleted-yaml-");
+    const kb = join(scratch, "kb");
+    mkdirSync(join(kb, "projects", "toy", "runs"), { recursive: true });
+    git(kb, "init", "-q", "-b", "main");
+    const parsedProject: unknown = JSON.parse(readFileSync(join(root, "templates/project.example.json"), "utf8"));
+    if (!asJsonObject(parsedProject)) throw new Error("project example is not an object");
+    const project: JsonObject = parsedProject;
+    const identity = asJsonObject(project.identity) ? project.identity : {};
+    project.identity = { ...identity, id: "toy" };
+    project.review = { behavior: "on" };
+    const projectHash = artifactHash(project);
+    const ticketHash = artifactHash(ticket);
+    writeFileSync(
+      join(kb, "projects", "toy", "runs", "artifacts.jsonl"),
+      `${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/project/toy",
+          content_hash: projectHash,
+          idempotency_key: projectHash,
+          links: [],
+        },
+        artifact: project,
+      })}\n${JSON.stringify({
+        record: {
+          ref: "run:bootstrap/ticket/toy-ticket",
+          content_hash: ticketHash,
+          idempotency_key: ticketHash,
+          links: [],
+        },
+        artifact: ticket,
+      })}\n`,
+    );
+    git(kb, "add", "-A");
+    git(kb, "commit", "-qm", "project-and-ticket");
+    writeFileSync(
+      join(f.worker, "ak.kb.yaml"),
+      "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    unlinkSync(join(f.worker, "ak.kb.yaml"));
+    const revision = workerHead(f.worker);
+    const registry = join(scratch, "registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
+    const previousRegistry = process.env.AK_KB_REGISTRY;
+    process.env.AK_KB_REGISTRY = registry;
+    try {
+      const started = f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f));
+      expect(started.behavior?.mode).toBe("on");
+      expect(started.behavior?.required_checks).toHaveLength(1);
+    } finally {
+      if (previousRegistry === undefined) delete process.env.AK_KB_REGISTRY;
+      else process.env.AK_KB_REGISTRY = previousRegistry;
+    }
+  });
+
+  test("an uncommitted ak.kb.yaml retarget is ignored at start", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker commit that deletes or retargets ak.kb.yaml after start does not change resolution", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "retarget");
+    const resumed = new Runner(f.privateDir, f.worker, root).status("toy-run");
+    expect(resumed.behavior?.mode).toBe("on");
+    expect(resumed.behavior?.binding_hash).toBe(started.behavior?.binding_hash);
+    git(f.worker, "rm", "-q", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "unbind");
+    const afterDelete = new Runner(f.privateDir, f.worker, root).status("toy-run");
+    expect(afterDelete.behavior?.mode).toBe("on");
+    expect(afterDelete.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a nested project binding is read from its own folder", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    const revision = workerHead(nested);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker commit before start that deletes ak.kb.yaml still uses the base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    git(f.worker, "rm", "-q", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "delete bind");
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker commit before start that retargets ak.kb.yaml still uses the base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "retarget bind");
+    const revision = workerHead(f.worker);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("git replace of the binding blob cannot retarget start", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const blob = gitText(f.worker, ["rev-parse", "HEAD:ak.kb.yaml"]);
+    const forgedPath = join(f.worker, "forged.kb.yaml");
+    writeFileSync(forgedPath, OTHER_BINDING);
+    const forged = gitText(f.worker, ["hash-object", "-w", forgedPath]);
+    unlinkSync(forgedPath);
+    git(f.worker, "replace", blob, forged);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("git replace of the binding tree cannot hide the committed binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const base = gitText(f.worker, ["merge-base", "HEAD", "main"]);
+    const tree = gitText(f.worker, ["rev-parse", `${base}^{tree}`]);
+    const empty = gitText(f.worker, ["mktree"], "");
+    git(f.worker, "replace", tree, empty);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("git grafts cannot retarget the merge-base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const featureSha = workerHead(f.worker);
+    const mainSha = gitText(f.worker, ["rev-parse", "main"]);
+    git(f.worker, "checkout", "--orphan", "forge");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "forged bind");
+    const forged = workerHead(f.worker);
+    git(f.worker, "checkout", "-q", "feature");
+    mkdirSync(join(f.worker, ".git", "info"), { recursive: true });
+    writeFileSync(join(f.worker, ".git", "info", "grafts"), `${featureSha} ${forged}\n${mainSha} ${forged}\n`);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("an uncommitted nested ak.kb.yaml does not override the committed root binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "root bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(nested, "ak.kb.yaml"), OTHER_BINDING);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", workerHead(nested), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker branched before the binding existed cannot start unbound", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind after fork");
+    git(f.worker, "checkout", "feature");
+    if (existsSync(join(f.worker, "ak.kb.yaml"))) unlinkSync(join(f.worker, "ak.kb.yaml"));
+    let started: ReturnType<Runner["start"]> | undefined;
+    let error: string | undefined;
+    try {
+      started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+    }
+    expect(error).toBe("the charter base tip has a knowledgebase binding the merge-base does not");
+    expect(started).toBeUndefined();
+  });
+
+  test("a local branch named origin/main cannot retarget the merge-base binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    const mainSha = workerHead(f.worker);
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    git(f.worker, "checkout", "--orphan", "forge");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "forged bind");
+    const forged = workerHead(f.worker);
+    git(f.worker, "checkout", "-q", "feature");
+    git(f.worker, "update-ref", "refs/heads/origin/main", forged);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+    expect(mainSha).not.toBe(forged);
+  });
+
+  test("a planted commit-graph file does not retarget the merge-base binding", () => {
+    // Does not pin core.commitGraph=false; the argv assertion does.
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    mkdirSync(join(f.worker, ".git", "objects", "info"), { recursive: true });
+    writeFileSync(join(f.worker, ".git", "objects", "info", "commit-graph"), "forged-commit-graph\n");
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("merge-base git argv disables the commit graph", () => {
+    const argv = isolatedGitArgv(root, ["merge-base", "HEAD", "main"]);
+    expect(argv).toContain("core.commitGraph=false");
+    expect(argv).toContain("merge-base");
+    expect(argv.indexOf("-c")).toBeGreaterThanOrEqual(0);
+    expect(argv[argv.indexOf("core.commitGraph=false") - 1]).toBe("-c");
+  });
+
+  test("verify records the charter base commit, not a short rev-parse", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const mainSha = gitText(f.worker, ["rev-parse", "refs/heads/main"]);
+    git(f.worker, "tag", "main", f.revision);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    reachShipReady(f, false);
+    expect(f.runner.status("toy-run").verified_base_revision).toBe(mainSha);
+    expect(mainSha).not.toBe(f.revision);
+  });
+
+  test("a non-ticket charter with a committed binding and an unregistered knowledgebase is refused", () => {
+    const f = fixture();
+    if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({
+      ...f.charter,
+      immutability: { ...f.charter.immutability, hash: "" },
+    });
+    const planApproval = f.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the authoritative project record is unavailable; missing project cannot turn this run off",
+    );
+  });
+
+  test("an unresolvable base branch does not record a planted working binding", () => {
+    const f = fixture();
+    if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.repos = [{ repo: "toy", base_branch: "missing-base", paths: ["src/**"] }];
+    f.charter.immutability.hash = artifactHash({
+      ...f.charter,
+      immutability: { ...f.charter.immutability, hash: "" },
+    });
+    const planApproval = f.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    expect(started.run_state).toBe("created");
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.policy_id).toBe(null);
+    expect(started.behavior?.required_checks).toEqual([]);
+  });
+
+  test("an uncomputable merge-base does not record a planted working binding", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    const planted = publishToyKb(ticket, "on");
+    if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
+    f.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    f.charter.immutability.hash = artifactHash({
+      ...f.charter,
+      immutability: { ...f.charter.immutability, hash: "" },
+    });
+    const planApproval = f.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "checkout", "--orphan", "orphan");
+    git(f.worker, "commit", "--allow-empty", "-qm", "orphan");
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.run_state).toBe("created");
+    expect(started.behavior?.mode).toBe("off");
+    expect(started.behavior?.policy_id).toBe(null);
+    expect(started.behavior?.required_checks).toEqual([]);
+  });
+
+  test("an in-repo worker commit that flips behavior still uses the base record", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, "wiki", "adr"), { recursive: true });
+    writeFileSync(join(f.worker, "wiki", "adr", ".gitkeep"), "");
+    mkdirSync(join(f.worker, "projects", "toy", "runs"), { recursive: true });
+    const onKb = publishToyKb(ticket, "on");
+    const offKb = publishToyKb(ticket, "off");
+    writeFileSync(
+      join(f.worker, "projects", "toy", "runs", "artifacts.jsonl"),
+      readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl")),
+    );
+    writeFileSync(join(f.worker, "ak.kb.yaml"), IN_REPO_BINDING);
+    git(f.worker, "add", "-A");
+    git(f.worker, "commit", "-qm", "in-repo on");
+    const mainSha = workerHead(f.worker);
+    git(f.worker, "update-ref", "refs/remotes/origin/main", mainSha);
+    git(f.worker, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take in-repo", "main");
+    writeFileSync(
+      join(f.worker, "projects", "toy", "runs", "artifacts.jsonl"),
+      readFileSync(join(offKb.kb, "projects", "toy", "runs", "artifacts.jsonl")),
+    );
+    git(f.worker, "add", "projects/toy/runs/artifacts.jsonl");
+    git(f.worker, "commit", "-qm", "flip off");
+    git(f.worker, "update-ref", "refs/remotes/origin/main", mainSha);
+    git(f.worker, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker branched before the base turned behavior on cannot start with the stale record", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkStoreTicket(f, ticket);
+    const offKb = publishToyKb(ticket, "off");
+    const onKb = publishToyKb(ticket, "on");
+    forkFeatureFromOlderKb(
+      f,
+      projectOnlyJsonl(offKb.kb),
+      readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+    );
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  test("a worker branched before the base published artifacts cannot start with the stale record", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkStoreTicket(f, ticket);
+    const onKb = publishToyKb(ticket, "on");
+    forkFeatureFromOlderKb(f, null, readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  for (const baseMode of ["off", "shadow"] as const) {
+    test(`a worker branched before the base left review.behavior ${baseMode} cannot start when the ticket already exists`, () => {
+      const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+      const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+      if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+      unlinkStoreTicket(f, parsed);
+      const atO = publishToyKb(parsed, baseMode);
+      const atT = publishToyKb(parsed, "on");
+      forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+      expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+        "the charter base tip has a knowledgebase record the merge-base does not",
+      );
+    });
+  }
+
+  test("a worker branched before the base published the ticket cannot start when mode and project already match", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    unlinkStoreTicket(f, parsed);
+    const onKb = publishToyKb(parsed, "on");
+    forkFeatureFromOlderKb(f, projectOnlyJsonl(onKb.kb), artifactsJsonl(onKb.kb));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  test("a worker branched before the base added ticket checks cannot start with the weaker freeze", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = parsed;
+    const newer = enabledToyTicket(parsed);
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(
+      f,
+      readFileSync(join(atO.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+      readFileSync(join(atT.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+    );
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  test("a worker branched before a same-check ticket body edit still starts", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = enabledToyTicket(parsed);
+    const newer: JsonObject = {
+      ...older,
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified, with different prose.", surface: "none" }],
+    };
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(
+      f,
+      readFileSync(join(atO.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+      readFileSync(join(atT.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+    );
+    const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker branched before the base added a freezeCheck reject cannot start with an unknown tip freeze", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = parsed;
+    const newer = freezeRejectingToyTicket(parsed);
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  for (const tipMode of ["off", "shadow"] as const) {
+    test(`a tip in ${tipMode} whose freeze fails still starts from the merge-base record`, () => {
+      const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+      const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+      if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+      const older = enabledToyTicket(parsed);
+      unlinkStoreTicket(f, older);
+      const atO = publishToyKb(older, "on");
+      const atT = publishToyKb(older, tipMode);
+      forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+      const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+      expect(started.behavior?.mode).toBe("on");
+      expect(started.behavior?.required_checks).toHaveLength(1);
+    });
+  }
+
+  test("a worker branched before the base reworded a frozen check cannot start with the weaker freeze", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const older = enabledToyTicket(parsed);
+    const newer = rewordedCheckToyTicket(parsed);
+    unlinkStoreTicket(f, older);
+    const atO = publishToyKb(older, "on");
+    const atT = publishToyKb(newer, "on");
+    forkFeatureFromOlderKb(f, artifactsJsonl(atO.kb), artifactsJsonl(atT.kb));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  test("approved ticket is absent from the runner store under W1 on", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    const planted = publishToyKb(ticket, "on");
+    const jsonl = readFileSync(join(planted.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8");
+    const projectLine = jsonl
+      .split("\n")
+      .find((line) => line.includes('"schema":"project"') || line.includes('"schema": "project"'));
+    if (projectLine === undefined) throw new Error("published kb has no project record");
+    writeFileSync(join(planted.kb, "projects", "toy", "runs", "artifacts.jsonl"), `${projectLine}\n`);
+    git(planted.kb, "add", "-A");
+    git(planted.kb, "commit", "-qm", "drop ticket");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    expect(() =>
+      withRegistry(planted.registry, () =>
+        f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+      ),
+    ).toThrow("approved ticket is absent from the runner store");
+  });
+
+  test("Runner.start refusals name the exact charter and binding failures", () => {
+    const f = fixture();
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", "not-a-revision", standing(f))).toThrow(
+      "revision must be a full version-control object id",
+    );
+    expect(() =>
+      new Runner(f.privateDir, f.worker, root, true).start(
+        "toy-run",
+        f.path,
+        "implementer-1",
+        "a".repeat(40),
+        standing(f),
+      ),
+    ).toThrow("start revision differs from worker checkout");
+    f.charter.status = "revoked";
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const revokedApproval = f.charter.approvals[0];
+    if (revokedApproval === undefined) throw new Error("toy charter approval missing");
+    revokedApproval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow(
+      "charter is inactive, moved or has a mismatched hash",
+    );
+    const moved = fixture();
+    const elsewhere = join(moved.privateDir, "elsewhere.json");
+    writeFileSync(elsewhere, readFileSync(moved.path));
+    expect(() => moved.runner.start("toy-run", elsewhere, "implementer-1", moved.revision, standing(moved))).toThrow(
+      "charter is inactive, moved or has a mismatched hash",
+    );
+    const humanFixture = fixture();
+    const humanParsed: unknown = JSON.parse(readFileSync(humanFixture.path, "utf8"));
+    if (!asJsonObject(humanParsed)) throw new Error("toy charter is not an object");
+    humanParsed.approvals = [];
+    expect(charterAllowsProtectedStart(humanParsed, humanFixture.charter.immutability.hash)).toEqual({
+      ok: false,
+      reason: "active charter lacks a human approval bound to its hash",
+    });
+    const sensitive = fixture();
+    const sensitiveParsed: unknown = JSON.parse(readFileSync(sensitive.path, "utf8"));
+    if (!asJsonObject(sensitiveParsed)) throw new Error("toy charter is not an object");
+    const sensitiveCharter = sensitiveParsed;
+    sensitiveCharter.sensitive_grants = [
+      {
+        action: "merge",
+        scope: "this toy run only",
+        approval: {
+          artifact_hash: `sha256:${"0".repeat(64)}`,
+          by: "human",
+          authority: "explicit",
+          at: "2026-10-01T00:00:00Z",
+        },
+      },
+    ];
+    if (!asJsonObject(sensitiveCharter.immutability)) throw new Error("charter immutability missing");
+    const sensitiveHash = artifactHash({
+      ...sensitiveCharter,
+      immutability: { ...sensitiveCharter.immutability, hash: "" },
+    });
+    sensitiveCharter.immutability.hash = sensitiveHash;
+    const sensitiveApproval = Array.isArray(sensitiveCharter.approvals) ? sensitiveCharter.approvals[0] : undefined;
+    if (!asJsonObject(sensitiveApproval)) throw new Error("toy charter approval missing");
+    sensitiveApproval.artifact_hash = sensitiveHash;
+    writeFileSync(sensitive.path, JSON.stringify(sensitiveCharter));
+    const sensitiveStanding = { ...standing(sensitive), charter_hash: sensitiveHash };
+    expect(() =>
+      sensitive.runner.start("toy-run", sensitive.path, "implementer-1", sensitive.revision, sensitiveStanding),
+    ).toThrow("sensitive grant lacks human approval bound to this charter");
+    const runId = fixture();
+    expect(() => runId.runner.start("other-run", runId.path, "implementer-1", runId.revision, standing(runId))).toThrow(
+      "run id does not match charter",
+    );
+    const exists = fixture();
+    exists.runner.start("toy-run", exists.path, "implementer-1", exists.revision, standing(exists));
+    expect(() =>
+      exists.runner.start("toy-run", exists.path, "implementer-1", exists.revision, standing(exists)),
+    ).toThrow("run already exists");
+    const base = fixture();
+    base.charter.repos = [{ repo: "toy", base_branch: "missing-base", paths: ["src/**"] }];
+    base.charter.immutability.hash = artifactHash({
+      ...base.charter,
+      immutability: { ...base.charter.immutability, hash: "" },
+    });
+    const baseApproval = base.charter.approvals[0];
+    if (baseApproval === undefined) throw new Error("toy charter approval missing");
+    baseApproval.artifact_hash = base.charter.immutability.hash;
+    writeFileSync(base.path, JSON.stringify(base.charter));
+    expect(() => base.runner.start("toy-run", base.path, "implementer-1", base.revision, standing(base))).toThrow(
+      "cannot resolve charter base branch missing-base",
+    );
+    const orphan = fixture();
+    git(orphan.worker, "checkout", "--orphan", "orphan");
+    git(orphan.worker, "commit", "--allow-empty", "-qm", "orphan");
+    expect(() =>
+      orphan.runner.start("toy-run", orphan.path, "implementer-1", workerHead(orphan.worker), standing(orphan)),
+    ).toThrow("cannot compute merge-base of the start revision and the charter base branch");
+    const planOrphan = fixture();
+    if (!asJsonObject(planOrphan.charter.work_source)) throw new Error("toy work source is missing");
+    planOrphan.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    planOrphan.charter.immutability.hash = artifactHash({
+      ...planOrphan.charter,
+      immutability: { ...planOrphan.charter.immutability, hash: "" },
+    });
+    const planApproval = planOrphan.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = planOrphan.charter.immutability.hash;
+    writeFileSync(planOrphan.path, JSON.stringify(planOrphan.charter));
+    git(planOrphan.worker, "checkout", "--orphan", "orphan");
+    git(planOrphan.worker, "commit", "--allow-empty", "-qm", "orphan");
+    const planStarted = planOrphan.runner.start(
+      "toy-run",
+      planOrphan.path,
+      "implementer-1",
+      workerHead(planOrphan.worker),
+      standing(planOrphan),
+    );
+    expect(planStarted.run_state).toBe("created");
+    const fromRevision = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const featureSha = fromRevision.revision;
+    git(fromRevision.worker, "checkout", "--orphan", "orphan");
+    git(fromRevision.worker, "commit", "--allow-empty", "-qm", "orphan");
+    const startedFromRevision = fromRevision.runner.start(
+      "toy-run",
+      fromRevision.path,
+      "implementer-1",
+      featureSha,
+      standing(fromRevision),
+    );
+    expect(startedFromRevision.run_state).toBe("created");
+    const mismatch = fixture();
+    if (!asJsonObject(mismatch.charter.work_source) || !asJsonObject(mismatch.charter.work_source.ref))
+      throw new Error("toy work source is missing");
+    mismatch.charter.work_source.ref.hash = `sha256:${"0".repeat(64)}`;
+    mismatch.charter.immutability.hash = artifactHash({
+      ...mismatch.charter,
+      immutability: { ...mismatch.charter.immutability, hash: "" },
+    });
+    const mismatchApproval = mismatch.charter.approvals[0];
+    if (mismatchApproval === undefined) throw new Error("toy charter approval missing");
+    mismatchApproval.artifact_hash = mismatch.charter.immutability.hash;
+    writeFileSync(mismatch.path, JSON.stringify(mismatch.charter));
+    expect(() =>
+      mismatch.runner.start("toy-run", mismatch.path, "implementer-1", mismatch.revision, standing(mismatch)),
+    ).toThrow("approved ticket does not match the charter work source");
+    const malformed = fixture();
+    writeFileSync(join(malformed.privateDir, "toy-ticket.json"), "{");
+    expect(() =>
+      malformed.runner.start("toy-run", malformed.path, "implementer-1", malformed.revision, standing(malformed)),
+    ).toThrow("approved ticket is malformed");
+    const unavailable = fixture();
+    writeFileSync(join(unavailable.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(unavailable.worker, "add", "ak.kb.yaml");
+    git(unavailable.worker, "commit", "-qm", "bind");
+    expect(() =>
+      unavailable.runner.start(
+        "toy-run",
+        unavailable.path,
+        "implementer-1",
+        workerHead(unavailable.worker),
+        standing(unavailable),
+      ),
+    ).toThrow("the authoritative project record is unavailable; missing project cannot turn this run off");
+  });
+
+  test("Runner.load refuses a tampered behavior snapshot", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind");
+    const revision = workerHead(f.worker);
+    withRegistry(planted.registry, () => f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f)));
+    const path = join(f.privateDir, "toy-run.json");
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!asJsonObject(raw) || !asJsonObject(raw.behavior)) throw new Error("runner record has no behavior");
+    raw.behavior.binding_hash = `sha256:${"0".repeat(64)}`;
+    writeFileSync(path, JSON.stringify(raw));
+    expect(() => f.runner.status("toy-run")).toThrow("behavior policy snapshot is incomplete");
+    expect(() => f.runner.verify("toy-run", "e1")).toThrow("behavior policy snapshot is incomplete");
   });
 
   test("a charter cannot request unattended decisions without event-delivery authority", () => {
@@ -727,7 +2385,7 @@ describe("runner guards", () => {
       JSON.stringify({
         timeout_ms: 10_000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const e=JSON.parse(await Bun.stdin.text()); const t=process.argv[1]+'.tmp'; await Bun.write(t, JSON.stringify(e)); (await import('node:fs')).renameSync(t, process.argv[1]); console.log(JSON.stringify({run:e.run,key:e.key}));",
           log,
@@ -736,7 +2394,7 @@ describe("runner guards", () => {
     );
     const service = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -802,7 +2460,7 @@ describe("runner guards", () => {
     );
     const service = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -873,20 +2531,23 @@ describe("runner guards", () => {
     const workerToken = "b".repeat(48);
     writeFileSync(tokenFile, adminToken, { mode: 0o600 });
     // The first consumer never answers, so its timeout fails delivery however long the host takes to start it.
-    writeFileSync(eventConfig, JSON.stringify({ timeout_ms: 100, command: ["bun", "-e", "await Bun.sleep(60_000);"] }));
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({ timeout_ms: 100, command: [process.execPath, "-e", "await Bun.sleep(60_000);"] }),
+    );
     writeFileSync(
       loopConfig,
       JSON.stringify({
         timeout_ms: 1000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const x=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
         ],
       }),
     );
     const launch = [
-      "bun",
+      process.execPath,
       "src/cli.ts",
       "runner",
       "serve",
@@ -932,7 +2593,7 @@ describe("runner guards", () => {
         JSON.stringify({
           timeout_ms: 10_000,
           command: [
-            "bun",
+            process.execPath,
             "-e",
             "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1], e.key); console.log(JSON.stringify({run:e.run,key:e.key}));",
             delivered,
@@ -1013,7 +2674,7 @@ describe("runner guards", () => {
       JSON.stringify({
         timeout_ms: 10_000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const e=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({run:e.run,key:e.key}));",
         ],
@@ -1024,7 +2685,7 @@ describe("runner guards", () => {
       JSON.stringify({
         timeout_ms: 10_000,
         command: [
-          "bun",
+          process.execPath,
           "-e",
           "const x=JSON.parse(await Bun.stdin.text()); if(x.action==='probe') console.log(JSON.stringify({probed:x.delegates,progress:[]})); else { await Bun.write(process.argv[1],JSON.stringify(x)); console.log(JSON.stringify({stood_down:true,replacement:'owner-2',expected_runtime_seconds:10,key:x.key})); }",
           replacementLog,
@@ -1033,7 +2694,7 @@ describe("runner guards", () => {
     );
     const service = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -1242,7 +2903,7 @@ describe("runner guards", () => {
     writeFileSync(join(f.worker, "feature.txt"), "amended feature\n");
     git(f.worker, "commit", "-q", "--amend", "-am", "amend feature");
     expect(runner().syncRevision("toy-run").verdict?.invalidated_by).toBe("patch-changed");
-    f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    f.revision = workerHead(f.worker);
     const verification = join(f.privateDir, "verification-2.txt");
     writeFileSync(verification, "tests passed on the amended patch");
     f.runner.collect("toy-run", "verify-2", verification, f.revision, "verify");
@@ -1284,7 +2945,7 @@ describe("runner guards", () => {
       writeFileSync(join(f.worker, "feature.txt"), "ready branch\n");
       git(f.worker, "add", "feature.txt");
       git(f.worker, "commit", "-qm", "prepare feature");
-      const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      const head = workerHead(f.worker);
       const socket = join(f.privateDir, "runner.sock");
       const tokenFile = join(f.privateDir, "admin.token");
       const eventConfig = join(f.privateDir, "event.json");
@@ -1305,22 +2966,25 @@ describe("runner guards", () => {
             actor: `supervisor-${seat}`,
             lineage: [`supervisor-${seat}`],
             command: [
-              "bun",
+              process.execPath,
               "-e",
               "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'charter and evidence agree'}));",
             ],
           })),
         }),
       );
-      writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('scratch behavior passed')"] }));
+      writeFileSync(
+        verifyConfig,
+        JSON.stringify({ command: [process.execPath, "-e", "console.log('scratch behavior passed')"] }),
+      );
       writeFileSync(
         eventConfig,
         JSON.stringify({
           timeout_ms: LIVE_SMOKE_WAIT_MS,
           command: [
-            "bun",
+            process.execPath,
             "-e",
-            "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync(['bun',process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
+            "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync([process.execPath,process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
             consumerRequest,
             cliEntry,
           ],
@@ -1331,7 +2995,7 @@ describe("runner guards", () => {
         JSON.stringify({
           timeout_ms: LIVE_SMOKE_WAIT_MS,
           command: [
-            "bun",
+            process.execPath,
             "-e",
             "const x=JSON.parse(await Bun.stdin.text());if(x.action!=='probe')process.exit(2);await Bun.write(process.argv[1],JSON.stringify(x));console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
             loopLog,
@@ -1340,7 +3004,7 @@ describe("runner guards", () => {
       );
       const service = spawnLive(
         [
-          "bun",
+          process.execPath,
           cliEntry,
           "runner",
           "serve",
@@ -1488,18 +3152,21 @@ describe("runner guards", () => {
             seat: "seat-a",
             actor: "supervisor-1",
             lineage: ["supervisor-1"],
-            command: ["bun", "-e", judgeScript, launches],
+            command: [process.execPath, "-e", judgeScript, launches],
           },
           {
             seat: "seat-b",
             actor: "supervisor-2",
             lineage: ["supervisor-2"],
-            command: ["bun", "-e", judgeScript, launches],
+            command: [process.execPath, "-e", judgeScript, launches],
           },
         ],
       }),
     );
-    writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('verification passed')"] }));
+    writeFileSync(
+      verifyConfig,
+      JSON.stringify({ command: [process.execPath, "-e", "console.log('verification passed')"] }),
+    );
     writeFileSync(
       effectConfig,
       JSON.stringify({
@@ -1507,12 +3174,18 @@ describe("runner guards", () => {
           {
             effect: "pr-open",
             read_back: [
-              "bun",
+              process.execPath,
               "-e",
               "const f=process.argv[1]; if (await Bun.file(f).exists()) process.stdout.write(await Bun.file(f).text());",
               remote,
             ],
-            perform: ["bun", "-e", "await Bun.write(process.argv[1], process.argv[2]);", remote, "{input_hash}"],
+            perform: [
+              process.execPath,
+              "-e",
+              "await Bun.write(process.argv[1], process.argv[2]);",
+              remote,
+              "{input_hash}",
+            ],
           },
         ],
       }),
@@ -1522,7 +3195,7 @@ describe("runner guards", () => {
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const launch = [
-      "bun",
+      process.execPath,
       "src/cli.ts",
       "runner",
       "serve",
@@ -1703,7 +3376,7 @@ describe("runner guards", () => {
           effect: "pr-open",
           target: "toy/pr",
           input_hash: inputHash,
-          perform: ["bun", "-e", "process.exit(1)"],
+          perform: [process.execPath, "-e", "process.exit(1)"],
         }),
       );
       expect(call("effect", adminToken).exitCode).toBe(1);
@@ -2201,7 +3874,7 @@ describe("runner guards", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -2317,7 +3990,7 @@ describe("runner guards", () => {
     git(f.worker, "add", "sub");
     git(f.worker, "commit", "-qm", "Add gitlink");
     const other = nested("other");
-    const revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const revision = workerHead(f.worker);
     const runner = new Runner(f.privateDir, f.worker, root, true);
     const before = runner.start("toy-run", f.path, "implementer-1", revision, standing(f)).diff_hash;
     writeFileSync(join(sub, "lib.ts"), "export const v = 2;\n");
@@ -3162,7 +4835,7 @@ describe("runner guards", () => {
           seat,
           actor: `supervisor-${seat}`,
           lineage: [`supervisor-${seat}`],
-          command: ["bun", seatScript, seat],
+          command: [process.execPath, seatScript, seat],
         })),
       }),
     );
@@ -3172,7 +4845,7 @@ describe("runner guards", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -3248,7 +4921,9 @@ describe("runner guards", () => {
       const fakeBun = join(workerBin, "bun");
       writeFileSync(fakeBun, '#!/bin/sh\nprintf \'%s\\n\' \'{"choice":"yes","rationale":"worker path"}\'\n');
       chmodSync(fakeBun, 0o755);
-      expect(Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]).stdout.toString()).toBe("");
+      const status = Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]);
+      expect(status.exitCode).toBe(0);
+      expect(status.stdout.toString()).toBe("");
       expect(prepare("after-attack", "c").exitCode).toBe(0);
       const second = call("decide", workerToken, { ...run, card_id: "after-attack" });
       expect(JSON.parse(second.stdout.toString())).toMatchObject({
@@ -3285,7 +4960,7 @@ describe("runner guards", () => {
             actor: "supervisor-1",
             lineage: ["supervisor-1"],
             command: [
-              "bun",
+              process.execPath,
               "-e",
               "await Bun.stdin.text(); console.log(JSON.stringify({choice:'yes',rationale:'ok'}));",
             ],
@@ -3295,7 +4970,7 @@ describe("runner guards", () => {
             actor: "supervisor-2",
             lineage: ["supervisor-2"],
             command: [
-              "bun",
+              process.execPath,
               "-e",
               "require('node:fs').appendFileSync(process.argv[1], 'crash\\n'); console.error('seat crashed'); process.exit(7);",
               crashes,
@@ -3306,7 +4981,7 @@ describe("runner guards", () => {
     );
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         "src/cli.ts",
         "runner",
         "serve",
@@ -3436,7 +5111,7 @@ describe("runner guards", () => {
 
 describe("unknown runner selectors", () => {
   test("the installed command exposes the runner service entrypoint", () => {
-    const command = Bun.spawnSync(["bun", "src/maintenance/cli.ts", "runner"], { cwd: root });
+    const command = Bun.spawnSync([process.execPath, "src/maintenance/cli.ts", "runner"], { cwd: root });
     expect(command.exitCode).toBe(2);
     expect(command.stderr.toString()).toContain("ak runner serve");
   });
@@ -3659,7 +5334,7 @@ describe("council blind veto", () => {
           actor: `supervisor-${seat}`,
           lineage: [`supervisor-${seat}`],
           command: [
-            "bun",
+            process.execPath,
             "-e",
             "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'agree'}));",
           ],
@@ -3675,11 +5350,16 @@ describe("council blind veto", () => {
             {
               actor: "veto-1",
               lineage: ["veto-1"],
-              command: ["bun", "-e", "process.exit(3)"],
+              command: [process.execPath, "-e", "process.exit(3)"],
               requested: "first-label",
             },
-            { actor: "veto-2", lineage: ["veto-2"], command: ["bun", "-e", answer("yes")], requested: "second-label" },
-            { actor: "veto-3", lineage: ["veto-3"], command: ["bun", "-e", answer("no")] },
+            {
+              actor: "veto-2",
+              lineage: ["veto-2"],
+              command: [process.execPath, "-e", answer("yes")],
+              requested: "second-label",
+            },
+            { actor: "veto-3", lineage: ["veto-3"], command: [process.execPath, "-e", answer("no")] },
           ],
         },
       }),
@@ -3691,7 +5371,7 @@ describe("council blind veto", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -3824,7 +5504,7 @@ describe("council blind veto", () => {
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = spawnLive(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",
@@ -3910,7 +5590,7 @@ describe("council blind veto", () => {
     writeFileSync(adminTokenFile, "a".repeat(48), { mode: 0o600 });
     const server = Bun.spawnSync(
       [
-        "bun",
+        process.execPath,
         join(root, "src", "cli.ts"),
         "runner",
         "serve",

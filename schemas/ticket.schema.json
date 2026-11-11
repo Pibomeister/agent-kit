@@ -98,6 +98,36 @@
             "type": "array",
             "minItems": 1,
             "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
+          },
+          "behavior": {
+            "description": "Optional binding of this named check to a behavior contract. Present when the check is a behavior obligation. Runner.start freezes the complete definition; open refuses. Later edits that keep this id cannot weaken the recorded layer, properties, contract or existing surface requirements.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["evidence_layer", "property_ids"],
+            "properties": {
+              "evidence_layer": { "enum": ["model", "implementation"] },
+              "property_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "$ref": "common.schema.json#/$defs/kebab_id" },
+                "x-validator-rule": "ticket.behavior-property-id-has-type"
+              },
+              "property_types": {
+                "type": "object",
+                "additionalProperties": { "enum": ["safety", "liveness"] }
+              },
+              "contract": {
+                "allOf": [
+                  { "$ref": "common.schema.json#/$defs/artifact_ref" },
+                  {
+                    "required": ["schema"],
+                    "properties": { "schema": { "const": "behavior-contract" } }
+                  }
+                ]
+              },
+              "input_manifest": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+            }
           }
         },
         "dependentRequired": {
@@ -235,6 +265,23 @@
           "resolved_as": { "enum": ["criterion", "non-goal", "open"] }
         }
       }
+    },
+    "behavior_contracts": {
+      "description": "Selected behavior-contract artifacts this ticket applies. Optional. Runner.start freezes complete required-check definitions; open refuses. These references alone are not the obligation.",
+      "type": "array",
+      "items": {
+        "allOf": [
+          { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          {
+            "required": ["schema"],
+            "properties": { "schema": { "const": "behavior-contract" } }
+          }
+        ]
+      }
+    },
+    "behavior_applicability": {
+      "description": "Whether this ticket selected stateful behavior work. Optional. eligible records that the behavior workflow applies; ordinary records that it does not. Omitted is not a policy mode and cannot turn an enabled run off.",
+      "enum": ["eligible", "ordinary"]
     },
     "cold_read_ref": {
       "description": "Hash-bound pointer to the independent cold-read artifact for this implementation ticket. Required when the project record's review.cold_read is on and the ticket type is implementation. On mode requires a non-empty envelope run_id. The id is not yet checked against a run ledger, so a non-empty forged id is a known residue. Off, shadow, a missing review object, and a decision ticket do not require it. A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Not yet backed by live probe evidence (phase 1b, GS-004g).",

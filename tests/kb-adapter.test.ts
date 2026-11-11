@@ -33,6 +33,7 @@ import {
   resolveKnowledgebase,
 } from "../src/kb/binding.ts";
 import { EXIT_UNAVAILABLE, runKb } from "../src/kb/cli.ts";
+import { git as kbGit } from "../src/kb/git.ts";
 import { KB_KINDS } from "../src/kb/local-git.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -61,7 +62,11 @@ const PAGE = "# Queue the exports\n\nExports run on a queue, because a request c
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env, maxBuffer: Infinity });
+  return execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], {
+    encoding: "utf8",
+    env,
+    maxBuffer: Infinity,
+  });
 }
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
@@ -354,6 +359,36 @@ describe("no knowledgebase configured", () => {
     expect(read.code).toBe(EXIT_UNAVAILABLE);
     expect(refusal(read).status).toBe("unavailable");
     expect(refusal(publishPage(fx, fx.project, page(fx))).status).toBe("refused");
+  });
+});
+
+describe("ak kb check reads the working binding", () => {
+  test("ak kb check reads an uncommitted ak.kb.yaml edit", () => {
+    const fx = registered();
+    writeFileSync(
+      join(fx.project, BINDING_FILE),
+      "backend: local-git\nproject: edited-project\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    const loaded = loadKbBinding(fx.project);
+    expect(loaded.binding?.project).toBe("edited-project");
+    const check = kb(fx, fx.project, "check");
+    expect(check.code).toBe(0);
+    expect(check.out).toContain("project 'edited-project'");
+  });
+});
+
+describe("an explicit revision never falls back to the working binding", () => {
+  test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
+    const fx = fixture();
+    writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
+    const loaded = loadKbBinding(fx.project, "not-a-commit", kbGit);
+    expect(loaded.binding).toBe(null);
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
+  });
+
+  test("an explicit revision requires a git function", () => {
+    const fx = fixture();
+    expect(() => loadKbBinding(fx.project, "HEAD")).toThrow("an explicit revision requires a git function");
   });
 });
 

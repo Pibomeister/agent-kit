@@ -5,7 +5,7 @@ import { parse as parseYaml } from "yaml";
 
 import { error, warning, type Issue } from "../validation/types.ts";
 import type { KbBinding, ResolvedKb } from "./binding.ts";
-import { git, workTreeTop } from "./git.ts";
+import { git, workTreeTop, type GitFn } from "./git.ts";
 import {
   documentHash,
   KB_KINDS,
@@ -29,9 +29,12 @@ import {
  *
  * The revision read is the merge-base of the checkout's HEAD and the remote's
  * default branch (refs/remotes/origin/HEAD), never a branch the binding names: a
- * binding is committed on the branch, so a branch could name itself. A page a
- * branch commits, or a status it sets, is not knowledge until it is merged: the same rule local-git keeps by reading only
- * what its own repository committed.
+ * binding is committed on the branch, so a branch could name itself. That
+ * availability check is not Runner.start's binding revision, which is the
+ * merge-base of the validated start revision and the charter base branch. A
+ * page a branch commits, or a status it sets, is not knowledge until it is
+ * merged: the same rule local-git keeps by reading only what its own
+ * repository committed.
  */
 export const IN_REPO = "in-repo";
 
@@ -135,21 +138,22 @@ function missing(file: string, message: string): Issue[] {
 }
 
 /** The remote's default branch: its `origin/<name>` and commit, or null when origin/HEAD is unset. No local fallback. */
-function defaultBranch(top: string): { name: string; sha: string } | null {
-  const target = git(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
+function defaultBranch(top: string, run: GitFn): { name: string; sha: string } | null {
+  const target = run(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
   // The ref alone, not peeled: a ref whose object git cannot read reaches merge-base and fails there.
-  const found = git(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
+  const found = run(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
   if (found.status !== 0) return null;
   return { name: target.status === 0 ? target.stdout.trim() : "origin/HEAD", sha: found.stdout.trim() };
 }
 
 /** Where the binding of the project at `projectRoot` reads, or why it reads nothing (kb.in-repo-missing). */
-export function resolveInRepo(projectRoot: string, binding: KbBinding, file: string): InRepoResolution {
+export function resolveInRepo(projectRoot: string, binding: KbBinding, file: string, gitFn?: GitFn): InRepoResolution {
   const project = realpathSync(projectRoot);
   const top = workTreeTop(project);
   if (top === null) return { location: null, top, issues: missing(file, `${project} is not in a git work tree.`) };
   const locator = locatorOf(binding);
-  const remote = defaultBranch(top);
+  const run = gitFn ?? git;
+  const remote = defaultBranch(top, run);
   if (remote === null) {
     return {
       location: null,
@@ -160,10 +164,10 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
   const base = remote.name;
   const baseSha = remote.sha;
   // Unpeeled, so only an unborn HEAD lands here; a HEAD whose commit object is lost fails at merge-base.
-  if (git(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
+  if (run(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
-  const merged = git(top, ["merge-base", "HEAD", baseSha]);
+  const merged = run(top, ["merge-base", "HEAD", baseSha]);
   // git merge-base exits 1 when the two share no ancestor, and higher when git itself failed.
   if (merged.status === 1) {
     return {
@@ -182,7 +186,7 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
   const revision = merged.stdout.trim();
   const projectPrefix = relative(top, project).split(sep).join("/");
   const path = posix.join(projectPrefix, locator.path);
-  const listed = git(top, ["ls-tree", "--full-tree", revision, "--", path]);
+  const listed = run(top, ["ls-tree", "--full-tree", revision, "--", path]);
   if (listed.status !== 0) {
     return {
       location: null,

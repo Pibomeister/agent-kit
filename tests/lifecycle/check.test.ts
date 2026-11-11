@@ -22,6 +22,7 @@ import {
 } from "../../src/lifecycle/gate.ts";
 import * as lifecycle from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
+import { asJsonObject } from "../../src/lifecycle/behavior-policy.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 import { verificationPopulations } from "../helpers/verification-cases.ts";
@@ -193,12 +194,18 @@ function open(cwd: string, id: string): string {
   expect(match).not.toBeNull();
   const run = match![1]!;
   const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
-  expect(metadata).toEqual({
+  expect(metadata).toMatchObject({
     run_id: run,
     ticket: { id, hash: artifactHash(JSON.parse(readFileSync(ticketPath, "utf8"))) },
     opened_at: expect.any(String),
     branch: "feature",
     base,
+    schema_version: 2,
+    behavior: {
+      run_id: run,
+      mode: "off",
+      required_checks: [],
+    },
   });
   return run;
 }
@@ -860,6 +867,48 @@ describe("ak lifecycle check, standalone", () => {
     expect(readRecords(defaultEvidenceDir(dir), run, "ship-preflight")).toEqual([]);
     record(dir, "verify");
     expect(ak(dir, "record", "--gate", "ship-preflight").code).toBe(0);
+  });
+
+  test("a forged binding_run_id does not skip the ship-preflight re-check", () => {
+    const dir = repo();
+    const run = open(dir, "ship-forged-parent");
+    const evidence = defaultEvidenceDir(dir);
+    const runPath = join(evidence, "runs", run, "run.json");
+    const parsed: unknown = JSON.parse(readFileSync(runPath, "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("run.json is not an object");
+    parsed.binding_run_id = "forged-parent";
+    parsed.binding_evidence_location = evidence;
+    writeFileSync(runPath, `${JSON.stringify(parsed, null, 2)}\n`);
+    const charterPath = join(dir, "forged-charter.json");
+    writeFileSync(charterPath, `${JSON.stringify({ schema: "charter", run_id: "forged-parent" })}\n`);
+    writeFileSync(
+      join(evidence, "..", "forged-parent.json"),
+      `${JSON.stringify({
+        id: "forged-parent",
+        charter_path: charterPath,
+        charter_hash: `sha256:${"a".repeat(64)}`,
+        charter: { run_id: "forged-parent" },
+        start_authority: { covers: "autopilot.start" },
+        implementer: "forged",
+        excluded_actors: [],
+        revision: git(dir, "rev-parse", "HEAD"),
+        diff_hash: `sha256:${"b".repeat(64)}`,
+        created_at: "2026-10-01T00:00:00Z",
+        run_state: "building",
+        cards: {},
+        evidence: {},
+        decisions: [],
+        budget_consumption: {},
+        effects: {},
+        events: {},
+        open_escalation: null,
+        behavior: { mode: "on", required_checks: [] },
+      })}\n`,
+    );
+    const shipped = ak(dir, "record", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("has no current evidence");
+    expect(readRecords(evidence, run, "ship-preflight")).toEqual([]);
   });
 
   test("ship-preflight is refused when the only receipt is bound to another head", () => {

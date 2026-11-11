@@ -410,3 +410,12 @@ local_sources:
     # protocols/work-trail/PROTOCOL.md cites its decision trail section (lines 224-227) through
     # an anchored `local:` row.
     cited_in_adaptations: true
+  - id: gs017-behavior-verification-prd
+    description: GS-017 behavior-verification PRD. The T01 contract, intent, and policy-binding requirements.
+    original_path: agent-kit-behavior-verification-prd.md
+    working_copy: research/sources/gs017-behavior-verification-prd.md
+    sha256: 9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3
+    lines: 550
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    cited_in_adaptations: true
