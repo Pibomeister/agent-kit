@@ -167,7 +167,7 @@ function isConnRefused(err: Error): boolean {
   let cur: Error | undefined = err;
   for (let i = 0; i < 6 && cur !== undefined; i += 1) {
     if ("code" in cur && (cur.code === "ECONNREFUSED" || cur.code === "ConnectionRefused")) return true;
-    const next = "cause" in cur ? cur.cause : undefined;
+    const next: unknown = "cause" in cur ? cur.cause : undefined;
     cur = next instanceof Error ? next : undefined;
   }
   return false;
