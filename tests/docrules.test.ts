@@ -2068,6 +2068,24 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     ).toContain(RULE_COLD_REF);
   });
 
+  test("a schema-valid docs/{foo.ts,bar.md} glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{foo.ts,bar.md}"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-valid docs/{foo.ts,bar.md}/*.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{foo.ts,bar.md}/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-valid docs/{guide,intro}/*.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{guide,intro}/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
   test("a declared glob that resolves through a symlink still requires cold_read_ref when on", () => {
     const root = makeTree({ "src/loader.ts": "export {}\n" }, { provenance: false });
     symlinkSync(join(root, "src/loader.ts"), join(root, "README.md"));

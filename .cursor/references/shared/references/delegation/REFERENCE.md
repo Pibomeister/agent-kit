@@ -286,12 +286,13 @@ off. Off dispatches nothing, stores nothing, and leaves the author's type-check 
 zero-context gate.
 
 **Skip.** Dispatch is skipped only when the validator's exemption detector would exempt the ticket.
-When the mode is on, the validator exempts that ticket from `cold_read_ref` only when every declared write
+A ticket is exempt from `cold_read_ref` only when every declared write
 glob (`allowed_changes.files`, `write_ownership.paths` and `write_ownership.generated_artifacts`) is
 documentation markdown under `docs/` (`docs/**/*.md`), or exactly `README.md`, `CHANGELOG.md`,
 `NOTICE` or `LICENSE`, `allowed_changes.symbols` is empty, `work_source.ref.id` is present, and no
-other indexed ticket shares that id. `docs/**` is refused; a markdown last segment is required. A
-literal glob that resolves through a symlink is refused when the checkout is present. Wildcard
+other indexed ticket shares that id. `docs/**` is refused; a glob containing `{` is refused; a
+markdown last segment is required. A literal glob that resolves through a symlink is refused when
+the checkout is present. Wildcard
 globs over a symlinked tree are not checked. A note or approval does not exempt. The exemption is
 declaration-only: the write guard lifts tests protection and does not deny a write outside those
 globs. A light-route ticket that touches `skills/` or `references/` still dispatches when on. Any
