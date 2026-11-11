@@ -404,7 +404,11 @@ The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
-have a ten-second timeout with a kill signal, and do not invoke textconv or attribute clean filters.
+have a ten-second timeout with a kill signal, set `attr.tree` to the empty tree so worker
+`.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
+programs. Verdict binding treats a worktree as clean only when its bytes equal the committed blob
+bytes, including nested gitlinks after their `HEAD` matches. An autocrlf or `eol=crlf` checkout
+whose bytes differ from the blob is dirty. There is no conversion path.
 A nonregular Git index or HEAD refuses the snapshot. A tracked edit in an inspected repository
 therefore changes the runner's `diff_hash` even when worker Git config claims the tree is clean.
 An attached submodule or embedded repository with a `.git` entry is hashed recursively the same

@@ -40970,8 +40970,8 @@ function resolveRunnerGit(workerRoot) {
 function failedGit(stderr) {
   return { code: -1, stdout: new Uint8Array, text: "", stderr };
 }
-function gitProcess(context, project, args, timeoutMs = 1e4, input) {
-  const env = {
+function gitEnv(context) {
+  return {
     PATH: context.path,
     HOME: context.home,
     XDG_CONFIG_HOME: context.home,
@@ -40981,7 +40981,9 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     GIT_NO_REPLACE_OBJECTS: "1",
     LC_ALL: "C"
   };
-  const proc = spawnSync4(context.binary, [
+}
+function isolationArgs(project) {
+  return [
     "-c",
     `safe.directory=${realpathSync11(project)}`,
     "-c",
@@ -40989,9 +40991,47 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     "-c",
     "core.hooksPath=/dev/null",
     "-c",
-    "core.excludesFile=/dev/null",
-    ...args
-  ], { cwd: project, env, input, maxBuffer: 1 << 30, timeout: timeoutMs, killSignal: "SIGKILL" });
+    "core.excludesFile=/dev/null"
+  ];
+}
+var emptyTrees = new Map;
+function emptyTreeId(context, project, timeoutMs) {
+  const key = realpathSync11(project);
+  const cached = emptyTrees.get(key);
+  if (cached !== undefined)
+    return { code: 0, stdout: new Uint8Array, text: cached, stderr: "" };
+  const proc = spawnSync4(context.binary, [...isolationArgs(project), "hash-object", "-t", "tree", "--stdin"], {
+    cwd: project,
+    env: gitEnv(context),
+    input: new Uint8Array,
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL"
+  });
+  if (proc.error !== undefined) {
+    if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
+      return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
+    return failedGit(`cannot run isolated git: ${proc.error.message}`);
+  }
+  const stdout = proc.stdout ?? new Uint8Array;
+  const text4 = new TextDecoder().decode(stdout).trim();
+  if ((proc.status ?? -1) !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(text4))
+    return failedGit(`cannot resolve empty tree: ${(proc.stderr ?? "").toString().trim() || text4}`);
+  emptyTrees.set(key, text4);
+  return { code: 0, stdout, text: text4, stderr: "" };
+}
+function gitProcess(context, project, args, timeoutMs = 1e4, input) {
+  const empty = emptyTreeId(context, project, timeoutMs);
+  if (empty.code !== 0)
+    return empty;
+  const proc = spawnSync4(context.binary, [...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
+    cwd: project,
+    env: gitEnv(context),
+    input,
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL"
+  });
   if (proc.error !== undefined) {
     if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
       return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
@@ -41098,7 +41138,23 @@ function mergeTreeClean(context, project, baseRef, head) {
     throw new Error(`cannot inspect merge tree: ${result2.stderr}`);
   return result2.code === 0;
 }
+function gitBlobId(bytes, blob) {
+  const algorithm = blob.length === 64 ? "sha256" : "sha1";
+  return createHash10(algorithm).update(`blob ${bytes.length}\x00`).update(bytes).digest("hex");
+}
 function cleanCommittedTree(context, project) {
+  return treeIsClean(context, project, new Set);
+}
+function treeIsClean(context, project, seen) {
+  let root;
+  try {
+    root = realpathSync11(project);
+  } catch {
+    return false;
+  }
+  if (seen.has(root))
+    return true;
+  seen.add(root);
   const untracked = runnerGit(context, project, ["ls-files", "--others", "--exclude-standard", "-z"]);
   if (untracked.code !== 0)
     throw new Error(`cannot inspect committed worktree: ${untracked.stderr}`);
@@ -41112,7 +41168,6 @@ function cleanCommittedTree(context, project) {
   const tracked = runnerGit(context, project, ["ls-files", "-s", "-z"]);
   if (tracked.code !== 0)
     throw new Error(`cannot inspect committed worktree: ${tracked.stderr}`);
-  const root = realpathSync11(project);
   for (const row of new TextDecoder().decode(tracked.stdout).split("\x00")) {
     if (row === "")
       continue;
@@ -41137,6 +41192,8 @@ function cleanCommittedTree(context, project) {
         const head = runnerGit(context, at, ["rev-parse", "--verify", "HEAD"]);
         if (head.code !== 0 || head.text !== blob)
           return false;
+        if (!treeIsClean(context, at, seen))
+          return false;
         continue;
       }
       let bytes;
@@ -41151,8 +41208,7 @@ function cleanCommittedTree(context, project) {
         bytes = readFileSync31(at);
       } else
         return false;
-      const hashed = gitProcess(context, project, ["hash-object", "--stdin", "--no-filters"], 1e4, bytes);
-      if (hashed.code !== 0 || hashed.text !== blob)
+      if (gitBlobId(bytes, blob) !== blob)
         return false;
     } catch {
       return false;

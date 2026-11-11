@@ -1346,9 +1346,7 @@ describe("runner guards", () => {
     const script = join(f.privateDir, "merge-driver.sh");
     writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
     chmodSync(script, 0o700);
-    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(
-      0,
-    );
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(0);
     let failed = false;
     try {
       f.runner.bindVerdict("toy-run");
@@ -1357,6 +1355,41 @@ describe("runner guards", () => {
     }
     expect(existsSync(marker)).toBe(false);
     expect(failed).toBe(false);
+  });
+
+  test("verdict ls-files diff-index hash-object and rev-parse do not run worker programs", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "other-git.marker");
+    const script = join(f.privateDir, "other-git.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "exclude"), ".gitattributes\n");
+    writeFileSync(join(f.worker, ".gitattributes"), "feature.txt filter=lie merge=lie diff=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.smudge", script]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness treats eol=crlf checkout bytes that differ from the blob as dirty", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      writeFileSync(join(worker, ".gitattributes"), "feature.txt text eol=crlf\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "crlf attr");
+      unlinkSync(join(worker, "feature.txt"));
+      git(worker, "checkout", "--", "feature.txt");
+    });
+    expect(Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]).stdout.toString().trim()).toBe("");
+    expect(readFileSync(join(f.worker, "feature.txt")).includes(0x0d)).toBe(true);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
   });
 
   test(

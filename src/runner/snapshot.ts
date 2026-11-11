@@ -33,14 +33,8 @@ function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
 }
 
-export function gitProcess(
-  context: RunnerGitContext,
-  project: string,
-  args: readonly string[],
-  timeoutMs = 10_000,
-  input?: Uint8Array,
-): GitResult {
-  const env: NodeJS.ProcessEnv = {
+function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
+  return {
     PATH: context.path,
     HOME: context.home,
     XDG_CONFIG_HOME: context.home,
@@ -50,21 +44,65 @@ export function gitProcess(
     GIT_NO_REPLACE_OBJECTS: "1",
     LC_ALL: "C",
   };
-  const proc = spawnSync(
-    context.binary,
-    [
-      "-c",
-      `safe.directory=${realpathSync(project)}`,
-      "-c",
-      "core.fsmonitor=false",
-      "-c",
-      "core.hooksPath=/dev/null",
-      "-c",
-      "core.excludesFile=/dev/null",
-      ...args,
-    ],
-    { cwd: project, env, input, maxBuffer: 1 << 30, timeout: timeoutMs, killSignal: "SIGKILL" },
-  );
+}
+
+function isolationArgs(project: string): string[] {
+  return [
+    "-c",
+    `safe.directory=${realpathSync(project)}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.excludesFile=/dev/null",
+  ];
+}
+
+const emptyTrees = new Map<string, string>();
+
+function emptyTreeId(context: RunnerGitContext, project: string, timeoutMs: number): GitResult {
+  const key = realpathSync(project);
+  const cached = emptyTrees.get(key);
+  if (cached !== undefined) return { code: 0, stdout: new Uint8Array(), text: cached, stderr: "" };
+  const proc = spawnSync(context.binary, [...isolationArgs(project), "hash-object", "-t", "tree", "--stdin"], {
+    cwd: project,
+    env: gitEnv(context),
+    input: new Uint8Array(),
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+  });
+  if (proc.error !== undefined) {
+    if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
+      return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
+    return failedGit(`cannot run isolated git: ${proc.error.message}`);
+  }
+  const stdout = proc.stdout ?? new Uint8Array();
+  const text = new TextDecoder().decode(stdout).trim();
+  if ((proc.status ?? -1) !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(text))
+    return failedGit(`cannot resolve empty tree: ${(proc.stderr ?? "").toString().trim() || text}`);
+  emptyTrees.set(key, text);
+  return { code: 0, stdout, text, stderr: "" };
+}
+
+export function gitProcess(
+  context: RunnerGitContext,
+  project: string,
+  args: readonly string[],
+  timeoutMs = 10_000,
+  input?: Uint8Array,
+): GitResult {
+  const empty = emptyTreeId(context, project, timeoutMs);
+  if (empty.code !== 0) return empty;
+  const proc = spawnSync(context.binary, [...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
+    cwd: project,
+    env: gitEnv(context),
+    input,
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+  });
   if (proc.error !== undefined) {
     if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
       return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
@@ -175,7 +213,29 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
   return result.code === 0;
 }
 
+function gitBlobId(bytes: Uint8Array, blob: string): string {
+  const algorithm = blob.length === 64 ? "sha256" : "sha1";
+  return createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+}
+
+/**
+ * Worktree bytes must equal the committed blob bytes. Autocrlf or eol=crlf that
+ * rewrites the checkout is dirty. There is no conversion path. Nested gitlinks
+ * are inspected the same way after their HEAD matches the gitlink blob.
+ */
 export function cleanCommittedTree(context: RunnerGitContext, project: string): boolean {
+  return treeIsClean(context, project, new Set());
+}
+
+function treeIsClean(context: RunnerGitContext, project: string, seen: Set<string>): boolean {
+  let root: string;
+  try {
+    root = realpathSync(project);
+  } catch {
+    return false;
+  }
+  if (seen.has(root)) return true;
+  seen.add(root);
   const untracked = runnerGit(context, project, ["ls-files", "--others", "--exclude-standard", "-z"]);
   if (untracked.code !== 0) throw new Error(`cannot inspect committed worktree: ${untracked.stderr}`);
   if (untracked.stdout.length > 0) return false;
@@ -184,7 +244,6 @@ export function cleanCommittedTree(context: RunnerGitContext, project: string): 
   if (cached.code !== 0) return false;
   const tracked = runnerGit(context, project, ["ls-files", "-s", "-z"]);
   if (tracked.code !== 0) throw new Error(`cannot inspect committed worktree: ${tracked.stderr}`);
-  const root = realpathSync(project);
   for (const row of new TextDecoder().decode(tracked.stdout).split("\0")) {
     if (row === "") continue;
     const tab = row.indexOf("\t");
@@ -203,6 +262,7 @@ export function cleanCommittedTree(context: RunnerGitContext, project: string): 
         if (!stat.isDirectory()) return false;
         const head = runnerGit(context, at, ["rev-parse", "--verify", "HEAD"]);
         if (head.code !== 0 || head.text !== blob) return false;
+        if (!treeIsClean(context, at, seen)) return false;
         continue;
       }
       let bytes: Uint8Array;
@@ -214,8 +274,7 @@ export function cleanCommittedTree(context: RunnerGitContext, project: string): 
         if (!stat.isFile() || executable !== (mode === "100755")) return false;
         bytes = readFileSync(at);
       } else return false;
-      const hashed = gitProcess(context, project, ["hash-object", "--stdin", "--no-filters"], 10_000, bytes);
-      if (hashed.code !== 0 || hashed.text !== blob) return false;
+      if (gitBlobId(bytes, blob) !== blob) return false;
     } catch {
       return false;
     }
