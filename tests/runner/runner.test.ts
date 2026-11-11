@@ -1269,6 +1269,40 @@ describe("runner guards", () => {
     }
   });
 
+  test("a charter without a replacement cap goes guided on the first loop failure and names audit-failed", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "probe-fail");
+    const script = [
+      "const fs=await import('node:fs');",
+      "fs.appendFileSync(process.argv[1],'x');",
+      "console.log(JSON.stringify({probed:[],progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil("the failed probe to run", () => existsSync(stamp));
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      await waitUntil(
+        "status to name audit-failed",
+        () => autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      );
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["audit-failed"],
+      });
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"]).toBeUndefined();
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("active");
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
   test("a failed loop adapter approves no checkpoint", async () => {
     const f = fixture();
     withAuditCadence(f, 30);
