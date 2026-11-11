@@ -40637,7 +40637,7 @@ init_dist();
 init_hash();
 import { createHash as createHash11 } from "crypto";
 import { existsSync as existsSync39, mkdirSync as mkdirSync24, readFileSync as readFileSync32, realpathSync as realpathSync12, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
-import { basename as basename20, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative12, resolve as resolve16 } from "path";
+import { basename as basename20, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative12, resolve as resolve16, sep as sep8 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -41415,7 +41415,7 @@ var ACTION_FOR = new Map([
 ]);
 function inside(path, root) {
   const rel = relative12(root, path);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute14(rel);
+  return rel === "" || rel !== ".." && !rel.startsWith(`..${sep8}`) && !isAbsolute14(rel);
 }
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
