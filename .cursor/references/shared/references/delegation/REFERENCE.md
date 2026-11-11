@@ -315,8 +315,9 @@ live probe evidence (phase 1b, GS-004i).
 
 **Mode.** Read `review.cold_read` from the checkout's own indexed project record, not from the
 ticket's project field. A missing review object, a missing key, an unknown value, or a checkout
-with no indexed project record is off. Off dispatches nothing, stores nothing, and leaves the
-author's type-check as the zero-context gate.
+with no indexed project record is off. On requires exactly one indexed project record. Several
+indexed records fail closed. Off dispatches nothing, stores nothing, and leaves the author's
+type-check as the zero-context gate.
 
 **Skip.** Dispatch is skipped only when the validator's exemption detector would exempt the ticket.
 A ticket is exempt from `cold_read_ref` only when every declared write
