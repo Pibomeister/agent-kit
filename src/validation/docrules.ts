@@ -1512,6 +1512,10 @@ function ticketRules(rc: RuleContext): void {
     fail(rc, RULE, `cold_read_ref ${refId} has status ${status ?? "missing"}, not complete or unavailable`);
     return;
   }
+  if (str(read.doc["run_id"]) === null) {
+    fail(rc, RULE, `cold_read_ref ${refId} records no producing run`);
+    return;
+  }
   const ticketRef = obj(read.doc["ticket"]);
   const readTicketId = ticketRef === null ? null : str(ticketRef["id"]);
   const thisId = str(doc["id"]);
