@@ -405,10 +405,16 @@ entries instead of trusting a Git text diff. At service start it pins an absolut
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
 have a ten-second timeout with a kill signal, set `attr.tree` to the empty tree so worker
-`.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
-programs. Verdict binding treats a worktree as clean only when its bytes equal the committed blob
-bytes, including nested gitlinks after their `HEAD` matches. An autocrlf or `eol=crlf` checkout
-whose bytes differ from the blob is dirty. There is no conversion path.
+`.gitattributes` cannot assign merge drivers, textconv or filters, override `merge.default` and
+`merge.renormalize`, and do not invoke those programs. Verdict `merge-tree` runs against a
+throwaway `GIT_DIR` so `.git/info/attributes` cannot assign `merge=union`. Verdict binding treats
+a worktree as clean only when its bytes equal the committed blob bytes, including nested gitlinks
+after their `HEAD` matches. An autocrlf or `eol=crlf` checkout whose bytes differ from the blob is
+dirty. There is no conversion path. Residues, documented with no conversion or extra refusal:
+CRLF/eol/ident/LFS stay fail-closed on raw bytes; ENOENT, sparse-checkout and skip-worktree stay
+fail-closed (stricter than porcelain); a partial or blobless clone may still promisor-fetch
+through worker `core.sshCommand` / `credential.helper`; ignored untracked files follow
+`ls-files --exclude-standard`, matching main.
 A nonregular Git index or HEAD refuses the snapshot. A tracked edit in an inspected repository
 therefore changes the runner's `diff_hash` even when worker Git config claims the tree is clean.
 An attached submodule or embedded repository with a `.git` entry is hashed recursively the same

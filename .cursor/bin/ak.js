@@ -40918,8 +40918,18 @@ var isEffectConfig = ajv6.compile({
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync4 } from "child_process";
 import { createHash as createHash10 } from "crypto";
-import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync5, readFileSync as readFileSync31, readlinkSync as readlinkSync3, realpathSync as realpathSync11 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15 } from "path";
+import {
+  accessSync,
+  constants,
+  existsSync as existsSync38,
+  lstatSync as lstatSync5,
+  mkdtempSync as mkdtempSync3,
+  readFileSync as readFileSync31,
+  readlinkSync as readlinkSync3,
+  realpathSync as realpathSync11,
+  rmSync as rmSync14
+} from "fs";
+import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15, sep as sep7 } from "path";
 
 // src/runner/path.ts
 import { lstatSync as lstatSync4, realpathSync as realpathSync10 } from "fs";
@@ -40991,7 +41001,11 @@ function isolationArgs(project) {
     "-c",
     "core.hooksPath=/dev/null",
     "-c",
-    "core.excludesFile=/dev/null"
+    "core.excludesFile=/dev/null",
+    "-c",
+    "merge.default=",
+    "-c",
+    "merge.renormalize=false"
   ];
 }
 var emptyTrees = new Map;
@@ -41020,13 +41034,13 @@ function emptyTreeId(context, project, timeoutMs) {
   emptyTrees.set(key, text4);
   return { code: 0, stdout, text: text4, stderr: "" };
 }
-function gitProcess(context, project, args, timeoutMs = 1e4, input) {
+function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv) {
   const empty = emptyTreeId(context, project, timeoutMs);
   if (empty.code !== 0)
     return empty;
   const proc = spawnSync4(context.binary, [...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
     cwd: project,
-    env: gitEnv(context),
+    env: { ...gitEnv(context), ...extraEnv },
     input,
     maxBuffer: 1 << 30,
     timeout: timeoutMs,
@@ -41122,6 +41136,7 @@ function ciConfigDrift(context, project, oldBase, newBase) {
     "diff",
     "--no-ext-diff",
     "--no-textconv",
+    "--no-renames",
     "--name-only",
     "-z",
     oldBase,
@@ -41133,14 +41148,44 @@ function ciConfigDrift(context, project, oldBase, newBase) {
   return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path.startsWith(".github/workflows/") || path.startsWith(".github/actions/") || path.startsWith(".circleci/") || path.startsWith(".buildkite/") || [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"].includes(path));
 }
 function mergeTreeClean(context, project, baseRef, head) {
-  const result2 = runnerGit(context, project, ["merge-tree", "--write-tree", baseRef, head]);
-  if (result2.code > 1)
-    throw new Error(`cannot inspect merge tree: ${result2.stderr}`);
-  return result2.code === 0;
+  const left = resolvedRevision(context, project, baseRef);
+  const right = resolvedRevision(context, project, head);
+  const gitDir = runnerGit(context, project, ["rev-parse", "--absolute-git-dir"]);
+  if (gitDir.code !== 0)
+    throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
+  const objectDir = realpathSync11(join44(gitDir.text, "objects"));
+  const scratch = mkdtempSync3(join44(gitDir.text, "ak-merge-"));
+  try {
+    const init = spawnSync4(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q"], {
+      cwd: scratch,
+      env: gitEnv(context),
+      timeout: 1e4,
+      killSignal: "SIGKILL"
+    });
+    if (init.error !== undefined) {
+      if ("code" in init.error && init.error.code === "ETIMEDOUT")
+        throw new Error("cannot inspect merge tree: runner git timed out after 10 seconds");
+      throw new Error(`cannot inspect merge tree: ${init.error.message}`);
+    }
+    if ((init.status ?? -1) !== 0)
+      throw new Error(`cannot inspect merge tree: ${(init.stderr ?? "").toString().trim() || "init failed"}`);
+    const result2 = gitProcess(context, project, ["merge-tree", "--write-tree", left, right], 1e4, undefined, {
+      GIT_DIR: scratch,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir
+    });
+    if (result2.code > 1)
+      throw new Error(`cannot inspect merge tree: ${result2.stderr}`);
+    return result2.code === 0;
+  } finally {
+    rmSync14(scratch, { recursive: true, force: true });
+  }
 }
 function gitBlobId(bytes, blob) {
   const algorithm = blob.length === 64 ? "sha256" : "sha1";
   return createHash10(algorithm).update(`blob ${bytes.length}\x00`).update(bytes).digest("hex");
+}
+function escapesWorktree(path, rel) {
+  return path === "" || isAbsolute13(path) || rel === "" || rel === ".." || rel.startsWith(`..${sep7}`) || isAbsolute13(rel);
 }
 function cleanCommittedTree(context, project) {
   return treeIsClean(context, project, new Set);
@@ -41182,7 +41227,7 @@ function treeIsClean(context, project, seen) {
       return false;
     const at = resolve15(project, path);
     const rel = relative11(root, at);
-    if (isAbsolute13(path) || rel === "" || rel.startsWith("..") || isAbsolute13(rel))
+    if (escapesWorktree(path, rel))
       return false;
     try {
       const stat = lstatSync5(at);
@@ -41289,7 +41334,7 @@ function treeHash(context, project, ignoreUntrackedDirs) {
   for (const path of [...paths2.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve15(project, path);
     const rel = relative11(root, at);
-    if (path === "" || isAbsolute13(path) || rel === "" || rel.startsWith("..") || isAbsolute13(rel))
+    if (escapesWorktree(path, rel))
       return "runner index contains a path outside the worker root";
     digest.update(JSON.stringify([path, paths2.get(path)?.toSorted(), rawFile(context, project, path)]));
     digest.update(`
@@ -43455,7 +43500,7 @@ async function runRunner(argv, io) {
 // src/council/cli.ts
 var import__202013 = __toESM(require_2020(), 1);
 import { createHash as createHash12 } from "crypto";
-import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync36, rmSync as rmSync14, writeFileSync as writeFileSync16 } from "fs";
+import { mkdtempSync as mkdtempSync4, readFileSync as readFileSync36, rmSync as rmSync15, writeFileSync as writeFileSync16 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
 import { basename as basename22, join as join46 } from "path";
 var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
@@ -43568,12 +43613,12 @@ ${entry.text}` }))
   const seats = [];
   let decided = null;
   if (refusals.length === 0) {
-    const scratch = mkdtempSync3(join46(tmpdir3(), "ak-council-"));
+    const scratch = mkdtempSync4(join46(tmpdir3(), "ak-council-"));
     const live = new Set;
     const stopOn = (code) => () => {
       for (const pid of live)
         killGroup(pid);
-      rmSync14(scratch, { recursive: true, force: true });
+      rmSync15(scratch, { recursive: true, force: true });
       process.exit(code);
     };
     const stops = [
@@ -43599,7 +43644,7 @@ ${entry.text}` }))
     } finally {
       for (const [signal, stop] of stops)
         process.off(signal, stop);
-      rmSync14(scratch, { recursive: true, force: true });
+      rmSync15(scratch, { recursive: true, force: true });
     }
   }
   const disclosed = decided === null ? { card: { id: card.id } } : {
