@@ -71,9 +71,11 @@ versions; it is safe to rerun. If the curl-installed
 `bin/ak` differs from the published command, update warns and gives the download remedy. Add
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
 `ak delegation <ticket> --project <project-record>`, which `/ak:super-bound` runs to score each
-ticket and, with `--stage merge --base <rev>`, to score again from the actual diff before the
-review panel is selected, so that skill needs a current `ak` on `PATH`
-([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
+ticket, so that skill needs a current `ak` on `PATH`
+([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). The review first pass runs
+`ak delegation <ticket> --project <project-record> --stage merge --base <rev>` to score again
+from the actual diff before the review panel is selected
+([ADR-0017](docs/decisions/0017-review-depth-follows-delegation-class.md)). The command also carries `ak learn`, the opt-in learning runtime
 ([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green run for a merged commit. Publication
 requires the release tag `v<version>` at the merged commit on `main`, so the run for the push to
