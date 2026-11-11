@@ -38,6 +38,7 @@ import {
   type GateIo,
   type Json,
   type JsonObject,
+  unattendedDisclosure,
 } from "../../src/lifecycle/unattended.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
@@ -614,7 +615,9 @@ afterEach(() => {
   }
   saved.clear();
 });
-beforeEach(() => setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_UNATTENDED_READ_TOKEN: undefined }));
+beforeEach(() =>
+  setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined, AK_UNATTENDED_READ_TOKEN: undefined }),
+);
 
 const STUB = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -798,6 +801,148 @@ describe("selection and start (command seam)", () => {
     expect(recorded.code).toBe(1);
     expect(recorded.err).toContain("a bypass grant does not apply under the unattended policy");
     expect(recordsOf(cwd, "feature", "align")).toEqual([]);
+  });
+
+  test("AK_LIFECYCLE_SUPERVISOR records the supervisor on phase starts, runs, gate records, decisions and ship disclosure", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    for (const phase of ["super-align", "super-bound", "super-ship"]) {
+      const checked = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out)).toEqual({
+        policy: "unattended",
+        source: "environment",
+        supervisor: "firstmate",
+        phase,
+      });
+    }
+    const modelPhase = ak(cwd, "unattended", "check", "--phase", "super-scout");
+    expect(modelPhase.code).toBe(0);
+    expect(JSON.parse(modelPhase.out)).toEqual({
+      policy: "unattended",
+      supervisor: "firstmate",
+      phase: "super-scout",
+      start: "model-started",
+    });
+
+    const run = fullRun(cwd);
+    const runRecord: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8"));
+    expect(runRecord).toMatchObject({
+      policy: { name: "unattended", source: "environment", supervisor: "firstmate" },
+    });
+    for (const gate of [
+      "align",
+      "bound",
+      "scout",
+      "build-checks",
+      "verify",
+      "review-full",
+      "review-readiness",
+    ] as const)
+      expect(recordsOf(cwd, run, gate)[0]?.policy).toEqual({
+        name: "unattended",
+        source: "environment",
+        supervisor: "firstmate",
+      });
+
+    const decisionCheck = ak(cwd, "check", "--json");
+    expect(decisionCheck.code).toBe(0);
+    expect(JSON.parse(decisionCheck.out)).toMatchObject({
+      outcome: "allowed",
+      policy: { name: "unattended", source: "environment", supervisor: "firstmate" },
+    });
+
+    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
+    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
+    const supervisedPull = {
+      [`repos/${REPO}/pulls/7`]: {
+        body: {
+          number: 7,
+          base: { ref: "main", sha: BASE },
+          head: { sha: HEAD },
+          body: `Change.\n\n${unattendedDisclosure("firstmate")}\n`,
+        },
+      },
+    };
+    const shipped = withFixtures({
+      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+      ...supervisedPull,
+    });
+    stubGh(shipped);
+    const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(preflight.code).toBe(0);
+    expect(preflight.out).toContain(unattendedDisclosure("firstmate"));
+    expect(recordsOf(cwd, run, "ship-preflight")[0]?.policy).toEqual({
+      name: "unattended",
+      source: "environment",
+      supervisor: "firstmate",
+    });
+    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
+
+    // Wrong or missing supervisor in PR disclosure is refused when the run recorded a supervisor.
+    stubGh(
+      withFixtures({
+        [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+      }),
+    );
+    const wrongDisclosure = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
+    expect(wrongDisclosure.code).toBe(1);
+    expect(wrongDisclosure.err).toContain("disclosure");
+
+    // Standalone review-status without AK_LIFECYCLE_SUPERVISOR still accepts a supervised disclosure.
+    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined });
+    stubGh(withFixtures(supervisedPull));
+    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+  });
+
+  test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
+    const rootConfig = readFileSync(join(import.meta.dir, "../../ak.lifecycle.json"), "utf8");
+    expect(JSON.parse(rootConfig)).toEqual({ policy: "unattended" });
+
+    const cwd = repo();
+    git(cwd, "checkout", "-q", "main");
+    writeFileSync(join(cwd, "ak.lifecycle.json"), rootConfig);
+    git(cwd, "add", "ak.lifecycle.json");
+    git(cwd, "commit", "-q", "-m", "opt in");
+    const tip = git(cwd, "rev-parse", "HEAD");
+    git(cwd, "update-ref", "refs/remotes/origin/main", tip);
+    git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(cwd, "checkout", "-q", "feature");
+
+    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    for (const phase of ["super-align", "super-bound"]) {
+      const checked = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out)).toEqual({
+        policy: "unattended",
+        source: `default-branch:${tip}`,
+        supervisor: "firstmate",
+        phase,
+      });
+    }
+
+    const run = fullRun(cwd);
+    expect(ak(cwd, "check").code).toBe(0);
+    expect(recordsOf(cwd, run, "align")[0]?.policy).toEqual({
+      name: "unattended",
+      source: `default-branch:${tip}`,
+      supervisor: "firstmate",
+    });
+
+    stubGh(
+      withFixtures({
+        ...UNPROTECTED,
+        ...configWith({ policy: "unattended" }),
+        [`repos/${REPO}/branches/main`]: { body: { name: "main", commit: { sha: tip } } },
+        [`repos/${REPO}/compare/${tip}...${tip}`]: { body: { status: "identical" } },
+      }),
+    );
+    const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(preflight.code).toBe(1);
+    expect(preflight.err).toContain("AK_UNATTENDED_READ_TOKEN is not set");
+    expect(preflight.err).toContain("a pull request with at least one approval is not required");
+    expect(preflight.err).toContain("ak.lifecycle.json: human_reviewers is empty");
+    expect(preflight.err).toContain("ak.lifecycle.json: independent_review.reviewer_model is missing");
   });
 
   test("a legacy run refuses an unattended record and an unattended check", () => {
