@@ -9,6 +9,8 @@
 # Never replaces an existing ~/.bun/bin/bun that is not the pin. Cloud Agent
 # tool shells are not login shells; they run .cursor/bin/ak, which finds the
 # pin at ~/.bun/bin/bun without bun on PATH.
+# After bun install --frozen-lockfile, clone_donors runs tools/donors/clone.sh
+# under timeout 300. A clone failure warns and continues so the pin check skips.
 set -euo pipefail
 PIN=1.3.14
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -112,6 +114,23 @@ login_finds_bun() {
     "$BASH_BIN" -l -c 'command -v bun >/dev/null && [ "$(bun --version)" = "'"$PIN"'" ]'
 }
 
+clone_donors() {
+  if ! command -v timeout >/dev/null 2>&1; then
+    echo "install.sh: warning: timeout is not on PATH; donor clone skipped (no time bound available)" >&2
+    return 0
+  fi
+  if ! (
+    cd "$ROOT" &&
+      GIT_TERMINAL_PROMPT=0 \
+      GIT_HTTP_LOW_SPEED_LIMIT=1000 \
+      GIT_HTTP_LOW_SPEED_TIME=30 \
+      timeout 300 sh "$ROOT/tools/donors/clone.sh" </dev/null
+  ); then
+    echo "install.sh: warning: donor clone failed; provenance pin check will skip" >&2
+  fi
+  return 0
+}
+
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
   return 0
 fi
@@ -134,3 +153,4 @@ fi
 
 cd "$ROOT"
 bun install --frozen-lockfile
+clone_donors

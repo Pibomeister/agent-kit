@@ -29,8 +29,22 @@ export function normalizeHeading(text: string): string {
     .replace(/\s+/g, " ");
 }
 
-function headingTitle(line: string): string | null {
+/** ATX heading title on this line, or null. Shared by the reference oracles. */
+export function headingTitle(line: string): string | null {
   return HEADING.exec(line)?.[1] ?? null;
+}
+
+/**
+ * Index of the first body line after a closed YAML frontmatter block, or 0
+ * if there is none. A closing `---` at EOF counts. An opening `---` with no
+ * closer is not frontmatter.
+ */
+export function skipFrontmatter(lines: readonly string[]): number {
+  if ((lines[0] ?? "") !== "---") return 0;
+  for (let i = 1; i < lines.length; i++) {
+    if ((lines[i] ?? "") === "---") return i + 1;
+  }
+  return 0;
 }
 
 function headingLevel(line: string): number {

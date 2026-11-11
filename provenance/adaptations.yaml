@@ -170,6 +170,9 @@ adaptations:
   - path: policies/resolved-conflicts.yaml
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
     rationale: Diff-scoped complexity, duplication, dead-code and boundary evidence became project checks that block only when declared mandatory.
+  - path: policies/review.yaml
+    source: local:review-routing-owner-ask-2026-11-10@sha256:468cbcc7b448e36805874c3ca8e5c36784d0f1680f37e5f965e1e765d7695ad6#L19-22
+    rationale: The owner's semaphore bullets, green a simple code review, yellow a multi-agent review that may enlist fewer agents and red the current review pipeline, became the pass_1.depth map of green to single, both yellow classes to reduced and red to full.
   - path: protocols/apply-findings/PROTOCOL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-code-review/references/action-class-rubric.md
     rationale: "Severity and owner routing. Recorded conflict: plan §5.5's four-value autofix_class (including safe_auto) stands and matches schemas/finding.schema.json, while this donor has evolved to a three-value enum that rejects safe_auto. Adopted the plan's, recorded the tension rather than silently taking either."

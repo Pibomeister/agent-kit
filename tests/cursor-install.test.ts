@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CURSOR_BUN_PIN, cursorAkLauncher } from "../src/packaging/cursor-ak.ts";
@@ -67,6 +67,18 @@ function noBunPath() {
   return dir;
 }
 
+function linkHostCommands(dir: string, names: readonly string[]) {
+  for (const name of names) {
+    const run = spawnSync("bash", ["-c", 'command -v "$1"', "_", name], { encoding: "utf8" });
+    const resolved = (run.stdout ?? "").trim();
+    expect(run.status, `${name}: ${run.stderr}`).toBe(0);
+    if (!resolved.startsWith("/")) continue;
+    const dest = join(dir, name);
+    if (existsSync(dest)) continue;
+    symlinkSync(resolved, dest);
+  }
+}
+
 function runLauncher(home: string | undefined, path: string, args: string[]) {
   const dir = join(processScratch("ak-cursor-overlay-"), "bin");
   mkdirSync(dir, { recursive: true });
@@ -99,6 +111,96 @@ describe("tools/cursor/install.sh", () => {
     expect(result.stderr).toContain(`leaving ${fx.bun} in place`);
     expect(readFileSync(fx.bun, "utf8")).toBe(body);
     expect(existsSync(fx.sudoLog)).toBe(false);
+  });
+
+  test("clone_donors reuses clone.sh and continues when it fails", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    writeFileSync(join(scratch, "tools/donors/clone.sh"), "#!/bin/sh\necho clone-failed >&2\nexit 1\n", {
+      mode: 0o755,
+    });
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("install.sh: warning: donor clone failed; provenance pin check will skip");
+  });
+
+  test("clone_donors skips when timeout is not on PATH", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-notimeout-");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    const marker = join(scratch, "cloned");
+    writeFileSync(join(scratch, "tools/donors/clone.sh"), `#!/bin/sh\nprintf 'ran\\n' > '${marker}'\nexit 0\n`, {
+      mode: 0o755,
+    });
+    const trap = join(fx.home, "trap-bin");
+    symlinkSync("/bin/bash", join(trap, "bash"));
+    linkHostCommands(trap, ["dirname", "git", "cat", "sh", "bash", "mkdir", "rm", "grep", "id", "env"]);
+    const path = `${trap}:${join(fx.home, ".bun/bin")}`;
+    const timeoutProbe = spawnSync("bash", ["-c", "command -v timeout"], {
+      encoding: "utf8",
+      env: { PATH: path, HOME: fx.home },
+    });
+    expect(timeoutProbe.status).not.toBe(0);
+    const result = runFn({ HOME: fx.home, PATH: path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain(
+      "install.sh: warning: timeout is not on PATH; donor clone skipped (no time bound available)",
+    );
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("the installer clones donors after bun install --frozen-lockfile", () => {
+    const runs = readFileSync(install, "utf8")
+      .split("\n")
+      .filter((line) => line === "clone_donors" || line === "bun install --frozen-lockfile");
+    expect(runs).toEqual(["bun install --frozen-lockfile", "clone_donors"]);
+  });
+
+  test("clone_donors bounds the clone with timeout 300", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-timeout-");
+    const log = join(scratch, "timeout.args");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    writeFileSync(join(scratch, "tools/donors/clone.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(
+      join(fx.home, "trap-bin", "timeout"),
+      `#!/bin/sh
+printf '%s\\n' "$1" > '${log}'
+shift
+exec "$@"
+`,
+      { mode: 0o755 },
+    );
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(log, "utf8").trim()).toBe("300");
+  });
+
+  test("clone_donors runs the lock pin clone script", () => {
+    const fx = scratchHome();
+    const scratch = processScratch("ak-cursor-clone-ok-");
+    mkdirSync(join(scratch, "tools/donors"), { recursive: true });
+    writeFileSync(
+      join(scratch, "tools/donors/clone.sh"),
+      `#!/bin/sh
+echo "GIT_TERMINAL_PROMPT=\${GIT_TERMINAL_PROMPT-unset}" >&2
+echo "GIT_HTTP_LOW_SPEED_LIMIT=\${GIT_HTTP_LOW_SPEED_LIMIT-unset}" >&2
+echo "GIT_HTTP_LOW_SPEED_TIME=\${GIT_HTTP_LOW_SPEED_TIME-unset}" >&2
+if [ -t 0 ]; then echo stdin-tty >&2; else echo stdin-not-tty >&2; fi
+echo clone.sh: .donors/donor_one at pin >&2
+exit 0
+`,
+      { mode: 0o755 },
+    );
+    const result = runFn({ HOME: fx.home, PATH: fx.path }, `ROOT="${scratch}"; clone_donors`);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain("clone.sh: .donors/donor_one at pin");
+    expect(result.stderr).toContain("GIT_TERMINAL_PROMPT=0");
+    expect(result.stderr).toContain("GIT_HTTP_LOW_SPEED_LIMIT=1000");
+    expect(result.stderr).toContain("GIT_HTTP_LOW_SPEED_TIME=30");
+    expect(result.stderr).toContain("stdin-not-tty");
+    expect(result.stderr).not.toContain("donor clone failed");
   });
 });
 
