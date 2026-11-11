@@ -407,11 +407,14 @@ Its Git calls disable fsmonitor, hooks and the global excludes file, run with a 
 have a ten-second timeout with a kill signal, set `--work-tree` to the inspected directory so a
 worker `core.worktree` cannot hide untracked files, set `attr.tree` to the empty tree so worker
 `.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
-programs. `-c merge.default=` and `-c merge.renormalize=false` are defense-in-depth: the throwaway
-`GIT_DIR` already ignores worker merge config, so those `-c` flags are not load-bearing while that
-scratch dir is in use. Verdict `merge-tree` runs against a throwaway `GIT_DIR` in the runner state
-directory, outside the worker root, so neither `.git/info/attributes` nor a concurrent writer under
-the worker `.git` can assign `merge=union`.
+programs. Verdict `merge-tree` is the exception: it sets `attr.tree` to the merge-base tree so
+committed `binary` and `-merge` attributes still conflict, then runs against a throwaway `GIT_DIR`
+initialized with the worker's object format, outside the worker root, so neither
+`.git/info/attributes` nor a worker `merge.<driver>.driver` can run. `-c merge.default=` and
+`-c merge.renormalize=false` are defense-in-depth: the throwaway `GIT_DIR` already ignores worker
+merge config, so those `-c` flags are not load-bearing while that scratch dir is in use. Verdict
+patch identity and CI-config diffs pass `--ignore-submodules=none --submodule=short` so a gitlink
+OID change cannot reuse a bound verdict.
 Verdict binding treats a worktree as clean only when its bytes equal the committed blob bytes,
 including nested gitlinks
 after their `HEAD` matches. An autocrlf or `eol=crlf` checkout whose bytes differ from the blob is

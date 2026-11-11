@@ -41034,11 +41034,15 @@ function emptyTreeId(context, project, timeoutMs) {
   emptyTrees.set(key, text4);
   return { code: 0, stdout, text: text4, stderr: "" };
 }
-function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv) {
-  const empty = emptyTreeId(context, project, timeoutMs);
-  if (empty.code !== 0)
-    return empty;
-  const proc = spawnSync4(context.binary, ["--work-tree", realpathSync11(project), ...isolationArgs(project), "-c", `attr.tree=${empty.text}`, ...args], {
+function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv, attrTree) {
+  let tree = attrTree;
+  if (tree === undefined) {
+    const empty = emptyTreeId(context, project, timeoutMs);
+    if (empty.code !== 0)
+      return empty;
+    tree = empty.text;
+  }
+  const proc = spawnSync4(context.binary, ["--work-tree", realpathSync11(project), ...isolationArgs(project), "-c", `attr.tree=${tree}`, ...args], {
     cwd: project,
     env: { ...gitEnv(context), ...extraEnv },
     input,
@@ -41115,6 +41119,8 @@ function patchIdentity(context, project, baseRef, head) {
     "--no-ext-diff",
     "--no-textconv",
     "--binary",
+    "--ignore-submodules=none",
+    "--submodule=short",
     base2.text,
     head,
     "--"
@@ -41125,7 +41131,7 @@ function patchIdentity(context, project, baseRef, head) {
     return null;
   const patch = gitProcess(context, project, ["patch-id", "--stable"], 1e4, diff.stdout);
   const patchId = patch.text.split(" ")[0];
-  if (patch.code !== 0 || patchId === undefined || !/^[0-9a-f]{40}$/.test(patchId))
+  if (patch.code !== 0 || patchId === undefined || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(patchId))
     throw new Error(`cannot compute stable patch-id: ${patch.stderr || patch.text}`);
   return patchId;
 }
@@ -41136,6 +41142,8 @@ function ciConfigDrift(context, project, oldBase, newBase) {
   const changed = runnerGit(context, project, [
     "diff",
     ...converterGuard,
+    "--ignore-submodules=none",
+    "--submodule=short",
     "--no-renames",
     "--name-only",
     "-z",
@@ -41145,7 +41153,16 @@ function ciConfigDrift(context, project, oldBase, newBase) {
   ]);
   if (changed.code !== 0)
     throw new Error(`cannot compare CI configuration: ${changed.stderr}`);
-  const converters = runnerGit(context, project, ["diff", ...converterGuard, "--exit-code", oldBase, newBase, "--"]);
+  const converters = runnerGit(context, project, [
+    "diff",
+    ...converterGuard,
+    "--ignore-submodules=none",
+    "--submodule=short",
+    "--exit-code",
+    oldBase,
+    newBase,
+    "--"
+  ]);
   if (converters.code > 1)
     throw new Error(`cannot compare CI configuration: ${converters.stderr}`);
   return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path.startsWith(".github/workflows/") || path.startsWith(".github/actions/") || path.startsWith(".circleci/") || path.startsWith(".buildkite/") || [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"].includes(path));
@@ -41153,13 +41170,22 @@ function ciConfigDrift(context, project, oldBase, newBase) {
 function mergeTreeClean(context, project, baseRef, head) {
   const left = resolvedRevision(context, project, baseRef);
   const right = resolvedRevision(context, project, head);
+  const mergeBase = runnerGit(context, project, ["merge-base", left, right]);
+  if (mergeBase.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(mergeBase.text))
+    throw new Error(`cannot inspect merge tree: ${mergeBase.stderr || mergeBase.text}`);
+  const attrTree = runnerGit(context, project, ["rev-parse", `${mergeBase.text}^{tree}`]);
+  if (attrTree.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(attrTree.text))
+    throw new Error(`cannot inspect merge tree: ${attrTree.stderr || attrTree.text}`);
+  const objectFormat = runnerGit(context, project, ["rev-parse", "--show-object-format"]);
+  if (objectFormat.code !== 0 || objectFormat.text !== "sha1" && objectFormat.text !== "sha256")
+    throw new Error(`cannot inspect merge tree: ${objectFormat.stderr || objectFormat.text}`);
   const gitDir = runnerGit(context, project, ["rev-parse", "--absolute-git-dir"]);
   if (gitDir.code !== 0)
     throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
   const objectDir = realpathSync11(join44(gitDir.text, "objects"));
   const scratch = mkdtempSync3(join44(context.home, "ak-merge-"));
   try {
-    const init = spawnSync4(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q"], {
+    const init = spawnSync4(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q", `--object-format=${objectFormat.text}`], {
       cwd: scratch,
       env: gitEnv(context),
       timeout: 1e4,
@@ -41175,7 +41201,7 @@ function mergeTreeClean(context, project, baseRef, head) {
     const result2 = gitProcess(context, project, ["merge-tree", "--write-tree", left, right], 1e4, undefined, {
       GIT_DIR: scratch,
       GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir
-    });
+    }, attrTree.text);
     if (result2.code > 1)
       throw new Error(`cannot inspect merge tree: ${result2.stderr}`);
     return result2.code === 0;
