@@ -26,25 +26,3 @@ ruling. Read it there before concluding from an empty list that nothing has been
 ---
 
 ## Open
-
-### Conversation-map locators cannot cite a captain decision
-
-**The instruction followed.** §5:
-
-> Inventing an `origin:` or `locator:` key on an adaptations row does not substitute: nothing
-> reads it. [...] The locator has three forms and the transcript is only one of them. [...]
-> `ak validate` admits `G:L<start>[-<end>]` ranges into `research/sources/grok-transcript.md`,
-> `plan §<section>` and `arch §<section>` document references, and
-> `amalgam <destination> + <destination>` seat pairs [...] Name where the capability was actually
-> specified.
-
-**What following it produced.** The GS-004k unavailable-read raise is a captain Q1 decision. It is
-not a transcript range, a plan section, an arch section, or an amalgam pair. A locator in any of
-the three admitted forms would fabricate a source. Parking the sentence on a donor-sourced
-adaptations rationale credits the egm pin. The existing `delegation` conversation-map row can carry
-the fact in `note`, and none of the locator forms can name the decision.
-
-**What the correct behavior appears to be.** Admit a locator form for a captain decision, or record
-that a `note` on an existing conversation-origin row is the route until that form exists. Until then
-a writer cannot cite a captain decision without fabricating a locator or parking the sentence on a
-donor rationale.
