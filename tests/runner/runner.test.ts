@@ -1643,9 +1643,9 @@ describe("runner guards", () => {
     writeFileSync(receipt, "source evidence");
     f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
     reachShipReady(f);
-    expect(
-      Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "--show-object-format"]).stdout.toString().trim(),
-    ).toBe("sha256");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "--show-object-format"]).stdout.toString().trim()).toBe(
+      "sha256",
+    );
     expect(f.runner.bindVerdict("toy-run").head_revision).toBe(f.revision);
   });
 
