@@ -1027,7 +1027,8 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").delegates?.["child-3"]?.state).toBe("active");
   });
 
-  // GAP-20 closed for audit-cadence runs; residue: non-audit-cadence runs don't have the pin guarantee, and nothing checks for it.
+  // GAP-20 closed for audit-cadence runs; residue: a run without audit_cadence_seconds never
+  // re-checks its recorded bundle procedure, and nothing else does.
   test("an audit tick stops when the recorded bundle procedure changes", () => {
     const f = procedureKit();
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
