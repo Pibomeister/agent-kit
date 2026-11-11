@@ -1732,6 +1732,7 @@ function citedRead(forTicket: Doc, extra: Doc = {}) {
   delete subject.cold_read_ref;
   const read = coldRead({
     ticket: { id: subject["id"], schema: "ticket", hash: artifactHash(subject) },
+    run_id: "run-1",
     ...extra,
   });
   return {
@@ -1838,6 +1839,33 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     const { read, ref } = citedRead(ticket());
     expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).not.toContain(RULE_COLD_REF);
   });
+
+  test("a hand-written cold-read with no producing run is refused when on", () => {
+    const { read, ref } = citedRead(ticket(), { run_id: null });
+    const issues = run(ticket({ cold_read_ref: ref }), [onProject(), read]);
+    expect(rulesOf(issues)).toContain(RULE_COLD_REF);
+    expect(issues.some((issue) => issue.rule === RULE_COLD_REF && issue.message.includes("producing run"))).toBe(true);
+  });
+
+  test("an unavailable hand-written cold-read with no producing run is refused when on", () => {
+    const { read, ref } = citedRead(ticket(), {
+      run_id: null,
+      status: "unavailable",
+      state: "unavailable",
+      reason: "The host could not start a separate reader context.",
+    });
+    expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).toContain(RULE_COLD_REF);
+  });
+
+  test.each(["off", "shadow"] as const)(
+    "review.cold_read %s still accepts a hand-written cold-read with no producing run",
+    (mode) => {
+      const { read, ref } = citedRead(ticket(), { run_id: null });
+      expect(
+        rulesOf(run(ticket({ cold_read_ref: ref }), [project({ review: { cold_read: mode } }), read])),
+      ).not.toContain(RULE_COLD_REF);
+    },
+  );
 
   test("a placeholder cold_read_ref with no indexed document is refused when on", () => {
     expect(
