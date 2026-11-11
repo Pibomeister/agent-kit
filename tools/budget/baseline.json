@@ -18,8 +18,8 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26318,
-      "tokens": 6534
+      "bytes": 26548,
+      "tokens": 6591
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -893,8 +893,8 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26318,
-      "tokens": 6534
+      "bytes": 26548,
+      "tokens": 6591
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -1768,8 +1768,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26390,
-      "tokens": 6552
+      "bytes": 26632,
+      "tokens": 6612
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -2643,8 +2643,8 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26318,
-      "tokens": 6534
+      "bytes": 26548,
+      "tokens": 6591
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -3518,8 +3518,8 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26318,
-      "tokens": 6534
+      "bytes": 26548,
+      "tokens": 6591
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",
@@ -4393,8 +4393,8 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 26318,
-      "tokens": 6534
+      "bytes": 26548,
+      "tokens": 6591
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/in-repo.md": {
       "file": "adapters/knowledgebase/backends/in-repo.md",

@@ -12,7 +12,9 @@
  * stays the branch's default until a new `open`, so every new task opens a new run.
  *
  * Parent-run trust for a Firstmate skip rests on host write isolation of the
- * evidence store. A home-ledger check is a follow-up, not this gate.
+ * evidence store. The recorded start_authority must be a standing grant with a
+ * grant. A cancelled or failed parent does not skip. A home-ledger check is a
+ * follow-up, not this gate.
  *
  * Recording `ship-preflight` in the legacy policy is judged the same way when the run is opened
  * and unbound: it runs the pre-ship check for the exact head first and records nothing on a
@@ -599,11 +601,14 @@ function loadRunnerBinding(path: string, runId: string, project?: string): Behav
   const declared = object(charter.immutability)?.hash;
   if (!nonempty(declared) || declared !== recomputed || raw.charter_hash !== recomputed) return undefined;
   if (!asJsonObject(charter)) return undefined;
+  if (raw.run_state === "cancelled" || raw.run_state === "failed") return undefined;
   const authority = object(raw.start_authority);
-  const grant = authority === undefined ? undefined : object(authority.grant);
+  if (authority === undefined || authority.kind !== "standing-grant") return undefined;
+  const grant = object(authority.grant);
   const allowed = charterAllowsProtectedStart(charter, recomputed, {
     charterPath,
     runId,
+    requireGrant: true,
     standingGrant:
       grant === undefined
         ? undefined

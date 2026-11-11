@@ -210,8 +210,12 @@ afterAll(() => {
 });
 
 function git(cwd: string, ...args: string[]) {
-  expect(
-    Bun.spawnSync([
+  expect(gitProc(cwd, args).exitCode).toBe(0);
+}
+
+function gitProc(cwd: string, args: readonly string[], stdin?: string) {
+  return Bun.spawnSync(
+    [
       "git",
       "-C",
       cwd,
@@ -222,8 +226,15 @@ function git(cwd: string, ...args: string[]) {
       "-c",
       "commit.gpgsign=false",
       ...args,
-    ]).exitCode,
-  ).toBe(0);
+    ],
+    stdin === undefined ? {} : { stdin: Buffer.from(stdin) },
+  );
+}
+
+function gitText(cwd: string, args: readonly string[], stdin?: string): string {
+  const result = gitProc(cwd, args, stdin);
+  expect(result.exitCode).toBe(0);
+  return result.stdout.toString().trim();
 }
 
 function waitForPath(path: string, owner: { exited: Promise<number> }) {
@@ -405,6 +416,14 @@ function standing(f: ReturnType<typeof fixture>): StandingGrant {
 
 const TOY_BINDING = "backend: local-git\nproject: toy\nlocator:\n  knowledgebase: fixture-kb\n";
 const OTHER_BINDING = "backend: local-git\nproject: other\nlocator:\n  knowledgebase: other-kb\n";
+const IN_REPO_BINDING = `backend: in-repo
+project: toy
+locator:
+  knowledgebase: fixture-kb
+  path: wiki
+  kinds:
+    adr: adr
+`;
 
 function enabledToyTicket(parsed: JsonObject): JsonObject {
   const HASH = `sha256:${"a".repeat(64)}`;
@@ -1529,6 +1548,97 @@ describe("runner guards", () => {
     expect(started.behavior?.required_checks).toHaveLength(1);
   });
 
+  test("git replace of the binding blob cannot retarget start", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const blob = gitText(f.worker, ["rev-parse", "HEAD:ak.kb.yaml"]);
+    const forgedPath = join(f.worker, "forged.kb.yaml");
+    writeFileSync(forgedPath, OTHER_BINDING);
+    const forged = gitText(f.worker, ["hash-object", "-w", forgedPath]);
+    unlinkSync(forgedPath);
+    git(f.worker, "replace", blob, forged);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("git replace of the binding tree cannot hide the committed binding", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "base bind");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take bind", "main");
+    const base = gitText(f.worker, ["merge-base", "HEAD", "main"]);
+    const tree = gitText(f.worker, ["rev-parse", `${base}^{tree}`]);
+    const empty = gitText(f.worker, ["mktree"], "");
+    git(f.worker, "replace", tree, empty);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    const started = withRegistry(planted.registry, () =>
+      f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("an in-repo worker commit that flips behavior still uses the base record", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, "wiki", "adr"), { recursive: true });
+    writeFileSync(join(f.worker, "wiki", "adr", ".gitkeep"), "");
+    mkdirSync(join(f.worker, "projects", "toy", "runs"), { recursive: true });
+    const onKb = publishToyKb(ticket, "on");
+    const offKb = publishToyKb(ticket, "off");
+    writeFileSync(
+      join(f.worker, "projects", "toy", "runs", "artifacts.jsonl"),
+      readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl")),
+    );
+    writeFileSync(join(f.worker, "ak.kb.yaml"), IN_REPO_BINDING);
+    git(f.worker, "add", "-A");
+    git(f.worker, "commit", "-qm", "in-repo on");
+    const mainSha = workerHead(f.worker);
+    git(f.worker, "update-ref", "refs/remotes/origin/main", mainSha);
+    git(f.worker, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "merge", "-q", "-m", "take in-repo", "main");
+    writeFileSync(
+      join(f.worker, "projects", "toy", "runs", "artifacts.jsonl"),
+      readFileSync(join(offKb.kb, "projects", "toy", "runs", "artifacts.jsonl")),
+    );
+    git(f.worker, "add", "projects/toy/runs/artifacts.jsonl");
+    git(f.worker, "commit", "-qm", "flip off");
+    git(f.worker, "update-ref", "refs/remotes/origin/main", mainSha);
+    git(f.worker, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
   test("approved ticket is absent from the runner store under W1 on", () => {
     const f = fixture();
     const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
@@ -1650,7 +1760,43 @@ describe("runner guards", () => {
     git(orphan.worker, "commit", "--allow-empty", "-qm", "orphan");
     expect(() =>
       orphan.runner.start("toy-run", orphan.path, "implementer-1", workerHead(orphan.worker), standing(orphan)),
-    ).toThrow("cannot compute merge-base of HEAD and the charter base branch");
+    ).toThrow("cannot compute merge-base of the start revision and the charter base branch");
+    const planOrphan = fixture();
+    if (!asJsonObject(planOrphan.charter.work_source)) throw new Error("toy work source is missing");
+    planOrphan.charter.work_source = {
+      kind: "plan",
+      ref: { id: "toy-plan", schema: "plan-record", hash: `sha256:${"a".repeat(64)}` },
+    };
+    planOrphan.charter.immutability.hash = artifactHash({
+      ...planOrphan.charter,
+      immutability: { ...planOrphan.charter.immutability, hash: "" },
+    });
+    const planApproval = planOrphan.charter.approvals[0];
+    if (planApproval === undefined) throw new Error("toy charter approval missing");
+    planApproval.artifact_hash = planOrphan.charter.immutability.hash;
+    writeFileSync(planOrphan.path, JSON.stringify(planOrphan.charter));
+    git(planOrphan.worker, "checkout", "--orphan", "orphan");
+    git(planOrphan.worker, "commit", "--allow-empty", "-qm", "orphan");
+    const planStarted = planOrphan.runner.start(
+      "toy-run",
+      planOrphan.path,
+      "implementer-1",
+      workerHead(planOrphan.worker),
+      standing(planOrphan),
+    );
+    expect(planStarted.run_state).toBe("created");
+    const fromRevision = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const featureSha = fromRevision.revision;
+    git(fromRevision.worker, "checkout", "--orphan", "orphan");
+    git(fromRevision.worker, "commit", "--allow-empty", "-qm", "orphan");
+    const startedFromRevision = fromRevision.runner.start(
+      "toy-run",
+      fromRevision.path,
+      "implementer-1",
+      featureSha,
+      standing(fromRevision),
+    );
+    expect(startedFromRevision.run_state).toBe("created");
     const mismatch = fixture();
     if (!asJsonObject(mismatch.charter.work_source) || !asJsonObject(mismatch.charter.work_source.ref))
       throw new Error("toy work source is missing");

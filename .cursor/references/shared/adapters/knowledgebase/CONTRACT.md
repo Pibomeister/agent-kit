@@ -384,13 +384,15 @@ locator: { <key>: <value> }      # how the backend finds the knowledgebase; the 
 **The binding file is committed and holds neither a secret nor a machine path.** It is committed so
 that every checkout of the project binds the same knowledgebase: a task copy made as a git work
 tree carries the file because it carries the commit, and needs no setup of its own. Runner.start
-resolves that committed file at the merge-base of HEAD and the charter's `repos[0].base_branch`
-(`origin/<branch>` when that ref exists, else the local branch). The committed binding at that
-revision wins over the working file. Fall back to the working file only when that revision has no
-committed `ak.kb.yaml`. The **project folder** is the nearest directory at or above the working
-directory that holds `ak.kb.yaml`, searching no higher than the repository's top level; with none
-there, the folder is unbound and §1's unconfigured case applies. A `backend` with no document under
-`backends/` is refused, since nothing states how to reach it.
+resolves that committed file at the merge-base of the validated start revision and the charter's
+`repos[0].base_branch` (`origin/<branch>` when that ref exists, else the local branch). The
+committed binding at that explicit revision wins over the working file. Fall back to the working
+file only when that revision has no committed `ak.kb.yaml`. That merge-base trusts the base ref, so
+it rests on host write isolation of `.git`. `.cursor/bin/ak kb check`, `read`, `publish`, and `lifecycle open`
+do not pass a revision and read the working `ak.kb.yaml`. The **project folder** is the nearest
+directory at or above the working directory that holds `ak.kb.yaml`, searching no higher than the
+repository's top level; with none there, the folder is unbound and §1's unconfigured case applies.
+A `backend` with no document under `backends/` is refused, since nothing states how to reach it.
 
 ### The registration
 

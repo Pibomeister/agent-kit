@@ -3,17 +3,7 @@
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
@@ -96,7 +86,7 @@ function buildRepo(): string {
 const REPO_TEMPLATE = buildRepo();
 
 function repo(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-bv-policy-")));
+  const dir = realpathSync(processScratch("ak-bv-policy-"));
   cpSync(REPO_TEMPLATE, dir, { recursive: true });
   return dir;
 }
@@ -274,7 +264,7 @@ function ticketPath(cwd: string, id: string): string {
 
 function receipt(cwd: string, run: string, ticket: JsonObject, extra: JsonObject = {}): string {
   const snapshot = headSnapshot(cwd);
-  const receiptDir = mkdtempSync(join(tmpdir(), "ak-bv-receipt-"));
+  const receiptDir = processScratch("ak-bv-receipt-");
   const outputPath = join(receiptDir, "verification-output.log");
   writeFileSync(outputPath, "1 pass, 0 fail\n");
   const outputDigest = `sha256:${createHash("sha256").update(readFileSync(outputPath)).digest("hex")}`;
@@ -374,7 +364,7 @@ function ensureTrustedNoMistakes(cwd: string): void {
 function startMandatory(cwd: string, ticketFile: string, bound: BoundProject, work: "ticket" | "plan" = "ticket") {
   ensureTrustedNoMistakes(cwd);
   const ticket = parseObject(readFileSync(ticketFile, "utf8"));
-  const privateDir = realpathSync(mkdtempSync(join(tmpdir(), "ak-bv-runner-")));
+  const privateDir = realpathSync(processScratch("ak-bv-runner-"));
   const evidence = join(privateDir, "evidence");
   mkdirSync(evidence);
   const { home, upstream } = makeHome({ patched: true });
@@ -533,7 +523,7 @@ function bundledGate(): string {
   if (catalog === null) throw new Error("no catalog");
   const file = planBundle({ root: ROOT, catalog }, "claude-code", {}).files.get(GATE_FILE);
   if (file === undefined) throw new Error("planned gate missing");
-  const script = join(mkdtempSync(join(tmpdir(), "ak-bv-gate-")), "ak-gate.mjs");
+  const script = join(processScratch("ak-bv-gate-"), "ak-gate.mjs");
   writeFileSync(script, file.contents);
   return script;
 }
@@ -551,7 +541,7 @@ function nodeGate(script: string, cwd: string, registry: string | undefined, ...
 }
 
 function sourceCli(cwd: string, registry: string | undefined, ...argv: string[]) {
-  const result = Bun.spawnSync(["bun", join(ROOT, "src/cli.ts"), "lifecycle", ...argv], {
+  const result = Bun.spawnSync([process.execPath, join(ROOT, "src/cli.ts"), "lifecycle", ...argv], {
     cwd,
     env: registry === undefined ? gitEnv(cwd) : { ...gitEnv(cwd), AK_KB_REGISTRY: registry },
   });
@@ -1251,7 +1241,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const dir = repo();
     behaviorTicket(dir, "forged-parent");
     const bound = attachKb(dir, "on");
-    const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-forged-"));
+    const parentDir = processScratch("ak-bv-forged-");
     const evidence = join(parentDir, "evidence");
     mkdirSync(evidence);
     const frozen = bindBehaviorPolicy({
@@ -1274,7 +1264,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     );
     const bindingPath = join(parentDir, "binding.json");
     writeJson(bindingPath, { schema: "firstmate-binding", run_id: "parent-run", evidence: { location: evidence } });
-    const ledger = mkdtempSync(join(tmpdir(), "ak-bv-ledger-"));
+    const ledger = processScratch("ak-bv-ledger-");
     const at = realpathSync(bindingPath);
     const sha = `sha256:${createHash("sha256").update(readFileSync(bindingPath)).digest("hex")}`;
     writeJson(join(ledger, "parent-run.json"), { binding_path: at, binding_sha256: sha });
@@ -1294,7 +1284,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
   test("CLI open of a /tmp forged parent without a home ledger refuses", () => {
     const dir = repo();
     behaviorTicket(dir, "tmp-forge");
-    const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-tmp-forge-"));
+    const parentDir = processScratch("ak-bv-tmp-forge-");
     const evidence = join(parentDir, "evidence");
     mkdirSync(evidence);
     writeFileSync(
@@ -1324,7 +1314,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     writeJson(join(parentDir, "charter.json"), { schema: "charter", run_id: "parent-run" });
     const bindingPath = join(parentDir, "binding.json");
     writeJson(bindingPath, { schema: "firstmate-binding", run_id: "parent-run", evidence: { location: evidence } });
-    const ledger = mkdtempSync(join(tmpdir(), "ak-bv-tmp-forge-ledger-"));
+    const ledger = processScratch("ak-bv-tmp-forge-ledger-");
     const forgedOpen = openRun({
       dir: evidence,
       project: dir,
@@ -1355,7 +1345,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const dir = repo();
     behaviorTicket(dir, "unregistered");
     const bound = attachKb(dir, "on");
-    const parentDir = mkdtempSync(join(tmpdir(), "ak-bv-unreg-"));
+    const parentDir = processScratch("ak-bv-unreg-");
     const evidence = join(parentDir, "evidence");
     mkdirSync(evidence);
     const bindingPath = join(parentDir, "binding.json");
@@ -1366,7 +1356,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
       ticket: ticketPath(dir, "unregistered"),
       registry: bound.registry,
       binding: bindingPath,
-      ledger: mkdtempSync(join(tmpdir(), "ak-bv-empty-ledger-")),
+      ledger: processScratch("ak-bv-empty-ledger-"),
     });
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("expected unregistered binding refusal");
@@ -1818,7 +1808,7 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     ensureTrustedNoMistakes(dir);
     plainTicket(dir, "early-child");
     const bound = attachKb(dir, "on");
-    const privateDir = realpathSync(mkdtempSync(join(tmpdir(), "ak-bv-early-")));
+    const privateDir = realpathSync(processScratch("ak-bv-early-"));
     const evidence = join(privateDir, "evidence");
     mkdirSync(evidence);
     const { home, upstream } = makeHome({ patched: true });
@@ -1942,6 +1932,10 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const runnerDoc = parseObject(readFileSync(runnerPath, "utf8"));
     runnerDoc.charter_hash = hash;
     runnerDoc.charter = charter;
+    const authority = asJsonObject(runnerDoc.start_authority) ? runnerDoc.start_authority : undefined;
+    const grant = authority !== undefined && asJsonObject(authority.grant) ? authority.grant : undefined;
+    if (grant === undefined) throw new Error("runner start_authority grant missing");
+    grant.charter_hash = hash;
     writeFileSync(runnerPath, JSON.stringify(runnerDoc));
     plantBoundChild(started, ticket, "child-inactive");
     const shipped = ak(dir, "record", "--dir", started.evidence, "--run", "child-inactive", "--gate", "ship-preflight");
@@ -1952,6 +1946,75 @@ describe("BV-T01 policy binding at open, resume and check", () => {
       );
     }
     expect(readRecords(started.evidence, "child-inactive", "ship-preflight")).toEqual([]);
+  });
+
+  test("a parent whose start_authority is not a standing grant does not skip the ship-preflight re-check", () => {
+    const dir = repo();
+    const ticket = behaviorTicket(dir, "no-grant-parent");
+    const started = startMandatory(dir, ticketPath(dir, "no-grant-parent"), attachKb(dir, "on"));
+    const runnerPath = join(started.privateDir, `${started.runId}.json`);
+    const runnerDoc = parseObject(readFileSync(runnerPath, "utf8"));
+    runnerDoc.start_authority = { kind: "human" };
+    writeFileSync(runnerPath, JSON.stringify(runnerDoc));
+    plantBoundChild(started, ticket, "child-no-grant");
+    const shipped = ak(dir, "record", "--dir", started.evidence, "--run", "child-no-grant", "--gate", "ship-preflight");
+    expect(shipped.code).toBe(1);
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run child-no-grant in ${started.evidence})`,
+      );
+    }
+    expect(readRecords(started.evidence, "child-no-grant", "ship-preflight")).toEqual([]);
+  });
+
+  test("a parent standing grant with no grant record does not skip the ship-preflight re-check", () => {
+    const dir = repo();
+    const ticket = behaviorTicket(dir, "empty-grant-parent");
+    const started = startMandatory(dir, ticketPath(dir, "empty-grant-parent"), attachKb(dir, "on"));
+    const runnerPath = join(started.privateDir, `${started.runId}.json`);
+    const runnerDoc = parseObject(readFileSync(runnerPath, "utf8"));
+    runnerDoc.start_authority = { kind: "standing-grant" };
+    writeFileSync(runnerPath, JSON.stringify(runnerDoc));
+    plantBoundChild(started, ticket, "child-empty-grant");
+    const shipped = ak(
+      dir,
+      "record",
+      "--dir",
+      started.evidence,
+      "--run",
+      "child-empty-grant",
+      "--gate",
+      "ship-preflight",
+    );
+    expect(shipped.code).toBe(1);
+    for (const gate of PRE_SHIP_GATES) {
+      expect(shipped.err).toContain(
+        `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run child-empty-grant in ${started.evidence})`,
+      );
+    }
+    expect(readRecords(started.evidence, "child-empty-grant", "ship-preflight")).toEqual([]);
+  });
+
+  test("a cancelled or failed parent does not skip the ship-preflight re-check", () => {
+    for (const state of ["cancelled", "failed"] as const) {
+      const dir = repo();
+      const ticket = behaviorTicket(dir, `${state}-parent`);
+      const started = startMandatory(dir, ticketPath(dir, `${state}-parent`), attachKb(dir, "on"));
+      const runnerPath = join(started.privateDir, `${started.runId}.json`);
+      const runnerDoc = parseObject(readFileSync(runnerPath, "utf8"));
+      runnerDoc.run_state = state;
+      writeFileSync(runnerPath, JSON.stringify(runnerDoc));
+      const childId = `child-${state}`;
+      plantBoundChild(started, ticket, childId);
+      const shipped = ak(dir, "record", "--dir", started.evidence, "--run", childId, "--gate", "ship-preflight");
+      expect(shipped.code).toBe(1);
+      for (const gate of PRE_SHIP_GATES) {
+        expect(shipped.err).toContain(
+          `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run ${childId} in ${started.evidence})`,
+        );
+      }
+      expect(readRecords(started.evidence, childId, "ship-preflight")).toEqual([]);
+    }
   });
 
   test("a valid Runner-started parent with a matching bound child skips the ship-preflight re-check", () => {

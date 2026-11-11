@@ -9,7 +9,7 @@ import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
 import type { IntentLookup } from "../validation/behavior-contract-intent.ts";
 import type { ResolvedKb } from "./binding.ts";
-import { git } from "./git.ts";
+import { git, type GitFn } from "./git.ts";
 import { markTrailAttempt } from "./trail-publish.ts";
 
 /**
@@ -269,18 +269,29 @@ function approvalsOf(artifact: RunArtifact): string[] {
   return Array.isArray(approvals) ? [...new Set(approvals.map((approval) => canonicalJson(approval)))].toSorted() : [];
 }
 
+function commitAt(root: string, rev: string, run: GitFn): string | null {
+  const found = run(root, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]);
+  return found.status === 0 ? found.stdout.trim() : null;
+}
+
 function headCommit(root: string): string | null {
-  const head = git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  return head.status === 0 ? head.stdout.trim() : null;
+  return commitAt(root, "HEAD", git);
 }
 
 /** The committed bytes at `path`, absent when not listed, or a failure when git cannot read them. */
-function committed(root: string, path: string): CommittedContent {
-  if (headCommit(root) === null) return failed("kb.unreadable", "the knowledgebase has no commits");
-  const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
+function committed(root: string, path: string, at?: { revision?: string; git?: GitFn }): CommittedContent {
+  const run = at?.git ?? git;
+  const rev = at?.revision !== undefined && at.revision !== "" ? at.revision : "HEAD";
+  if (commitAt(root, rev, run) === null) {
+    return failed(
+      "kb.unreadable",
+      rev === "HEAD" ? "the knowledgebase has no commits" : `revision ${rev} cannot be resolved`,
+    );
+  }
+  const listed = run(root, ["ls-tree", "-z", rev, "--", path]);
   if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
   if (listed.stdout === "") return { status: "absent" };
-  const shown = git(root, ["show", `HEAD:${path}`]);
+  const shown = run(root, ["show", `${rev}:${path}`]);
   return shown.status === 0
     ? { status: "found", text: shown.stdout }
     : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
@@ -829,25 +840,43 @@ export type ArtifactLookup =
   | { status: "absent" }
   | { status: "unavailable"; reason: string };
 
-function lookupArtifactsFile(kb: ResolvedKb): ArtifactLookup & { text?: string } {
-  const content = committed(kb.root, artifactsPath(kb.binding.project));
+type ArtifactsFile =
+  | { status: "found"; text: string }
+  | { status: "absent" }
+  | { status: "unavailable"; reason: string };
+
+export interface ArtifactRead {
+  revision?: string;
+  git?: GitFn;
+}
+
+function lookupRevision(kb: ResolvedKb, at?: ArtifactRead): ArtifactRead | undefined {
+  if (at === undefined) return undefined;
+  if (kb.inRepo === undefined) return at.git === undefined ? undefined : { git: at.git };
+  return at;
+}
+
+function lookupArtifactsFile(kb: ResolvedKb, at?: ArtifactRead): ArtifactsFile {
+  const content = committed(kb.root, artifactsPath(kb.binding.project), lookupRevision(kb, at));
   if ("message" in content) return { status: "unavailable", reason: content.message };
   if (content.status === "absent") return { status: "absent" };
-  return { status: "found", artifact: {}, text: content.text };
+  return { status: "found", text: content.text };
 }
 
 /**
  * The latest committed project record whose identity.id is `projectId`.
- * Distinguishes a confirmed miss from a failed git read.
+ * Distinguishes a confirmed miss from a failed git read. An in-repo binding
+ * with an explicit revision is read at that revision, not worker HEAD.
  */
 export function lookupPublishedProject(
   kb: ResolvedKb,
   projectId: string,
+  at?: ArtifactRead,
 ): { status: "found"; project: JsonObject } | { status: "absent" } | { status: "unavailable"; reason: string } {
-  const file = lookupArtifactsFile(kb);
-  if (file.status !== "found") return file.status === "absent" ? { status: "absent" } : file;
+  const file = lookupArtifactsFile(kb, at);
+  if (file.status !== "found") return file;
   let found: JsonObject | undefined;
-  for (const line of (file.text ?? "").split("\n")) {
+  for (const line of file.text.split("\n")) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.schema !== "project") continue;
     if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId) continue;
@@ -861,12 +890,12 @@ export function lookupPublishedProject(
 export function lookupCommittedArtifact(
   kb: ResolvedKb,
   id: string,
-  match?: { schema?: string; hash?: string },
+  match?: { schema?: string; hash?: string } & ArtifactRead,
 ): ArtifactLookup {
-  const file = lookupArtifactsFile(kb);
-  if (file.status !== "found") return file.status === "absent" ? { status: "absent" } : file;
+  const file = lookupArtifactsFile(kb, match);
+  if (file.status !== "found") return file;
   let found: JsonObject | undefined;
-  for (const line of (file.text ?? "").split("\n")) {
+  for (const line of file.text.split("\n")) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.id !== id) continue;
     if (!asJsonObject(stored.artifact)) continue;

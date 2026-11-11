@@ -17590,8 +17590,13 @@ var init_local_git_schema = __esm(() => {
 // src/kb/git.ts
 import { spawnSync as spawnSync2 } from "child_process";
 import { realpathSync as realpathSync2 } from "fs";
-function git2(root, args, input) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+function gitEnv(extra = {}) {
+  return {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+    ...extra
+  };
+}
+function runGit(root, args, env, input) {
   const run = spawnSync2("git", ["--literal-pathspecs", "-C", root, ...args], {
     encoding: "utf8",
     env,
@@ -17599,6 +17604,21 @@ function git2(root, args, input) {
     maxBuffer: Infinity
   });
   return { status: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
+}
+function git2(root, args, input) {
+  return runGit(root, args, gitEnv(), input);
+}
+function gitWithoutReplace(root, args, input) {
+  return runGit(root, args, gitEnv({
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1"
+  }), input);
+}
+function gitForRevision(revision, gitFn) {
+  if (gitFn !== undefined)
+    return gitFn;
+  return revision !== undefined && revision !== "" ? gitWithoutReplace : git2;
 }
 function workTreeTop(dir) {
   const top = git2(dir, ["rev-parse", "--show-toplevel"]);
@@ -23173,19 +23193,25 @@ function approvalsOf(artifact) {
   const approvals = artifact.approvals;
   return Array.isArray(approvals) ? [...new Set(approvals.map((approval) => canonicalJson(approval)))].toSorted() : [];
 }
-function headCommit(root) {
-  const head = git2(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  return head.status === 0 ? head.stdout.trim() : null;
+function commitAt(root, rev, run) {
+  const found = run(root, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]);
+  return found.status === 0 ? found.stdout.trim() : null;
 }
-function committed(root, path) {
-  if (headCommit(root) === null)
-    return failed("kb.unreadable", "the knowledgebase has no commits");
-  const listed = git2(root, ["ls-tree", "-z", "HEAD", "--", path]);
+function headCommit(root) {
+  return commitAt(root, "HEAD", git2);
+}
+function committed(root, path, at) {
+  const run = at?.git ?? git2;
+  const rev = at?.revision !== undefined && at.revision !== "" ? at.revision : "HEAD";
+  if (commitAt(root, rev, run) === null) {
+    return failed("kb.unreadable", rev === "HEAD" ? "the knowledgebase has no commits" : `revision ${rev} cannot be resolved`);
+  }
+  const listed = run(root, ["ls-tree", "-z", rev, "--", path]);
   if (listed.status !== 0)
     return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
   if (listed.stdout === "")
     return { status: "absent" };
-  const shown = git2(root, ["show", `HEAD:${path}`]);
+  const shown = run(root, ["show", `${rev}:${path}`]);
   return shown.status === 0 ? { status: "found", text: shown.stdout } : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
 }
 function normalizeBody(body) {
@@ -23616,20 +23642,27 @@ function projectIdentityId(artifact) {
   const id = artifact.identity.id;
   return isText3(id) && id !== "" ? id : undefined;
 }
-function lookupArtifactsFile(kb) {
-  const content = committed(kb.root, artifactsPath(kb.binding.project));
+function lookupRevision(kb, at) {
+  if (at === undefined)
+    return;
+  if (kb.inRepo === undefined)
+    return at.git === undefined ? undefined : { git: at.git };
+  return at;
+}
+function lookupArtifactsFile(kb, at) {
+  const content = committed(kb.root, artifactsPath(kb.binding.project), lookupRevision(kb, at));
   if ("message" in content)
     return { status: "unavailable", reason: content.message };
   if (content.status === "absent")
     return { status: "absent" };
-  return { status: "found", artifact: {}, text: content.text };
+  return { status: "found", text: content.text };
 }
-function lookupPublishedProject(kb, projectId) {
-  const file = lookupArtifactsFile(kb);
+function lookupPublishedProject(kb, projectId, at) {
+  const file = lookupArtifactsFile(kb, at);
   if (file.status !== "found")
-    return file.status === "absent" ? { status: "absent" } : file;
+    return file;
   let found;
-  for (const line of (file.text ?? "").split(`
+  for (const line of file.text.split(`
 `)) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.schema !== "project")
@@ -23643,11 +23676,11 @@ function lookupPublishedProject(kb, projectId) {
   return { status: "found", project: found };
 }
 function lookupCommittedArtifact(kb, id, match) {
-  const file = lookupArtifactsFile(kb);
+  const file = lookupArtifactsFile(kb, match);
   if (file.status !== "found")
-    return file.status === "absent" ? { status: "absent" } : file;
+    return file;
   let found;
-  for (const line of (file.text ?? "").split(`
+  for (const line of file.text.split(`
 `)) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.id !== id)
@@ -23741,20 +23774,21 @@ function missing(file, message) {
     warning("kb.in-repo-missing", file, `${message} No knowledgebase is read, a coverage limit: reads are unavailable and a publish is skipped. ${IN_REPO_MISSING_REMEDY}`)
   ];
 }
-function defaultBranch(top) {
-  const target = git2(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
-  const found = git2(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
+function defaultBranch(top, run) {
+  const target = run(top, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]);
+  const found = run(top, ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"]);
   if (found.status !== 0)
     return null;
   return { name: target.status === 0 ? target.stdout.trim() : "origin/HEAD", sha: found.stdout.trim() };
 }
-function resolveInRepo(projectRoot, binding, file) {
+function resolveInRepo(projectRoot, binding, file, gitFn) {
   const project = realpathSync3(projectRoot);
   const top = workTreeTop(project);
   if (top === null)
     return { location: null, top, issues: missing(file, `${project} is not in a git work tree.`) };
   const locator = locatorOf(binding);
-  const remote = defaultBranch(top);
+  const run = gitFn ?? git2;
+  const remote = defaultBranch(top, run);
   if (remote === null) {
     return {
       location: null,
@@ -23764,10 +23798,10 @@ function resolveInRepo(projectRoot, binding, file) {
   }
   const base = remote.name;
   const baseSha = remote.sha;
-  if (git2(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
+  if (run(top, ["rev-parse", "--verify", "--quiet", "HEAD"]).status !== 0) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
-  const merged = git2(top, ["merge-base", "HEAD", baseSha]);
+  const merged = run(top, ["merge-base", "HEAD", baseSha]);
   if (merged.status === 1) {
     return {
       location: null,
@@ -23785,7 +23819,7 @@ function resolveInRepo(projectRoot, binding, file) {
   const revision = merged.stdout.trim();
   const projectPrefix = relative3(top, project).split(sep2).join("/");
   const path = posix.join(projectPrefix, locator.path);
-  const listed = git2(top, ["ls-tree", "--full-tree", revision, "--", path]);
+  const listed = run(top, ["ls-tree", "--full-tree", revision, "--", path]);
   if (listed.status !== 0) {
     return {
       location: null,
@@ -24004,26 +24038,25 @@ var init_in_repo = __esm(() => {
 // src/kb/binding.ts
 import { existsSync as existsSync5, mkdirSync as mkdirSync3, realpathSync as realpathSync4, writeFileSync as writeFileSync4 } from "fs";
 import { userInfo } from "os";
-import { dirname as dirname3, isAbsolute as isAbsolute3, join as join7, relative as relative4 } from "path";
+import { dirname as dirname3, isAbsolute as isAbsolute3, join as join7, relative as relative4, sep as sep3 } from "path";
 function describe2(validate) {
   return (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
 }
-function committedBindingText(projectRoot, revision) {
-  const explicit = revision !== undefined && revision !== "";
-  const rev = explicit ? revision : "HEAD";
-  if (explicit) {
-    const verified = git2(projectRoot, ["rev-parse", "--verify", `${rev}^{commit}`]);
-    if (verified.status !== 0)
-      return { text: null, unresolved: `revision ${rev} cannot be resolved` };
-  }
-  const prefix = git2(projectRoot, ["rev-parse", "--show-prefix"]);
+function committedBindingText(projectRoot, revision, gitFn) {
+  if (revision === undefined || revision === "")
+    return { text: null };
+  const run = gitForRevision(revision, gitFn);
+  const verified = run(projectRoot, ["rev-parse", "--verify", `${revision}^{commit}`]);
+  if (verified.status !== 0)
+    return { text: null, unresolved: `revision ${revision} cannot be resolved` };
+  const prefix = run(projectRoot, ["rev-parse", "--show-prefix"]);
   if (prefix.status !== 0)
     return { text: null };
-  const shown = git2(projectRoot, ["show", `${rev}:${prefix.stdout.trim()}${BINDING_FILE2}`]);
+  const shown = run(projectRoot, ["show", `${revision}:${prefix.stdout.trim()}${BINDING_FILE2}`]);
   return { text: shown.status === 0 ? shown.stdout : null };
 }
-function loadKbBinding(projectRoot, revision) {
-  const committed2 = committedBindingText(projectRoot, revision);
+function loadKbBinding(projectRoot, revision, gitFn) {
+  const committed2 = committedBindingText(projectRoot, revision, gitFn);
   if (committed2.unresolved !== undefined) {
     return {
       binding: null,
@@ -24080,11 +24113,18 @@ function loadKbBinding(projectRoot, revision) {
   }
   return { binding: value, issues: [] };
 }
-function findKbProjectRoot(start) {
+function findKbProjectRoot(start, revision, gitFn) {
   const from = realpathSync4(start);
   const ceiling = workTreeTop(from) ?? from;
+  const explicit = revision !== undefined && revision !== "";
+  const run = gitForRevision(revision, gitFn);
   for (let dir = from;; dir = dirname3(dir)) {
-    if (existsSync5(join7(dir, BINDING_FILE2)))
+    if (explicit) {
+      const rel = relative4(ceiling, dir).split(sep3).join("/");
+      const path = rel === "" ? BINDING_FILE2 : `${rel}/${BINDING_FILE2}`;
+      if (run(ceiling, ["cat-file", "-e", `${revision}:${path}`]).status === 0)
+        return dir;
+    } else if (existsSync5(join7(dir, BINDING_FILE2)))
       return dir;
     if (dir === ceiling || dirname3(dir) === dir || relative4(ceiling, dir).startsWith(".."))
       return from;
@@ -24160,8 +24200,8 @@ function registerKnowledgebase(file, id, path, cwd) {
 `);
   return [];
 }
-function resolveKnowledgebase(projectRoot, registryFile, revision) {
-  const loaded = loadKbBinding(projectRoot, revision);
+function resolveKnowledgebase(projectRoot, registryFile, revision, gitFn) {
+  const loaded = loadKbBinding(projectRoot, revision, gitFn);
   if (loaded.binding === null) {
     const unbound = loaded.issues.every((issue) => issue.rule === "kb.unbound");
     return { resolved: null, state: unbound ? "unavailable" : "failed", issues: loaded.issues };
@@ -24170,7 +24210,7 @@ function resolveKnowledgebase(projectRoot, registryFile, revision) {
   const locator = binding.locator;
   const id = hasKnowledgebaseId(locator) ? locator.knowledgebase : "";
   if (binding.backend === IN_REPO) {
-    const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE2);
+    const inRepo = resolveInRepo(projectRoot, binding, BINDING_FILE2, gitFn);
     if (inRepo.location === null || inRepo.top === null) {
       const failed2 = inRepo.issues.some((issue) => issue.severity === "error");
       return { resolved: null, state: failed2 ? "failed" : "unavailable", issues: inRepo.issues };
@@ -25587,7 +25627,7 @@ var init_ledger = __esm(() => {
 
 // src/learn/core/paths.ts
 import { readFileSync as readFileSync10, statSync as statSync9 } from "fs";
-import { delimiter, dirname as dirname6, join as join14, relative as relative6, resolve as resolve4, sep as sep3 } from "path";
+import { delimiter, dirname as dirname6, join as join14, relative as relative6, resolve as resolve4, sep as sep4 } from "path";
 function projectFolderName(path) {
   return resolve4(path).replace(/[^A-Za-z0-9-]/g, "-");
 }
@@ -25632,7 +25672,7 @@ function rootOf(cwd) {
 function inProtectedFolder(path, home, platform = process.platform) {
   if (platform !== "darwin")
     return false;
-  const [folder] = relative6(resolve4(home).toLowerCase(), resolve4(path).toLowerCase()).split(sep3);
+  const [folder] = relative6(resolve4(home).toLowerCase(), resolve4(path).toLowerCase()).split(sep4);
   return folder === "documents" || folder === "desktop" || folder === "downloads";
 }
 function linkedWorktree(cwd, canRead = () => true) {
@@ -25656,7 +25696,7 @@ function linkedWorktree(cwd, canRead = () => true) {
       const common = resolve4(administrative, readFileSync10(commonPath, "utf8").trim());
       if (!canRead(common))
         return null;
-      return { worktree, root: common.endsWith(`${sep3}.git`) ? dirname6(common) : common };
+      return { worktree, root: common.endsWith(`${sep4}.git`) ? dirname6(common) : common };
     } catch {
       return null;
     }
@@ -25684,7 +25724,7 @@ var init_paths = __esm(() => {
 
 // src/learn/memory/registry.ts
 import { mkdirSync as mkdirSync8, statSync as statSync10 } from "fs";
-import { basename as basename5, dirname as dirname7, join as join15, resolve as resolve5, sep as sep4 } from "path";
+import { basename as basename5, dirname as dirname7, join as join15, resolve as resolve5, sep as sep5 } from "path";
 function readRegistry2(config) {
   return readJson(registryPath2(config), {});
 }
@@ -25711,7 +25751,7 @@ function recordResolvedWorktree(config, worktree, root) {
   writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
 }
 function ineligible(root) {
-  if (`${root}${sep4}`.includes(`${sep4}.no-mistakes${sep4}repos${sep4}`) || `${root}${sep4}`.includes(`${sep4}.no-mistakes${sep4}worktrees${sep4}`))
+  if (`${root}${sep5}`.includes(`${sep5}.no-mistakes${sep5}repos${sep5}`) || `${root}${sep5}`.includes(`${sep5}.no-mistakes${sep5}worktrees${sep5}`))
     return "managed by no-mistakes";
   try {
     const bare = statSync10(join15(root, ".git"), { throwIfNoEntry: false }) === undefined && statSync10(join15(root, "HEAD")).isFile() && statSync10(join15(root, "objects")).isDirectory();
@@ -29913,7 +29953,7 @@ var init_redact = __esm(() => {
 import { createHash as createHash5 } from "crypto";
 import { closeSync as closeSync2, existsSync as existsSync20, openSync as openSync2, readdirSync as readdirSync6, readFileSync as readFileSync16, readSync, statSync as statSync12 } from "fs";
 import { homedir as homedir3 } from "os";
-import { basename as basename12, delimiter as delimiter2, dirname as dirname12, isAbsolute as isAbsolute6, join as join24, relative as relative7, resolve as resolve7, sep as sep5 } from "path";
+import { basename as basename12, delimiter as delimiter2, dirname as dirname12, isAbsolute as isAbsolute6, join as join24, relative as relative7, resolve as resolve7, sep as sep6 } from "path";
 function object(value) {
   return value !== undefined && validateObject(value) ? value : null;
 }
@@ -30714,7 +30754,7 @@ function repoOrigin(root, canRead) {
   }
 }
 function isNoMistakesPath(path) {
-  return `${path}${sep5}`.includes(`${sep5}.no-mistakes${sep5}`);
+  return `${path}${sep6}`.includes(`${sep6}.no-mistakes${sep6}`);
 }
 function workerRootResolver(registry, worktrees, guard = {}) {
   const entries = Object.values(registry);
@@ -30742,7 +30782,7 @@ function workerRootResolver(registry, worktrees, guard = {}) {
   };
   return (cwd) => {
     const path = resolve7(cwd);
-    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep5}`))?.[1];
+    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep6}`))?.[1];
     if (placed !== undefined)
       return placed;
     let protectedRead = false;
@@ -36326,7 +36366,7 @@ var init_json = __esm(() => {
 // src/learn/doctor/collect.ts
 import { createHash as createHash8 } from "crypto";
 import { existsSync as existsSync34, openSync as openSync4, readFileSync as readFileSync25, readSync as readSync2, closeSync as closeSync4, readdirSync as readdirSync12, statSync as statSync16 } from "fs";
-import { basename as basename18, dirname as dirname15, join as join37, resolve as resolve11, sep as sep6 } from "path";
+import { basename as basename18, dirname as dirname15, join as join37, resolve as resolve11, sep as sep7 } from "path";
 function parseLine(line) {
   return object2(parseJson2(line) ?? undefined);
 }
@@ -36621,7 +36661,7 @@ function parseGrokSession2(dir) {
 function belongsTo(cwd, root) {
   const top = resolve11(root);
   const place = resolve11(cwd);
-  return place === top || place.startsWith(`${top}${sep6}`);
+  return place === top || place.startsWith(`${top}${sep7}`);
 }
 function files(dir, accept, depth) {
   if (depth < 0 || !existsSync34(dir))
@@ -41631,6 +41671,8 @@ function charterAllowsProtectedStart(charter, hash, extras = {}) {
   if (!listed)
     return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
   const granted = extras.standingGrant;
+  if (extras.requireGrant === true && granted === undefined)
+    return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
   if (granted !== undefined) {
     if (granted.charter_hash !== hash || extras.runId !== undefined && granted.run_id !== extras.runId || granted.covers !== "autopilot.start" || granted.controller !== "firstmate")
       return { ok: false, reason: "standing grant is absent, forged or unbound to the approved charter" };
@@ -42688,9 +42730,10 @@ class Runner {
         throw cause;
     }
     const createdAt = new Date().toISOString();
-    const bindingRevision = this.bindingBaseRevision(charter);
-    const work = this.tryWorkTicket(charter, bindingRevision);
-    const looked = this.projectLookup(charter.project.id, bindingRevision);
+    const gitFn = this.kbGit();
+    const bindingRevision = this.bindingBaseRevision(charter, revision);
+    const work = this.tryWorkTicket(charter, bindingRevision, gitFn);
+    const looked = this.projectLookup(charter.project.id, bindingRevision, gitFn);
     const run2 = {
       id,
       charter_path: source,
@@ -42719,19 +42762,41 @@ class Runner {
     this.persistBehaviorEvidence(run2, work);
     return run2;
   }
-  bindingBaseRevision(charter) {
+  kbGit() {
+    return (root, args) => {
+      const result2 = runnerGit(this.gitContext, root, args);
+      return {
+        status: result2.code,
+        stdout: new TextDecoder().decode(result2.stdout),
+        stderr: result2.stderr
+      };
+    };
+  }
+  bindingBaseRevision(charter, revision) {
+    const raw = charter;
+    const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    const needed = source !== undefined && source.kind === "ticket";
     const branch = charter.repos[0]?.base_branch;
-    if (branch === undefined || branch === "")
-      throw new Error("charter names no base branch for the knowledgebase binding");
+    if (branch === undefined || branch === "") {
+      if (needed)
+        throw new Error("charter names no base branch for the knowledgebase binding");
+      return;
+    }
     const origin = `origin/${branch}`;
     const originOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${origin}^{commit}`]);
     const localOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${branch}^{commit}`]);
     const base2 = originOk.code === 0 ? origin : localOk.code === 0 ? branch : undefined;
-    if (base2 === undefined)
-      throw new Error(`cannot resolve charter base branch ${branch}`);
-    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", "HEAD", base2]);
-    if (mergeBase.code !== 0 || mergeBase.text.trim() === "")
-      throw new Error("cannot compute merge-base of HEAD and the charter base branch");
+    if (base2 === undefined) {
+      if (needed)
+        throw new Error(`cannot resolve charter base branch ${branch}`);
+      return;
+    }
+    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", revision, base2]);
+    if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
+      if (needed)
+        throw new Error("cannot compute merge-base of the start revision and the charter base branch");
+      return;
+    }
     return mergeBase.text.trim();
   }
   persistBehaviorEvidence(run2, work) {
@@ -42753,15 +42818,15 @@ class Runner {
       behavior: run2.behavior
     }, ticketBytes);
   }
-  tryWorkTicket(charter, revision) {
+  tryWorkTicket(charter, revision, gitFn) {
     if (!asJsonObject(charter))
       throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket")
       return;
-    return this.loadTicket(charter, revision);
+    return this.loadTicket(charter, revision, gitFn);
   }
-  loadTicket(charter, revision) {
+  loadTicket(charter, revision, gitFn) {
     if (!asJsonObject(charter))
       throw new Error("charter is not an object");
     const source = charter.work_source;
@@ -42790,17 +42855,22 @@ class Runner {
         throw new Error("approved ticket does not match the charter work source");
       return { ticket: parsed, hash };
     }
-    return this.loadCommittedTicket(ticketId, expected, revision);
+    return this.loadCommittedTicket(ticketId, expected, revision, gitFn);
   }
-  loadCommittedTicket(ticketId, expected, revision) {
-    const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot, revision);
+  loadCommittedTicket(ticketId, expected, revision, gitFn) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn);
     if (loaded.binding === null)
       return;
-    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null || resolved.state !== "available")
       throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
-    const looked = expected === undefined ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket" }) : lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", hash: expected });
+    const looked = expected === undefined ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", revision, git: gitFn }) : lookupCommittedArtifact(resolved.resolved, ticketId, {
+      schema: "ticket",
+      hash: expected,
+      revision,
+      git: gitFn
+    });
     if (looked.status === "unavailable")
       throw new Error(looked.reason);
     if (looked.status === "absent")
@@ -42812,9 +42882,9 @@ class Runner {
       throw new Error("approved ticket does not match the charter work source");
     return { ticket: looked.artifact, hash };
   }
-  projectLookup(projectId, revision) {
-    const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot, revision);
+  projectLookup(projectId, revision, gitFn) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined)
       throw new Error(bindingError.message);
@@ -42825,10 +42895,10 @@ class Runner {
       const first = loaded.issues[0];
       throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
     }
-    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null || resolved.state !== "available")
       return { lookup: "unavailable" };
-    const published = lookupPublishedProject(resolved.resolved, projectId);
+    const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
     if (published.status === "unavailable")
       return { lookup: "unavailable" };
     if (published.status === "absent")

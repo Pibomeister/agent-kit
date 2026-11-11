@@ -11,6 +11,7 @@ import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { persistFrozenRun } from "../lifecycle/persist-run.ts";
 import { findKbProjectRoot, loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import type { GitFn } from "../kb/git.ts";
 import { lookupCommittedArtifact, lookupPublishedProject } from "../kb/local-git.ts";
 import {
   asJson,
@@ -643,9 +644,10 @@ export class Runner {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
     }
     const createdAt = new Date().toISOString();
-    const bindingRevision = this.bindingBaseRevision(charter);
-    const work = this.tryWorkTicket(charter, bindingRevision);
-    const looked = this.projectLookup(charter.project.id, bindingRevision);
+    const gitFn = this.kbGit();
+    const bindingRevision = this.bindingBaseRevision(charter, revision);
+    const work = this.tryWorkTicket(charter, bindingRevision, gitFn);
+    const looked = this.projectLookup(charter.project.id, bindingRevision, gitFn);
     const run: Run = {
       id,
       charter_path: source,
@@ -675,19 +677,48 @@ export class Runner {
     return run;
   }
 
-  /** Merge-base of HEAD and the charter base branch. Origin wins when that ref exists. */
-  private bindingBaseRevision(charter: Charter): string {
+  /** Isolated git for start-time reads at an explicit revision. Ignores refs/replace. */
+  private kbGit(): GitFn {
+    return (root, args) => {
+      const result = runnerGit(this.gitContext, root, args);
+      return {
+        status: result.code,
+        stdout: new TextDecoder().decode(result.stdout),
+        stderr: result.stderr,
+      };
+    };
+  }
+
+  /**
+   * Merge-base of the validated start revision and the charter base branch.
+   * Origin wins when that ref exists. The merge-base trusts the base ref, so it
+   * rests on host write isolation of `.git`. A worker that can move
+   * `refs/heads/<base>` or `refs/remotes/origin/<base>` can make the merge-base
+   * equal the start revision. Pinning a base SHA is a captain follow-up.
+   * An uncomputable merge-base is refused only when the charter cites a ticket.
+   */
+  private bindingBaseRevision(charter: Charter, revision: string): string | undefined {
+    const raw: unknown = charter;
+    const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    const needed = source !== undefined && source.kind === "ticket";
     const branch = charter.repos[0]?.base_branch;
-    if (branch === undefined || branch === "")
-      throw new Error("charter names no base branch for the knowledgebase binding");
+    if (branch === undefined || branch === "") {
+      if (needed) throw new Error("charter names no base branch for the knowledgebase binding");
+      return undefined;
+    }
     const origin = `origin/${branch}`;
     const originOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${origin}^{commit}`]);
     const localOk = runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", `${branch}^{commit}`]);
     const base = originOk.code === 0 ? origin : localOk.code === 0 ? branch : undefined;
-    if (base === undefined) throw new Error(`cannot resolve charter base branch ${branch}`);
-    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", "HEAD", base]);
-    if (mergeBase.code !== 0 || mergeBase.text.trim() === "")
-      throw new Error("cannot compute merge-base of HEAD and the charter base branch");
+    if (base === undefined) {
+      if (needed) throw new Error(`cannot resolve charter base branch ${branch}`);
+      return undefined;
+    }
+    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", revision, base]);
+    if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
+      if (needed) throw new Error("cannot compute merge-base of the start revision and the charter base branch");
+      return undefined;
+    }
     return mergeBase.text.trim();
   }
 
@@ -714,14 +745,14 @@ export class Runner {
     );
   }
 
-  private tryWorkTicket(charter: Charter, revision: string) {
+  private tryWorkTicket(charter: Charter, revision: string | undefined, gitFn: GitFn) {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket") return undefined;
-    return this.loadTicket(charter, revision);
+    return this.loadTicket(charter, revision, gitFn);
   }
 
-  private loadTicket(charter: Charter, revision: string) {
+  private loadTicket(charter: Charter, revision: string | undefined, gitFn: GitFn) {
     if (!asJsonObject(charter)) throw new Error("charter is not an object");
     const source = charter.work_source;
     if (!asJsonObject(source) || source.kind !== "ticket") throw new Error("run work source is not an approved ticket");
@@ -746,20 +777,30 @@ export class Runner {
         throw new Error("approved ticket does not match the charter work source");
       return { ticket: parsed, hash };
     }
-    return this.loadCommittedTicket(ticketId, expected, revision);
+    return this.loadCommittedTicket(ticketId, expected, revision, gitFn);
   }
 
-  private loadCommittedTicket(ticketId: string, expected: string | undefined, revision: string) {
-    const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot, revision);
+  private loadCommittedTicket(
+    ticketId: string,
+    expected: string | undefined,
+    revision: string | undefined,
+    gitFn: GitFn,
+  ) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn);
     if (loaded.binding === null) return undefined;
-    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null || resolved.state !== "available")
       throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
     const looked =
       expected === undefined
-        ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket" })
-        : lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", hash: expected });
+        ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", revision, git: gitFn })
+        : lookupCommittedArtifact(resolved.resolved, ticketId, {
+            schema: "ticket",
+            hash: expected,
+            revision,
+            git: gitFn,
+          });
     if (looked.status === "unavailable") throw new Error(looked.reason);
     if (looked.status === "absent") return undefined;
     if (looked.artifact.schema !== "ticket" || looked.artifact.id !== ticketId)
@@ -770,9 +811,9 @@ export class Runner {
     return { ticket: looked.artifact, hash };
   }
 
-  private projectLookup(projectId: string, revision?: string) {
-    const projectRoot = findKbProjectRoot(this.workerRoot);
-    const loaded = loadKbBinding(projectRoot, revision);
+  private projectLookup(projectId: string, revision: string | undefined, gitFn: GitFn) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn);
     const bindingError = loaded.issues.find((issue) => issue.severity === "error");
     if (bindingError !== undefined) throw new Error(bindingError.message);
     if (loaded.binding === null) {
@@ -781,9 +822,9 @@ export class Runner {
       const first = loaded.issues[0];
       throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
     }
-    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
     if (resolved.resolved === null || resolved.state !== "available") return { lookup: "unavailable" as const };
-    const published = lookupPublishedProject(resolved.resolved, projectId);
+    const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
     if (published.status === "unavailable") return { lookup: "unavailable" as const };
     if (published.status === "absent") return { lookup: "absent" as const };
     return {
