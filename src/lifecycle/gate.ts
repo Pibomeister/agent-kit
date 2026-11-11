@@ -70,6 +70,7 @@ import {
   RESIDUAL_ASSUMPTIONS,
   resolvePolicy,
   resolveRepo,
+  SUPERVISOR_PATTERN,
   unattendedDisclosure,
 } from "./unattended.ts";
 import { isDesignReport } from "./design-report.ts";
@@ -475,14 +476,8 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
   if (value.closed_at !== undefined && typeof value.closed_at !== "string") return undefined;
   const policy = object(value.policy);
   if (policy !== undefined && "supervisor" in policy) {
-    const raw = nonempty(policy.supervisor) ? policy.supervisor.trim() : "";
-    let valid = raw !== "";
-    for (let i = 0; valid && i < raw.length; i += 1) {
-      const code = raw.charCodeAt(i);
-      if (code < 0x20 || code === 0x7f) valid = false;
-    }
-    if (valid) policy.supervisor = raw;
-    else Reflect.deleteProperty(policy, "supervisor");
+    if (!(nonempty(policy.supervisor) && SUPERVISOR_PATTERN.test(policy.supervisor)))
+      Reflect.deleteProperty(policy, "supervisor");
   }
   return value as unknown as RunRecord;
 }
@@ -871,7 +866,9 @@ export function readRecords(dir: string, run: string, gate: Gate): GateRecord[] 
       (g.verdict === undefined || (g.gate === "review-full" && REVIEW_VERDICTS.includes(g.verdict))) &&
       bypassWellFormed(g.authority) &&
       (g.policy === undefined ||
-        (g.policy?.name === "unattended" && (g.policy.supervisor === undefined || nonempty(g.policy.supervisor)))) &&
+        (g.policy?.name === "unattended" &&
+          (g.policy.supervisor === undefined ||
+            (nonempty(g.policy.supervisor) && SUPERVISOR_PATTERN.test(g.policy.supervisor))))) &&
       (g.commands === undefined ||
         (Array.isArray(g.commands) &&
           g.commands.every(

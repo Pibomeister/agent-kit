@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 
 export const POLICY_ENV = "AK_LIFECYCLE_POLICY";
 export const SUPERVISOR_ENV = "AK_LIFECYCLE_SUPERVISOR";
+export const SUPERVISOR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const READ_TOKEN_ENV = "AK_UNATTENDED_READ_TOKEN";
 export const CONFIG_FILE = "ak.lifecycle.json";
 export const UNATTENDED = "unattended";
@@ -27,20 +28,11 @@ const DISCLOSURE_TAIL =
   " approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.";
 export const DISCLOSURE = `Unattended lifecycle policy: no human${DISCLOSURE_TAIL}`;
 
-const hasControlChar = (text: string): boolean => {
-  for (let i = 0; i < text.length; i += 1) {
-    const code = text.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-};
-
 /** The unattended disclosure for a pull request, naming the supervisor when one was recorded in place of a human. */
 export function unattendedDisclosure(supervisor?: string): string {
-  const who = nonEmpty(supervisor)?.trim();
-  return who === undefined || hasControlChar(who)
-    ? DISCLOSURE
-    : `Unattended lifecycle policy (supervisor: ${who}, in place of a human): no human${DISCLOSURE_TAIL}`;
+  return isText(supervisor) && SUPERVISOR_PATTERN.test(supervisor)
+    ? `Unattended lifecycle policy (supervisor: ${supervisor}, in place of a human): no human${DISCLOSURE_TAIL}`
+    : DISCLOSURE;
 }
 /** What the forge reads cannot show, stated by ship-preflight and review-status whatever their outcome. */
 export const RESIDUAL_ASSUMPTIONS =
@@ -103,10 +95,9 @@ export function resolvePolicy(
   project: string,
   env: NodeJS.ProcessEnv = process.env,
 ): { ok: true; policy?: Policy } | { ok: false; reason: string } {
-  const rawSupervisor = env[SUPERVISOR_ENV]?.trim();
-  const supervisor = rawSupervisor !== undefined && rawSupervisor !== "" ? rawSupervisor : undefined;
-  if (supervisor !== undefined && hasControlChar(supervisor))
-    return { ok: false, reason: `${SUPERVISOR_ENV} must not contain control characters` };
+  const supervisor = env[SUPERVISOR_ENV];
+  if (supervisor !== undefined && !SUPERVISOR_PATTERN.test(supervisor))
+    return { ok: false, reason: `${SUPERVISOR_ENV} must match ${SUPERVISOR_PATTERN.source}` };
   const stamp = (source: string): Policy =>
     supervisor === undefined ? { name: UNATTENDED, source } : { name: UNATTENDED, source, supervisor };
   const value = env[POLICY_ENV];
@@ -609,12 +600,14 @@ function identityFailures(reviewer: Json | undefined, config: LifecycleConfig): 
   return out;
 }
 
-function carriesDisclosure(body: string): boolean {
+export function carriesDisclosure(body: string, supervisor?: string): boolean {
   const text = visibleText(body);
+  if (supervisor !== undefined)
+    return SUPERVISOR_PATTERN.test(supervisor) && text.includes(unattendedDisclosure(supervisor));
   if (text.includes(DISCLOSURE)) return true;
   const escaped = DISCLOSURE_TAIL.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `Unattended lifecycle policy \\(supervisor: [^\\r\\n]+?, in place of a human\\): no human${escaped}`,
+    `Unattended lifecycle policy \\(supervisor: [A-Za-z0-9][A-Za-z0-9._-]{0,63}, in place of a human\\): no human${escaped}`,
   ).test(text);
 }
 
