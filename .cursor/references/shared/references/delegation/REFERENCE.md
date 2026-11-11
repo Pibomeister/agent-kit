@@ -283,8 +283,11 @@ off. Off dispatches nothing, stores nothing, and leaves the author's type-check 
 zero-context gate.
 
 **Skip.** A ticket on the text-only single-slice light route above skips this dispatch. When the
-mode is on, the validator still requires a cited read, so do not publish that implementation
-ticket on this route.
+mode is on, the validator exempts that ticket from `cold_read_ref` only when every declared write
+glob is documentation markdown under `docs/`, `references/` or `skills/`, or exactly `README.md`,
+`CHANGELOG.md`, `NOTICE` or `LICENSE`, `allowed_changes.symbols` is empty, `work_source.ref.id` is
+present, and no other indexed implementation ticket shares that id. A note or approval does not
+exempt. Any other implementation ticket still requires a cited read.
 
 **Dispatch.** In shadow and on, dispatch one cold reader per remaining implementation ticket, in
 parallel, each in its own context. Give the reader the ticket and a read-only checkout at the

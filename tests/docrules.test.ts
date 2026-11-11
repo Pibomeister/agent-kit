@@ -1750,6 +1750,18 @@ function lightRouteApproval(): Doc {
   };
 }
 
+function planSource(): Doc {
+  return { kind: "plan", ref: { id: "plan-1", schema: "plan-record", hash: HASH } };
+}
+
+function textOnlyTicket(extra: Doc = {}): Doc {
+  return ticket({
+    work_source: planSource(),
+    allowed_changes: { files: ["README.md"] },
+    ...extra,
+  });
+}
+
 function coveredComprehension(extra: Doc = {}): Doc {
   return {
     role: "doc-review/comprehension",
@@ -1967,6 +1979,35 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     expect(
       rulesOf(run(ticket({ approvals: [lightRouteApproval()] }), [project({ review: { cold_read: "on" } })])),
     ).toContain(RULE_COLD_REF);
+  });
+
+  test("a forged light-route claim on a code ticket still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(
+          textOnlyTicket({
+            allowed_changes: { files: ["src/loader.ts"] },
+            approvals: [lightRouteApproval()],
+          }),
+          [onProject()],
+        ),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a code change on a light ticket still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["README.md", "src/loader.ts"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a multi-slice ticket still requires cold_read_ref when on", () => {
+    const peer = textOnlyTicket({ id: "ticket-2" });
+    expect(rulesOf(run(textOnlyTicket(), [onProject(), peer]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a text-only single-slice ticket does not require cold_read_ref when on", () => {
+    expect(rulesOf(run(textOnlyTicket(), [onProject()]))).not.toContain(RULE_COLD_REF);
   });
 
   test("a ticket with no project document in the index is treated as off", () => {

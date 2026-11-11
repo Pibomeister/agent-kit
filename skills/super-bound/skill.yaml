@@ -126,7 +126,8 @@ outputs:
       acceptance criteria with surfaces, verification bound to recipe hashes and evidence kinds,
       readiness, resolved assumptions and the exact ticket-time delegation record returned by ak
       delegation, or, under a delegation coverage limit, no delegation block and the unscored
-      assumption. When review.cold_read is on, cold_read_ref cites the finished read.
+      assumption. When review.cold_read is on, cold_read_ref cites the finished read, except on a
+      text-only single-slice ticket.
   - id: cold-read
     schema: cold-read
     summary: >-
