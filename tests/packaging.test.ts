@@ -1253,7 +1253,9 @@ describe("bundle planning", () => {
       expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
       const includedSkills = new Set<string>();
       for (const file of plan.files.values()) {
-        const skillDir = /^skills\/([^/]+)\//.exec(file.source)?.[1];
+        const source = file.source;
+        if (source === undefined) continue;
+        const skillDir = /^skills\/([^/]+)\//.exec(source)?.[1];
         if (skillDir !== undefined) includedSkills.add(skillDir);
       }
       const missingRoles: string[] = [];
