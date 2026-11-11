@@ -648,14 +648,16 @@ export class Runner {
     const bindingRevision = this.bindingBaseRevision(charter, revision);
     const ticketSource = asJsonObject(charter) && asJsonObject(charter.work_source) ? charter.work_source : undefined;
     const ticketCharter = ticketSource !== undefined && ticketSource.kind === "ticket";
-    if (ticketCharter && bindingRevision !== null) {
+    if (ticketSource !== undefined && ticketSource.kind === "ticket" && bindingRevision !== null) {
       const tip = this.charterBaseCommit(charter);
-      if (
-        tip !== undefined &&
-        this.hasCommittedBinding(tip, gitFn) &&
-        !this.hasCommittedBinding(bindingRevision, gitFn)
-      )
-        throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+      if (tip !== undefined) {
+        if (this.hasCommittedBinding(tip, gitFn) && !this.hasCommittedBinding(bindingRevision, gitFn))
+          throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+        const ref = asJsonObject(ticketSource.ref) ? ticketSource.ref : undefined;
+        const ticketId = ref !== undefined && isJsonText(ref.id) ? ref.id : undefined;
+        if (ticketId !== undefined && this.tipRecordsDiverge(charter.project.id, ticketId, tip, bindingRevision, gitFn))
+          throw new Error("the charter base tip has a knowledgebase record the merge-base does not");
+      }
     }
     const work = bindingRevision === null ? undefined : this.tryWorkTicket(charter, bindingRevision, gitFn);
     const looked =
@@ -734,6 +736,47 @@ export class Runner {
   private hasCommittedBinding(revision: string, gitFn: GitFn): boolean {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
     return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
+  }
+
+  /** Committed project and ticket at `revision`. Missing KB, project or ticket is absent, not a throw. */
+  private committedKbView(projectId: string, ticketId: string, revision: string, gitFn: GitFn) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
+    if (resolved.resolved === null) return { mode: "absent" as const, project: false, ticket: false };
+    const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
+    const project = published.status === "found";
+    const mode = project ? reviewMode(published.project) : "absent";
+    const looked = lookupCommittedArtifact(resolved.resolved, ticketId, {
+      schema: "ticket",
+      revision,
+      git: gitFn,
+    });
+    return {
+      mode: mode === "on" || mode === "shadow" || mode === "off" ? mode : ("absent" as const),
+      project,
+      ticket: looked.status === "found",
+    };
+  }
+
+  /**
+   * True when the charter base tip's committed project mode is `on` and the
+   * merge-base's is not, or when the tip has the project or ticket and the
+   * merge-base does not.
+   */
+  private tipRecordsDiverge(
+    projectId: string,
+    ticketId: string,
+    tip: string,
+    mergeBase: string,
+    gitFn: GitFn,
+  ): boolean {
+    const atTip = this.committedKbView(projectId, ticketId, tip, gitFn);
+    const atBase = this.committedKbView(projectId, ticketId, mergeBase, gitFn);
+    return (
+      (atTip.mode === "on" && atBase.mode !== "on") ||
+      (atTip.project && !atBase.project) ||
+      (atTip.ticket && !atBase.ticket)
+    );
   }
 
   private bindingBaseRevision(charter: Charter, revision: string): string | null {
@@ -1574,10 +1617,8 @@ export class Runner {
           throw new Error(`required behavior check ${check.id} is missing its frozen definition`);
       }
     }
-    const baseRef = run.charter.repos[0]?.base_branch;
-    const base =
-      baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
-    if (base?.code === 0) run.verified_base_revision = base.text;
+    const base = this.charterBaseCommit(run.charter);
+    if (base !== undefined) run.verified_base_revision = base;
     else delete run.verified_base_revision;
     run.run_state = "verifying";
     run.next_permitted_action = "review.full";

@@ -37,7 +37,7 @@ export function git(root: string, args: readonly string[], input?: string): GitR
   return runGit(root, args, gitEnv(), input);
 }
 
-/** Isolated git when `revision` is set. An explicit revision requires `gitFn`. */
+/** The caller's git; an explicit revision requires one. */
 export function gitForRevision(revision: string | undefined, gitFn?: GitFn): GitFn {
   if (revision !== undefined && revision !== "") {
     if (gitFn === undefined) throw new Error("an explicit revision requires a git function");

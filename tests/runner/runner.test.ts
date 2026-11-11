@@ -21,6 +21,7 @@ import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fas
 import { runCli } from "../../src/cli.ts";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
+import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
@@ -485,6 +486,51 @@ function publishToyKb(ticket: JsonObject, mode: "off" | "shadow" | "on") {
   const registry = join(scratch, "registry.json");
   writeFileSync(registry, JSON.stringify({ knowledgebases: { "fixture-kb": { path: kb } } }));
   return { registry, kb };
+}
+
+function projectOnlyJsonl(kb: string): string {
+  const jsonl = readFileSync(join(kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8");
+  const projectLine = jsonl
+    .split("\n")
+    .find((line) => line.includes('"schema":"project"') || line.includes('"schema": "project"'));
+  if (projectLine === undefined) throw new Error("published kb has no project record");
+  return `${projectLine}\n`;
+}
+
+function commitInRepoKb(worker: string, jsonl: string | null, message: string) {
+  mkdirSync(join(worker, "wiki", "adr"), { recursive: true });
+  writeFileSync(join(worker, "wiki", "adr", ".gitkeep"), "");
+  writeFileSync(join(worker, "ak.kb.yaml"), IN_REPO_BINDING);
+  const artifacts = join(worker, "projects", "toy", "runs", "artifacts.jsonl");
+  if (jsonl === null) {
+    if (existsSync(artifacts)) unlinkSync(artifacts);
+  } else {
+    mkdirSync(join(worker, "projects", "toy", "runs"), { recursive: true });
+    writeFileSync(artifacts, jsonl);
+  }
+  git(worker, "add", "-A");
+  git(worker, "commit", "-qm", message);
+  const sha = workerHead(worker);
+  git(worker, "update-ref", "refs/remotes/origin/main", sha);
+  git(worker, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  return sha;
+}
+
+function forkFeatureFromOlderKb(f: ReturnType<typeof fixture>, atO: string | null, atT: string) {
+  git(f.worker, "checkout", "main");
+  commitInRepoKb(f.worker, atO, "kb at O");
+  git(f.worker, "checkout", "feature");
+  git(f.worker, "merge", "-q", "-m", "take O", "main");
+  git(f.worker, "checkout", "main");
+  commitInRepoKb(f.worker, atT, "kb at T");
+  git(f.worker, "checkout", "feature");
+  git(f.worker, "commit", "--allow-empty", "-qm", "worker");
+}
+
+function unlinkStoreTicket(f: ReturnType<typeof fixture>, ticket: JsonObject) {
+  unlinkSync(join(f.privateDir, "toy-ticket.json"));
+  retargetCharterTicket(f, ticket);
+  unlinkSync(join(f.privateDir, "toy-ticket.json"));
 }
 
 function retargetCharterTicket(f: ReturnType<typeof fixture>, ticket: JsonObject) {
@@ -1745,6 +1791,27 @@ describe("runner guards", () => {
     expect(started.behavior?.required_checks).toHaveLength(1);
   });
 
+  test("merge-base git argv disables the commit graph", () => {
+    const argv = isolatedGitArgv(root, ["merge-base", "HEAD", "main"]);
+    expect(argv).toContain("core.commitGraph=false");
+    expect(argv).toContain("merge-base");
+    expect(argv.indexOf("-c")).toBeGreaterThanOrEqual(0);
+    expect(argv[argv.indexOf("core.commitGraph=false") - 1]).toBe("-c");
+  });
+
+  test("verify records the charter base commit, not a short rev-parse", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const mainSha = gitText(f.worker, ["rev-parse", "refs/heads/main"]);
+    git(f.worker, "tag", "main", f.revision);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    reachShipReady(f, false);
+    expect(f.runner.status("toy-run").verified_base_revision).toBe(mainSha);
+    expect(mainSha).not.toBe(f.revision);
+  });
+
   test("a non-ticket charter with a committed binding and an unregistered knowledgebase is refused", () => {
     const f = fixture();
     if (!asJsonObject(f.charter.work_source)) throw new Error("toy work source is missing");
@@ -1859,6 +1926,37 @@ describe("runner guards", () => {
     const started = f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f));
     expect(started.behavior?.mode).toBe("on");
     expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a worker branched before the base turned behavior on cannot start with the stale record", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkStoreTicket(f, ticket);
+    const offKb = publishToyKb(ticket, "off");
+    const onKb = publishToyKb(ticket, "on");
+    forkFeatureFromOlderKb(
+      f,
+      projectOnlyJsonl(offKb.kb),
+      readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"),
+    );
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
+  });
+
+  test("a worker branched before the base published artifacts cannot start with the stale record", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkStoreTicket(f, ticket);
+    const onKb = publishToyKb(ticket, "on");
+    forkFeatureFromOlderKb(f, null, readFileSync(join(onKb.kb, "projects", "toy", "runs", "artifacts.jsonl"), "utf8"));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", workerHead(f.worker), standing(f))).toThrow(
+      "the charter base tip has a knowledgebase record the merge-base does not",
+    );
   });
 
   test("approved ticket is absent from the runner store under W1 on", () => {

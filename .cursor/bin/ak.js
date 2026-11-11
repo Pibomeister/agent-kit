@@ -41999,19 +41999,8 @@ function resolveRunnerGit(workerRoot) {
 function failedGit(stderr) {
   return { code: -1, stdout: new Uint8Array, text: "", stderr };
 }
-function gitProcess(context, project, args, timeoutMs = 1e4, input) {
-  const env = {
-    PATH: context.path,
-    HOME: context.home,
-    XDG_CONFIG_HOME: context.home,
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_OPTIONAL_LOCKS: "0",
-    GIT_NO_REPLACE_OBJECTS: "1",
-    GIT_GRAFT_FILE: "/dev/null",
-    LC_ALL: "C"
-  };
-  const proc = spawnSync4(context.binary, [
+function isolatedGitArgv(project, args) {
+  return [
     "-c",
     `safe.directory=${realpathSync12(project)}`,
     "-c",
@@ -42025,7 +42014,28 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     "-c",
     "advice.graftFileDeprecated=false",
     ...args
-  ], { cwd: project, env, input, maxBuffer: 1 << 30, timeout: timeoutMs, killSignal: "SIGKILL" });
+  ];
+}
+function gitProcess(context, project, args, timeoutMs = 1e4, input) {
+  const env = {
+    PATH: context.path,
+    HOME: context.home,
+    XDG_CONFIG_HOME: context.home,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
+    LC_ALL: "C"
+  };
+  const proc = spawnSync4(context.binary, isolatedGitArgv(project, args), {
+    cwd: project,
+    env,
+    input,
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL"
+  });
   if (proc.error !== undefined) {
     if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
       return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
@@ -42735,10 +42745,16 @@ class Runner {
     const bindingRevision = this.bindingBaseRevision(charter, revision);
     const ticketSource = asJsonObject(charter) && asJsonObject(charter.work_source) ? charter.work_source : undefined;
     const ticketCharter = ticketSource !== undefined && ticketSource.kind === "ticket";
-    if (ticketCharter && bindingRevision !== null) {
+    if (ticketSource !== undefined && ticketSource.kind === "ticket" && bindingRevision !== null) {
       const tip = this.charterBaseCommit(charter);
-      if (tip !== undefined && this.hasCommittedBinding(tip, gitFn) && !this.hasCommittedBinding(bindingRevision, gitFn))
-        throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+      if (tip !== undefined) {
+        if (this.hasCommittedBinding(tip, gitFn) && !this.hasCommittedBinding(bindingRevision, gitFn))
+          throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+        const ref = asJsonObject(ticketSource.ref) ? ticketSource.ref : undefined;
+        const ticketId = ref !== undefined && isJsonText(ref.id) ? ref.id : undefined;
+        if (ticketId !== undefined && this.tipRecordsDiverge(charter.project.id, ticketId, tip, bindingRevision, gitFn))
+          throw new Error("the charter base tip has a knowledgebase record the merge-base does not");
+      }
     }
     const work = bindingRevision === null ? undefined : this.tryWorkTicket(charter, bindingRevision, gitFn);
     const looked = bindingRevision === null ? { lookup: "unbound" } : this.projectLookup(charter.project.id, bindingRevision, gitFn, !ticketCharter);
@@ -42803,6 +42819,30 @@ class Runner {
   hasCommittedBinding(revision, gitFn) {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
     return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
+  }
+  committedKbView(projectId, ticketId, revision, gitFn) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
+    if (resolved.resolved === null)
+      return { mode: "absent", project: false, ticket: false };
+    const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
+    const project = published.status === "found";
+    const mode = project ? reviewMode(published.project) : "absent";
+    const looked = lookupCommittedArtifact(resolved.resolved, ticketId, {
+      schema: "ticket",
+      revision,
+      git: gitFn
+    });
+    return {
+      mode: mode === "on" || mode === "shadow" || mode === "off" ? mode : "absent",
+      project,
+      ticket: looked.status === "found"
+    };
+  }
+  tipRecordsDiverge(projectId, ticketId, tip, mergeBase, gitFn) {
+    const atTip = this.committedKbView(projectId, ticketId, tip, gitFn);
+    const atBase = this.committedKbView(projectId, ticketId, mergeBase, gitFn);
+    return atTip.mode === "on" && atBase.mode !== "on" || atTip.project && !atBase.project || atTip.ticket && !atBase.ticket;
   }
   bindingBaseRevision(charter, revision) {
     const raw = charter;
@@ -43473,10 +43513,9 @@ class Runner {
           throw new Error(`required behavior check ${check2.id} is missing its frozen definition`);
       }
     }
-    const baseRef = run2.charter.repos[0]?.base_branch;
-    const base2 = baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
-    if (base2?.code === 0)
-      run2.verified_base_revision = base2.text;
+    const base2 = this.charterBaseCommit(run2.charter);
+    if (base2 !== undefined)
+      run2.verified_base_revision = base2;
     else
       delete run2.verified_base_revision;
     run2.run_state = "verifying";
