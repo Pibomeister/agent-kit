@@ -146,7 +146,7 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     send it back. Off and shadow keep that action; on uses the independent read. When that read is
     unavailable, the author check decides. A ticket on the text-only single-slice light route skips
     the dispatch. In on mode the validator exempts that ticket from `cold_read_ref`; any other
-    implementation ticket still requires it. Shadow and on dispatch one cold reader
+    implementation ticket still requires it. The exemption is declaration-only: the write guard lifts tests protection and does not deny a write outside those globs. Shadow and on dispatch one cold reader
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/shared/references/delegation/REFERENCE.md) under "Independent cold
     read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,
@@ -265,7 +265,7 @@ performed is `failed`, never complete.
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
   ticket, every implementation ticket carries the three evidence blocks (an unscored ticket under a delegation coverage limit carries readiness and assumptions, with no `delegation` block), every on-mode
-  implementation ticket cites a finished cold read, or an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise, and
+  implementation ticket that is not a light-route ticket under the detector cites a finished cold read, or an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise, and
   every published artifact's read-back matched what was sent.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different
