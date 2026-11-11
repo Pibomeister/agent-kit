@@ -2492,13 +2492,7 @@ export function main(
       return 1;
     }
     const forge = forgeIo();
-    const status = checkReviewStatus(
-      forge,
-      repo.repo,
-      pr,
-      checkMergeGate(forge, repo.repo, { identity: false }),
-      policy?.supervisor,
-    );
+    const status = checkReviewStatus(forge, repo.repo, pr, checkMergeGate(forge, repo.repo, { identity: false }));
     io.err(`note: ${RESIDUAL_ASSUMPTIONS}`);
     for (const note of status.notes) io.err(`note: ${note}`);
     for (const failure of status.failures) io.err(`refused: ${failure}`);

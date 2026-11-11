@@ -606,7 +606,7 @@ function carriesDisclosure(body: string, supervisor?: string): boolean {
   if (text.includes(DISCLOSURE)) return true;
   const escaped = DISCLOSURE_TAIL.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `Unattended lifecycle policy \\(supervisor: [^,\\r\\n]+, in place of a human\\): no human${escaped}`,
+    `Unattended lifecycle policy \\(supervisor: [^\\r\\n]+?, in place of a human\\): no human${escaped}`,
   ).test(text);
 }
 

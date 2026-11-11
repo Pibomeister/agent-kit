@@ -893,6 +893,24 @@ describe("selection and start (command seam)", () => {
     setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined });
     stubGh(withFixtures(supervisedPull));
     expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+
+    // Standalone review-status accepts a supervisor name with a comma, and with AK_LIFECYCLE_SUPERVISOR set it
+    // still accepts the plain disclosure of a pull request prepared without a supervisor.
+    const commaPull = {
+      [`repos/${REPO}/pulls/7`]: {
+        body: {
+          number: 7,
+          base: { ref: "main", sha: BASE },
+          head: { sha: HEAD },
+          body: `Change.\n\n${unattendedDisclosure("firstmate, crew 3")}\n`,
+        },
+      },
+    };
+    stubGh(withFixtures(commaPull));
+    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    stubGh(withFixtures({}));
+    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
   });
 
   test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
