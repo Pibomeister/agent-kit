@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { processScratch } from "./helpers/process-tmp.ts";
 import { collectInput } from "../src/semantic-lint/input.ts";
 import { enablement, hookOutput, runHook, unwireHook, wireHook } from "../tools/hooks/semantic-lint.ts";
@@ -168,14 +177,18 @@ describe("optional semantic sibling hook", () => {
       encoding: "utf8",
     });
     expect(run.status).toBe(0);
-    expect(JSON.parse(run.stdout)).toMatchObject({
+    expect(JSON.parse(run.stdout)).toEqual({
       status: "skipped",
       reason: "disabled",
-      systemMessage: "JEV lint (advisory): skipped (disabled).",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
     });
+    expect(JSON.parse(run.stdout)).not.toHaveProperty("systemMessage");
   });
 
-  test("unset enable variable runs by default and skips quietly without a key file", () => {
+  test("off values skip quietly without a key file, and AK_JEV_ENABLED=1 reports missing-key", () => {
     const root = processScratch("semantic-default-");
     const run = (flag: Record<string, string>) =>
       spawnSync(process.execPath, [ENTRY, "hook"], {
@@ -194,17 +207,96 @@ describe("optional semantic sibling hook", () => {
       excludedOmitted: 0,
       systemMessage: "JEV lint (advisory): skipped (missing-key).",
     });
+    const quiet = {
+      status: "skipped",
+      reason: "disabled",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    };
+    const unset = run({});
+    expect(unset.status).toBe(0);
+    expect(unset.stderr).toBe("");
+    expect(JSON.parse(unset.stdout)).toEqual(quiet);
+    for (const flag of ["", "0", "true", "yes", " 1"]) {
+      const off = run({ AK_JEV_ENABLED: flag });
+      expect(off.status).toBe(0);
+      expect(JSON.parse(off.stdout)).toEqual(quiet);
+    }
+  });
+
+  test("unset enable variable skips quietly even with a valid key file", () => {
+    const home = processScratch("semantic-keyed-unset-");
+    mkdirSync(join(home, ".config/agent-kit"), { recursive: true });
+    writeFileSync(join(home, pin.key_file), 'TYPESAFE_API_KEY="fixture-private-key"\n', { mode: 0o600 });
+    chmodSync(join(home, pin.key_file), 0o600);
+    const cwd = processScratch("semantic-keyed-unset-cwd-");
+    const state = processScratch("semantic-keyed-unset-state-");
+    const run = (flag: Record<string, string>) =>
+      spawnSync(process.execPath, [ENTRY, "hook"], {
+        cwd,
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          GIT_CEILING_DIRECTORIES: dirname(cwd),
+          XDG_STATE_HOME: state,
+          ...flag,
+        },
+        encoding: "utf8",
+      });
     const unset = run({});
     expect(unset.status).toBe(0);
     expect(unset.stderr).toBe("");
     expect(JSON.parse(unset.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],
       excludedOmitted: 0,
     });
+    expect(JSON.parse(unset.stdout)).not.toHaveProperty("systemMessage");
+    const on = run({ AK_JEV_ENABLED: "1" });
+    expect(on.status).toBe(0);
+    expect(JSON.parse(on.stdout)).toEqual({
+      status: "error",
+      reason: "input",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+      systemMessage: "JEV lint (advisory): error (input).",
+    });
+  });
+
+  test("a disabled hook in a dirty git checkout runs no git and skips as disabled", () => {
+    const options = fixture();
+    writeFileSync(join(options.root, "cart.ts"), "export function cart() { return 1; }\n");
+    const bin = join(options.root, "bin");
+    mkdirSync(bin);
+    const log = join(options.root, "git-calls.log");
+    writeFileSync(join(bin, "git"), '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$GIT_CALL_LOG"\nexit 1\n');
+    chmodSync(join(bin, "git"), 0o755);
+    const run = spawnSync(process.execPath, [ENTRY, "hook"], {
+      cwd: options.root,
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        HOME: options.root,
+        GIT_CALL_LOG: log,
+      },
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual({
+      status: "skipped",
+      reason: "disabled",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
+    expect(existsSync(log)).toBe(false);
   });
 
   test("command surfaces auth errors as non-blocking host feedback", () => {
@@ -803,69 +895,70 @@ function claimState(dir: string): ClaimView {
   return { names, state: isState(raw) ? raw.state : null };
 }
 
-describe("default-on enablement and one check per input", () => {
-  test("only 0 and 1 are explicit; unset or any other value runs by default", () => {
-    expect(enablement("0")).toEqual({ enabled: false, explicit: true });
-    expect(enablement("1")).toEqual({ enabled: true, explicit: true });
-    for (const flag of [undefined, "", "true", "yes", " 1"])
-      expect(enablement(flag)).toEqual({ enabled: true, explicit: false });
+async function postsFor(flag: string | undefined) {
+  const options = fixture();
+  let calls = 0;
+  const result = await runHook({
+    ...options,
+    enabled: enablement(flag),
+    transport: async (_url, init) => {
+      calls += 1;
+      if (!isText(init.body)) throw new Error("non-text request");
+      return reply(init.body);
+    },
   });
+  return { calls, result };
+}
 
-  test("default mode makes exactly one call and reports the reviewed result with its message", async () => {
-    const options = fixture();
-    const mode = enablement(undefined);
-    let calls = 0;
-    const result = await runHook({
-      ...options,
-      enabled: mode.enabled,
-      transport: async (_url, init) => {
-        calls += 1;
-        if (!isText(init.body)) throw new Error("non-text request");
-        return reply(init.body);
-      },
-    });
-    expect(calls).toBe(1);
-    expect(result.status).toBe("reviewed");
-    const output = hookOutput(result, { explicit: mode.explicit });
+describe("opt-in enablement and one check per input", () => {
+  test("only AK_JEV_ENABLED=1 posts; unset, 0 and any other value skip with no call", async () => {
+    const on = await postsFor("1");
+    expect(on.calls).toBe(1);
+    expect(on.result.status).toBe("reviewed");
+    const output = hookOutput(on.result);
     expect(output.systemMessage).toStartWith("JEV lint (advisory): reviewed.\nReceipt trace: ");
-    expect(hookOutput(result, { explicit: mode.explicit, host: "codex" })).toEqual({
+    expect(hookOutput(on.result, { host: "codex" })).toEqual({
       systemMessage: output.systemMessage,
     });
+    for (const flag of [undefined, "", "0", "true", "yes", " 1"]) {
+      const off = await postsFor(flag);
+      expect(off.calls).toBe(0);
+      expect(off.result).toMatchObject({ status: "skipped", reason: "disabled" });
+      expect(hookOutput(off.result)).not.toHaveProperty("systemMessage");
+    }
   });
 
   test("the off switch reads no key file", async () => {
     const options = fixture();
     chmodSync(options.keyFile, 0o644);
     expect(await runHook({ ...options, enabled: true, transport: neverSend })).toMatchObject({ reason: "auth" });
-    const off = await runHook({ ...options, enabled: enablement("0").enabled, transport: neverSend });
+    const off = await runHook({ ...options, enabled: enablement("0"), transport: neverSend });
     expect(off).toMatchObject({ status: "skipped", reason: "disabled" });
-    expect(hookOutput(off, { explicit: true }).systemMessage).toBe("JEV lint (advisory): skipped (disabled).");
+    expect(hookOutput(off)).not.toHaveProperty("systemMessage");
   });
 
-  test("default mode skips are quiet while errors and reviewed results keep their message", () => {
+  test("disabled skips are quiet while errors, reviewed results and enabled skips keep their message", () => {
     const base = { advisory: true as const, excluded: [], excludedOmitted: 0, findings: noFindings };
+    const disabled = { ...base, status: "skipped" as const, reason: "disabled" };
+    expect(hookOutput(disabled)).toEqual(disabled);
+    expect(hookOutput(disabled, { host: "codex" })).toEqual({});
     const skips = [
       { ...base, status: "skipped" as const, reason: "missing-key" },
       { ...base, status: "skipped" as const, reason: "no-input" },
       { ...base, status: "skipped" as const, reason: "duplicate" as const, priorTrace: null },
       { ...base, status: "skipped" as const, reason: "in-progress" as const },
     ];
-    for (const skip of skips) {
-      expect(hookOutput(skip, { explicit: false })).toEqual(skip);
-      expect(hookOutput(skip, { explicit: false, host: "codex" })).toEqual({});
-      expect(hookOutput(skip, { explicit: true }).systemMessage).toBe(`JEV lint (advisory): skipped (${skip.reason}).`);
-    }
+    for (const skip of skips)
+      expect(hookOutput(skip).systemMessage).toBe(`JEV lint (advisory): skipped (${skip.reason}).`);
     const loud = [
       { ...base, status: "error" as const, reason: "auth" as const },
       { ...base, status: "error" as const, reason: "receipt" as const },
       { ...base, status: "reviewed" as const },
     ];
-    for (const result of loud)
-      for (const explicit of [true, false]) {
-        expect(hookOutput(result, { explicit })).toHaveProperty("systemMessage");
-        const codex = hookOutput(result, { explicit, host: "codex" });
-        expect(Object.keys(codex)).toEqual(["systemMessage"]);
-      }
+    for (const result of loud) {
+      expect(hookOutput(result)).toHaveProperty("systemMessage");
+      expect(Object.keys(hookOutput(result, { host: "codex" }))).toEqual(["systemMessage"]);
+    }
   });
 
   test("the Codex host form prints only the documented Stop fields and other arguments are usage errors", () => {
@@ -889,7 +982,7 @@ describe("default-on enablement and one check per input", () => {
     }
   });
 
-  test("a completed check makes an identical later Stop a duplicate in both modes, with no call", async () => {
+  test("a completed check makes an identical later Stop a duplicate, with no call", async () => {
     const options = fixture();
     const first = await runHook({
       ...options,
@@ -910,10 +1003,9 @@ describe("default-on enablement and one check per input", () => {
       excluded: [],
       excludedOmitted: 0,
     });
-    expect(hookOutput(again, { explicit: true }).systemMessage).toBe(
+    expect(hookOutput(again).systemMessage).toBe(
       `JEV lint (advisory): skipped (duplicate).\nPrior receipt trace: ${first.traceparent}`,
     );
-    expect(hookOutput(again, { explicit: false })).not.toHaveProperty("systemMessage");
     for (const file of readdirSync(claimDir(options))) {
       const text = readFileSync(join(claimDir(options), file), "utf8");
       expect(text).not.toContain("fixture-private-key");

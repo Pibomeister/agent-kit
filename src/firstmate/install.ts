@@ -60,7 +60,7 @@ function settingsText(akRoot: string): string {
           hooks: [{ type: "command", command: `bash '${hook}' --binding '${BINDING_TOKEN}'` }],
         },
       ],
-      // The advisory semantic lint: on by default, quiet until the key file the pin names holds a key.
+      // The advisory semantic lint: off unless AK_JEV_ENABLED=1 in the hook process.
       Stop: [{ hooks: [{ type: "command", command: `bun '${join(akRoot, SEMANTIC_LINT_HOOK)}' hook`, timeout: 30 }] }],
     },
   };

@@ -38,13 +38,18 @@ function project(): string {
 // timeout scheduling Bun. The assertions below still cover their exit codes and complete output.
 const maintenanceRoot = project();
 const maintenanceCli = join(import.meta.dir, "../src/maintenance/cli.ts");
-const maintenanceEnv = {
+const maintenanceHome = join(maintenanceRoot, "home");
+mkdirSync(join(maintenanceHome, ".config"), { recursive: true });
+const maintenanceEnv: NodeJS.ProcessEnv = {
   ...process.env,
   PATH: "/usr/bin:/bin",
+  HOME: maintenanceHome,
+  XDG_CONFIG_HOME: join(maintenanceHome, ".config"),
   CLAUDE_CONFIG_DIR: join(maintenanceRoot, "claude-home"),
   CODEX_HOME: join(maintenanceRoot, "codex-home"),
   AK_PUBLISHED_ROOT: join(maintenanceRoot, "missing-published"),
 };
+delete maintenanceEnv.AK_JEV_ENABLED;
 const doctorJson = spawnSync(process.execPath, [maintenanceCli, "doctor", "--json"], {
   cwd: maintenanceRoot,
   env: maintenanceEnv,
@@ -111,15 +116,20 @@ fi
   const codex = join(fakeBin, "codex");
   writeFileSync(codex, "#!/bin/sh\necho '{\"installed\":[]}'\n");
   chmodSync(codex, 0o755);
-  const env = {
+  const home = join(root, "home");
+  mkdirSync(join(home, ".config"), { recursive: true });
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${fakeBin}:${process.env.PATH}`,
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
     AK_PUBLISHED_ROOT: published,
     AK_TEST_ROOT: root,
     AK_TEST_LINKED: realpathSync(linked),
     CODEX_HOME: join(root, "empty-codex"),
     AK_TEST_MARKET_SOURCE: "github",
   };
+  delete env.AK_JEV_ENABLED;
   const projectRuns = [linked, join(root, "src")].map((cwd) => {
     if (cwd.endsWith("src")) mkdirSync(cwd);
     return {
@@ -486,27 +496,34 @@ function keyed(text: string, mode = 0o600): string {
   return file;
 }
 
-function doctorWith(value: string, mode: number) {
+function doctorWith(value: string, mode: number, flag: string | null = "1") {
   const home = processScratch("ak-doctor-jev-home-");
   mkdirSync(join(home, ".config/agent-kit"), { recursive: true });
   writeFileSync(join(home, ".config/agent-kit/jev.env"), `TYPESAFE_API_KEY='${value}'\n`, { mode });
   chmodSync(join(home, ".config/agent-kit/jev.env"), mode);
   const cwd = project();
+  const env: NodeJS.ProcessEnv = {
+    ...maintenanceEnv,
+    CLAUDE_CONFIG_DIR: join(cwd, "claude-home"),
+    CODEX_HOME: join(cwd, "codex-home"),
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
+  };
+  if (flag === null) delete env.AK_JEV_ENABLED;
+  else env.AK_JEV_ENABLED = flag;
   return spawnSync(process.execPath, [maintenanceCli, "doctor", "--json"], {
     cwd,
-    env: {
-      ...maintenanceEnv,
-      CLAUDE_CONFIG_DIR: join(cwd, "claude-home"),
-      CODEX_HOME: join(cwd, "codex-home"),
-      HOME: home,
-      AK_JEV_ENABLED: "",
-    },
+    env,
     encoding: "utf8",
   });
 }
 
 describe("ak doctor semantic lint check", () => {
   const value = "fixture-doctor-key-value";
+  const notOne =
+    "AK_JEV_ENABLED is not 1 in this shell; the Stop hook runs only where its host process has AK_JEV_ENABLED=1";
+  const passWhenHostHasFlag =
+    "key file present and owner-only; the Stop hook runs on changed files when the host process also has AK_JEV_ENABLED=1";
 
   test("reports each key-file state without the key value", () => {
     const good = keyed(`TYPESAFE_API_KEY="${value}"\n`);
@@ -514,18 +531,28 @@ describe("ak doctor semantic lint check", () => {
       checkSemanticLint(good, undefined),
       checkSemanticLint(good, "1"),
       checkSemanticLint(good, "0"),
-      checkSemanticLint(join(processScratch("ak-doctor-jev-none-"), "jev.env"), undefined),
-      checkSemanticLint(keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644), undefined),
-      checkSemanticLint(keyed("OTHER=1\n"), undefined),
+      checkSemanticLint(join(processScratch("ak-doctor-jev-none-"), "jev.env"), "1"),
+      checkSemanticLint(keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644), "1"),
+      checkSemanticLint(keyed("OTHER=1\n"), "1"),
     ];
-    expect(found.map((item) => item.level)).toEqual(["PASS", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
-    expect(found[0]?.detail).toBe("key file present and owner-only; the Stop hook runs on changed files");
-    expect(found[2]?.detail).toBe("disabled by AK_JEV_ENABLED=0");
+    expect(found.map((item) => item.level)).toEqual(["WARN", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
+    expect(found[0]?.detail).toBe(notOne);
+    expect(found[0]?.remedy).toBe(
+      "If the hook's host already has AK_JEV_ENABLED=1, re-run doctor with it set to check the key. Doctor reads only this shell.",
+    );
+    expect(found[1]?.detail).toBe(passWhenHostHasFlag);
+    expect(found[2]?.detail).toBe(notOne);
     expect(found[3]?.detail).toStartWith("no key file at ");
-    expect(found[3]?.detail).toEndWith("; the Stop hook skips quietly");
+    expect(found[3]?.detail).toEndWith("; the Stop hook skips (missing-key)");
     expect(found[4]?.detail).toEndWith(" is not a private owner-only file with one key assignment");
     for (const item of found) {
       expect(item.check).toBe("semantic lint");
+      expect(JSON.stringify(item)).not.toContain(value);
+    }
+    for (const flag of ["", "true", " 1"]) {
+      const item = checkSemanticLint(good, flag);
+      expect(item.level).toBe("WARN");
+      expect(item.detail).toBe(notOne);
       expect(JSON.stringify(item)).not.toContain(value);
     }
   });
@@ -534,9 +561,36 @@ describe("ak doctor semantic lint check", () => {
     const target = keyed(`TYPESAFE_API_KEY=${value}\n`);
     const link = join(processScratch("ak-doctor-jev-link-"), "jev.env");
     symlinkSync(target, link);
-    const item = checkSemanticLint(link, undefined);
+    const item = checkSemanticLint(link, "1");
     expect(item.level).toBe("FAIL");
     expect(JSON.stringify(item)).not.toContain(value);
+  });
+
+  test("a disabled doctor check returns before reading a bad key file", () => {
+    const unsafe = keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644);
+    const link = join(processScratch("ak-doctor-jev-disabled-link-"), "jev.env");
+    symlinkSync(keyed(`TYPESAFE_API_KEY=${value}\n`), link);
+    for (const file of [unsafe, link]) {
+      const item = checkSemanticLint(file, undefined);
+      expect(item.level).toBe("WARN");
+      expect(item.detail).toBe(notOne);
+      expect(JSON.stringify(item)).not.toContain(value);
+    }
+  });
+
+  test("doctor warns on unset even with a good key file", () => {
+    const run = doctorWith(value, 0o600, null);
+    expect(JSON.parse(run.stdout)).toHaveProperty(
+      "findings",
+      expect.arrayContaining([
+        expect.objectContaining({
+          check: "semantic lint",
+          level: "WARN",
+          detail: notOne,
+        }),
+      ]),
+    );
+    expect(run.stdout + run.stderr).not.toContain(value);
   });
 
   test("the doctor reports the key file it found and never prints its value", () => {
@@ -565,7 +619,7 @@ describe("ak doctor semantic lint check", () => {
     expect(quiet.status).toBe(0);
     expect(JSON.parse(quiet.stdout)).toEqual({
       status: "skipped",
-      reason: "missing-key",
+      reason: "disabled",
       findings: [],
       advisory: true,
       excluded: [],
