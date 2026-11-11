@@ -40637,7 +40637,7 @@ init_dist();
 init_hash();
 import { createHash as createHash11 } from "crypto";
 import { existsSync as existsSync39, mkdirSync as mkdirSync24, readFileSync as readFileSync32, realpathSync as realpathSync12, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
-import { basename as basename20, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative12, resolve as resolve16, sep as sep8 } from "path";
+import { basename as basename20, dirname as dirname21, isAbsolute as isAbsolute14, join as join45, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -40678,6 +40678,40 @@ class PrivateFileEvidenceStore {
 // src/runner/lineage.ts
 function sharesLineage(a, b) {
   return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+}
+
+// src/runner/path.ts
+import { lstatSync as lstatSync4, realpathSync as realpathSync10 } from "fs";
+import { delimiter as delimiter4, dirname as dirname20, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14, sep as sep7 } from "path";
+function relativeInsideRoot(rel) {
+  return rel === "" || rel !== ".." && !rel.startsWith(`..${sep7}`) && !isAbsolute12(rel);
+}
+function workerControlledPath(path, workerRoot) {
+  if (!isAbsolute12(path))
+    return true;
+  let existing = resolve14(path);
+  for (;; ) {
+    try {
+      lstatSync4(existing);
+      break;
+    } catch (cause) {
+      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
+        return true;
+      const parent = dirname20(existing);
+      if (parent === existing)
+        return true;
+      existing = parent;
+    }
+  }
+  try {
+    return relativeInsideRoot(relative10(workerRoot, realpathSync10(existing)));
+  } catch {
+    return true;
+  }
+}
+function workerFreePath(path, workerRoot) {
+  const entries = (path ?? "").split(delimiter4).filter((entry) => entry.length > 0 && !workerControlledPath(entry, workerRoot));
+  return entries.length > 0 ? entries.join(delimiter4) : "/usr/bin:/bin";
 }
 
 // src/council/rule.ts
@@ -40929,41 +40963,7 @@ import {
   realpathSync as realpathSync11,
   rmSync as rmSync14
 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15, sep as sep7 } from "path";
-
-// src/runner/path.ts
-import { lstatSync as lstatSync4, realpathSync as realpathSync10 } from "fs";
-import { delimiter as delimiter4, dirname as dirname20, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
-function workerControlledPath(path, workerRoot) {
-  if (!isAbsolute12(path))
-    return true;
-  let existing = resolve14(path);
-  for (;; ) {
-    try {
-      lstatSync4(existing);
-      break;
-    } catch (cause) {
-      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
-        return true;
-      const parent = dirname20(existing);
-      if (parent === existing)
-        return true;
-      existing = parent;
-    }
-  }
-  try {
-    const rel = relative10(workerRoot, realpathSync10(existing));
-    return rel === "" || !rel.startsWith("..") && !isAbsolute12(rel);
-  } catch {
-    return true;
-  }
-}
-function workerFreePath(path, workerRoot) {
-  const entries = (path ?? "").split(delimiter4).filter((entry) => entry.length > 0 && !workerControlledPath(entry, workerRoot));
-  return entries.length > 0 ? entries.join(delimiter4) : "/usr/bin:/bin";
-}
-
-// src/runner/snapshot.ts
+import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15 } from "path";
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
   for (const directory of path.split(delimiter5)) {
@@ -41188,7 +41188,7 @@ function gitBlobId(bytes, blob) {
   return createHash10(algorithm).update(`blob ${bytes.length}\x00`).update(bytes).digest("hex");
 }
 function escapesWorktree(path, rel) {
-  return path === "" || isAbsolute13(path) || rel === "" || rel === ".." || rel.startsWith(`..${sep7}`) || isAbsolute13(rel);
+  return path === "" || isAbsolute13(path) || rel === "" || !relativeInsideRoot(rel);
 }
 function cleanCommittedTree(context, project) {
   return treeIsClean(context, project, new Set);
@@ -41414,8 +41414,7 @@ var ACTION_FOR = new Map([
   ["ship-pr", "open-pr"]
 ]);
 function inside(path, root) {
-  const rel = relative12(root, path);
-  return rel === "" || rel !== ".." && !rel.startsWith(`..${sep8}`) && !isAbsolute14(rel);
+  return relativeInsideRoot(relative12(root, path));
 }
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
