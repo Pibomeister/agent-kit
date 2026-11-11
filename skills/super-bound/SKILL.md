@@ -151,8 +151,8 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
     send it back. Off and shadow keep that action; on uses the independent read. When that read is
     unavailable, the author check decides. Dispatch is skipped only when the validator's exemption detector would exempt
-    the ticket: implementation globs under `docs/**/*.md`, or exactly `README.md`, `CHANGELOG.md`, `NOTICE` or `LICENSE`, with the other existing conditions. A light-route ticket that touches `skills/` or `references/` still dispatches when on. In on mode the validator exempts that ticket from `cold_read_ref`; any other
-    implementation ticket still requires it. The exemption is declaration-only: the write guard lifts tests protection and does not deny a write outside those globs. Shadow and on dispatch one cold reader
+    the ticket: implementation globs under `docs/**/*.md`, or exactly `README.md`, `CHANGELOG.md`, `NOTICE` or `LICENSE`, with the other existing conditions. In on mode docs-markdown and four-file tickets skip `cold_read_ref`; any other implementation ticket requires it. A light-route ticket that touches `skills/` or `references/` still dispatches when on.
+    The exemption is declaration-only: the write guard lifts tests protection and does not deny a write outside those globs. Shadow and on dispatch one cold reader
     per remaining implementation ticket, in parallel, each in its own context. Follow
     [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
     read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,

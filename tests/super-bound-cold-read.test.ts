@@ -80,7 +80,7 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       expect(text).toContain("Shadow and on dispatch one cold reader");
       expect(text).toContain("Dispatch is skipped only when the validator's exemption detector would exempt");
       expect(text).toContain("reshape it, or reclassify it");
-      expect(text).toContain("exempts that ticket from `cold_read_ref`");
+      expect(text).toContain("docs-markdown and four-file tickets skip `cold_read_ref`");
       expect(text).toContain("still dispatches when on");
       expect(text).toContain("The exemption is declaration-only");
       expect(text).toContain("Off and shadow do not change the class or the scorer");
@@ -105,7 +105,8 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
       "Step 13 skips the independent cold read only when the validator's exemption detector would exempt the ticket",
     );
     expect(note).toContain("A note or approval does not exempt");
-    expect(note).toContain("is refused; a markdown last segment is required");
+    expect(note).toContain("a glob containing `{` is refused");
+    expect(note).toContain("a markdown last segment is required");
     expect(note).toContain("A literal glob that resolves through a symlink is refused");
     expect(note).toContain("Wildcard globs over a symlinked tree are not checked");
     expect(note).toContain("The exemption is declaration-only");

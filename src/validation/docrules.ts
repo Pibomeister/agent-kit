@@ -1466,7 +1466,8 @@ function isMarkdownSegment(name: string): boolean {
 
 /** A glob the light-route detector can treat as documentation-only. Exclusions always win. */
 function isLightRouteGlob(pattern: string): boolean {
-  if (pattern.includes("\\") || pattern.startsWith("/") || pattern.includes("..")) return false;
+  if (pattern.includes("\\") || pattern.startsWith("/") || pattern.includes("..") || pattern.includes("{"))
+    return false;
   if (LIGHT_ROUTE_FILES.has(pattern)) return true;
   if (!LIGHT_ROUTE_PREFIXES.some((prefix) => pattern.startsWith(prefix))) return false;
   const rest = pattern.slice(pattern.indexOf("/") + 1);
