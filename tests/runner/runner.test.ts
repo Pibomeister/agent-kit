@@ -275,7 +275,6 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
   const { revision } = template;
   const requestDir = join(worker, ".runner-requests");
   const path = join(privateDir, "charter.json");
-  const delegateReplacements: number | undefined = undefined;
   const initialCharter = {
     schema: "charter",
     schema_version: 1,
@@ -321,7 +320,6 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
       tickets: 3,
       elapsed_minutes: 60,
       review_rounds: 2,
-      delegate_replacements: delegateReplacements,
     },
     budgets: {
       provided_by: "runner",
@@ -340,7 +338,10 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
     },
     approvals: [{ artifact_hash: "", by: "human", authority: "explicit", at: "2026-10-01T00:00:00Z" }],
   };
-  const charter: typeof initialCharter & { audit_cadence_seconds?: number } = initialCharter;
+  const charter: typeof initialCharter & {
+    audit_cadence_seconds?: number;
+    limits: { delegate_replacements?: number };
+  } = initialCharter;
   charter.immutability.hash = artifactHash({ ...charter, immutability: { ...charter.immutability, hash: "" } });
   const approval = charter.approvals[0];
   if (approval === undefined) throw new Error("toy charter approval missing");
