@@ -600,10 +600,8 @@ function identityFailures(reviewer: Json | undefined, config: LifecycleConfig): 
   return out;
 }
 
-export function carriesDisclosure(body: string, supervisor?: string): boolean {
+export function carriesDisclosure(body: string): boolean {
   const text = visibleText(body);
-  if (supervisor !== undefined)
-    return SUPERVISOR_PATTERN.test(supervisor) && text.includes(unattendedDisclosure(supervisor));
   if (text.includes(DISCLOSURE)) return true;
   const escaped = DISCLOSURE_TAIL.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(

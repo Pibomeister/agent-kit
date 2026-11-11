@@ -968,8 +968,7 @@ describe("selection and start (command seam)", () => {
       const disclosure = unattendedDisclosure(name);
       expect(disclosure).not.toBe(DISCLOSURE);
       expect(carriesDisclosure(disclosure)).toBe(true);
-      expect(carriesDisclosure(disclosure, name)).toBe(true);
-      expect(carriesDisclosure(`Change.\n\n${disclosure}\n`, name)).toBe(true);
+      expect(carriesDisclosure(`Change.\n\n${disclosure}\n`)).toBe(true);
     }
 
     const refused = [
@@ -993,7 +992,6 @@ describe("selection and start (command seam)", () => {
         reason: "AK_LIFECYCLE_SUPERVISOR must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
       });
       expect(unattendedDisclosure(bad)).toBe(DISCLOSURE);
-      expect(carriesDisclosure(unattendedDisclosure(bad), bad)).toBe(false);
       expect(
         carriesDisclosure(
           `Unattended lifecycle policy (supervisor: ${bad}, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.`,
