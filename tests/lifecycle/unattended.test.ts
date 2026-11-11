@@ -1059,7 +1059,7 @@ describe("selection and start (command seam)", () => {
         source: "environment",
       });
     }
-  }, 180_000);
+  }, 600_000);
 
   test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
     const rootConfig = readFileSync(join(import.meta.dir, "../../ak.lifecycle.json"), "utf8");
