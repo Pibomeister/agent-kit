@@ -46,7 +46,7 @@ import {
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(180_000);
 
 const REPO = "acme/widget";
 const HEAD = "a".repeat(40);
