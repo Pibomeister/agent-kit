@@ -145,20 +145,18 @@ a ticket whose class makes a human the author keeps that class, and a delegation
 12. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
     ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
     with no edge between them are still unsafe in parallel when they write the same file.
-13. Read `review.cold_read` from the checkout's own indexed project record, not the ticket's project
-    field. A missing review object, a missing key, an unknown value, or a checkout with no indexed
-    project record is off. On requires exactly one indexed project record. Several records fail
-    closed. Off keeps the author
-    type-check. An implementer opening the ticket with an empty context window who still cannot do
-    it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
-    send it back. Off and shadow keep that action; on uses the independent read. When that read is
-    unavailable, the author check decides. Dispatch is skipped only when every Skip condition in
-    [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
-    read of a ticket" holds; otherwise dispatch. Shadow and on dispatch one cold reader
-    per remaining implementation ticket, in parallel, each in its own context. Follow
-    [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent cold
-    read of a ticket" for Skip, the packet, claims, readiness observations, rewrite cap, shadow print,
-    citation, unavailable handling and the green-to-yellow-agent raise.
+13. Read `review.cold_read` from the checkout's own indexed project record, not the ticket's project field. A
+    missing review object, a missing key, an unknown value, or a checkout with no indexed project record is off.
+    On requires exactly one indexed project record. Several records fail closed. Off keeps the author
+    type-check. An implementer opening the ticket with an empty context window who still cannot do it is not
+    holding an implementation ticket: reshape it, or reclassify it `type: decision` and send it back. Off and
+    shadow keep that action; on uses the independent read. When that read is unavailable, the author check
+    decides. Dispatch is skipped only when every Skip condition in [the delegation
+    reference](../../references/delegation/REFERENCE.md) under "Independent cold read of a ticket" holds;
+    otherwise dispatch. Shadow and on dispatch one cold reader per remaining implementation ticket, in parallel,
+    each in its own context. Follow [the delegation reference](../../references/delegation/REFERENCE.md) under
+    "Independent cold read of a ticket" for Skip, the packet, claims, readiness observations, rewrite cap,
+    shadow print, citation, unavailable handling and the green-to-yellow-agent raise.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
     ticket, no ticket carries an unfinished-content marker or a "same as the earlier ticket"
     instruction, and each ticket's produced names and types match the next one's consumed names
