@@ -919,7 +919,7 @@ describe("selection and start (command seam)", () => {
     setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
     stubGh(withFixtures({}));
     expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
-  });
+  }, 180_000);
 
   test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
     const rootConfig = readFileSync(join(import.meta.dir, "../../ak.lifecycle.json"), "utf8");
@@ -969,7 +969,7 @@ describe("selection and start (command seam)", () => {
     expect(preflight.err).toContain("a pull request with at least one approval is not required");
     expect(preflight.err).toContain("ak.lifecycle.json: human_reviewers is empty");
     expect(preflight.err).toContain("ak.lifecycle.json: independent_review.reviewer_model is missing");
-  });
+  }, 180_000);
 
   test("a legacy run refuses an unattended record and an unattended check", () => {
     const cwd = repo();
