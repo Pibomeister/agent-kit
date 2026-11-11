@@ -129,27 +129,41 @@ function describe(validate: ValidateFunction): string {
 /**
  * The committed binding at `revision` (or HEAD), relative to `projectRoot`.
  * Uses `git rev-parse --show-prefix` so a nested folder is not read as the
- * repo-root `ak.kb.yaml`. Null when git cannot show that path.
+ * repo-root `ak.kb.yaml`. An explicit revision that `rev-parse --verify` cannot
+ * resolve is an error, not a miss. A confirmed miss of the path is null.
  */
-function committedBindingText(projectRoot: string, revision?: string): string | null {
-  const rev = revision !== undefined && revision !== "" ? revision : "HEAD";
+function committedBindingText(projectRoot: string, revision?: string) {
+  const explicit = revision !== undefined && revision !== "";
+  const rev = explicit ? revision : "HEAD";
+  if (explicit) {
+    const verified = git(projectRoot, ["rev-parse", "--verify", `${rev}^{commit}`]);
+    if (verified.status !== 0) return { text: null, unresolved: `revision ${rev} cannot be resolved` };
+  }
   const prefix = git(projectRoot, ["rev-parse", "--show-prefix"]);
-  if (prefix.status !== 0) return null;
+  if (prefix.status !== 0) return { text: null };
   const shown = git(projectRoot, ["show", `${rev}:${prefix.stdout.trim()}${BINDING_FILE}`]);
-  return shown.status === 0 ? shown.stdout : null;
+  return { text: shown.status === 0 ? shown.stdout : null };
 }
 
 /**
  * Parse and shape-check the folder's binding. A committed binding at the given
  * revision (HEAD when omitted) wins over the working file. Runner.start passes
- * the start revision so a later worker commit cannot retarget lookup. A nested
- * folder is read from that folder, not from the git top level. Fall back to the
- * working file only when no committed binding exists at that revision. A
+ * the merge-base of HEAD and the charter base branch so a worker commit before
+ * start cannot retarget lookup. A nested folder is read from that folder, not
+ * from the git top level. Fall back to the working file only when that revision
+ * has no committed binding. An unresolvable explicit revision is an error. A
  * confirmed miss of both is a note, not an error: an unbound folder is the
  * unconfigured case the contract defines, not a malformed one.
  */
 export function loadKbBinding(projectRoot: string, revision?: string): KbBindingResult {
-  const text = committedBindingText(projectRoot, revision) ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
+  const committed = committedBindingText(projectRoot, revision);
+  if (committed.unresolved !== undefined) {
+    return {
+      binding: null,
+      issues: [error("kb.revision-unresolved", BINDING_FILE, committed.unresolved)],
+    };
+  }
+  const text = committed.text ?? readTextIfPresent(join(projectRoot, BINDING_FILE));
   if (text === null) {
     return {
       binding: null,

@@ -12,7 +12,7 @@ adaptations:
     rationale: Off/shadow/on. Runner.start freezes; missing project cannot reset a required run to off.
   - path: src/runner/core.ts
     source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
-    rationale: Runner.start freezes mandatory behavior checks from the trusted start revision; lifecycle open refuses.
+    rationale: Runner.start freezes mandatory behavior checks from the committed binding at the charter base merge-base; lifecycle open refuses.
   - path: src/lifecycle/protected-start.ts
     source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
-    rationale: The gate reuses Runner.start's charter checks so a weaker parent cannot skip ship-preflight.
+    rationale: protected-start.ts is the one complete charter predicate Runner.start and the gate both call.
