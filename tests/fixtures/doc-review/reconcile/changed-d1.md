@@ -1,5 +1,5 @@
 ---
-case: GAP-04-contradiction
+case: GAP-04-changed
 fr: [FR-02]
 at: [AT-03]
 defect: changed

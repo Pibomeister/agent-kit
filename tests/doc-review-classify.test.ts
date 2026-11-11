@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { classifyDocumentFile, classifyDocumentKind, documentIdentity } from "../src/validation/classify-document.ts";
+import { parseSeeds } from "../src/validation/reconciliation.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures/doc-review/classify");
 
@@ -29,6 +30,16 @@ describe("doc-review classifier (FR-01 / AT-20)", () => {
     expect(content).not.toContain("## Rollout");
     expect(classifyDocumentFile(path)).toBe("requirements");
     expect(classifyDocumentKind(content)).toBe("requirements");
+  });
+
+  test("a closing --- at EOF is frontmatter for both oracles", () => {
+    const closed = ["---", "## Requirements", "R0. trapped.", "## Implementation", "---"].join("\n");
+    expect(closed.endsWith("\n")).toBe(false);
+    expect(classifyDocumentKind(closed)).toBe("requirements");
+    expect(parseSeeds(closed)).toEqual([]);
+    const open = ["---", "## Requirements", "R0. trapped.", "## Implementation"].join("\n");
+    expect(classifyDocumentKind(open)).toBe("plan");
+    expect(parseSeeds(open).map((seed) => seed.id)).toEqual(["R0"]);
   });
 
   test("CRLF frontmatter is stripped the same as LF", () => {

@@ -15,8 +15,11 @@
  *
  * Supported function forms are `function name(...) { ... }` and
  * `export function name(...) { ... }`, including a default-parameter object
- * such as `function f(a = {}) { ... }`. Arrow functions, methods,
- * `async function`, generators and `const x = function` are not extracted.
+ * such as `function f(a = {}) { ... }`. The match is unanchored, so
+ * `async function name` and a named `const x = function name` are extracted
+ * too. Arrow functions, methods, generators and anonymous `function (`
+ * expressions are not. Brace matching is a depth count. A brace inside a
+ * string, comment or regex breaks body extraction.
  */
 
 import { readdirSync, readFileSync } from "node:fs";

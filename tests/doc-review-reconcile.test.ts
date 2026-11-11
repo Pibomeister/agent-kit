@@ -49,7 +49,7 @@ describe("doc-review predecessor reconciliation (FR-02 / AT-03)", () => {
   });
 
   test("a changed D1 cites both predecessor and successor lines", () => {
-    const findings = against("contradict-d1.md");
+    const findings = against("changed-d1.md");
     const changed = findingsOfKind(findings, "changed");
     const d1 = changed.find((finding) => finding.seed === "D1");
     expect(d1).toBeDefined();

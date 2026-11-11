@@ -15,7 +15,7 @@
  * Alternatives. Frontmatter and fenced lines are skipped with fenceAfter.
  */
 
-import { fenceAfter, headingTitle, type FenceState } from "./headings.ts";
+import { fenceAfter, headingTitle, skipFrontmatter, type FenceState } from "./headings.ts";
 
 const SEED_LINE = /^(?:[-*] |\d+\. )?(R|D|ALT)(\d+[a-z]?)\.\s+(.*)$/;
 const SEED_SECTIONS = new Set(["decisions", "requirements", "alternatives"]);
@@ -62,25 +62,13 @@ function ref(artifact: string, seed: Seed): SeedRef {
   return { artifact, seed: seed.id, line: seed.line };
 }
 
-type FrontmatterSkip = {
-  readonly start: number;
-  readonly fence: FenceState | null;
-};
-
-function skipFrontmatter(lines: readonly string[]): FrontmatterSkip {
-  if ((lines[0] ?? "") !== "---") return { start: 0, fence: null };
-  for (let i = 1; i < lines.length; i++) {
-    if ((lines[i] ?? "") === "---") return { start: i + 1, fence: null };
-  }
-  return { start: lines.length, fence: null };
-}
-
 /** ID-bearing seeds under seed sections, in document order. */
 export function parseSeeds(markdown: string): readonly Seed[] {
   const lines = normalizeNewlines(markdown).split("\n");
   const seeds: Seed[] = [];
-  let { start, fence } = skipFrontmatter(lines);
+  let fence: FenceState | null = null;
   let inSeedSection = false;
+  const start = skipFrontmatter(lines);
   for (let i = start; i < lines.length; i++) {
     const line = lines[i] ?? "";
     const next = fenceAfter(line, fence);

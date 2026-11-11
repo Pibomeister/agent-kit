@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 
 import { sha256Hex } from "../util/hash.ts";
-import { fenceAfter, headingTitle, type FenceState } from "./headings.ts";
+import { fenceAfter, headingTitle, skipFrontmatter, type FenceState } from "./headings.ts";
 
 export type DocumentKind = "requirements" | "plan";
 
@@ -32,20 +32,13 @@ function normalizeNewlines(text: string): string {
   return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
 }
 
-function stripFrontmatter(text: string): string {
-  const body = normalizeNewlines(text);
-  if (!body.startsWith("---\n")) return body;
-  const end = body.indexOf("\n---\n", 4);
-  if (end === -1) return body;
-  return body.slice(end + 5);
-}
-
 /** ATX headings in the body, skipping YAML frontmatter and fenced regions. */
 export function documentHeadings(markdown: string): readonly string[] {
   const titles: string[] = [];
   let fence: FenceState | null = null;
-  for (const raw of stripFrontmatter(markdown).split("\n")) {
-    const line = raw ?? "";
+  const lines = normalizeNewlines(markdown).split("\n");
+  for (let i = skipFrontmatter(lines); i < lines.length; i++) {
+    const line = lines[i] ?? "";
     const next = fenceAfter(line, fence);
     const skip = fence !== null || next !== null;
     fence = next;
