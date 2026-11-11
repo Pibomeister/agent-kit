@@ -1968,10 +1968,13 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     const older = ticket({ title: "older body" });
     const read = coldRead({
       ticket: { id: "ticket-1", schema: "ticket", hash: artifactHash(older) },
+      run_id: "run-1",
     });
     const ref = { id: String(read["id"]), schema: "cold-read", hash: artifactHash(read) };
-    expect(rulesOf(run(ticket({ title: "newer body", cold_read_ref: ref }), [onProject(), read]))).toContain(
-      RULE_COLD_REF,
+    const issues = run(ticket({ title: "newer body", cold_read_ref: ref }), [onProject(), read]);
+    expect(rulesOf(issues)).toContain(RULE_COLD_REF);
+    expect(issues.some((issue) => issue.rule === RULE_COLD_REF && issue.message.includes("records ticket hash"))).toBe(
+      true,
     );
   });
 
