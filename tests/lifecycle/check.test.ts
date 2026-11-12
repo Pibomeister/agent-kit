@@ -4,6 +4,7 @@
  * home, binding or ledger anywhere.
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,8 +33,9 @@ setDefaultTimeout(60_000);
 const REPO = join(import.meta.dir, "..", "..");
 
 function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(["git", ...args], {
+  const run = spawnSync("git", args, {
     cwd,
+    encoding: "utf8",
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: "t",
@@ -42,8 +44,8 @@ function git(cwd: string, ...args: string[]): string {
       GIT_COMMITTER_EMAIL: "t@example.invalid",
     },
   });
-  if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
-  return p.stdout.toString().trim();
+  if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr ?? ""}`);
+  return (run.stdout ?? "").trim();
 }
 
 /** A repository on branch `feature`, one commit in, with the work uncommitted on top as a session leaves it. */

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -33,7 +33,11 @@ locator:
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  const run = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  if (run.error !== undefined || run.status !== 0) {
+    throw new Error(`Command failed: git -C ${dir} ${args.join(" ")}\n${run.stderr ?? run.error?.message ?? ""}`);
+  }
+  return run.stdout ?? "";
 }
 
 function write(root: string, path: string, text: string): void {
