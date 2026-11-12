@@ -1,4 +1,5 @@
-# The same gates .no-mistakes.yaml runs as test and lint, on GitHub's runner.
+# The full test suite, which .no-mistakes.yaml deliberately does not run, plus
+# the same lint gates .no-mistakes.yaml runs, on GitHub's runner.
 # Firstmate is never installed here: the adapter tests use temp-dir fixtures,
 # and anything that needs a real Firstmate clone runs outside CI.
 name: ci
