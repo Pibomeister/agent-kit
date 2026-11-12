@@ -1286,9 +1286,8 @@ describe("runner guards", () => {
       await waitForPath(socket, service);
       await waitUntil("the failed probe to run", () => existsSync(stamp));
       writeFileSync(request, JSON.stringify({ run: "toy-run" }));
-      await waitUntil(
-        "status to name audit-failed",
-        () => autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      await waitUntil("status to name audit-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
       );
       expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
         mode: "guided",

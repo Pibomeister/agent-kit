@@ -42976,7 +42976,7 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
     case "decide": {
       const charter = runner.status(str4(a, "run")).charter;
       if (charter.audit_cadence_seconds !== undefined && (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery"))) {
-        if (auditRetryOpen)
+        if (auditRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
           throw new Error("audit retry in progress; checkpoint not approved; retry decide after the next tick");
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
       }
