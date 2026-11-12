@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/supervisor-declaration.schema.json",
+  "title": "Supervisor declaration",
+  "description": "The file a run supervisor keeps outside the checkout to declare how it meets the six obligations of the unattended policy (adapters/supervisor/CONTRACT.md). Shape only: that the supervisor equals AK_LIFECYCLE_SUPERVISOR, that the file sits outside the repository and that its bytes match the run's stamp are checked by the gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "supervisor", "obligations"],
+  "properties": {
+    "contract": {
+      "const": "agent-kit/supervisor-contract@1"
+    },
+    "supervisor": {
+      "description": "The supervisor's name: non-empty, no control character, no surrounding whitespace.",
+      "type": "string",
+      "pattern": "^[^\\s\\u0000-\\u001f\\u007f](?:[^\\u0000-\\u001f\\u007f]*[^\\s\\u0000-\\u001f\\u007f])?$"
+    },
+    "obligations": {
+      "description": "One non-empty single-line statement per obligation: the mechanism by which the supervisor meets it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launch-and-watch",
+        "validation-gate",
+        "independent-review",
+        "seat-separation",
+        "head-bound-evidence",
+        "disclosure"
+      ],
+      "properties": {
+        "launch-and-watch": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        },
+        "validation-gate": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        },
+        "independent-review": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        },
+        "seat-separation": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        },
+        "head-bound-evidence": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        },
+        "disclosure": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        }
+      }
+    }
+  }
+}
