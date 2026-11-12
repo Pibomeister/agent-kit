@@ -18,8 +18,8 @@
     },
     "bundle/claude-code:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12486,
-      "tokens": 3116
+      "bytes": 12672,
+      "tokens": 3163
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -48,8 +48,8 @@
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 10808,
-      "tokens": 2702
+      "bytes": 12498,
+      "tokens": 3124
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -203,8 +203,8 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10319,
-      "tokens": 2580
+      "bytes": 10462,
+      "tokens": 2616
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -913,8 +913,8 @@
     },
     "bundle/codex:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12486,
-      "tokens": 3116
+      "bytes": 12672,
+      "tokens": 3163
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -943,8 +943,8 @@
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 10808,
-      "tokens": 2702
+      "bytes": 12498,
+      "tokens": 3124
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1098,8 +1098,8 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10319,
-      "tokens": 2580
+      "bytes": 10462,
+      "tokens": 2616
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1808,8 +1808,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12546,
-      "tokens": 3131
+      "bytes": 12732,
+      "tokens": 3178
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1838,8 +1838,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 10808,
-      "tokens": 2702
+      "bytes": 12498,
+      "tokens": 3124
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1993,8 +1993,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10391,
-      "tokens": 2598
+      "bytes": 10534,
+      "tokens": 2634
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2703,8 +2703,8 @@
     },
     "bundle/droid:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12486,
-      "tokens": 3116
+      "bytes": 12672,
+      "tokens": 3163
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -2733,8 +2733,8 @@
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 10808,
-      "tokens": 2702
+      "bytes": 12498,
+      "tokens": 3124
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2888,8 +2888,8 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10319,
-      "tokens": 2580
+      "bytes": 10462,
+      "tokens": 2616
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3598,8 +3598,8 @@
     },
     "bundle/grok:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12486,
-      "tokens": 3116
+      "bytes": 12672,
+      "tokens": 3163
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -3628,8 +3628,8 @@
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 10808,
-      "tokens": 2702
+      "bytes": 12498,
+      "tokens": 3124
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3783,8 +3783,8 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10319,
-      "tokens": 2580
+      "bytes": 10462,
+      "tokens": 2616
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -4493,8 +4493,8 @@
     },
     "bundle/kimi:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12486,
-      "tokens": 3116
+      "bytes": 12672,
+      "tokens": 3163
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -4523,8 +4523,8 @@
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 10808,
-      "tokens": 2702
+      "bytes": 12498,
+      "tokens": 3124
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4678,8 +4678,8 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10319,
-      "tokens": 2580
+      "bytes": 10462,
+      "tokens": 2616
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -5383,8 +5383,8 @@
     },
     "firstmate:adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12364,
-      "tokens": 3086
+      "bytes": 12550,
+      "tokens": 3132
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",

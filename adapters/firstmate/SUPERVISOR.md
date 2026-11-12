@@ -138,8 +138,10 @@ Under the unattended policy Firstmate is the run supervisor (`adapters/superviso
 `AK_LIFECYCLE_SUPERVISOR=firstmate`. Write the declaration below to a path outside every checkout of every
 project the worker can reach, for example a per-task folder under the user's home directory such as
 `~/.firstmate-supervisor/<task-id>/`, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path. The
-Firstmate repository's own home, including its `data/` folder, sits inside a worktree: it must hold neither the
-declaration nor the attestation. Each worker is started with both variables.
+path must also be outside every repository that encloses the project: on a machine whose home directory is a
+work tree holding the project, pick a folder outside the home directory. The Firstmate repository's own home,
+including its `data/` folder, sits inside a worktree: it must hold neither the declaration nor the
+attestation. Each worker is started with both variables.
 
 ```json
 {

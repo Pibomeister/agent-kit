@@ -104,7 +104,8 @@ declaration cannot pass ship-preflight.
 
 `record --gate ship-preflight` checks the declaration in force against that stamp, runs the pre-ship
 check (all six earlier phases, current, passing), refuses with every unmet item and refuses a working tree with
-uncommitted changes (commit them and record the gates again), and on success closes
+uncommitted changes, which include untracked files that git does not ignore (commit what should ship, remove or
+git-ignore the rest, then record the gates again), and on success closes
 the run and prints the disclosure and each gate's commands. Every refusal in the declaration steps ends
 with one recovery: open a new run with `open --ticket` under the declaration in force and record the
 gates again. Put the disclosure in the pull request text. Under no-mistakes delivery, edit the opened
@@ -129,8 +130,8 @@ Nothing here is done by an agent or by agent-kit.
 1. Opt in with `AK_LIFECYCLE_POLICY=unattended` in the runner's environment, or commit `ak.lifecycle.json`
    with `{"policy": "unattended"}` to the default branch.
 2. Pick the supervisor's name and set `AK_LIFECYCLE_SUPERVISOR`.
-3. Write the declaration to a path outside every worktree of the project and set
-   `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path. `adapters/supervisor/CONTRACT.md` has the
+3. Write the declaration to a path outside every worktree of the project and of every repository that
+   encloses it, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path. `adapters/supervisor/CONTRACT.md` has the
    shape and an example. `adapters/firstmate/SUPERVISOR.md` has Firstmate's.
 4. Decide who merges. agent-kit does not merge: whoever the human authorized merges, and protects the
    default branch as the project requires.

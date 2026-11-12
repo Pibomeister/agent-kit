@@ -338,6 +338,14 @@ describe("the disclosure sentence in a body", () => {
     ["after a paragraph that quotes the comment opener in inline code", `Strips \`<!--\` comments.\n\n${sentence()}\n`],
     ["after an inline empty comment", `Inline \`<!-->\` before it.\n\n${sentence()}\n`],
     ["after a line that is inline code and not a fence", `\`\`\`npm test\`\`\`\n\n${sentence()}\n`],
+    [
+      "after an HTML block line closes a comment that a block quote left open",
+      `> <!--\n\n<!-- end -->\n\n${sentence()}\n`,
+    ],
+    [
+      "after an HTML block that opens with an empty comment, when either reading of the block shows it",
+      `<!--->\n\n${sentence()}\n`,
+    ],
   ])("is carried %s", (_name, body) => {
     expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(true);
   });
@@ -365,6 +373,30 @@ describe("the disclosure sentence in a body", () => {
     ["only inside a tilde fence in a block quote", `> ~~~\n> ${sentence()}\n> ~~~\n`],
     ["only inside a backtick fence in a list item", `- \`\`\`\n  ${sentence()}\n  \`\`\`\n`],
     ["only inside a backtick fence in a numbered list item", `1. \`\`\`\n   ${sentence()}\n   \`\`\`\n`],
+    [
+      "in a comment after a fence line indented four columns",
+      `Summary.\n\n    \`\`\`\n<!--\n    \`\`\`\n${sentence()}\n-->\n`,
+    ],
+    [
+      "in a comment that an unquoted opener starts after a block-quote fence",
+      `Summary.\n\n> \`\`\`\n<!--\n> \`\`\`\n${sentence()}\n-->\n`,
+    ],
+    [
+      "in a comment that an unindented opener starts after a list-item fence",
+      `Summary.\n\n- \`\`\`\n<!--\n- \`\`\`\n${sentence()}\n-->\n`,
+    ],
+    ["in a top-level fence past a quoted fence line", `Summary.\n\n\`\`\`\n> \`\`\`\n${sentence()}\n\`\`\`\n`],
+    ["only in indented code", `Summary.\n\n    ${sentence()}\n`],
+    ["after a comment that a block quote leaves open in the page", `> <!--\n\n${sentence()}\n`],
+    [
+      "after a comment that a block quote leaves open, past a link whose destination reads as a comment",
+      `> <!--\n\n[a](<!-- x -->) ${sentence()}\n`,
+    ],
+    [
+      "after an HTML block that opens with an empty comment, which renderers end at different lines",
+      `<!--->\n\`<!--\`\n\n${sentence()}\n`,
+    ],
+    ["in a comment past an inline code span that crosses lines", `Note \` a\nb \` <!-- ${sentence()} --> \`\n`],
   ])("is not carried when it is %s", (_name, body) => {
     expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
   });

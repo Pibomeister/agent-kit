@@ -39,6 +39,7 @@ import {
   copyFileSync,
   existsSync,
   fstatSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -1831,39 +1832,60 @@ const containedIn = (path: string, dir: string): boolean => {
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 };
 
-/** One repository's work tree and the places a worker in it can write: its git directory and every worktree. */
-function checkoutPlaces(dir: string): { top: string | undefined; writable: string[] } | undefined {
-  const common = placeGit(dir, ["rev-parse", "--git-common-dir"]);
-  const trees = placeGit(dir, ["worktree", "list", "--porcelain"]);
+/**
+ * One repository's git directory, work tree and the places a worker in it can write: its git directory and every
+ * worktree. `gitDir` names the repository; without it git finds the repository that holds `dir`.
+ */
+function checkoutPlaces(
+  dir: string,
+  gitDir?: string,
+): { common: string; top: string | undefined; writable: string[] } | undefined {
+  const named = gitDir === undefined ? [] : [`--git-dir=${gitDir}`];
+  const common = placeGit(dir, [...named, "rev-parse", "--git-common-dir"]);
+  const trees = placeGit(dir, [...named, "worktree", "list", "--porcelain"]);
   if (common === undefined || trees === undefined || common === "") return undefined;
-  const top = placeGit(dir, ["rev-parse", "--show-toplevel"]);
+  const top = placeGit(dir, [...named, "rev-parse", "--show-toplevel"]);
   const worktrees = trees.split("\n").flatMap((line) => (line.startsWith("worktree ") ? [line.slice(9)] : []));
+  const realCommon = realNative(isAbsolute(common) ? common : join(dir, common));
   return {
+    common: realCommon,
     top: top === undefined || top === "" ? undefined : realNative(top),
-    writable: [isAbsolute(common) ? common : join(dir, common), ...worktrees].map(realNative),
+    writable: [realCommon, ...worktrees.map(realNative)],
   };
 }
 
+/** A place a supervisor file must stay out of, and the toplevel of the enclosing repository it belongs to, if any. */
+interface WritablePlace {
+  path: string;
+  enclosing?: string;
+}
+
+/** A repository's toplevel as a list: empty when git reports none, as for a bare repository. */
+const tops = (found: { top: string | undefined }): string[] => (found.top === undefined ? [] : [found.top]);
+
 /**
  * Every place a worker could write that a supervisor file must stay out of: the project's own directory and
- * toplevel, its git directory and worktrees, and the same for each repository whose work tree encloses it, so a
- * repository nested in a worktree cannot hide the worktree. Undefined when `project` is not a git repository.
+ * toplevel, its git directory and worktrees, and every directory from the project's real path up to the root that
+ * holds a `.git` entry, with that repository's git directory, toplevel and worktrees. So a repository nested in a
+ * worktree cannot hide the worktree, whatever git reports for the nest. Refused when `project` is not a git
+ * repository, or when a `.git` entry on the way up is not a repository git can read.
  */
-function supervisorWritable(project: string): string[] | undefined {
+function supervisorWritable(project: string): { ok: true; places: WritablePlace[] } | { ok: false; reason: string } {
   const own = checkoutPlaces(project);
-  if (own === undefined) return undefined;
-  const writable = [...own.writable, realNative(project)];
-  let top = own.top;
-  while (top !== undefined) {
-    writable.push(top);
-    const parent = dirname(top);
-    if (parent === top) break;
-    const enclosing = checkoutPlaces(parent);
-    if (enclosing === undefined) break;
-    writable.push(...enclosing.writable);
-    top = enclosing.top;
+  if (own === undefined) return { ok: false, reason: `${project} is not a git repository` };
+  const real = realNative(project);
+  const places: WritablePlace[] = [...own.writable, real, ...tops(own)].map((path) => ({ path }));
+  for (let dir = real; ; dir = dirname(dir)) {
+    const entry = join(dir, ".git");
+    if (lstatSync(entry, { throwIfNoEntry: false }) !== undefined) {
+      const found = checkoutPlaces(dir, entry);
+      if (found === undefined) return { ok: false, reason: `${entry} is not a repository git can read` };
+      const enclosing = found.common === own.common ? undefined : (found.top ?? dir);
+      for (const path of [dir, ...found.writable, ...tops(found)])
+        places.push(enclosing === undefined ? { path } : { path, enclosing });
+    }
+    if (dirname(dir) === dir) return { ok: true, places };
   }
-  return writable;
 }
 
 /** A file a supervisor supplies must sit where a worker in the repository cannot write it. */
@@ -1873,20 +1895,24 @@ function outsideRepo(
   what: string,
 ): { ok: true; real: string } | { ok: false; reason: string } {
   const writable = supervisorWritable(project);
-  if (writable === undefined)
-    return { ok: false, reason: `${what} cannot be placed outside the repository: ${project} is not a git repository` };
+  if (!writable.ok) return { ok: false, reason: `${what} cannot be placed outside the repository: ${writable.reason}` };
   let real: string;
   try {
     real = realNative(path);
   } catch {
     return { ok: false, reason: `${what} ${path} cannot be read` };
   }
-  if (writable.some((place) => containedIn(real, place)))
-    return {
-      ok: false,
-      reason: `${what} ${path} is inside the repository; it must be outside the repository, where a worker cannot write it`,
-    };
-  return { ok: true, real };
+  const inside = writable.places.filter((place) => containedIn(real, place.path));
+  if (inside.length === 0) return { ok: true, real };
+  // The project's own repository names the refusal whenever it holds the file; an enclosing one only otherwise.
+  const enclosing = inside.every((place) => place.enclosing !== undefined) ? inside[0]?.enclosing : undefined;
+  return {
+    ok: false,
+    reason:
+      enclosing === undefined
+        ? `${what} ${path} is inside the repository; it must be outside the repository, where a worker cannot write it`
+        : `${what} ${path} is inside ${enclosing}, a repository that encloses the project; it must be outside the repository and every repository that encloses it, where a worker cannot write it`,
+  };
 }
 
 /** A supervisor file read from outside the repository: placed, read and parsed, each refusal naming `what`. */
@@ -2324,12 +2350,13 @@ const RECOVERY =
   "recovery: open a new run with open --ticket under the declaration in force and record the gates again";
 
 /**
- * How final ship reads the worker's repository, which the worker can write: no replace refs, so the descent check
- * and the listing see the history the forge has, and no signature verification, so no program named in the
- * repository's configuration (`gpg.program`) runs in the supervisor's process. Nothing else final ship runs
- * (`cat-file`, `merge-base`, `log` with a fixed format) reads a program-valued key.
+ * How final ship reads objects in the worker's repository, which the worker can write, here and in the policy read:
+ * no lazy fetch, so a missing object runs no promisor remote's program; no replace refs, so the descent check and the
+ * listing see the history the forge has; and no signature display, so no `gpg.program` runs in the supervisor's
+ * process. A git older than 2.44 rejects `--no-lazy-fetch`, and the call's failure refuses. Any other
+ * program-valued key git reads in the worker's repository is outside this guarantee: only OS user separation closes it.
  */
-const FINAL_SHIP_GIT = ["--no-replace-objects", "-c", "log.showSignature=false"] as const;
+const FINAL_SHIP_GIT = ["--no-lazy-fetch", "--no-replace-objects", "-c", "log.showSignature=false"] as const;
 
 /** What final ship stores beside the closing record, by digest. */
 interface FinalShipOutput {
@@ -2381,7 +2408,7 @@ function shipUnattended(
     if (!isSnapshot(live)) return deny(live, false);
     if (live.diff_hash !== EMPTY_DIFF)
       return deny(
-        "the working tree has uncommitted changes, which the shipped revision would not carry; commit them and record the gates again",
+        "the working tree has uncommitted changes or untracked files that git does not ignore, which the shipped revision would not carry; commit what should ship, remove or git-ignore the rest, then record the gates again",
         false,
       );
     const mismatch = supervisorMismatch({ dir, run, gates: UNATTENDED_PRE_SHIP_GATES, project }, live, supervisor);
@@ -2676,7 +2703,8 @@ export function main(
       acquired.release();
     }
   }
-  const resolved = sub === "bypass grant" ? { ok: true as const } : resolvePolicy(project);
+  const finalShipGit = sub === "record" && flags.has("attestation") ? FINAL_SHIP_GIT : [];
+  const resolved = sub === "bypass grant" ? { ok: true as const } : resolvePolicy(project, process.env, finalShipGit);
   if (!resolved.ok) {
     io.err(`ak lifecycle ${sub}: ${resolved.reason}`);
     return 2;

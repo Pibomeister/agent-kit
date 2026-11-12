@@ -37,6 +37,7 @@ import {
 } from "../../src/lifecycle/unattended.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 setDefaultTimeout(60_000);
@@ -146,8 +147,8 @@ function declareSupervisor(name = "firstmate", value?: Json, text?: string): str
   return file;
 }
 
-/** The ticket lives outside the checkout: a file in it would be an uncommitted change, which ship-preflight refuses. */
-function ticketFile(_cwd: string): string {
+/** The ticket lives outside the checkout: an untracked file in it counts as a change, which ship-preflight refuses. */
+function ticketFile(): string {
   const path = join(realpathSync(mkdtempSync(join(tmpdir(), "ak-ticket-"))), "ticket.json");
   const ticket = {
     schema: "ticket",
@@ -211,7 +212,7 @@ function runId(out: string): string {
 /** An opened unattended run with every phase gate before ship recorded with a passing command. */
 function fullRun(cwd: string): string {
   for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
-  const ticketPath = ticketFile(cwd);
+  const ticketPath = ticketFile();
   const opened = ak(cwd, "open", "--ticket", ticketPath);
   expect(opened.code).toBe(0);
   const run = runId(opened.out);
@@ -225,7 +226,7 @@ function fullRun(cwd: string): string {
 
 /** An opened unattended run whose full review requested changes, current through a review-delta running `delta`. */
 function deltaRun(cwd: string, delta: string[]) {
-  const ticketPath = ticketFile(cwd);
+  const ticketPath = ticketFile();
   for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
   const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
   expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
@@ -497,7 +498,7 @@ describe("selection and start (command seam)", () => {
 
   test("a legacy run refuses an unattended record and an unattended check", () => {
     const cwd = repo();
-    expect(ak(cwd, "open", "--ticket", ticketFile(cwd)).code).toBe(0);
+    expect(ak(cwd, "open", "--ticket", ticketFile()).code).toBe(0);
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const recorded = ak(cwd, "record", "--gate", "build-checks", "--", ...ok);
     expect(recorded.code).toBe(1);
@@ -514,7 +515,7 @@ describe("selection and start (command seam)", () => {
 const BARE = { acceptance_criteria: [], verification: [] };
 
 /** A ticket file with `fields` over the demo-bare identity. */
-function bareTicketFile(_cwd: string, fields: JsonObject = BARE): string {
+function bareTicketFile(fields: JsonObject = BARE): string {
   const path = join(realpathSync(mkdtempSync(join(tmpdir(), "ak-ticket-"))), "bare-ticket.json");
   writeFileSync(path, `${JSON.stringify({ schema: "ticket", schema_version: 1, id: "demo-bare", ...fields })}\n`);
   return path;
@@ -535,7 +536,7 @@ function bareTicketRun(
 ) {
   setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
   for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
-  const run = runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd, fields)).out);
+  const run = runId(ak(cwd, "open", "--ticket", bareTicketFile(fields)).out);
   expect(ak(cwd, "record", "--gate", "build-checks", ...(seats.build ?? []), "--", ...ok).code).toBe(0);
   for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
   if (verify !== undefined) ak(cwd, "record", "--gate", "verify", ...(seats.verify ?? VERIFIER_SEAT), "--", ...verify);
@@ -571,7 +572,7 @@ const HALF_DECLARED: [string, JsonObject][] = [
 function unscoredRun(cwd: string, seat: string[], receipt: JsonObject) {
   setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
   for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
-  const ticketPath = ticketFile(cwd);
+  const ticketPath = ticketFile();
   const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
   expect(ak(cwd, "record", "--gate", "build-checks", ...seat, "--", ...ok).code).toBe(0);
   for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
@@ -605,7 +606,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     expect(ak(cwd, "record", "--gate", "bound", "--", ...ok).code).toBe(0);
     const [before] = recordsOf(cwd, "feature", "bound");
-    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    const opened = ak(cwd, "open", "--ticket", ticketFile());
     expect(opened.code).toBe(0);
     const run = runId(opened.out);
     const [imported] = recordsOf(cwd, run, "bound");
@@ -635,7 +636,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
   test("a missing scout refuses, and a mismatched policy is refused in both directions", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-    expect(ak(cwd, "open", "--ticket", ticketFile(cwd)).code).toBe(0);
+    expect(ak(cwd, "open", "--ticket", ticketFile()).code).toBe(0);
     const check = ak(cwd, "check");
     expect(check.code).toBe(1);
     expect(check.err).toContain("scout");
@@ -698,7 +699,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
   test("a reused branch imports only the command entries recorded after its earlier run opened", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-    const ticketPath = ticketFile(cwd);
+    const ticketPath = ticketFile();
     const argvs = (run: string) => recordsOf(cwd, run, "align")[0]?.commands?.map((entry) => entry.argv.join(" "));
     expect(ak(cwd, "record", "--gate", "align", "--", "sh", "-c", "echo first").code).toBe(0);
     const first = runId(ak(cwd, "open", "--ticket", ticketPath).out);
@@ -718,7 +719,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
   test("an imported record whose every entry predates an earlier run's opening is not imported", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-    const ticketPath = ticketFile(cwd);
+    const ticketPath = ticketFile();
     expect(ak(cwd, "record", "--gate", "bound", "--", ...ok).code).toBe(0);
     const first = runId(ak(cwd, "open", "--ticket", ticketPath).out);
     expect(recordsOf(cwd, first, "bound")).toHaveLength(1);
@@ -730,7 +731,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
-    const ticketPath = ticketFile(cwd);
+    const ticketPath = ticketFile();
     const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
     const seatFlags = ["--class", "red", "--author-kind", "agent", "--host", "claude-code", "--seat-id", "impl-1"];
     expect(ak(cwd, "record", "--gate", "build-checks", ...seatFlags, "--", ...ok).code).toBe(0);
@@ -892,7 +893,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
 
   test("outside the unattended policy a ticket with no criteria or named verification is still unavailable", () => {
     const cwd = repo();
-    runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd)).out);
+    runId(ak(cwd, "open", "--ticket", bareTicketFile()).out);
     for (const g of ["build-checks", "review-full", "review-readiness", "verify"])
       expect(ak(cwd, "record", "--gate", g).code).toBe(0);
     const r = ak(cwd, "check");
@@ -1125,7 +1126,7 @@ describe("the declaration (AC-2)", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     setup(cwd);
-    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    const opened = ak(cwd, "open", "--ticket", ticketFile());
     if (absent === true) {
       expect(opened.code).toBe(0);
       expect(opened.err).toContain(
@@ -1259,7 +1260,7 @@ function deltaUnder(deltaSupervisor: string) {
   const cwd = repo();
   declareSupervisor();
   setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-  const ticketPath = ticketFile(cwd);
+  const ticketPath = ticketFile();
   for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
   const opened = ak(cwd, "open", "--ticket", ticketPath).out;
   const run = runId(opened);
@@ -1284,7 +1285,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const file = declareSupervisor();
-    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    const opened = ak(cwd, "open", "--ticket", ticketFile());
     expect(opened.code).toBe(0);
     expect(opened.err).not.toContain("no supervisor declaration");
     const stored: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", runId(opened.out), "run.json"), "utf8"));
@@ -1305,7 +1306,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
   test("a legacy run carries no supervisor stamp", () => {
     const cwd = repo();
     declareSupervisor();
-    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    const opened = ak(cwd, "open", "--ticket", ticketFile());
     expect(opened.code).toBe(0);
     const stored: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", runId(opened.out), "run.json"), "utf8"));
     expect(stored).not.toHaveProperty("supervisor");
@@ -1405,6 +1406,8 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(runState(cwd, run)).toEqual(before);
   });
 
+  const SHIP_TREE_RECOVERY = "commit what should ship, remove or git-ignore the rest, then record the gates again";
+
   test("ship-preflight refuses a tree with uncommitted changes, even when every gate was recorded at that tree", () => {
     const cwd = repo();
     declareSupervisor();
@@ -1415,16 +1418,46 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const r = ak(cwd, "record", "--gate", "ship-preflight");
     expect(r.code).toBe(1);
     expect(r.err).toContain("uncommitted changes");
-    expect(r.err).toContain("commit them and record the gates again");
+    expect(r.err).toContain(SHIP_TREE_RECOVERY);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a tree whose only difference is an untracked file, naming untracked files", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    mkdirSync(join(cwd, ".lavish"));
+    writeFileSync(join(cwd, ".lavish", "plan.html"), "<p>plan</p>\n");
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("untracked files that git does not ignore");
+    expect(r.err).toContain(SHIP_TREE_RECOVERY);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight passes with an untracked file that the repository ignores", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    writeFileSync(join(cwd, ".gitignore"), ".lavish/\n");
+    git(cwd, "add", ".gitignore");
+    git(cwd, "commit", "-q", "-m", "ignore scratch");
+    mkdirSync(join(cwd, ".lavish"));
+    writeFileSync(join(cwd, ".lavish", "plan.html"), "<p>plan</p>\n");
+    const run = fullRun(cwd);
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
   });
 
   test("a record made under a mistyped supervisor and re-recorded correctly at a later revision does not block ship-preflight", () => {
     const cwd = repo();
     declareSupervisor();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-    const ticketPath = ticketFile(cwd);
+    const ticketPath = ticketFile();
     for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
     const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
     expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
@@ -1531,6 +1564,38 @@ const outputOf = (s: Shipped, index: number): JsonObject => {
   );
   return isObj(parsed) ? parsed : {};
 };
+/**
+ * Makes `cwd` a partial clone whose promisor remote runs a marker program on a fetch, as a worker can through its
+ * repository's configuration. Returns the marker file, which exists once the program has run.
+ */
+function promisorMarker(cwd: string): string {
+  const dir = outsideDir();
+  const marker = join(dir, "marker");
+  const program = join(dir, "upload-pack-marker");
+  writeFileSync(program, `#!/bin/sh\necho ran >> '${marker}'\nexit 1\n`);
+  chmodSync(program, 0o755);
+  git(dir, "init", "-q", "--bare", "upstream.git");
+  git(cwd, "config", "core.repositoryformatversion", "1");
+  git(cwd, "config", "extensions.partialClone", "origin");
+  git(cwd, "config", "remote.origin.url", join(dir, "upstream.git"));
+  git(cwd, "config", "remote.origin.promisor", "true");
+  git(cwd, "config", "remote.origin.uploadpack", program);
+  return marker;
+}
+/** A commit object hashed and never written, so the repository does not have it. */
+const missingCommit = (cwd: string, parent: string, message: string): string =>
+  execGit(cwd, [
+    ["hash-object", "-t", "commit", "--stdin"],
+    [
+      `tree ${git(cwd, "rev-parse", `${parent}^{tree}`)}`,
+      `parent ${parent}`,
+      "author t <t@example.invalid> 1700000000 +0000",
+      "committer t <t@example.invalid> 1700000000 +0000",
+      "",
+      message,
+      "",
+    ].join("\n"),
+  ]);
 
 describe("final ship (AC-5)", () => {
   test("appends a final-ship entry naming the head, the pull request, both digests and the commits after", () => {
@@ -1767,6 +1832,64 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
+  test("final ship fetches nothing for a head the repository lacks: the worker's promisor remote program stays unrun", () => {
+    const s = shipped();
+    const marker = promisorMarker(s.cwd);
+    const ghost = missingCommit(s.cwd, s.head, "never written");
+    const probe = Bun.spawnSync(["git", "cat-file", "-e", `${ghost}^{commit}`], { cwd: s.cwd });
+    expect(probe.exitCode).not.toBe(0);
+    expect(existsSync(marker)).toBe(true); // the repository's configuration does run it on a lazy fetch
+    Bun.spawnSync(["rm", "-f", marker]);
+    const r = finalShip(s.cwd, files(attestationOf(ghost)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is not in this repository");
+    expect(existsSync(marker)).toBe(false);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("final ship fetches nothing for a commit missing between the shipped revision and the head", () => {
+    const s = shipped();
+    const marker = promisorMarker(s.cwd);
+    const middle = missingCommit(s.cwd, s.head, "middle, never written");
+    const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
+    const head = execGit(s.cwd, [
+      ["hash-object", "-t", "commit", "-w", "--stdin"],
+      [
+        `tree ${tree}`,
+        `parent ${middle}`,
+        "author t <t@example.invalid> 1700000001 +0000",
+        "committer t <t@example.invalid> 1700000001 +0000",
+        "",
+        "head over a missing parent",
+        "",
+      ].join("\n"),
+    ]);
+    const r = finalShip(s.cwd, files(attestationOf(head)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("does not descend from the shipped revision");
+    expect(existsSync(marker)).toBe(false);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("final ship reads the default-branch policy without fetching: a policy file missing from a partial clone runs no program", () => {
+    const s = shipped();
+    const marker = promisorMarker(s.cwd);
+    const blob = execGit(s.cwd, [["hash-object", "--stdin"], `${JSON.stringify({ policy: "unattended" })}\n`]);
+    const tree = execGit(s.cwd, [["mktree", "--missing"], `100644 blob ${blob}\tak.lifecycle.json\n`]);
+    const tip = git(s.cwd, "commit-tree", tree, "-m", "opt in");
+    git(s.cwd, "update-ref", "refs/remotes/origin/HEAD", tip);
+    const probe = Bun.spawnSync(["git", "show", `${tip}:ak.lifecycle.json`], { cwd: s.cwd });
+    expect(probe.exitCode).not.toBe(0);
+    expect(existsSync(marker)).toBe(true); // the policy read without the guard runs it
+    Bun.spawnSync(["rm", "-f", marker]);
+    setEnv({ AK_LIFECYCLE_POLICY: undefined });
+    const r = finalShip(s.cwd, files(attestationOf(s.head)).flags);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("apply only under the unattended policy");
+    expect(existsSync(marker)).toBe(false);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
   const SENTENCE = unattendedDisclosure("firstmate");
   const BODY_REFUSALS: [string, string][] = [
     ["the sentence is absent", "Change."],
@@ -1777,6 +1900,19 @@ describe("final ship (AC-5)", () => {
     ["the sentence names another supervisor", `Change.\n\n${unattendedDisclosure("other-crew")}\n`],
     ["the sentence is wrapped across lines", SENTENCE.replace("in place of", "in place\nof")],
     ["the sentence has its spacing changed", SENTENCE.replace("no human", "no  human")],
+    [
+      "a comment holds it after a fence line indented four columns, which is indented code",
+      `Summary.\n\n    \`\`\`\n<!--\n    \`\`\`\n${SENTENCE}\n-->\n`,
+    ],
+    [
+      "a comment holds it after a block-quote fence that the unquoted comment opener ends",
+      `Summary.\n\n> \`\`\`\n<!--\n> \`\`\`\n${SENTENCE}\n-->\n`,
+    ],
+    [
+      "a comment holds it after a list-item fence that the unindented comment opener ends",
+      `Summary.\n\n- \`\`\`\n<!--\n- \`\`\`\n${SENTENCE}\n-->\n`,
+    ],
+    ["a top-level fence holds it past a quoted fence line", `Summary.\n\n\`\`\`\n> \`\`\`\n${SENTENCE}\n\`\`\`\n`],
   ];
 
   test.each(BODY_REFUSALS)("refuses the body when %s", (_name, body) => {
@@ -1856,41 +1992,55 @@ const swapLastCase = (path: string): string => {
   );
 };
 
-describe("supervisor-file containment: letter case under node, GIT_* variables and a nested project", () => {
-  test("a case-variant spelling of an in-checkout declaration is refused by the gate under node", () => {
-    const cwd = repo();
-    const variant = swapLastCase(cwd);
-    if (variant === cwd || !existsSync(variant) || realpathSync.native(variant) !== cwd) return; // a case-sensitive volume
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-    inCheckout(cwd, "declaration.json");
-    const named = join(variant, "declaration.json");
-    setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: named });
-    const r = nodeGate(cwd, "unattended", "check", "--phase", "super-align");
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("outside the repository");
-    expect(r.out).toBe("");
-  });
+/** Whether the volume that holds the test checkouts tells `A` from `a`. There a case-variant spelling names no file. */
+const caseSensitiveTmp = (() => {
+  const probe = processScratch("ak-case-");
+  writeFileSync(join(probe, "a"), "");
+  return !existsSync(join(probe, "A"));
+})();
 
-  test("a case-variant spelling of an in-checkout attestation is refused by the gate under node", () => {
-    const s = shipped();
-    const variant = swapLastCase(s.cwd);
-    if (variant === s.cwd || !existsSync(variant) || realpathSync.native(variant) !== s.cwd) return; // a case-sensitive volume
-    const inside = join(s.cwd, "attestation.json");
-    writeFileSync(inside, `${JSON.stringify(attestationOf(s.head))}\n`);
-    const r = nodeGate(
-      s.cwd,
-      "record",
-      "--gate",
-      "ship-preflight",
-      "--attestation",
-      join(variant, "attestation.json"),
-      "--body-file",
-      files(null).bodyFile,
-    );
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("outside the repository");
-    expect(entriesOf(s)).toEqual(["supervisor"]);
-  });
+describe("supervisor-file containment: letter case under node, GIT_* variables and a nested project", () => {
+  // On a case-sensitive volume the variant spelling is another path, so the two case tests are skipped there.
+  test.skipIf(caseSensitiveTmp)(
+    "a case-variant spelling of an in-checkout declaration is refused by the gate under node",
+    () => {
+      const cwd = repo();
+      const variant = swapLastCase(cwd);
+      expect(realpathSync.native(variant)).toBe(cwd);
+      setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+      inCheckout(cwd, "declaration.json");
+      const named = join(variant, "declaration.json");
+      setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: named });
+      const r = nodeGate(cwd, "unattended", "check", "--phase", "super-align");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("outside the repository");
+      expect(r.out).toBe("");
+    },
+  );
+
+  test.skipIf(caseSensitiveTmp)(
+    "a case-variant spelling of an in-checkout attestation is refused by the gate under node",
+    () => {
+      const s = shipped();
+      const variant = swapLastCase(s.cwd);
+      expect(realpathSync.native(variant)).toBe(s.cwd);
+      const inside = join(s.cwd, "attestation.json");
+      writeFileSync(inside, `${JSON.stringify(attestationOf(s.head))}\n`);
+      const r = nodeGate(
+        s.cwd,
+        "record",
+        "--gate",
+        "ship-preflight",
+        "--attestation",
+        join(variant, "attestation.json"),
+        "--body-file",
+        files(null).bodyFile,
+      );
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("outside the repository");
+      expect(entriesOf(s)).toEqual(["supervisor"]);
+    },
+  );
 
   test("an exported GIT_DIR does not move the repository the declaration is judged against", () => {
     const cwd = repo();
@@ -1985,6 +2135,94 @@ describe("supervisor-file containment: letter case under node, GIT_* variables a
     mkdirSync(nest);
     git(nest, "init", "-q", "-b", "main");
     expect(ak(cwd, "unattended", "check", "--phase", "super-align", "--project", nest).code).toBe(0);
+  });
+
+  test("a declaration in the work tree of a repository that encloses the project is refused naming that repository", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const nest = join(cwd, "nest");
+    mkdirSync(nest);
+    git(nest, "init", "-q", "-b", "main");
+    inCheckout(cwd, "declaration.json");
+    const enclosing = ak(nest, "unattended", "check", "--phase", "super-align");
+    expect(enclosing.code).toBe(1);
+    expect(enclosing.err).toContain(`is inside ${cwd}, a repository that encloses the project`);
+    expect(enclosing.err).toContain("outside the repository and every repository that encloses it");
+    inCheckout(cwd, "nest/declaration.json");
+    const own = ak(nest, "unattended", "check", "--phase", "super-align");
+    expect(own.code).toBe(1);
+    expect(own.err).toContain("is inside the repository; it must be outside the repository");
+    expect(own.err).not.toContain("encloses");
+  });
+
+  /** Repository layouts nested in a worktree whose git reports no work tree, or no enclosing step, to walk up from. */
+  const NESTS: [string, (cwd: string) => string][] = [
+    [
+      "a bare repository",
+      (cwd) => {
+        git(cwd, "init", "-q", "--bare", "nest");
+        return join(cwd, "nest");
+      },
+    ],
+    [
+      "a repository whose core.worktree names a missing directory",
+      (cwd) => {
+        git(cwd, "init", "-q", "-b", "main", "nest");
+        git(join(cwd, "nest"), "config", "core.worktree", join(outsideDir(), "missing"));
+        return join(cwd, "nest");
+      },
+    ],
+    [
+      "a repository whose config sets core.bare",
+      (cwd) => {
+        git(cwd, "init", "-q", "-b", "main", "nest");
+        git(join(cwd, "nest"), "config", "core.bare", "true");
+        return join(cwd, "nest");
+      },
+    ],
+    [
+      "a repository under a directory that holds an invalid .git file",
+      (cwd) => {
+        mkdirSync(join(cwd, "a"));
+        writeFileSync(join(cwd, "a", ".git"), "not a gitfile\n");
+        git(join(cwd, "a"), "init", "-q", "-b", "main", "nest");
+        return join(cwd, "a", "nest");
+      },
+    ],
+  ];
+
+  test.each(NESTS)(
+    "%s nested in the worktree and passed as --project does not hide a declaration in the worktree",
+    (_name, nestIn) => {
+      const cwd = repo();
+      setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+      inCheckout(cwd, "declaration.json");
+      const nest = nestIn(cwd);
+      const r = ak(cwd, "unattended", "check", "--phase", "super-align", "--project", nest);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("outside the repository");
+      expect(r.out).toBe("");
+    },
+  );
+
+  test.each([
+    ["an invalid .git file", (at: string) => writeFileSync(at, "not a gitfile\n")],
+    ["an empty .git directory", (at: string) => mkdirSync(at)],
+  ])("%s on the way up from the project refuses the declaration rather than being skipped", (_name, make) => {
+    const above = outsideDir();
+    make(join(above, ".git"));
+    git(above, "init", "-q", "-b", "main", "nest");
+    const file = join(above, "declaration.json");
+    writeFileSync(file, JSON.stringify(declarationOf("firstmate")));
+    setEnv({
+      AK_LIFECYCLE_POLICY: "unattended",
+      AK_LIFECYCLE_SUPERVISOR: "firstmate",
+      AK_LIFECYCLE_SUPERVISOR_DECLARATION: file,
+    });
+    const r = ak(join(above, "nest"), "unattended", "check", "--phase", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(`${join(above, ".git")} is not a repository git can read`);
+    expect(r.out).toBe("");
   });
 });
 

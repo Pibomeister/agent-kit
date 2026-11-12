@@ -89,11 +89,13 @@ const exec = (cmd: string, args: readonly string[], cwd?: string) => {
 /**
  * The active policy: the environment first, else the default-branch configuration at the local
  * `refs/remotes/origin/HEAD`, never the working tree or the task branch. Undefined is the legacy policy.
- * Only the configuration's `policy` key is read; any other key is ignored.
+ * Only the configuration's `policy` key is read; any other key is ignored. `gitOptions` go before each git
+ * subcommand: final ship passes its guard there, and a read that fails under it is the legacy policy.
  */
 export function resolvePolicy(
   project: string,
   env: NodeJS.ProcessEnv = process.env,
+  gitOptions: readonly string[] = [],
 ): { ok: true; policy?: Policy } | { ok: false; reason: string } {
   const rawSupervisor = env[SUPERVISOR_ENV]?.trim();
   const supervisor = rawSupervisor !== undefined && rawSupervisor !== "" ? rawSupervisor : undefined;
@@ -107,10 +109,14 @@ export function resolvePolicy(
       return { ok: false, reason: `${POLICY_ENV} accepts only '${UNATTENDED}', not '${value}'` };
     return { ok: true, policy: stamp("environment") };
   }
-  const rev = exec("git", ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD^{commit}"], project);
+  const rev = exec(
+    "git",
+    [...gitOptions, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD^{commit}"],
+    project,
+  );
   const revision = rev.out.trim();
   if (rev.code !== 0 || revision === "") return { ok: true };
-  const file = exec("git", ["show", `${revision}:${CONFIG_FILE}`], project);
+  const file = exec("git", [...gitOptions, "show", `${revision}:${CONFIG_FILE}`], project);
   if (file.code !== 0 || field(parseJson(file.out), "policy") !== UNATTENDED) return { ok: true };
   return { ok: true, policy: stamp(`default-branch:${revision}`) };
 }
@@ -261,34 +267,126 @@ export function attestationFailures(value: Json | undefined, supervisor: string)
   return read.ok ? [] : read.failures;
 }
 
-/** A line that opens or closes a fenced block, once block-quote and list markers are stripped; the rest is its info string. */
-const FENCE = /^[ \t]*(`{3,}|~{3,})([\s\S]*)$/;
-/** One block-quote marker or one list marker (bullet or number) and the space after it. */
-const CONTAINER = /^[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]))[ \t]?/;
+/** A fence line from its first non-blank character: the fence characters, then the info string. */
+const FENCE = /^(`{3,}|~{3,})(.*)$/;
+/** A list marker, bullet or number, followed by a space, a tab or the end of the line. */
+const ITEM = /^(?:[-*+]|(\d{1,9})[.)])(?=[ \t]|$)/;
+/** A thematic break, which a line of three list markers is rather than a list item. */
+const THEMATIC = /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+const BLANK = /^[ \t]*$/;
+/** An ATX heading, and the underline that makes the paragraph above it a setext heading. */
+const HEADING = /^#{1,6}(?:[ \t]|$)/;
+const SETEXT = /^=+[ \t]*$/;
 
-/** The line without its block-quote and list markers, so a fence nested in a container is seen as a fence. */
-function unwrap(line: string): string {
-  let rest = line;
-  for (let match = CONTAINER.exec(rest); match !== null; match = CONTAINER.exec(rest))
-    rest = rest.slice(match[0].length);
-  return rest;
+/** A container that later lines continue: a block quote, or a list item whose content starts `width` columns in. */
+type Container = { quote: true } | { quote: false; width: number };
+
+/** A place in a line: its index, its column, and the column where the innermost matched container's content starts. */
+interface Cursor {
+  at: number;
+  column: number;
+  base: number;
+}
+
+/** The cursor past the spaces and tabs at `from`; a tab moves to the next multiple of four columns. */
+function skipBlank(line: string, from: Cursor): Cursor {
+  let { at, column } = from;
+  for (; line[at] === " " || line[at] === "\t"; at += 1)
+    column = line[at] === "\t" ? column + 4 - (column % 4) : column + 1;
+  return { at, column, base: from.base };
+}
+
+/** The cursor past a block-quote marker at `from`, 0 to 3 columns in, and the one space after it. */
+function quoteMarker(line: string, from: Cursor): Cursor | undefined {
+  const blank = skipBlank(line, from);
+  if (blank.column - from.base > 3 || line[blank.at] !== ">") return undefined;
+  const at = blank.at + 1;
+  const column = blank.column + 1;
+  if (line[at] === " ") return { at: at + 1, column: column + 1, base: column + 1 };
+  return { at, column, base: line[at] === "\t" ? column + 1 : column };
+}
+
+/** The cursor past `container` when the line continues it: a quote marker, or a blank line or the item's indent. */
+function continues(line: string, from: Cursor, container: Container): Cursor | undefined {
+  if (container.quote) return quoteMarker(line, from);
+  const base = from.base + container.width;
+  if (BLANK.test(line.slice(from.at))) return { ...from, base };
+  if (skipBlank(line, from).column < base) return undefined;
+  let { at, column } = from;
+  for (; column < base; at += 1) column = line[at] === "\t" ? column + 4 - (column % 4) : column + 1;
+  return { at, column, base };
 }
 
 /**
- * The text of one line outside any fence that a renderer would show: inline code spans stay whole, so a comment
- * opener inside one starts nothing, and everything from a comment opener to its closer is dropped. `state.comment`
- * carries an open comment from line to line.
+ * A container that starts at `from`, 0 to 3 columns in, and the cursor past its marker. Inside a paragraph a list
+ * item starts only with content and, numbered, only at 1, as in CommonMark.
  */
-function visibleText(line: string, state: { comment: boolean }): string {
+function opens(line: string, from: Cursor, paragraph: boolean): { container: Container; cursor: Cursor } | undefined {
+  const quote = quoteMarker(line, from);
+  if (quote !== undefined) return { container: { quote: true }, cursor: quote };
+  const blank = skipBlank(line, from);
+  const rest = line.slice(blank.at);
+  const marker = ITEM.exec(rest);
+  if (blank.column - from.base > 3 || marker === null || THEMATIC.test(rest)) return undefined;
+  const end = { at: blank.at + marker[0].length, column: blank.column + marker[0].length, base: from.base };
+  const after = skipBlank(line, end);
+  const empty = after.at === line.length;
+  if (paragraph && (empty || (marker[1] !== undefined && Number(marker[1]) !== 1))) return undefined;
+  if (!empty && after.column - end.column <= 4)
+    return { container: { quote: false, width: after.column - from.base }, cursor: { ...after, base: after.column } };
+  const cursor = line[end.at] === " " ? { at: end.at + 1, column: end.column + 1 } : end;
+  return {
+    container: { quote: false, width: end.column + 1 - from.base },
+    cursor: { ...cursor, base: end.column + 1 },
+  };
+}
+
+/** The fence that a line opens at `from`, 0 to 3 columns in; a backtick fence has no backtick in its info string. */
+function fenceOpener(line: string, from: Cursor): { char: string; length: number } | undefined {
+  const blank = skipBlank(line, from);
+  const fence = FENCE.exec(line.slice(blank.at));
+  const marks = fence?.[1] ?? "";
+  if (blank.column - from.base > 3 || marks === "" || (marks[0] === "`" && (fence?.[2] ?? "").includes("`")))
+    return undefined;
+  return { char: marks[0] ?? "", length: marks.length };
+}
+
+/**
+ * Whether a line that a paragraph could take starts a block instead, which ends the paragraph. `inside` is whether
+ * the line continues every container the paragraph sits in; a lazy line is checked outside it, as in CommonMark.
+ */
+function startsBlock(line: string, from: Cursor, inside: boolean): boolean {
+  const blank = skipBlank(line, from);
+  const rest = line.slice(blank.at);
+  if (BLANK.test(rest) || opens(line, from, inside) !== undefined || fenceOpener(line, from) !== undefined) return true;
+  return blank.column - from.base <= 3 && (rest.startsWith("<!--") || THEMATIC.test(rest) || HEADING.test(rest));
+}
+
+/** What a line reads while it is scanned: a comment the current block opened, and one the page is still inside. */
+interface CommentState {
+  comment: boolean;
+  raw: boolean;
+}
+
+/**
+ * The text of one line outside any fence that a browser shows. `state.comment` is a comment that this block
+ * opened, which ends at `-->`. `state.raw` is a comment that an earlier HTML block left open in the rendered page:
+ * the page hides everything until a later HTML block line carries `-->`. Renderers differ on which inline text
+ * reaches the page as raw HTML, so no paragraph ends it. Outside an HTML block, inline code spans stay whole, so a
+ * comment opener inside one starts nothing.
+ */
+function visibleText(line: string, state: CommentState, html = false): string {
+  if (state.raw && !html) return "";
   let out = "";
   let i = 0;
   while (i < line.length) {
-    if (state.comment) {
+    if (state.comment || (html && state.raw)) {
       const end = line.indexOf("-->", i);
       if (end < 0) return out;
       state.comment = false;
+      state.raw = false;
       i = end + 3;
-    } else if (line[i] === "`") {
+    } else if (line[i] === "`" && !html) {
       let run = 1;
       while (line[i + run] === "`") run += 1;
       let close = -1;
@@ -301,9 +399,9 @@ function visibleText(line: string, state: { comment: boolean }): string {
       const end = close < 0 ? i + run : close + run;
       out += line.slice(i, end);
       i = end;
-    } else if (line.startsWith("<!-->", i)) i += 5;
-    else if (line.startsWith("<!--->", i)) i += 6;
-    else if (line.startsWith("<!--", i)) {
+    } else if (line.startsWith("<!-->", i) || line.startsWith("<!--->", i)) {
+      i += line.startsWith("<!-->", i) ? 5 : 6;
+    } else if (line.startsWith("<!--", i)) {
       state.comment = true;
       i += 4;
     } else {
@@ -316,30 +414,105 @@ function visibleText(line: string, state: { comment: boolean }): string {
 
 /**
  * Whether the body carries the disclosure sentence for `supervisor`: an exact substring test with no whitespace
- * normalisation over the text that is outside backtick or tilde fences and outside HTML comments. Fences come
- * first: a comment opener inside a fence starts no comment, and a fence line inside a comment starts no fence.
- * A backtick fence line has no backtick in its info string, as in CommonMark, so a line of inline code opens
- * nothing. Block-quote and list markers are stripped to find fences, at any indent, so the check hides at least
- * what a renderer hides. An unclosed comment or fence hides the rest of the body. It does not see text that
- * renders hidden by other means.
+ * normalisation over the text a CommonMark renderer shows outside code blocks and HTML comments. The check follows
+ * the block structure that decides where those start and end. Block quotes and list items are containers: a later
+ * line continues a quote with its marker and a list item with a blank line or the item's indent, and a paragraph
+ * also takes a lazy line. A fence opens and closes only 0 to 3 columns past its container's markers; a line four
+ * columns past them is indented code, which hides as a fence does. A backtick fence line has no backtick in its info
+ * string. A fence ends at its closer or at the first line that does not continue its container, and that line is
+ * read as ordinary text. Inside a fence no marker is stripped, and a comment opener starts nothing. A comment opener
+ * at the start of a block opens an HTML block that ends at the line holding `-->` or where its container ends. A
+ * comment that such a block leaves open hides the rest of the page until a later HTML block line carries `-->`. A
+ * paragraph is read whole, so an inline code span or comment may cross its lines, and a comment opener inside it
+ * hides text to its closer or to the end of the paragraph. Renderers differ on whether `<!-->` or `<!--->` ends the
+ * HTML block it opens, so the sentence must show under both readings. The check does not see text that renders
+ * hidden by other means, such as raw HTML elements or link definitions.
  */
 export function bodyCarriesDisclosure(body: string, supervisor: string): boolean {
+  const sentence = unattendedDisclosure(supervisor);
+  // Renderers differ on whether the `-->` inside `<!-->` or `<!--->` ends the HTML block it opens: read it both ways.
+  return shownText(body, false).includes(sentence) && shownText(body, true).includes(sentence);
+}
+
+/**
+ * The text that a renderer shows outside code blocks and comments, with line breaks between its lines and blocks.
+ * With `emptyRunsOn`, an HTML block that opens with `<!-->` or `<!--->` and holds no other `-->` on that line runs on
+ * past it.
+ */
+function shownText(body: string, emptyRunsOn: boolean): string {
   const shownLines: string[] = [];
-  const state = { comment: false };
-  let open: { char: string; length: number } | undefined;
+  const state: CommentState = { comment: false, raw: false };
+  const stack: Container[] = [];
+  let fence: { char: string; length: number } | undefined;
+  let htmlBlock = false;
+  let paragraph = false;
+  /** The lines of the open paragraph, read together because an inline code span or a comment may cross lines. */
+  const lines: string[] = [];
+  const endParagraph = () => {
+    if (lines.length > 0) shownLines.push(visibleText(lines.join("\n"), state));
+    lines.length = 0;
+  };
+  /** Reads one line of an HTML block and says whether the block goes on: it ends at the line that holds `-->`. */
+  const htmlLine = (text: string, ends = text.includes("-->")): boolean => {
+    shownLines.push(visibleText(text, state, true));
+    if (!ends) return true;
+    state.raw ||= state.comment;
+    state.comment = false;
+    return false;
+  };
   for (const line of body.split("\n")) {
-    if (state.comment) {
-      shownLines.push(visibleText(line, state));
+    let cursor: Cursor = { at: 0, column: 0, base: 0 };
+    let matched = 0;
+    for (const container of stack) {
+      const next = continues(line, cursor, container);
+      if (next === undefined) break;
+      cursor = next;
+      matched += 1;
+    }
+    if (fence !== undefined && matched === stack.length) {
+      const closer = fenceOpener(line, cursor);
+      const info = line.slice(skipBlank(line, cursor).at + (closer?.length ?? 0));
+      if (closer?.char === fence.char && closer.length >= fence.length && BLANK.test(info)) fence = undefined;
       continue;
     }
-    const fence = FENCE.exec(unwrap(line));
-    const marks = fence?.[1] ?? "";
-    const info = fence?.[2] ?? "";
-    if (open !== undefined) {
-      if (marks[0] === open.char && marks.length >= open.length && info.trim() === "") open = undefined;
-    } else if (marks !== "" && !(marks[0] === "`" && info.includes("`")))
-      open = { char: marks[0] ?? "", length: marks.length };
-    else shownLines.push(visibleText(line, state));
+    if (htmlBlock && matched === stack.length) {
+      htmlBlock = htmlLine(line.slice(cursor.at));
+      continue;
+    }
+    if (fence === undefined && !htmlBlock && paragraph && !startsBlock(line, cursor, matched === stack.length)) {
+      // A setext underline ends the paragraph as a heading; any other line continues it, lazily past a container.
+      const lead = skipBlank(line, cursor);
+      paragraph = matched < stack.length || lead.column - cursor.base > 3 || !SETEXT.test(line.slice(lead.at));
+      lines.push(line.slice(cursor.at));
+      if (!paragraph) endParagraph();
+      continue;
+    }
+    const interrupts = paragraph && matched === stack.length;
+    endParagraph();
+    // An HTML block that its container ends leaves its comment open in the page; an inline one never closed is text.
+    if (htmlBlock) state.raw ||= state.comment;
+    fence = undefined;
+    htmlBlock = false;
+    paragraph = false;
+    state.comment = false;
+    stack.length = matched;
+    for (let open = opens(line, cursor, interrupts); open !== undefined; open = opens(line, cursor, false)) {
+      stack.push(open.container);
+      cursor = open.cursor;
+    }
+    const blank = skipBlank(line, cursor);
+    const rest = line.slice(blank.at);
+    fence = fenceOpener(line, cursor);
+    if (fence !== undefined || BLANK.test(rest)) continue;
+    if (blank.column - cursor.base > 3) continue; // indented code
+    if (rest.startsWith("<!--")) {
+      htmlBlock = htmlLine(rest, (emptyRunsOn ? rest.slice(4) : rest).includes("-->"));
+      continue;
+    }
+    paragraph = !HEADING.test(rest) && !THEMATIC.test(rest);
+    if (paragraph) lines.push(rest);
+    else shownLines.push(visibleText(rest, state));
   }
-  return shownLines.join("\n").includes(unattendedDisclosure(supervisor));
+  endParagraph();
+  return shownLines.join("\n");
 }
