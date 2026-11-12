@@ -135,6 +135,12 @@ const DECLARATIONS: Fixture[] = [
   { name: "null at the top", value: null, valid: false },
 ];
 
+/** The nested keys the attestation schema requires, section by section; a test below pins the lists to the schema. */
+const NESTED_REQUIRED = [
+  ["validation", VALIDATION, ["result", "ref"]],
+  ["review", REVIEW, ["result", "reviewer", "authors", "ref"]],
+] as const;
+
 const ATTESTATIONS: Fixture[] = [
   { name: "a complete attestation", value: attestation(), valid: true },
   { name: "no pull request reference", value: without(attestation(), "pull_request"), valid: true },
@@ -184,9 +190,26 @@ const ATTESTATIONS: Fixture[] = [
     valid: true,
   },
   { name: "a reviewer that is also an author", value: review({ authors: ["vendor-b/model-x"] }), valid: true },
+  ...NESTED_REQUIRED.flatMap(([section, whole, keys]) =>
+    keys.map((key) => ({
+      name: `${section}.${key} missing`,
+      value: attestation({ [section]: without(whole, key) }),
+      valid: false,
+    })),
+  ),
   { name: "an array at the top", value: [], valid: false },
   { name: "null at the top", value: null, valid: false },
 ];
+
+describe("the nested required keys", () => {
+  test.each(NESTED_REQUIRED)("%s lists exactly the keys the attestation schema requires", (section, _whole, keys) => {
+    const schema = lib.parseJson(readFileSync(join(ROOT, "schemas", "supervisor-attestation.schema.json"), "utf8"));
+    const properties = isObj(schema) ? schema.properties : undefined;
+    const nested = isObj(properties) ? properties[section] : undefined;
+    const required = isObj(nested) ? nested.required : undefined;
+    expect(required).toEqual([...keys]);
+  });
+});
 
 describe("the contract's names and constants", () => {
   test("the library exports the contract constants and the closed obligation list", () => {
@@ -308,6 +331,13 @@ describe("the disclosure sentence in a body", () => {
     ["after a closed fence", `\`\`\`\ncode\n\`\`\`\n${sentence()}\n`],
     ["after a closed tilde fence", `~~~~\ncode\n~~~~\n${sentence()}\n`],
     ["after a comment", `<!-- note -->\n${sentence()}`],
+    [
+      "after a fenced html block that holds an unclosed comment opener",
+      `\`\`\`html\n<!-- template\n\`\`\`\n${sentence()}\n`,
+    ],
+    ["after a paragraph that quotes the comment opener in inline code", `Strips \`<!--\` comments.\n\n${sentence()}\n`],
+    ["after an inline empty comment", `Inline \`<!-->\` before it.\n\n${sentence()}\n`],
+    ["after a line that is inline code and not a fence", `\`\`\`npm test\`\`\`\n\n${sentence()}\n`],
   ])("is carried %s", (_name, body) => {
     expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(true);
   });
@@ -324,6 +354,17 @@ describe("the disclosure sentence in a body", () => {
     ["with a doubled space", sentence().replace("no human", "no  human")],
     ["with its final period removed", sentence().slice(0, -1)],
     ["absent", "Change."],
+    ["inside a comment that is never closed", `Change.\n\n<!--\n${sentence()}\n`],
+    ["inside a backtick fence that holds a tilde line", `\`\`\`\n~~~\n${sentence()}\n\`\`\`\n`],
+    ["inside a fence whose would-be closer has an info string", `\`\`\`\n\`\`\`js\n${sentence()}\n\`\`\`\n`],
+    [
+      "only inside a real fence after a line that is inline code",
+      `\`\`\`js\`\`\`\n\ntext\n\n\`\`\`\n${sentence()}\n\`\`\`\n`,
+    ],
+    ["only inside a backtick fence in a block quote", `> \`\`\`\n> ${sentence()}\n> \`\`\`\n`],
+    ["only inside a tilde fence in a block quote", `> ~~~\n> ${sentence()}\n> ~~~\n`],
+    ["only inside a backtick fence in a list item", `- \`\`\`\n  ${sentence()}\n  \`\`\`\n`],
+    ["only inside a backtick fence in a numbered list item", `1. \`\`\`\n   ${sentence()}\n   \`\`\`\n`],
   ])("is not carried when it is %s", (_name, body) => {
     expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
   });

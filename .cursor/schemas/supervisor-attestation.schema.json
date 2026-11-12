@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/supervisor-attestation.schema.json",
   "title": "Supervisor attestation",
-  "description": "The file a run supervisor supplies at final ship: its attestation of the validation gate and the independent review at one head. Shape only: that the supervisor equals the run's, that the reviewer is not an author, that the head exists and descends from the shipped revision, and that the file sits outside the repository are checked by the gate. agent-kit checks the attestation but cannot authenticate it.",
+  "description": "The file a run supervisor supplies at final ship: its attestation of the validation gate and the independent review at one head. Shape only: that the supervisor equals the run's, that the reviewer is not an author, that the head exists and descends from the shipped revision, and that the file sits outside the repository are checked by the gate. agent-kit checks the attestation but cannot authenticate it. Every pattern is an ECMA-262 regular expression in unicode mode, as Ajv compiles it; the identity pattern uses the \\p{Lu} and \\p{Lt} classes.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "supervisor", "head", "validation", "review"],
