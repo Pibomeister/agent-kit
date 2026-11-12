@@ -9,6 +9,7 @@
  * and logs every request's method.
  */
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -577,9 +578,12 @@ describe("independent review status (pure)", () => {
 // ── the command seam ─────────────────────────────────────────────────────────
 
 function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd });
-  if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
-  return p.stdout.toString().trim();
+  const run = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
+  if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr ?? ""}`);
+  return (run.stdout ?? "").trim();
 }
 
 function repo(): string {

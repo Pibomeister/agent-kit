@@ -295,12 +295,15 @@ describe("where the registry is", () => {
 });
 
 describe("with no registry configured", () => {
+  // Two full `ak validate` runs. On a loaded host the 60s budget fired while the
+  // second run was still going, so this uses the same 300s allowance the lifecycle
+  // gate already states for a case that runs long under load.
   test("`ak validate --project` on a record without one prints the summary `ak validate` prints", () => {
     const record = writeRecord(freshRepository(), null);
     const plain = summary(["validate"]);
     expect(plain).toMatch(/^ak validate: \d+ errors?/);
     expect(summary(["validate", "--project", record])).toBe(plain);
-  }, 60_000);
+  }, 300_000);
 
   test("no project record at all runs the check and reports nothing", () => {
     expect(constitutionIssues(undefined)).toEqual([]);
