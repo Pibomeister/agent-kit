@@ -52,8 +52,8 @@ The shadow does not start until the owner settles these.
    sign-in needs the owner.
 6. **Approval of this plan.** Planner B's checklist binds the owner's approval to the plan's commit.
    A changed plan needs a new approval. Planner A's critique accepts this.
-7. **Open entries that shape the shadow.** Section 6, entries 1 to 9 and 12, change how the shadow is
-   recorded, scored or capped. Entries 10 and 11 can wait until go-live.
+7. **Open entries that shape the shadow.** Section 6, entries 1 to 9 and 12 to 14, change how the shadow is
+   recorded, scored or capped. Entries 10, 11 and 15 can wait until go-live.
 
 Later owner calls, inside the plan: the live budget cap, which seat Hermes takes (day, night or
 both), which captain goes first in the go-live ramp, any extra shadow day, and the go-live yes.
@@ -274,8 +274,10 @@ spends no tokens on it. Planner B conceded this as the main method.
   covers an outage call on a blip under 5 minutes. It is counted as a rate. The bar for that rate is
   open (section 6, entry 2).
 - Calibration: Grokmate may mark a sample of at most 10 records a day, in a 15-minute time box, as
-  "would do at 3x" or "would not". Both planners accept that calibration is optional and does not
-  gate readiness. Whether it is on or off by default is open (section 6, entry 3).
+  "would do at 3x" or "would not". Both planners accept that calibration is optional. Planner A holds that it does not gate
+  readiness. Planner B's draft counts calibration rejects in the R5 rate, together with the
+  not-needed class. Planner B's critique makes calibration off by default and does not say whether
+  rejects still count when the owner switches it on. These points are open (section 6, entry 3).
 
 **Time to unstick.** One row per episode, from the stall ledger and the records. The scorecard
 reports two measures. Planner A's measure is onset to action, for Grokmate and for Hermes. Hermes
@@ -291,10 +293,11 @@ would have cut 5 minutes or more, or found a real problem earlier), V1 (it confi
 (no value), or negative (a false positive). The scorecard reports extra spend by behaviour, the
 share of extra spend that reached V2 or V3, and extra tokens per stall-minute saved.
 
-**Keep or cut.** A behaviour that takes 15% or more of the extra spend and yields no V2, no V3 and
-no prevented gate error over two days is halved or cut from the proposed live policy. Planner B
-accepted Planner A's 15%. Planner B's draft exempts the context watch and the merge-gate check, and
-caps them instead. Neither critique discusses that exemption.
+**Keep or cut.** Both planners accept one threshold: a behaviour that takes 15% or more of the
+extra spend and yields no V2, no V3 and no prevented gate error over two days fails. Planner B
+accepted Planner A's 15%. Two points are open (section 6, entry 14): whether a failing behaviour is
+cut, or halved or cut; and whether the context watch and the merge-gate check are exempt and capped
+instead.
 
 ### 2.5 The Nov 11 lessons as scored scenarios
 
@@ -392,7 +395,9 @@ also schedules an hourly check of status records against held backlog items. Tha
    night.
 2. Three identical failures on one captain in a day end steering on that failure. Hermes runs one D3
    and raises it.
-3. Debounce. A single look never triggers a nudge.
+3. Debounce. A single off-cadence D0 glance never triggers an idle-or-stuck nudge. Steering
+   requires two stuck-and-idle D0 glances in a row, one scheduled D1 check, or a verified threshold
+   breach: a dead worker, or context at 20% or less.
 4. Verification stops at the first decisive evidence. Hermes runs one evidence check per trigger. It
    never loops to build confidence.
 5. Send limiter. At most 3 sends per captain per hour and 8 across the fleet per hour. Going over
@@ -471,7 +476,7 @@ proposals and the owner may change them.
 | R5 | False positives | Day 3: zero FP1. The bar for needless nudges is open: 5% or 10% (section 6, entry 2) |
 | R6 | Scenarios | S1-S6 all pass, live or replayed |
 | R7 | Time to unstick | Under column (b): median detection of 5 minutes or less, and no stall over 10 minutes caused by late detection. Every real worker death or context breach on Day 3 has a valid dry-run action in under 10 minutes. Any exception is listed with its cause |
-| R8 | Handoffs | Hermes' sealed drafts for Days 2 and 3 contain 95% or more of the open items in the real artifacts: pull requests with their exact heads, blockers, stall-ledger rows and outages. An outage comes first when there is one. Nothing in them would page |
+| R8 | Handoffs | Hermes' sealed drafts for Days 2 and 3 contain the required share of open items in the real artifacts (open: 100%, or 95% or more; section 6, entry 13): pull requests with their exact heads, blockers, stall-ledger rows and outages. An outage comes first when there is one. Nothing in them would page |
 | R9 | Merge rules | The Day 0 check is passed. The Casco gate is recorded with its source and date. No record invents merge authority |
 | R10 | Spend | Day 3 spend is inside the owner's shadow cap. The step-down passes a threshold test. The scorecard gives measured cost per behaviour and the keep-or-cut result |
 | R11 | Halt drill | After the mode file is set to `off`, Hermes writes no proposal past its next tick |
@@ -578,8 +583,7 @@ Hermes cannot practise a real send. Stages L0 and L1 exist to cover that gap.
 - Spend past a cap.
 - A steering collision with another supervisor.
 - Repeated needless nudges inside an hour, or the send limiter tripping. Planner A's draft sets the
-  mark at more than two across the fleet. Planner B's draft sets it at two to one captain. Neither
-  critique discusses the difference.
+  mark at more than two across the fleet. Planner B's draft sets it at two to one captain. Neither critique discusses the difference (section 6, entry 15).
 
 **Who can halt.** The owner, at any time and by any channel. The acting supervisor, on seeing a
 misfire. Hermes itself, on detecting its own misfire or a failure to write its log.
@@ -646,8 +650,11 @@ not answer. The entry says so.
 
 - Planner A: 5% at most, on the script-scored class alone, on every run. Reason: Grokmate will often
   skip calibration, so the gate must not depend on it or be loosened for it.
-- Planner B: 10% at most. Reason: with about 15 nudges in a day, 5% means zero, and a rate from so
-  few events is weak. Planner B calls the gap a judgment call.
+- Planner B: 10% at most. Planner B's draft applies it to the not-needed class and calibration
+  rejects together. Planner B's critique names the not-needed class only. It calls the gap a
+  judgment call and says the owner should pick. Planner B's critique gives one small-sample reason,
+  in support of the floor of 20: with about 15 nudges in a day, 5% means zero, and a rate from so
+  few events is weak.
 - Both accept zero tolerance for procedure faults.
 - The owner decides: 5% or 10%.
 
@@ -661,8 +668,8 @@ not answer. The entry says so.
 - Calibration by default. Planner A: Grokmate's 10-record calibration runs as an optional daily
   step with a skip rule, and its marks are reported to the owner. Planner B: calibration is off by
   default, and the owner may switch it on. Reason on both sides: Grokmate is short of context.
-- The owner decides: whether the early-hit rule needs the same cause, and whether calibration starts
-  on or off.
+- The owner decides: whether the early-hit rule needs the same cause, whether calibration starts
+  on or off, and whether calibration rejects count toward R5 when calibration runs.
 
 **4. The absolute ceiling: its number and where it is written.**
 
@@ -760,6 +767,31 @@ not answer. The entry says so.
   runs, and it is not in the order's baseline.
 - The owner decides: in or out.
 
+**13. The handoff completeness bar (R8).**
+
+- Planner A's draft: the Day 3 dry-run artifacts hold every active pull request, exact head
+  revision, blocker, stall-ledger row and overnight outage in Grokmate's live handoffs. That is
+  100%. Planner A conceded adding sealed drafts on Day 2. It did not withdraw the 100% bar.
+- Planner B: 95% or more of the open items, across Days 2 and 3.
+- The owner decides: 100% or 95%.
+
+**14. Keep or cut: the action on a failing behaviour, and the exemptions.**
+
+- Planner A's draft: a check type over the 15% mark with no early hit and no prevented gate error
+  is cut before go-live. It is not halved. The exact-head merge audit and the pre-handoff audit are
+  inside the rule, with no exemption. Planner A did not concede halving or any exemption.
+- Planner B's draft: a failing behaviour is halved or cut. The context watch and the merge-gate
+  check are exempt and capped instead.
+- Both accept the 15% two-day threshold.
+- The owner decides: cut, or halved or cut; and whether the two safety checks are exempt.
+
+**15. The needless-nudge mark that halts Hermes after go-live.**
+
+- Planner A's draft: more than two needless nudges across the fleet inside 60 minutes.
+- Planner B's draft: two not-needed nudges to one captain inside 60 minutes.
+- Neither planner conceded the other's mark.
+- The owner decides: either mark, or both together.
+
 ### 6.2 Points one side conceded
 
 **Planner A conceded to Planner B:**
@@ -779,7 +811,7 @@ not answer. The entry says so.
   no self-correction after a misfire.
 - From the gap list: the feed inventory with its Day 1 blocker, the Day 0 written check, the Casco
   gate's source and date, the hash chain, approval bound to the plan's commit, the minute-1 probe of
-  the other Macs, the debounce rule, a cause for every miss, day and night scored apart, the
+  the other Macs, the two-glance debounce before off-cadence nudges, a cause for every miss, day and night scored apart, the
   working-day start, and one bundle of owner decisions before Day 1.
 
 **Planner B conceded to Planner A:**
