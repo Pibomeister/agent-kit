@@ -100,7 +100,10 @@ whose entries name delegate, side-effect kind and observed ref. For each delegat
 effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
 `stood_down:true`, a replacement id and its expected runtime after read-back. A failed probe
 records no progress, and a failed replacement records no replacement for its delegate, which stays
-active. Effects of earlier steps in the same tick stand. No failure approves a checkpoint. Both config files must be outside the worker root and shared
+active. Effects of earlier steps in the same tick stand. No failure approves a checkpoint. While a
+failed attempt waits for its retry tick, `decide` is refused with `audit retry in progress` until the
+next successful tick; the supervisor retries `decide` after one cadence. This is a transient wait, not a
+guided handoff. Both config files must be outside the worker root and shared
 Git directory. Restarting the service replays unacknowledged events and resumes the audit timer
 for active delegates.
 

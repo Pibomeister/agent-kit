@@ -287,7 +287,9 @@ progress. A delegate with no side effect within its expected runtime is sent to 
 with a stable replacement key; only a matching stand-down and replacement read-back records the
 new delegate. The next tick audits the replacement too. A failed probe records no progress, and a
 failed replacement records no replacement for its delegate, which stays active. Effects of earlier
-steps in the same tick stand. No failure approves a checkpoint. When the charter
+steps in the same tick stand. No failure approves a checkpoint. While a failed attempt waits for its
+retry tick, `decide` is refused with `audit retry in progress` until the next successful tick, and the
+supervisor retries `decide` after one cadence. This is a transient wait, not a guided handoff. When the charter
 sets `limits.delegate_replacements`, the next cadence tick retries and status stays autonomous
 while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
 spent, and `autonomy.missing` names `delegate-replacements`. A cap of N allows N failed

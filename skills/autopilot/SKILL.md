@@ -109,7 +109,9 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    every delegated owner and child is finished. A failed probe or replacement retries on the next
    tick and the run stays autonomous while a delegate remains active and
    `limits.delegate_replacements` is unspent. Status goes guided only when that cap is spent, and
-   it names `delegate-replacements`. The failed attempt approves nothing.
+   it names `delegate-replacements`. The failed attempt approves nothing. Until the next successful
+   tick, `decide` is refused with `audit retry in progress`; retry it after one cadence. This is a
+   transient wait, not a guided handoff.
 6. At each checkpoint, freeze a decision card: the question, two to six bounded options, the one
    option that approves, the evidence refs and the affected artifact hashes
    (`schemas/decision.schema.json`). Only the approving option advances the run.

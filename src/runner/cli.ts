@@ -409,7 +409,7 @@ async function execute(
         charter.audit_cadence_seconds !== undefined &&
         (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery"))
       ) {
-        if (auditRetryOpen) throw new Error("audit adapter failed; checkpoint not approved");
+        if (auditRetryOpen) throw new Error("audit retry in progress; checkpoint not approved; retry decide after the next tick");
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
       }
       const cardId = str(a, "card_id");

@@ -1332,6 +1332,7 @@ describe("runner guards", () => {
       const refused = callRunnerCli("decide", request, socket, workerToken);
       expect(refused.exitCode).toBe(1);
       expect(refused.stderr.toString()).toContain("checkpoint not approved");
+      expect(refused.stderr.toString()).toContain("retry decide after the next tick");
       expect(f.runner.status("toy-run").decisions).toEqual([]);
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("active");
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);

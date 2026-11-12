@@ -203,7 +203,8 @@ hard_gates:
   - A missing event consumer, supervisor loop or charter cadence leaves the run guided; a run
     requesting unattended mode cannot decide a checkpoint there. A failed loop adapter approves
     nothing. While limits.delegate_replacements is unspent the run stays autonomous and the next
-    cadence tick retries; once that cap is spent, status names delegate-replacements and the run
+    cadence tick retries; until that tick succeeds, decide is refused with audit retry in progress
+    and the supervisor retries decide after one cadence, a transient wait, not a guided handoff; once that cap is spent, status names delegate-replacements and the run
     is guided.
 
 stop_conditions:
