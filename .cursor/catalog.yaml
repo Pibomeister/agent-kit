@@ -1241,7 +1241,7 @@ profiles:
       compound-refresh read its ledgers. Never required: every skill works without it.
 
 # ---------------------------------------------------------------------------
-# Adapters — 12. Host and evidence-source contracts.
+# Adapters — 13. Host and evidence-source contracts.
 # Arch 4 also sketched issue-tracker and repository-events directories. repository-events is
 # folded into runner-contract, which owns the event-delivery capability
 # (schemas/common.schema.json#/$defs/capability); splitting it out would create an adapter with no

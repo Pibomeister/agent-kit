@@ -106,7 +106,8 @@ identity. It is a consistency guard, not proof of model independence.
   authenticate the attestation.
 - **Disclosure.** The sentence names the supervisor and states that agent-kit does not merge.
 
-**Kept.** The start rule for align, bound and ship, advances, worker-attested evidence, the recorded note for
+**Kept.** The start path for align, bound and ship through `unattended check`, now gated on a valid declaration,
+advances, worker-attested evidence, the recorded note for
 a host-unattested verifier, the refusal of self-verification, the head-bound evidence and the closed run
 are unchanged. The run supervisor of this policy is not the checkpoint [`supervisor`](../../roles/supervisor/ROLE.md) seat of autopilot,
 and no checkpoint rule changes. Merge and deploy stay outside every policy.

@@ -103,7 +103,8 @@ their original times. A later read-back is a new record with its own time, never
 declaration cannot pass ship-preflight.
 
 `record --gate ship-preflight` checks the declaration in force against that stamp, runs the pre-ship
-check (all six earlier phases, current, passing), refuses with every unmet item, and on success closes
+check (all six earlier phases, current, passing), refuses with every unmet item and refuses a working tree with
+uncommitted changes (commit them and record the gates again), and on success closes
 the run and prints the disclosure and each gate's commands. Every refusal in the declaration steps ends
 with one recovery: open a new run with `open --ticket` under the declaration in force and record the
 gates again. Put the disclosure in the pull request text. Under no-mistakes delivery, edit the opened
@@ -112,7 +113,7 @@ pull request's text once the pipeline returns: that is the only pull-request wri
 > Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
 
 Final ship is `record --gate ship-preflight --attestation <file> --body-file <file>`. The attestation is a
-file the supervisor writes outside the repository. `shipUnattended` (`src/lifecycle/gate.ts`) runs the
+file the supervisor writes outside the repository, named by an absolute path. `shipUnattended` (`src/lifecycle/gate.ts`) runs the
 final-ship checks listed in "The sequence and its refusals" of
 [the supervisor contract](../../adapters/supervisor/CONTRACT.md). It appends the result to the closing
 record and lists the commits after the shipped revision. Those commits are covered by the supervisor's
