@@ -81,10 +81,15 @@ test fixtures must keep agreeing with it. The reviewer must not be among the aut
 
 ## Where the files may live
 
-Both files must sit **outside the repository**: outside the git directory and every worktree of the
-project. Containment guards against a worker's accidental or in-tree write. It is not isolation: a worker
-running as the same OS user can write outside the repository too. A path inside the repository, a relative
-path or a project that is not a git repository is refused.
+Both files must sit **outside the repository**: outside the project directory, its work tree, its git
+directory and every worktree of the project. They must also sit outside each repository that encloses the
+project, which is any directory above the project that holds a `.git` entry: outside that directory, its work
+tree, its git directory and every one of its worktrees. A home directory that is a work tree holding the
+project is such a repository, so a folder under it is refused too. Containment guards against a worker's
+accidental or in-tree write. It is not isolation: a worker running as the same OS user can write outside the
+repository too. A path inside the repository or an enclosing repository, a relative path, a project that is
+not a git repository and a `.git` entry above the project that git cannot read are refused. The refusal for an
+enclosing repository names its toplevel.
 
 ## The disclosure sentence
 
@@ -92,11 +97,13 @@ The pull request body carries this sentence, with the supervisor's name in place
 
 > Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
 
-The check is an exact substring test on the body. Text in an HTML comment or a fenced code block does not
-count. Fences are recognised first, as in CommonMark: a comment opener inside a fence or an inline code span
-starts no comment, and a backtick fence line has no backtick in its info string. A fence nested in a block quote
-or a list item counts as a fence: the check strips the quote and list markers to find it, at any indent, and so
-it hides at least what a renderer hides.
+The check is an exact substring test on the body. Text in an HTML comment or a code block does not count. The
+check follows the CommonMark block structure that decides where those start and end. Block quotes and list items
+are containers. A fence opens and closes only 0 to 3 columns past its container's markers, and it ends where its
+container ends. A line four columns past them is indented code. A comment opener inside a fence or an inline code
+span starts no comment, and a backtick fence line has no backtick in its info string. A comment that an HTML block
+leaves open hides the rest of the page until a later HTML block line closes it. Renderers differ on whether
+`<!-->` or `<!--->` ends the HTML block it opens, so the sentence must show under both readings.
 
 ## The sequence and its refusals
 
@@ -106,8 +113,9 @@ it hides at least what a renderer hides.
    a valid declaration.
 3. `record --gate ship-preflight` compares the declaration in force with the stamp. A changed file, a
    missing stamp, a gate recorded under another supervisor, or a working tree with uncommitted changes
-   refuses. The gate record is judged at the tree it ran at, so uncommitted changes would ship in no
-   revision: commit them and record the gates again. A refusal for the file, the stamp or another supervisor
+   refuses. Untracked files that git does not ignore count as uncommitted changes. The gate record is judged
+   at the tree it ran at, so those changes would ship in no revision: commit what should ship, remove or
+   git-ignore the rest, then record the gates again. A refusal for the file, the stamp or another supervisor
    ends with the same recovery: open a new run with `open --ticket` under the declaration in force, and
    record the gates again. On success it checks the pre-ship gates, records `ship-preflight` with a
    [`supervisor`](../../roles/supervisor/ROLE.md) entry that names the declaration, closes the run and prints the disclosure.
@@ -125,11 +133,14 @@ both supervisor variables set, with the declaration file unchanged since the run
 path must be absolute. The exit status is 0 when it records, 1 when it refuses and 2 for a usage error. It
 never waits: every outcome is immediate.
 
-The final-ship git calls (`cat-file`, `merge-base` and `log`) read the worker's repository, which the worker can
-write. They run with `--no-replace-objects` and with signature display off, so replace refs cannot change the
-history they see and no program named in repository configuration, such as `gpg.program`, runs in the
-supervisor's process. These three commands read no other program-valued key. A key a later git version
-reads is outside this guarantee, and only OS user separation between the worker and the supervisor closes it.
+Final ship reads the worker's repository, which the worker can write. Its reads of the head, its descent and
+the commits after the shipped revision, and its read of the policy from the default-branch ref, run with the
+options that `FINAL_SHIP_GIT` in `src/lifecycle/gate.ts` names. They turn off lazy fetch, replace refs and
+signature display. So a missing object runs no promisor remote's program, replace refs cannot change the
+history the checks see, and no `gpg.program` runs in the supervisor's process. A git older than 2.44 rejects
+`--no-lazy-fetch`, and final ship refuses. Any other program-valued key that git reads in the worker's
+repository is outside this guarantee. Only OS user separation between the worker and the supervisor closes it.
+A fetch that the supervisor runs in the worker's repository reads that configuration too.
 
 ## What agent-kit checks and what it does not
 
@@ -149,13 +160,17 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 ### Residual limits
 
 - The gate does not see the forge, the posted pull request text or the merged head.
-- The body match does not detect text that renders hidden: raw HTML elements, collapsed details blocks,
-  indented code or link definitions. It judges inline code spans one line at a time.
+- The body match does not detect text that renders hidden by other means: raw HTML elements, collapsed details
+  blocks or link definitions. Its reading of tabs and of lazy continuation lines is approximate.
 - The opt-in policy read from the local default-branch ref is not cross-checked against any forge.
 - The same-user limit: a party that runs as the same OS user can write both files. Both files are claims.
 - A final-ship refusal names its cause. Two kinds of cause need different action:
-  - Fix the cause and run the final-ship command again: a head that is missing locally (fetch it first), an
-    attestation or body that fails a check, a reviewer among the authors.
+  - Fix the cause and run the final-ship command again. The causes are a declaration that is absent, invalid
+    or changed since the run was opened (restore the stamped file), a run that ship-preflight has not closed
+    (record ship-preflight first), a relative attestation path, an attestation inside the repository or a
+    repository that encloses it, a `.git` entry above the project that git cannot read, an attestation or body
+    that cannot be read or fails a check, a reviewer among the authors, and a head that is missing locally
+    (fetch it first).
   - Open a new run: a head that does not descend from the shipped revision, or a run with no supervisor stamp.
     These refusals print the same recovery line as the ship-preflight refusals: open a new run with
     `open --ticket` under the declaration in force, and record the gates again.
@@ -163,8 +178,8 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 ## How an external factory declares itself
 
 1. Pick a stable name. Set `AK_LIFECYCLE_SUPERVISOR` to it in the run's environment.
-2. Write the declaration to a path outside every worktree and set
-   `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path.
+2. Write the declaration to a path outside every worktree of the project and of every repository that
+   encloses it, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path.
 3. Run each worker with those variables and the policy set.
 4. At final ship write the attestation and the body, and pass both to `record`.
 
