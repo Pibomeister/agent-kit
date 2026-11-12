@@ -3,6 +3,8 @@
 # output. At most 3 attempts. A finished git, any exit status, is returned as it
 # is. Setting or deleting a symbolic ref, an ancestor check, and every other
 # command replace this shell with the real git. AK_GIT_REAL is that git.
+# The copy placed on PATH bakes the path in, because the runner resolves this
+# script as git and then starts it with a cleared environment.
 # Keep the classification in step with commandMustPrint in git-spawn.ts.
 
 real=${AK_GIT_REAL:?}

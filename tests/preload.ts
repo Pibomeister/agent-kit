@@ -39,12 +39,16 @@ if (process.platform === "darwin" && Bun.which("git") === "/usr/bin/git") {
     mkdirSync(bin);
     // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
     // The script execs the selected git, and retries a read that must print when that read
-    // exits 0 with empty output. Child processes inherit PATH, so a packaged gate gets the
-    // same retry the in-process wrapper gives spawnSync.
+    // exits 0 with empty output. The real path is written into the script: the runner
+    // resolves this entry as its git and starts it with a cleared environment.
     process.env.AK_GIT_REAL = executable;
     process.env.AK_GIT_SHIM = "1";
     const shim = join(bin, "git");
-    writeFileSync(shim, readFileSync(join(import.meta.dir, "helpers/git-retry.sh")));
+    const marker = "real=${AK_GIT_REAL:?}";
+    const source = readFileSync(join(import.meta.dir, "helpers/git-retry.sh"), "utf8");
+    if (!source.includes(marker)) throw new Error("git retry shim lost its real-git marker");
+    const quoted = `'${executable.replaceAll("'", "'\\''")}'`;
+    writeFileSync(shim, source.replace(marker, `real=${quoted}`));
     chmodSync(shim, 0o755);
     process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
   }
