@@ -78,11 +78,11 @@ first remote call, as in `dry-run`, and every remote effect waits for the superv
 `needs-decision`. Record `ship-preflight` with `--bypass <path> --task <id>`. Merge and deploy are never on it.
 
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
-check --phase super-ship` exiting 0 is the start (an exception to ruling `entrypoint-phase-operation-split`). `record --gate ship-preflight` then reads the merge
-gate live and closes the run only when it holds. Put the disclosure it prints in the pull request text
-(under no-mistakes delivery, by editing the opened pull request's text once the pipeline returns, the
-only pull-request write) and record final ship success with `--pr <n>`, as
-[the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
+check --phase super-ship` exiting 0 is the start (an exception to ruling `entrypoint-phase-operation-split`).
+`record --gate ship-preflight` checks the supervisor declaration and closes the run only when it holds.
+Put the disclosure in the pull request text and record final ship with `--attestation <file> --body-file <file>`.
+Detail: [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) and
+[the supervisor contract](../../adapters/supervisor/CONTRACT.md).
 
 For the autonomous form, `ship.prepare` delegated under a grant, exit 0 is necessary and not
 sufficient. That form also needs trusted evidence: gate evidence the runner recorded into the run's
@@ -181,7 +181,7 @@ worker's reach. Gate records the worker itself wrote are worker-attested, not tr
 neither a grant nor a host permission makes them so.
 
 Gate: no ship begins with an uncovered criterion, an implementer-authored receipt where independent
-verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant (under the unattended policy, a recorded note instead, whose boundary is the live merge-gate read; an exception to ruling `closure-requires-independent-verification`), or a missing project-declared surface evidence kind. The run
+verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant (under the unattended policy, a recorded note instead, whose boundary is the declared run supervisor; an exception to ruling `closure-requires-independent-verification`), or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
 Gate: under either transport, an uncommitted head, a stale verify, review-readiness or approved
@@ -264,9 +264,9 @@ In `dry-run` the effects performed are `artifact-write` alone.
 ## Stop conditions
 
 `complete`: under no-mistakes delivery, the committed handoff head and ship-preflight are recorded
-with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request carries the disclosure and `ship-preflight --pr <n>` succeeded. In direct `dry-run`, the payload and pre-flight record are
+with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request carries the disclosure and `ship-preflight --attestation <file> --body-file <file>` succeeded. In direct `dry-run`, the payload and pre-flight record are
 emitted. In direct `publish`, the branch and PR exist with read-backs, the lesson candidate is
-drafted (or named as not published under a knowledgebase coverage limit), and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful `--pr` check).
+drafted (or named as not published under a knowledgebase coverage limit), and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful attested final ship).
 
 `needs-input`: the run was started by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive

@@ -1,11 +1,14 @@
 /**
- * Unattended-policy wording (ADR-0014): super-ship's needs-input stop names the
- * unattended start, and the capability-map review is an unattended advance.
+ * Unattended-policy wording (ADR-0014 and its amendment of 2026-11-11): super-ship's needs-input stop names the
+ * unattended start, the capability-map review is an unattended advance, and no guide, skill, reference, policy
+ * or adapter still states a forge rule as the policy's boundary.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
+
+import { unattendedDisclosure } from "../src/lifecycle/unattended.ts";
 
 const REPO = join(import.meta.dir, "..");
 const read = (p: string): string => readFileSync(join(REPO, p), "utf8").replace(/\s+/g, " ");
@@ -64,5 +67,55 @@ describe("unattended wording", () => {
     const step = body.slice(at, body.indexOf("4. Write the specification", at));
     expect(step).toContain("unattended advance");
     expect(step).toContain("unattended-lifecycle/REFERENCE.md");
+  });
+
+  /** Every surface that describes the boundary; the ADR amendment names what it removed and is not listed. */
+  const SURFACES = [
+    "AGENTS.md",
+    "AUTHORING.md",
+    "catalog.yaml",
+    "policies/invocation.yaml",
+    "provenance/conversation-map.yaml",
+    "references/unattended-lifecycle/REFERENCE.md",
+    "references/verification-evidence/REFERENCE.md",
+    "references/delegation/REFERENCE.md",
+    "protocols/invocation-authority.md",
+    "adapters/runner-contract/CONTRACT.md",
+    "adapters/supervisor/CONTRACT.md",
+    "adapters/firstmate/SUPERVISOR.md",
+    "skills/super-review/SKILL.md",
+    "skills/super-ship/SKILL.md",
+    "skills/super-ship/skill.yaml",
+    "skills/super-verify/SKILL.md",
+    "skills/super-verify/skill.yaml",
+    "src/lifecycle/gate.ts",
+    "src/lifecycle/unattended.ts",
+  ];
+  const FORGE_RULE =
+    /merge[- ]gate|forge-side|AK_UNATTENDED_READ_TOKEN|review-status|independent-review\.yml|live-checked/;
+
+  test.each(SURFACES)("%s states no forge rule as the unattended boundary", (path) => {
+    expect(read(path)).not.toMatch(FORGE_RULE);
+  });
+
+  test("the disclosure the documents quote is the gate's sentence", () => {
+    const sentence = unattendedDisclosure("<name>");
+    for (const path of ["references/unattended-lifecycle/REFERENCE.md", "adapters/supervisor/CONTRACT.md"])
+      expect(read(path)).toContain(sentence);
+  });
+
+  test("the reference and the contract carry the same boundary: a declared run supervisor", () => {
+    for (const path of ["references/unattended-lifecycle/REFERENCE.md", "adapters/supervisor/CONTRACT.md"]) {
+      const body = read(path);
+      expect(body).toContain("AK_LIFECYCLE_SUPERVISOR_DECLARATION");
+      expect(body).toContain("agent-kit does not merge");
+    }
+  });
+
+  test("super-ship and super-review point to the reference and the contract", () => {
+    for (const path of ["skills/super-ship/SKILL.md", "skills/super-review/SKILL.md"])
+      expect(read(path)).toContain("unattended-lifecycle/REFERENCE.md");
+    expect(read("skills/super-ship/SKILL.md")).toContain("supervisor/CONTRACT.md");
+    expect(read("skills/super-review/SKILL.md")).toContain("supervisor/CONTRACT.md");
   });
 });

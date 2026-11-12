@@ -121,7 +121,7 @@ rather than reproducing a forbidden command's effect through a side door (`AGENT
 ruling `entrypoint-phase-operation-split`).
 Under the opt-in unattended policy ([ADR-0014](../../docs/decisions/0014-unattended-lifecycle-policy.md)),
 align, bound and ship start instead when the gate tool's `unattended check` exits 0, the human boundary
-being the live protected merge: an exception, for that policy only, to ruling
+being the declared run supervisor and whoever merges: an exception, for that policy only, to ruling
 `entrypoint-phase-operation-split`.
 For model-started review, see [ADR-0013](../../docs/decisions/0013-model-starts-super-review.md).
 
@@ -137,8 +137,8 @@ form of an evidence-consuming operation stops with `status: needs-input` naming 
 unavailable. That stop is the `fails-closed` row in §1. The explicit form is unaffected.
 
 The one exception is the opt-in unattended policy (ADR-0014): there the worker-attested gate records
-count, labelled so, and the boundary is the live merge-gate read with its residual assumptions
-stated. Work outside that opt-in keeps both restrictions above.
+count, labelled so, and the boundary is the declared run supervisor (`adapters/supervisor/CONTRACT.md`) with its
+residual limits stated. Work outside that opt-in keeps both restrictions above.
 
 ---
 
@@ -149,10 +149,11 @@ prompt for a seat; the runner supplies who fills it.
 
 **Independence is a runner-enforced structural constraint, never a model identity.** It is never
 expressed as, satisfied by, or checked against a different model, provider or family. The one scoped
-exception is the forge-side independent review check under the opt-in unattended policy
-([ADR-0014](../../docs/decisions/0014-unattended-lifecycle-policy.md)), whose reviewer must be a
-canonical model identity different from every configured author model; the seats this contract fills
-and every run outside that policy are unchanged. What the runner
+exception is the final-ship identity comparison under the opt-in unattended policy
+([ADR-0014](../../docs/decisions/0014-unattended-lifecycle-policy.md), amendment of 2026-11-11): the
+attested reviewer identity must differ, as a string, from every attested author identity. It is a
+consistency guard on attested identities, not proof of model independence. The seats this contract
+fills and every run outside that policy are unchanged. What the runner
 must attest for two seats declared independent:
 
 - **Distinct seat identifiers** bound to the run, recorded in the decision card.

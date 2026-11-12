@@ -63,7 +63,7 @@ The verifier seat record names its id, the implementer seat, and one isolation s
   only for a human-typed ship, with a visible note, as worker-attested evidence. It refuses it once
   the build gate records the implementer seat, or once the run holds any bypass or delegated grant
   record, and the refusal names the record. Under the opt-in unattended policy (ADR-0014) it is
-  counted with a recorded note instead, whose boundary is the live merge-gate read (an exception to
+  counted with a recorded note instead, whose boundary is the declared run supervisor (an exception to
   ruling `closure-requires-independent-verification`). A bypass check made before the lifecycle run
   is opened does not mark that run. A delegated grant is found through the binding
   the run was opened with (`open --binding <binding file>`): the run record keeps the binding's run

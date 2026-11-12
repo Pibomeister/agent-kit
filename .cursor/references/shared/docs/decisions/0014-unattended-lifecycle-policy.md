@@ -35,7 +35,7 @@ every record, decision and exit status is unchanged. The policy is runner-neutra
   output digest, revision and times. Align, bound and scout gain gates under this policy, recorded
   before the run opens and imported into it with their original times. The pre-ship check requires all
   six earlier phases current and passing. The evidence is worker-attested and labelled so.
-- **Trust moves to the merge.** A host-unattested verifier is a recorded note instead of a refusal; an
+- **Trust moves to the merge** (amended 2026-11-11, see below). A host-unattested verifier is a recorded note instead of a refusal; an
   implementer still cannot verify its own work. In exchange, ship-preflight reads the target repository
   live and read-only and refuses unless its default branch requires code-owner review by operator-
   designated human reviewers with stale approvals dismissed and last-push approval, required CI pinned to
@@ -43,7 +43,7 @@ every record, decision and exit status is unchanged. The policy is runner-neutra
   and unless the runner is a non-admin, non-designated user account. Final ship success needs the posted
   review valid at the pull request's exact head, the head descended from the shipped revision, and the
   disclosure in the pull request text.
-- **Independence.** The independent review is a required check posted from outside the task by a pinned
+- **Independence** (amended 2026-11-11, see below). The independent review is a required check posted from outside the task by a pinned
   app, from the head-bound diff only. The reviewer's canonical `provider/model` identity is stamped from
   operator configuration and the provider's call metadata, never from the review's own text, and must
   differ from every configured author model; the same provider is allowed. This is a deterministic check
@@ -57,16 +57,71 @@ super-ship, super-verify, super-review and the verification-evidence reference, 
 `closure-requires-independent-verification`; the delegation reference's rule that a human-author class
 makes a human the author, an exception to ruling `delegation-class-is-authority-not-finding`; and the
 rule that seat independence is never a model identity (`AUTHORING.md` section 7,
-[`adapters/runner-contract/CONTRACT.md`](../../adapters/runner-contract/CONTRACT.md) section 3), for the forge-side review check alone. Each rule's
+[`adapters/runner-contract/CONTRACT.md`](../../adapters/runner-contract/CONTRACT.md) section 3), for the forge-side review check alone (amended 2026-11-11: the exception now covers the final-ship identity comparison alone, see below). Each rule's
 text carries its scoped exception beside it; runner-filled seats and every run outside the policy are
 unchanged. Merge and deploy stay outside every policy.
 
 ## Consequences
 
-- A repository without the enforced merge gate cannot finish an unattended ship; the refusal names
+- (Amended 2026-11-11, see below.) A repository without the enforced merge gate cannot finish an unattended ship; the refusal names
   every missing item.
 - The forge cannot show that a designated account is operated by a person, that a review used the model
   it reports, or that a fine-grained read credential is read-only. A runner sharing the operator's account
   or credentials does not meet the policy's assumptions.
 - A pull request head rewritten after ship-preflight needs a new run; old phase evidence never covers it.
 - The signed-issuer and runtime-attested paths are unchanged and not required by this policy.
+
+## Amendment of 2026-11-11 — the trust boundary is a declared run supervisor
+
+**Authority:** the captain's words, relayed by Firstmate as decision 002: "Unattended mode should not
+have github requirements at all, that's up to the human." and "unattended mode needs a supervisor". The
+specification of ticket `bound-unattended-supervisor-contract` records the ruling that follows from
+them: agent-kit holds no forge client and reads no forge.
+
+**What changes.** The decisions "Trust moves to the merge" and "Independence" above, and the
+operator setup and consequences that followed from them, are replaced. agent-kit no longer reads the
+target repository, its branch protection, its code owners, its review check or its accounts. It no longer
+holds a read credential and no longer ships a review workflow template. The command
+`unattended review-status` and the `--pr` flag of `record` are removed. The forge-era configuration keys
+and identity aliases, the GitHub-only repository resolution and the forge cross-check of the local
+default-branch ref are removed too. The identity comparison keeps one scoped exception to seat
+independence: the attested reviewer identity must differ, as a string, from every attested author
+identity. It is a consistency guard, not proof of model independence.
+
+**What replaces them.**
+
+- **Run supervisor.** The boundary is a named run supervisor: the system that launched the run and watches
+  it. It is named by `AK_LIFECYCLE_SUPERVISOR` and declares itself in a JSON file outside the repository,
+  named by `AK_LIFECYCLE_SUPERVISOR_DECLARATION`. The declaration states how the supervisor meets six
+  obligations. [`adapters/supervisor/CONTRACT.md`](../../adapters/supervisor/CONTRACT.md) is the contract, and [`schemas/supervisor-declaration.schema.json`](../../schemas/supervisor-declaration.schema.json)
+  and [`schemas/supervisor-attestation.schema.json`](../../schemas/supervisor-attestation.schema.json) give the shapes.
+- **Start.** A human-started phase starts only with a valid declaration. A declaration that is missing,
+  relative, inside the repository, unreadable, not JSON or malformed is refused, and the refusal names
+  the item.
+- **Binding.** `open --ticket` stamps the run with the declaration's name, path and digest. `ship-preflight`
+  refuses when the declaration in force differs from the stamp, and every such refusal ends with one
+  recovery: open a new run and record the gates again.
+- **Final ship.** The supervisor supplies an attestation of its validation gate and independent review at
+  one head. agent-kit runs the final-ship checks that [`adapters/supervisor/CONTRACT.md`](../../adapters/supervisor/CONTRACT.md) lists. It cannot
+  authenticate the attestation.
+- **Disclosure.** The sentence names the supervisor and states that agent-kit does not merge.
+
+**Kept.** The start rule for align, bound and ship, advances, worker-attested evidence, the recorded note for
+a host-unattested verifier, the refusal of self-verification, the head-bound evidence and the closed run
+are unchanged. The run supervisor of this policy is not the checkpoint [`supervisor`](../../roles/supervisor/ROLE.md) seat of autopilot,
+and no checkpoint rule changes. Merge and deploy stay outside every policy.
+
+**Transition.** A run opened under the policy without a declaration cannot pass ship-preflight. Open a
+new run under a declaration and record the gates again. No grace path exists. Firstmate must write its
+declaration and attestation files before its runs use the policy.
+
+**Same-user limit.** Containment keeps the files outside the repository. A party that runs as the same
+OS user can still write both files, as the bypass grant of ADR-0008 accepts for its own ledger. The
+contract states the limit.
+
+**Merge authority.** "Whoever the human authorized merges" means that agent-kit never merges. The merge
+is the human gate, and the human may delegate it to a named party.
+
+**Consequences.** A project needs no forge setup to finish an unattended ship, and the policy names no
+vendor. The trust that the forge's protections once carried now sits with the supervisor and with whoever
+merges. A party that can write outside the repository can forge either file. The contract states that limit.

@@ -16,6 +16,11 @@
       "bytes": 21212,
       "tokens": 5299
     },
+    "bundle/claude-code:references/shared/adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 12172,
+      "tokens": 3038
+    },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
       "bytes": 25992,
@@ -31,10 +36,20 @@
       "bytes": 13739,
       "tokens": 3428
     },
+    "bundle/claude-code:references/shared/adapters/runner-contract/CLI.md": {
+      "file": "adapters/runner-contract/CLI.md",
+      "bytes": 12349,
+      "tokens": 3088
+    },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35146,
+      "tokens": 8757
+    },
+    "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
+      "file": "adapters/supervisor/CONTRACT.md",
+      "bytes": 8248,
+      "tokens": 2062
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -53,8 +68,8 @@
     },
     "bundle/claude-code:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 5726,
-      "tokens": 1431
+      "bytes": 10174,
+      "tokens": 2543
     },
     "bundle/claude-code:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -68,8 +83,8 @@
     },
     "bundle/claude-code:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25322,
-      "tokens": 6329
+      "bytes": 25345,
+      "tokens": 6334
     },
     "bundle/claude-code:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -108,8 +123,8 @@
     },
     "bundle/claude-code:references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
-      "bytes": 8514,
-      "tokens": 2128
+      "bytes": 8536,
+      "tokens": 2133
     },
     "bundle/claude-code:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -153,8 +168,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 23510,
+      "tokens": 5872
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -188,13 +203,13 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11365,
-      "tokens": 2842
+      "bytes": 10199,
+      "tokens": 2550
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6622,
-      "tokens": 1656
+      "bytes": 6625,
+      "tokens": 1657
     },
     "bundle/claude-code:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -470,6 +485,16 @@
       "file": "schemas/skill.schema.json",
       "bytes": 21351,
       "tokens": 5338
+    },
+    "bundle/claude-code:references/shared/schemas/supervisor-attestation.schema.json": {
+      "file": "schemas/supervisor-attestation.schema.json",
+      "bytes": 2168,
+      "tokens": 542
+    },
+    "bundle/claude-code:references/shared/schemas/supervisor-declaration.schema.json": {
+      "file": "schemas/supervisor-declaration.schema.json",
+      "bytes": 2310,
+      "tokens": 578
     },
     "bundle/claude-code:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -758,8 +783,8 @@
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26242,
-      "tokens": 6553
+      "bytes": 26251,
+      "tokens": 6555
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -778,13 +803,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23851,
-      "tokens": 5958
-    },
-    "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
-      "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6825,
-      "tokens": 1707
+      "bytes": 23868,
+      "tokens": 5962
     },
     "bundle/claude-code:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -798,8 +818,8 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21054,
-      "tokens": 5258
+      "bytes": 21060,
+      "tokens": 5260
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -891,6 +911,11 @@
       "bytes": 21212,
       "tokens": 5299
     },
+    "bundle/codex:references/shared/adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 12172,
+      "tokens": 3038
+    },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
       "bytes": 25992,
@@ -906,10 +931,20 @@
       "bytes": 13739,
       "tokens": 3428
     },
+    "bundle/codex:references/shared/adapters/runner-contract/CLI.md": {
+      "file": "adapters/runner-contract/CLI.md",
+      "bytes": 12349,
+      "tokens": 3088
+    },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35146,
+      "tokens": 8757
+    },
+    "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
+      "file": "adapters/supervisor/CONTRACT.md",
+      "bytes": 8248,
+      "tokens": 2062
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -928,8 +963,8 @@
     },
     "bundle/codex:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 5726,
-      "tokens": 1431
+      "bytes": 10174,
+      "tokens": 2543
     },
     "bundle/codex:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -943,8 +978,8 @@
     },
     "bundle/codex:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25322,
-      "tokens": 6329
+      "bytes": 25345,
+      "tokens": 6334
     },
     "bundle/codex:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -983,8 +1018,8 @@
     },
     "bundle/codex:references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
-      "bytes": 8514,
-      "tokens": 2128
+      "bytes": 8536,
+      "tokens": 2133
     },
     "bundle/codex:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -1028,8 +1063,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 23510,
+      "tokens": 5872
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1063,13 +1098,13 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11365,
-      "tokens": 2842
+      "bytes": 10199,
+      "tokens": 2550
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6622,
-      "tokens": 1656
+      "bytes": 6625,
+      "tokens": 1657
     },
     "bundle/codex:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -1345,6 +1380,16 @@
       "file": "schemas/skill.schema.json",
       "bytes": 21351,
       "tokens": 5338
+    },
+    "bundle/codex:references/shared/schemas/supervisor-attestation.schema.json": {
+      "file": "schemas/supervisor-attestation.schema.json",
+      "bytes": 2168,
+      "tokens": 542
+    },
+    "bundle/codex:references/shared/schemas/supervisor-declaration.schema.json": {
+      "file": "schemas/supervisor-declaration.schema.json",
+      "bytes": 2310,
+      "tokens": 578
     },
     "bundle/codex:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -1633,8 +1678,8 @@
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26289,
-      "tokens": 6564
+      "bytes": 26298,
+      "tokens": 6567
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1653,13 +1698,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 24012,
-      "tokens": 5998
-    },
-    "bundle/codex:skills/super-ship/assets/independent-review.yml": {
-      "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6825,
-      "tokens": 1707
+      "bytes": 24029,
+      "tokens": 6002
     },
     "bundle/codex:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -1673,8 +1713,8 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21054,
-      "tokens": 5258
+      "bytes": 21060,
+      "tokens": 5260
     },
     "bundle/codex:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -1766,6 +1806,11 @@
       "bytes": 21272,
       "tokens": 5314
     },
+    "bundle/cursor:.cursor/references/shared/adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 12232,
+      "tokens": 3053
+    },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
       "bytes": 26064,
@@ -1781,10 +1826,20 @@
       "bytes": 13823,
       "tokens": 3449
     },
+    "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CLI.md": {
+      "file": "adapters/runner-contract/CLI.md",
+      "bytes": 12397,
+      "tokens": 3100
+    },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34996,
-      "tokens": 8720
+      "bytes": 35182,
+      "tokens": 8766
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
+      "file": "adapters/supervisor/CONTRACT.md",
+      "bytes": 8248,
+      "tokens": 2062
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1803,8 +1858,8 @@
     },
     "bundle/cursor:.cursor/references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 5726,
-      "tokens": 1431
+      "bytes": 10174,
+      "tokens": 2543
     },
     "bundle/cursor:.cursor/references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -1818,8 +1873,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25322,
-      "tokens": 6329
+      "bytes": 25345,
+      "tokens": 6334
     },
     "bundle/cursor:.cursor/references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -1858,8 +1913,8 @@
     },
     "bundle/cursor:.cursor/references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
-      "bytes": 8514,
-      "tokens": 2128
+      "bytes": 8536,
+      "tokens": 2133
     },
     "bundle/cursor:.cursor/references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -1903,8 +1958,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23548,
-      "tokens": 5881
+      "bytes": 23570,
+      "tokens": 5887
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1938,13 +1993,13 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11437,
-      "tokens": 2860
+      "bytes": 10271,
+      "tokens": 2568
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6622,
-      "tokens": 1656
+      "bytes": 6625,
+      "tokens": 1657
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -2220,6 +2275,16 @@
       "file": "schemas/skill.schema.json",
       "bytes": 21351,
       "tokens": 5338
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/supervisor-attestation.schema.json": {
+      "file": "schemas/supervisor-attestation.schema.json",
+      "bytes": 2168,
+      "tokens": 542
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/supervisor-declaration.schema.json": {
+      "file": "schemas/supervisor-declaration.schema.json",
+      "bytes": 2310,
+      "tokens": 578
     },
     "bundle/cursor:.cursor/references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -2503,8 +2568,8 @@
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26278,
-      "tokens": 6562
+      "bytes": 26287,
+      "tokens": 6564
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2523,13 +2588,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23884,
-      "tokens": 5966
-    },
-    "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
-      "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6825,
-      "tokens": 1707
+      "bytes": 23901,
+      "tokens": 5971
     },
     "bundle/cursor:.cursor/skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -2543,8 +2603,8 @@
     },
     "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21078,
-      "tokens": 5264
+      "bytes": 21084,
+      "tokens": 5266
     },
     "bundle/cursor:.cursor/skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -2641,6 +2701,11 @@
       "bytes": 21212,
       "tokens": 5299
     },
+    "bundle/droid:references/shared/adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 12172,
+      "tokens": 3038
+    },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
       "bytes": 25992,
@@ -2656,10 +2721,20 @@
       "bytes": 13739,
       "tokens": 3428
     },
+    "bundle/droid:references/shared/adapters/runner-contract/CLI.md": {
+      "file": "adapters/runner-contract/CLI.md",
+      "bytes": 12349,
+      "tokens": 3088
+    },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35146,
+      "tokens": 8757
+    },
+    "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
+      "file": "adapters/supervisor/CONTRACT.md",
+      "bytes": 8248,
+      "tokens": 2062
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2678,8 +2753,8 @@
     },
     "bundle/droid:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 5726,
-      "tokens": 1431
+      "bytes": 10174,
+      "tokens": 2543
     },
     "bundle/droid:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -2693,8 +2768,8 @@
     },
     "bundle/droid:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25322,
-      "tokens": 6329
+      "bytes": 25345,
+      "tokens": 6334
     },
     "bundle/droid:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -2733,8 +2808,8 @@
     },
     "bundle/droid:references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
-      "bytes": 8514,
-      "tokens": 2128
+      "bytes": 8536,
+      "tokens": 2133
     },
     "bundle/droid:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -2778,8 +2853,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 23510,
+      "tokens": 5872
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2813,13 +2888,13 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11365,
-      "tokens": 2842
+      "bytes": 10199,
+      "tokens": 2550
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6622,
-      "tokens": 1656
+      "bytes": 6625,
+      "tokens": 1657
     },
     "bundle/droid:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -3095,6 +3170,16 @@
       "file": "schemas/skill.schema.json",
       "bytes": 21351,
       "tokens": 5338
+    },
+    "bundle/droid:references/shared/schemas/supervisor-attestation.schema.json": {
+      "file": "schemas/supervisor-attestation.schema.json",
+      "bytes": 2168,
+      "tokens": 542
+    },
+    "bundle/droid:references/shared/schemas/supervisor-declaration.schema.json": {
+      "file": "schemas/supervisor-declaration.schema.json",
+      "bytes": 2310,
+      "tokens": 578
     },
     "bundle/droid:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -3383,8 +3468,8 @@
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26287,
-      "tokens": 6564
+      "bytes": 26296,
+      "tokens": 6566
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -3403,13 +3488,8 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23995,
-      "tokens": 5994
-    },
-    "bundle/droid:skills/super-ship/assets/independent-review.yml": {
-      "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6825,
-      "tokens": 1707
+      "bytes": 24012,
+      "tokens": 5998
     },
     "bundle/droid:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -3423,8 +3503,8 @@
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21050,
-      "tokens": 5257
+      "bytes": 21056,
+      "tokens": 5259
     },
     "bundle/droid:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -3516,6 +3596,11 @@
       "bytes": 21212,
       "tokens": 5299
     },
+    "bundle/grok:references/shared/adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 12172,
+      "tokens": 3038
+    },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
       "bytes": 25992,
@@ -3531,10 +3616,20 @@
       "bytes": 13739,
       "tokens": 3428
     },
+    "bundle/grok:references/shared/adapters/runner-contract/CLI.md": {
+      "file": "adapters/runner-contract/CLI.md",
+      "bytes": 12349,
+      "tokens": 3088
+    },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35146,
+      "tokens": 8757
+    },
+    "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
+      "file": "adapters/supervisor/CONTRACT.md",
+      "bytes": 8248,
+      "tokens": 2062
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3553,8 +3648,8 @@
     },
     "bundle/grok:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 5726,
-      "tokens": 1431
+      "bytes": 10174,
+      "tokens": 2543
     },
     "bundle/grok:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -3568,8 +3663,8 @@
     },
     "bundle/grok:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25322,
-      "tokens": 6329
+      "bytes": 25345,
+      "tokens": 6334
     },
     "bundle/grok:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -3608,8 +3703,8 @@
     },
     "bundle/grok:references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
-      "bytes": 8514,
-      "tokens": 2128
+      "bytes": 8536,
+      "tokens": 2133
     },
     "bundle/grok:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -3653,8 +3748,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 23510,
+      "tokens": 5872
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3688,13 +3783,13 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11365,
-      "tokens": 2842
+      "bytes": 10199,
+      "tokens": 2550
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6622,
-      "tokens": 1656
+      "bytes": 6625,
+      "tokens": 1657
     },
     "bundle/grok:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -3970,6 +4065,16 @@
       "file": "schemas/skill.schema.json",
       "bytes": 21351,
       "tokens": 5338
+    },
+    "bundle/grok:references/shared/schemas/supervisor-attestation.schema.json": {
+      "file": "schemas/supervisor-attestation.schema.json",
+      "bytes": 2168,
+      "tokens": 542
+    },
+    "bundle/grok:references/shared/schemas/supervisor-declaration.schema.json": {
+      "file": "schemas/supervisor-declaration.schema.json",
+      "bytes": 2310,
+      "tokens": 578
     },
     "bundle/grok:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -4258,8 +4363,8 @@
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26242,
-      "tokens": 6553
+      "bytes": 26251,
+      "tokens": 6555
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -4278,13 +4383,8 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23836,
-      "tokens": 5954
-    },
-    "bundle/grok:skills/super-ship/assets/independent-review.yml": {
-      "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6825,
-      "tokens": 1707
+      "bytes": 23853,
+      "tokens": 5959
     },
     "bundle/grok:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -4298,8 +4398,8 @@
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21054,
-      "tokens": 5258
+      "bytes": 21060,
+      "tokens": 5260
     },
     "bundle/grok:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -4391,6 +4491,11 @@
       "bytes": 21212,
       "tokens": 5299
     },
+    "bundle/kimi:references/shared/adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 12172,
+      "tokens": 3038
+    },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
       "bytes": 25992,
@@ -4406,10 +4511,20 @@
       "bytes": 13739,
       "tokens": 3428
     },
+    "bundle/kimi:references/shared/adapters/runner-contract/CLI.md": {
+      "file": "adapters/runner-contract/CLI.md",
+      "bytes": 12349,
+      "tokens": 3088
+    },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35146,
+      "tokens": 8757
+    },
+    "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
+      "file": "adapters/supervisor/CONTRACT.md",
+      "bytes": 8248,
+      "tokens": 2062
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4428,8 +4543,8 @@
     },
     "bundle/kimi:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 5726,
-      "tokens": 1431
+      "bytes": 10174,
+      "tokens": 2543
     },
     "bundle/kimi:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -4443,8 +4558,8 @@
     },
     "bundle/kimi:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25322,
-      "tokens": 6329
+      "bytes": 25345,
+      "tokens": 6334
     },
     "bundle/kimi:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -4483,8 +4598,8 @@
     },
     "bundle/kimi:references/shared/protocols/invocation-authority.md": {
       "file": "protocols/invocation-authority.md",
-      "bytes": 8514,
-      "tokens": 2128
+      "bytes": 8536,
+      "tokens": 2133
     },
     "bundle/kimi:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -4528,8 +4643,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 23510,
+      "tokens": 5872
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4563,13 +4678,13 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11365,
-      "tokens": 2842
+      "bytes": 10199,
+      "tokens": 2550
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6622,
-      "tokens": 1656
+      "bytes": 6625,
+      "tokens": 1657
     },
     "bundle/kimi:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -4845,6 +4960,16 @@
       "file": "schemas/skill.schema.json",
       "bytes": 21351,
       "tokens": 5338
+    },
+    "bundle/kimi:references/shared/schemas/supervisor-attestation.schema.json": {
+      "file": "schemas/supervisor-attestation.schema.json",
+      "bytes": 2168,
+      "tokens": 542
+    },
+    "bundle/kimi:references/shared/schemas/supervisor-declaration.schema.json": {
+      "file": "schemas/supervisor-declaration.schema.json",
+      "bytes": 2310,
+      "tokens": 578
     },
     "bundle/kimi:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -5133,8 +5258,8 @@
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26289,
-      "tokens": 6564
+      "bytes": 26298,
+      "tokens": 6567
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -5153,13 +5278,8 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 24027,
-      "tokens": 6002
-    },
-    "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
-      "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6825,
-      "tokens": 1707
+      "bytes": 24044,
+      "tokens": 6006
     },
     "bundle/kimi:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -5173,8 +5293,8 @@
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 21054,
-      "tokens": 5258
+      "bytes": 21060,
+      "tokens": 5260
     },
     "bundle/kimi:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -5263,8 +5383,8 @@
     },
     "firstmate:adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 10537,
-      "tokens": 2629
+      "bytes": 12050,
+      "tokens": 3007
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",

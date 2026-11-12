@@ -33,7 +33,7 @@ law:
         standing exception is `bypass` below: a supervisor-held grant stands in for the typed
         command of the lifecycle phases it names, for one task, and starts them only (ADR-0008).
         The third is `unattended` below: where the operator opts in, super-align, super-bound and
-        super-ship start with no typed command and no grant, bounded by the live merge-gate read
+        super-ship start with no typed command and no grant, bounded by the declared run supervisor
         (ADR-0014).
       enforced_by: >-
         the skill's own text, which `ak validate` checks (`human-start`): the description names
@@ -262,7 +262,7 @@ operations:
       Release checks, sensitive-data scan, PR preparation and the linked knowledgebase change,
       up to and including opening a pull request when the charter grants it.
     preconditions:
-      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`, except under the unattended policy (ADR-0014), whose worker-attested evidence is bounded by the live merge-gate read
+      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`, except under the unattended policy (ADR-0014), whose worker-attested evidence is bounded by the declared run supervisor
       - verification receipts bind to the head being shipped
       - review approval exists and binds to that head's artifact hash
     hard_gates:
@@ -483,20 +483,20 @@ unattended:
   advance: >-
     A wait for a human answer or approval proceeds with the skill's own recommendation, recorded as
     an unattended advance and never as an approval. A ticket whose class makes a human the author is
-    implemented by the agent with its true class, floor and author kind recorded, an exception to ruling `delegation-class-is-authority-not-finding` whose boundary is the live merge-gate read.
+    implemented by the agent with its true class, floor and author kind recorded, an exception to ruling `delegation-class-is-authority-not-finding` whose boundary is the declared run supervisor.
     Every other stop still stops, every sensitive action included.
   never: [merge, deploy, scope-expansion]
   evidence: >-
     Every gate records the policy and the evidence commands the gate tool ran; align, bound and scout
     gain gates under the policy. The evidence is worker-attested, and a host-unattested verifier is a
-    recorded note rather than a refusal, an exception to ruling `closure-requires-independent-verification` whose boundary is the live merge-gate read.
+    recorded note rather than a refusal, an exception to ruling `closure-requires-independent-verification` whose boundary is the declared run supervisor.
   trust: >-
-    The boundary is the merge. ship-preflight reads the target's default branch live and read-only
-    and refuses unless code-owner review by designated human reviewers, required CI and the
-    independent review check pinned to a dedicated app are enforced with no bypass, and the runner is
-    a non-admin, non-designated user. Final ship success validates the posted review at the pull
-    request's exact head; its reviewer identity must be a canonical model different from every
-    configured author model.
+    The boundary is a declared run supervisor. `open --ticket` stamps the run with its declaration, a
+    file outside the repository that names how it meets six obligations. ship-preflight refuses unless
+    the declaration in force still matches the stamp. Final ship takes the supervisor's attestation of
+    its validation gate and independent review at one head. agent-kit runs the final-ship checks that
+    `adapters/supervisor/CONTRACT.md` lists and cannot authenticate the attestation. agent-kit does not
+    merge.
 
 packs:
   rule: >-

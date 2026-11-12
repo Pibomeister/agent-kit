@@ -34,7 +34,7 @@ validated a grant against an immutable charter and issued a grant reference carr
 hash and the single action or checkpoint it covers ([`policies/authority-defaults.yaml`](../policies/authority-defaults.yaml)). Under the
 opt-in unattended policy ([ADR-0014](../docs/decisions/0014-unattended-lifecycle-policy.md)), align,
 bound and ship also start when the gate tool's `unattended check` exits 0, with no command or grant, the
-human boundary being the live protected merge: an exception, for that policy only, to ruling
+human boundary being the declared run supervisor and whoever merges: an exception, for that policy only, to ruling
 `entrypoint-phase-operation-split`.
 
 Neither a local artifact nor a seat's confidence supplies a grant. In particular:

@@ -1,12 +1,12 @@
 /**
- * The unattended lifecycle policy (docs/decisions/0014-unattended-lifecycle-policy.md): opt-in selection,
- * the phase start check, command evidence, the pre-ticket import, the pre-ship check, the live merge-gate
- * read before ship and the independent review before final ship success.
+ * The unattended lifecycle policy (docs/decisions/0014-unattended-lifecycle-policy.md and its amendment of
+ * 2026-11-11): opt-in selection, the declared run supervisor, the phase start check, command evidence, the
+ * pre-ticket import, the pre-ship check, and the attested final ship.
  *
- * Two seams. The evaluations run over an in-memory forge serving API response shapes; each shape below is
- * written from the GitHub REST documentation unless it says it was recorded live. The command runs through
- * `runCli` in temporary git repositories with a stub `gh` on the search path that serves the same shapes
- * and logs every request's method.
+ * One seam. The command runs through `runCli` in temporary git repositories that have no remote at all. A
+ * `gh` shim on the search path logs every call, and every test fails if it was ever called: nothing on the
+ * unattended path reads a forge. Declarations, attestations and bodies live in temporary directories outside
+ * the repository, as the contract requires.
  */
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -18,26 +18,19 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import Ajv from "ajv";
-import { parse } from "yaml";
-
 import { runCli } from "../../src/cli.ts";
 import { defaultEvidenceDir, readRecords, takeSnapshot, type Gate, type Snapshot } from "../../src/lifecycle/gate.ts";
+import * as unattended from "../../src/lifecycle/unattended.ts";
 import {
-  ACTIONS_APP_ID,
-  canonicalModel,
-  checkMergeGate,
-  checkReviewStatus,
-  DISCLOSURE,
-  type Forge,
-  type GateIo,
   type Json,
   type JsonObject,
+  parseJson,
   resolvePolicy,
   unattendedDisclosure,
 } from "../../src/lifecycle/unattended.ts";
@@ -46,535 +39,20 @@ import { makeTree } from "../helpers/tree.ts";
 
 setDefaultTimeout(60_000);
 
-const REPO = "acme/widget";
-const HEAD = "a".repeat(40);
-const BASE = "b".repeat(40);
-const REVIEW_APP = 4242;
-const CHECK = "agent-kit/independent-review";
-const DIFF = "diff --git a/x b/x\n+changed\n";
-/** One page of a paginated listing, as the forge reads it. */
-const page = (path: string, n = 1) => `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${n}`;
-const RUNS_PATH = `repos/${REPO}/commits/${HEAD}/check-runs?check_name=${encodeURIComponent(CHECK)}&filter=all`;
-const RUNS_KEY = page(RUNS_PATH);
-const CONFIG_KEY = `repos/${REPO}/contents/ak.lifecycle.json?ref=main`;
-const OWNERS_KEY = `repos/${REPO}/contents/.github/CODEOWNERS?ref=main`;
-const PROTECTION_KEY = `repos/${REPO}/branches/main/protection`;
-const REPO_SECRETS = `repos/${REPO}/actions/secrets`;
+const ROOT = join(import.meta.dir, "../..");
+const CONTRACT = "agent-kit/supervisor-contract@1";
+const OBLIGATION_KEYS = [
+  "launch-and-watch",
+  "validation-gate",
+  "independent-review",
+  "seat-separation",
+  "head-bound-evidence",
+  "disclosure",
+] as const;
+const RECOVERY =
+  "recovery: open a new run with open --ticket under the declaration in force and record the gates again";
 const sha = (text: string | Uint8Array) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
-const b64 = (text: string) => Buffer.from(text).toString("base64");
-
-interface Fixture {
-  status?: number;
-  headers?: Record<string, string>;
-  body?: Json;
-  /** A raw body, served as is (the comparison diff). */
-  text?: string;
-  /** A raw body given as base64, for bytes that are not UTF-8. */
-  base64?: string;
-}
-/** A listing page carrying its `total_count`, as the forge's paginated listings do. */
-const listed = (key: string, list: Json[], total = list.length): Fixture => ({
-  body: { total_count: total, [key]: list },
-});
-interface FixtureMap {
-  [path: string]: Fixture;
-}
-
-const REVIEW = {
-  check: CHECK,
-  environment: "independent-review",
-  key_secret: "REVIEW_APP_KEY",
-  reviewer_model: "prov/model-b",
-  author_models: ["prov/model-a"],
-};
-const CONFIG = { policy: "unattended", human_reviewers: ["@alice", "@acme/maintainers"], independent_review: REVIEW };
-/** The residual assumptions ship-preflight and review-status state (AC-8), one phrase each. */
-const RESIDUAL = [
-  "designated reviewer accounts are operated by people",
-  "not reachable by the runner through credentials outside the forge client",
-  "team membership is not verified",
-  "scoped read-only by the operator",
-  "the runner's push credential is the active one",
-];
-
-function identity(configuration: string, native?: string): JsonObject {
-  const sources: JsonObject = { configuration };
-  if (native !== undefined) sources.native_metadata = native;
-  return { model: configuration, sources };
-}
-
-function result(overrides: JsonObject = {}): JsonObject {
-  return {
-    schema: "independent-review",
-    schema_version: 1,
-    head_sha: HEAD,
-    base_sha: BASE,
-    diff_sha256: sha(DIFF),
-    input: "diff-only",
-    reviewer: identity("prov/model-b", "prov/model-b"),
-    verdict: "approve",
-    findings: [],
-    ...overrides,
-  };
-}
-
-/** A completion time `minute` minutes into the hour. */
-const at = (minute: number) => new Date(Date.UTC(2026, 9, 29, 1, minute)).toISOString();
-
-function checkRun(id: number, body: JsonObject, overrides: JsonObject = {}): JsonObject {
-  return {
-    id,
-    name: CHECK,
-    head_sha: HEAD,
-    status: "completed",
-    conclusion: "success",
-    completed_at: `2026-10-29T0${id}:00:00Z`,
-    app: { id: REVIEW_APP },
-    output: { text: JSON.stringify(body) },
-    ...overrides,
-  };
-}
-
-interface Classic {
-  admins?: boolean;
-  bypass?: Json[];
-  codeOwners?: boolean;
-  stale?: boolean;
-  lastPush?: boolean;
-  checks?: { context: string; app_id: number | null }[];
-}
-
-const DEFAULT_CHECKS = [
-  { context: "ci/test", app_id: ACTIONS_APP_ID },
-  { context: CHECK, app_id: REVIEW_APP },
-];
-
-function classic(c: Classic = {}): JsonObject {
-  return {
-    required_pull_request_reviews: {
-      required_approving_review_count: 1,
-      require_code_owner_reviews: c.codeOwners ?? true,
-      dismiss_stale_reviews: c.stale ?? true,
-      require_last_push_approval: c.lastPush ?? true,
-      bypass_pull_request_allowances: { users: c.bypass ?? [], teams: [], apps: [] },
-    },
-    required_status_checks: { strict: true, checks: c.checks ?? DEFAULT_CHECKS },
-    enforce_admins: { enabled: c.admins ?? true },
-  };
-}
-
-/** A repository whose default branch enforces every merge-gate item through classic protection. */
-function protectedFixtures(): FixtureMap {
-  return {
-    [`repos/${REPO}`]: { body: { default_branch: "main", owner: { type: "Organization" } } },
-    [PROTECTION_KEY]: { body: classic() },
-    [`repos/${REPO}/rules/branches/main`]: { body: [] },
-    [CONFIG_KEY]: { body: { content: b64(JSON.stringify(CONFIG)) } },
-    [OWNERS_KEY]: { body: { content: b64("* @alice @acme/maintainers\n") } },
-    [`repos/${REPO}/codeowners/errors?ref=main`]: { body: { errors: [] } },
-    user: { body: { login: "runner-bot", type: "User" } },
-    [`repos/${REPO}/collaborators/runner-bot/permission`]: { body: { permission: "write", role_name: "write" } },
-    [`repos/${REPO}/environments/independent-review`]: {
-      body: { deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } },
-    },
-    [`repos/${REPO}/environments/independent-review/deployment-branch-policies`]: {
-      body: { branch_policies: [{ name: "main", type: "branch" }] },
-    },
-    [page(REPO_SECRETS)]: listed("secrets", []),
-    [page(`repos/${REPO}/actions/organization-secrets`)]: listed("secrets", []),
-    [page(`repos/${REPO}/environments`)]: listed("environments", [{ name: "independent-review" }, { name: "prod" }]),
-    [page(`repos/${REPO}/environments/prod/secrets`)]: listed("secrets", [{ name: "DEPLOY_KEY" }]),
-    [`repos/${REPO}/pulls/7`]: {
-      body: { number: 7, base: { ref: "main", sha: BASE }, head: { sha: HEAD }, body: `Change.\n\n${DISCLOSURE}\n` },
-    },
-    [RUNS_KEY]: listed("check_runs", [checkRun(1, result())]),
-    [`repos/${REPO}/compare/${BASE}...${HEAD}#diff`]: { text: DIFF },
-  };
-}
-
-function withFixtures(changes: FixtureMap, removed: string[] = []): FixtureMap {
-  const fixtures = { ...protectedFixtures(), ...changes };
-  for (const key of removed) Reflect.deleteProperty(fixtures, key);
-  return fixtures;
-}
-
-const UNPROTECTED: FixtureMap = { [PROTECTION_KEY]: { status: 404, body: { message: "Branch not protected" } } };
-const configWith = (value: JsonObject): FixtureMap => ({
-  [CONFIG_KEY]: { body: { content: b64(JSON.stringify(value)) } },
-});
-const runsWith = (list: Json[]): FixtureMap => ({ [RUNS_KEY]: listed("check_runs", list) });
-
-function memForge(fixtures: FixtureMap, log: string[] = []): Forge {
-  return (path, options = {}) => {
-    const key = options.accept?.includes("diff") === true ? `${path}#diff` : path;
-    log.push(`${options.token === undefined ? "runner" : "read"} ${key}`);
-    const fixture = fixtures[key];
-    const body: Json = fixture === undefined ? { message: "Not Found" } : (fixture.body ?? null);
-    const text = fixture?.text ?? JSON.stringify(body);
-    return {
-      status: fixture === undefined ? 404 : (fixture.status ?? 200),
-      headers: fixture?.headers ?? {},
-      body,
-      text,
-      digest: sha(text),
-    };
-  };
-}
-
-function io(fixtures: FixtureMap, log: string[] = [], accounts = ["runner-bot"]): GateIo {
-  return { forge: memForge(fixtures, log), accounts: () => accounts, readToken: "read-token" };
-}
-
-const failuresOf = (fixtures: FixtureMap, withIdentity = true) =>
-  checkMergeGate(io(fixtures), REPO, { identity: withIdentity, policySource: "environment" }).failures.join("\n");
-
-function reviewOf(fixtures: FixtureMap) {
-  return checkReviewStatus(
-    io(fixtures),
-    REPO,
-    7,
-    checkMergeGate(io(fixtures), REPO, { identity: false, policySource: "environment" }),
-  );
-}
-
-function aliased(target: string): FixtureMap {
-  return {
-    ...configWith({
-      ...CONFIG,
-      independent_review: { ...REVIEW, reviewer_model: "prov/latest", model_aliases: { "prov/latest": target } },
-    }),
-    ...runsWith([checkRun(1, result({ reviewer: identity("prov/latest", target) }))]),
-  };
-}
-
-const scoped = (scopes: string) =>
-  withFixtures({ [PROTECTION_KEY]: { body: classic(), headers: { "x-oauth-scopes": scopes } } });
-
-describe("merge gate (pure, API shapes written from the documentation)", () => {
-  test("a fully protected default branch passes, reads protection and secrets with the read credential only", () => {
-    const log: string[] = [];
-    const r = checkMergeGate(io(protectedFixtures(), log), REPO, { identity: true, policySource: "environment" });
-    expect(r.failures).toEqual([]);
-    expect(r.reviewAppId).toBe(REVIEW_APP);
-    expect(log.flatMap((line) => (line.startsWith("read ") ? [line.slice(5)] : [])).toSorted()).toEqual(
-      [
-        page(`repos/${REPO}/actions/organization-secrets`),
-        page(REPO_SECRETS),
-        PROTECTION_KEY,
-        page(`repos/${REPO}/environments/prod/secrets`),
-      ].toSorted(),
-    );
-    expect(log).toContain("runner user");
-  });
-
-  test("the live unprotected shape (recorded from Pibomeister/agent-kit main, 2026-10-29) refuses every item", () => {
-    const failures = failuresOf(withFixtures(UNPROTECTED));
-    for (const item of ["approval", "code-owner", "stale", "most recent push", "required CI", CHECK])
-      expect(failures).toContain(item);
-  });
-
-  test("an unreadable protection response and a missing read credential refuse as unknown", () => {
-    expect(failuresOf(withFixtures({ [PROTECTION_KEY]: { status: 404, body: { message: "Not Found" } } }))).toContain(
-      "unreadable",
-    );
-    const missing = checkMergeGate({ ...io(protectedFixtures()), readToken: undefined }, REPO, {
-      identity: true,
-      policySource: "environment",
-    });
-    expect(missing.failures.join("\n")).toContain("AK_UNATTENDED_READ_TOKEN");
-  });
-
-  test.each([
-    ["admins may bypass", { admins: false }, "admins"],
-    ["a pull-request bypass allowance", { bypass: [{ login: "bot" }] }, "bypass"],
-    ["no code-owner review", { codeOwners: false }, "code-owner"],
-    ["stale approvals kept", { stale: false }, "stale"],
-    ["no last-push approval", { lastPush: false }, "most recent push"],
-  ])("%s refuses", (_name, change: Classic, word) => {
-    expect(failuresOf(withFixtures({ [PROTECTION_KEY]: { body: classic(change) } }))).toContain(word);
-  });
-
-  test("a required check from any source does not count, and a review check pinned to GitHub Actions refuses", () => {
-    const anySource = failuresOf(
-      withFixtures({
-        [PROTECTION_KEY]: {
-          body: classic({
-            checks: [
-              { context: "ci/test", app_id: null },
-              { context: CHECK, app_id: null },
-            ],
-          }),
-        },
-      }),
-    );
-    expect(anySource).toContain("required CI");
-    expect(anySource).toContain(CHECK);
-    const actionsPinned = [
-      { context: "ci/test", app_id: ACTIONS_APP_ID },
-      { context: CHECK, app_id: ACTIONS_APP_ID },
-    ];
-    expect(failuresOf(withFixtures({ [PROTECTION_KEY]: { body: classic({ checks: actionsPinned }) } }))).toContain(
-      "GitHub Actions",
-    );
-    const notRequired = [{ context: "ci/test", app_id: ACTIONS_APP_ID }];
-    expect(failuresOf(withFixtures({ [PROTECTION_KEY]: { body: classic({ checks: notRequired }) } }))).toContain(
-      `${CHECK} is not a required check`,
-    );
-  });
-
-  test("a ruleset counts only with a readable empty bypass list, and an uncountable one does not block classic", () => {
-    const partial = withFixtures({
-      [`repos/${REPO}/rules/branches/main`]: {
-        body: [{ type: "pull_request", ruleset_id: 9, parameters: { required_approving_review_count: 1 } }],
-      },
-      [`repos/${REPO}/rulesets/9`]: { body: { id: 9, enforcement: "active" } },
-    });
-    expect(failuresOf(partial)).toBe("");
-    const rules: Fixture = {
-      body: [
-        {
-          type: "pull_request",
-          ruleset_id: 9,
-          parameters: {
-            required_approving_review_count: 1,
-            require_code_owner_review: true,
-            dismiss_stale_reviews_on_push: true,
-            require_last_push_approval: true,
-          },
-        },
-        {
-          type: "required_status_checks",
-          ruleset_id: 9,
-          parameters: {
-            required_status_checks: [
-              { context: "ci/test", integration_id: ACTIONS_APP_ID },
-              { context: CHECK, integration_id: REVIEW_APP },
-            ],
-          },
-        },
-      ],
-    };
-    const hidden = { body: { id: 9, enforcement: "active" } };
-    const empty = { body: { id: 9, enforcement: "active", bypass_actors: [] } };
-    const base = { ...UNPROTECTED, [`repos/${REPO}/rules/branches/main`]: rules };
-    expect(failuresOf(withFixtures({ ...base, [`repos/${REPO}/rulesets/9`]: hidden }))).toContain("bypass list");
-    expect(failuresOf(withFixtures({ ...base, [`repos/${REPO}/rulesets/9`]: empty }))).toBe("");
-    const forbidden = { status: 403, body: { message: "Forbidden", bypass_actors: [] } };
-    expect(failuresOf(withFixtures({ ...base, [`repos/${REPO}/rulesets/9`]: forbidden }))).toContain(
-      "ruleset 9 (its detail is unreadable (HTTP 403))",
-    );
-  });
-
-  test("code owners: catch-all, owners inside the designated set, no ownerless rule and no forge errors", () => {
-    const owners = (text: string) => withFixtures({ [OWNERS_KEY]: { body: { content: b64(text) } } });
-    expect(failuresOf(owners("src/ @alice\n"))).toContain("catch-all");
-    expect(failuresOf(owners("* @alice @mallory\n"))).toContain("@mallory");
-    expect(failuresOf(owners("* @alice\ndocs/\n"))).toContain("without owners");
-    const errors = { body: { errors: [{ line: 1, kind: "Unknown owner", message: "Unknown owner" }] } };
-    expect(failuresOf(withFixtures({ [`repos/${REPO}/codeowners/errors?ref=main`]: errors }))).toContain(
-      "code-owners errors",
-    );
-    const docs = { [`repos/${REPO}/contents/docs/CODEOWNERS?ref=main`]: { body: { content: b64("* @alice\n") } } };
-    expect(failuresOf(withFixtures(docs, [OWNERS_KEY]))).toBe("");
-  });
-
-  test("configuration comes from the default branch and must name reviewers, models and the policy", () => {
-    expect(failuresOf(withFixtures(configWith({ ...CONFIG, human_reviewers: [] })))).toContain("human_reviewers");
-    const noAuthors = configWith({ ...CONFIG, independent_review: { ...REVIEW, author_models: [] } });
-    expect(failuresOf(withFixtures(noAuthors))).toContain("author_models");
-    const bare = configWith({ ...CONFIG, independent_review: { ...REVIEW, reviewer_model: "model-b" } });
-    expect(failuresOf(withFixtures(bare))).toContain("provider/model");
-    const notPolicy = withFixtures(configWith({ ...CONFIG, policy: "legacy" }));
-    const fromRepo = checkMergeGate(io(notPolicy), REPO, { identity: true, policySource: "default-branch:abc" });
-    expect(fromRepo.failures.join("\n")).toContain("no longer names the unattended policy");
-    expect(failuresOf(notPolicy)).toBe("");
-  });
-
-  test("the runner must be a non-admin, non-designated user account, and no stored account may be designated", () => {
-    const admin = withFixtures({
-      [`repos/${REPO}/collaborators/runner-bot/permission`]: { body: { permission: "admin", role_name: "admin" } },
-    });
-    expect(failuresOf(admin)).toContain("role");
-    expect(failuresOf(admin, false)).toBe("");
-    expect(
-      failuresOf(withFixtures({ user: { status: 403, body: { message: "Resource not accessible by integration" } } })),
-    ).toContain("user account");
-    const designated = withFixtures({
-      user: { body: { login: "alice", type: "User" } },
-      [`repos/${REPO}/collaborators/alice/permission`]: { body: { permission: "write", role_name: "write" } },
-    });
-    expect(failuresOf(designated)).toContain("designated");
-    const stored = checkMergeGate(io(protectedFixtures(), [], ["runner-bot", "Alice"]), REPO, {
-      identity: true,
-      policySource: "environment",
-    });
-    expect(stored.failures.join("\n")).toContain("stored");
-  });
-
-  test("an environment, branch-policy or permission read that is not HTTP 200 refuses, though its body would pass", () => {
-    const fixtures = protectedFixtures();
-    expect(failuresOf(fixtures)).toBe("");
-    const forbidden = (key: string) => withFixtures({ [key]: { ...fixtures[key], status: 403 } });
-    const environment = `repos/${REPO}/environments/independent-review`;
-    expect(failuresOf(forbidden(environment))).toContain("environment independent-review is unreadable (HTTP 403)");
-    expect(failuresOf(forbidden(`${environment}/deployment-branch-policies`))).toContain(
-      "environment independent-review's deployment branch policies are unreadable (HTTP 403)",
-    );
-    expect(failuresOf(forbidden(`repos/${REPO}/collaborators/runner-bot/permission`))).toContain(
-      `the runner runner-bot's role on ${REPO} is unreadable (HTTP 403)`,
-    );
-  });
-
-  test("a classic read credential with a write scope refuses", () => {
-    expect(failuresOf(scoped("read:org, repo"))).toContain("write scope");
-    expect(failuresOf(scoped("read:org"))).toBe("");
-  });
-
-  test("the review key's environment is the default branch only and the key is stored nowhere else", () => {
-    const wildcard = {
-      [`repos/${REPO}/environments/independent-review/deployment-branch-policies`]: {
-        body: { branch_policies: [{ name: "*", type: "branch" }] },
-      },
-    };
-    expect(failuresOf(withFixtures(wildcard))).toContain("deployment branch policy");
-    const keyed = listed("secrets", [{ name: "REVIEW_APP_KEY" }]);
-    expect(failuresOf(withFixtures({ [page(REPO_SECRETS)]: keyed }))).toContain("REVIEW_APP_KEY");
-    expect(failuresOf(withFixtures({ [page(`repos/${REPO}/environments/prod/secrets`)]: keyed }))).toContain("prod");
-  });
-
-  test("every page of a secrets listing is read: the key on page two refuses, a short listing refuses", () => {
-    const filler = Array.from({ length: 100 }, (_, i) => ({ name: `SECRET_${i}` }));
-    const twoPages = withFixtures({
-      [page(REPO_SECRETS)]: listed("secrets", filler, 101),
-      [page(REPO_SECRETS, 2)]: listed("secrets", [{ name: "REVIEW_APP_KEY" }], 101),
-    });
-    expect(failuresOf(twoPages)).toContain("REVIEW_APP_KEY is also stored as a repository secret");
-    const clean = withFixtures({
-      [page(REPO_SECRETS)]: listed("secrets", filler, 101),
-      [page(REPO_SECRETS, 2)]: listed("secrets", [{ name: "OTHER" }], 101),
-    });
-    expect(failuresOf(clean)).toBe("");
-    const short = withFixtures({ [page(REPO_SECRETS)]: listed("secrets", [{ name: "OTHER" }], 3) });
-    expect(failuresOf(short)).toContain("repository secrets are incomplete (1 of 3 listed)");
-    const unreadable = withFixtures({
-      [page(REPO_SECRETS)]: listed("secrets", filler, 101),
-      [page(REPO_SECRETS, 2)]: { status: 502, body: { message: "Bad Gateway" } },
-    });
-    expect(failuresOf(unreadable)).toContain("repository secrets are unreadable (HTTP 502)");
-  });
-
-  test("a repository-sourced run must have been stamped from a revision on the forge's default branch", () => {
-    const stamped = "c".repeat(40);
-    const tip = "d".repeat(40);
-    const branchKey = `repos/${REPO}/branches/main`;
-    const standing = (status?: string): FixtureMap => {
-      const fixtures = withFixtures({ [branchKey]: { body: { name: "main", commit: { sha: tip } } } });
-      if (status !== undefined) fixtures[`repos/${REPO}/compare/${stamped}...${tip}`] = { body: { status } };
-      return fixtures;
-    };
-    const failuresAt = (fixtures: FixtureMap, source = `default-branch:${stamped}`) =>
-      checkMergeGate(io(fixtures), REPO, { identity: true, policySource: source }).failures.join("\n");
-    expect(failuresAt(standing("ahead"))).toBe("");
-    expect(failuresAt(standing("identical"))).toBe("");
-    expect(failuresAt(standing("diverged"))).toContain(`read at ${stamped.slice(0, 12)}, which is not on main`);
-    expect(failuresAt(standing("behind"))).toContain("not on main");
-    expect(failuresAt(standing())).toContain("not on main");
-    expect(failuresAt(withFixtures({}, [branchKey]))).toContain("not on main");
-    const forbidden = standing("ahead");
-    forbidden[branchKey] = { status: 403, body: { name: "main", commit: { sha: tip } } };
-    expect(failuresAt(forbidden)).toContain("(comparison: unreadable)");
-    expect(failuresAt(standing("diverged"), "environment")).toBe("");
-  });
-});
-
-describe("independent review status (pure)", () => {
-  test("a same-provider different canonical model passes", () => {
-    const r = reviewOf(protectedFixtures());
-    expect(r.failures).toEqual([]);
-    expect(r.state).toBe("pass");
-  });
-
-  test("a pull request read that is not HTTP 200 is unreadable, whatever its body carries", () => {
-    const pullKey = `repos/${REPO}/pulls/7`;
-    const healthy = protectedFixtures();
-    expect(reviewOf(healthy).state).toBe("pass");
-    const r = reviewOf(withFixtures({ [pullKey]: { ...healthy[pullKey], status: 403 } }));
-    expect(r.state).toBe("refused");
-    expect(r.head).toBeUndefined();
-    expect(r.failures).toContain("pull request 7 is unreadable (HTTP 403)");
-  });
-
-  test("no completed run from the pinned app waits; another app's run is ignored and listed", () => {
-    const r = reviewOf(withFixtures(runsWith([checkRun(1, result(), { app: { id: 99 } })])));
-    expect(r.state).toBe("waiting");
-    expect(r.notes.join("\n")).toContain("99");
-  });
-
-  test.each([
-    ["the same canonical model", result({ reviewer: identity("prov/model-a", "prov/model-a") }), "author model"],
-    ["absent native metadata", result({ reviewer: identity("prov/model-b") }), "native"],
-    ["native metadata that disagrees", result({ reviewer: identity("prov/model-b", "prov/model-c") }), "disagree"],
-    [
-      "a forged identity in the verdict text",
-      result({
-        reviewer: identity("prov/model-a", "prov/model-a"),
-        reviewer_model: "prov/model-z",
-        findings: [{ text: "reviewed by prov/model-z" }],
-      }),
-      "author model",
-    ],
-    ["another head", result({ head_sha: "c".repeat(40) }), "head"],
-    ["another diff", result({ diff_sha256: sha("other") }), "digest"],
-    ["input that is not diff-only", result({ input: "diff-and-records" }), "diff-only"],
-    ["a changes-requested verdict", result({ verdict: "changes-requested" }), "verdict"],
-  ])("%s refuses", (_name, body, word) => {
-    const r = reviewOf(withFixtures(runsWith([checkRun(1, body)])));
-    expect(r.state).toBe("refused");
-    expect(r.failures.join("\n")).toContain(word);
-  });
-
-  test("an alias that resolves to an author model refuses; one resolving elsewhere passes", () => {
-    expect(reviewOf(withFixtures(aliased("prov/model-a"))).failures.join("\n")).toContain("author model");
-    expect(reviewOf(withFixtures(aliased("prov/model-b"))).failures).toEqual([]);
-    expect(canonicalModel(" Prov/Latest ", new Map([["prov/latest", "prov/model-b"]]))).toBe("prov/model-b");
-  });
-
-  test("an earlier rejection on the head refuses even when a later run approves", () => {
-    const rejected = checkRun(1, result({ verdict: "changes-requested" }), { conclusion: "failure" });
-    expect(reviewOf(withFixtures(runsWith([rejected, checkRun(2, result())]))).failures.join("\n")).toContain(
-      "earlier",
-    );
-  });
-
-  test("every page of check runs is read: an earlier rejection off page one refuses, a short listing refuses", () => {
-    const approvals = Array.from({ length: 100 }, (_, i) => checkRun(i + 2, result(), { completed_at: at(i + 10) }));
-    const rejected = checkRun(1, result({ verdict: "changes-requested" }), {
-      conclusion: "failure",
-      completed_at: at(0),
-    });
-    const paged = (second: Json[]) =>
-      reviewOf(
-        withFixtures({
-          [RUNS_KEY]: listed("check_runs", approvals, 100 + second.length),
-          [page(RUNS_PATH, 2)]: listed("check_runs", second, 100 + second.length),
-        }),
-      );
-    expect(paged([rejected]).failures.join("\n")).toContain("earlier");
-    expect(paged([checkRun(1, result(), { completed_at: at(0) })]).failures).toEqual([]);
-    const short = reviewOf(withFixtures({ [RUNS_KEY]: listed("check_runs", [checkRun(1, result())], 4) }));
-    expect(short.state).toBe("refused");
-    expect(short.failures.join("\n")).toContain("check runs are incomplete (1 of 4 listed)");
-  });
-
-  test("the pull request text must carry the disclosure outside HTML comments", () => {
-    const hidden = {
-      [`repos/${REPO}/pulls/7`]: {
-        body: { base: { ref: "main", sha: BASE }, head: { sha: HEAD }, body: `<!-- ${DISCLOSURE} -->` },
-      },
-    };
-    expect(reviewOf(withFixtures(hidden)).failures.join("\n")).toContain("disclosure");
-  });
-});
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 // ── the command seam ─────────────────────────────────────────────────────────
 
@@ -584,13 +62,13 @@ function git(cwd: string, ...args: string[]): string {
   return p.stdout.toString().trim();
 }
 
+/** A repository with one commit on main and a feature branch checked out. It has no remote. */
 function repo(): string {
   const dir = realpathSync(makeTree({ "src/a.js": "export const a = 1;\n" }));
   git(dir, "init", "-q", "-b", "main");
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "init");
   git(dir, "checkout", "-q", "-b", "feature");
-  git(dir, "remote", "add", "origin", `https://github.com/${REPO}.git`);
   return dir;
 }
 
@@ -609,48 +87,50 @@ function setEnv(vars: Record<string, string | undefined>): void {
     else process.env[key] = value;
   }
 }
+
+/** The log of the `gh` shim of the running test. */
+let ghLog = "";
+beforeEach(() => {
+  setEnv({
+    AK_LIFECYCLE_POLICY: undefined,
+    AK_LIFECYCLE_SUPERVISOR: undefined,
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined,
+  });
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-shim-")));
+  ghLog = join(dir, "calls.log");
+  writeFileSync(join(dir, "gh"), `#!/bin/sh\necho "$@" >> '${ghLog}'\nexit 1\n`);
+  chmodSync(join(dir, "gh"), 0o755);
+  setEnv({ PATH: `${dir}:${process.env.PATH ?? ""}` });
+});
 afterEach(() => {
+  const calls = existsSync(ghLog) ? readFileSync(ghLog, "utf8") : "";
   for (const [key, value] of saved) {
     if (value === undefined) Reflect.deleteProperty(process.env, key);
     else process.env[key] = value;
   }
   saved.clear();
+  expect(calls).toBe("");
 });
-beforeEach(() =>
-  setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined, AK_UNATTENDED_READ_TOKEN: undefined }),
-);
 
-const STUB = `#!/usr/bin/env node
-const fs = require("node:fs");
-const dir = __dirname;
-const { fixtures, accounts } = JSON.parse(fs.readFileSync(dir + "/fixtures.json", "utf8"));
-const args = process.argv.slice(2);
-if (args[0] === "auth") {
-  fs.appendFileSync(dir + "/log", "CLIENT auth status\\n");
-  process.stdout.write(JSON.stringify({ hosts: { "github.com": accounts.map((login) => ({ login })) } }));
-  process.exit(0);
-}
-const method = args.includes("--method") ? args[args.indexOf("--method") + 1] : "IMPLICIT";
-const accept = args.find((a) => a.startsWith("Accept:")) || "";
-const path = args[args.length - 1];
-fs.appendFileSync(dir + "/log", method + " " + path + " " + (process.env.GH_TOKEN ? "read" : "runner") + "\\n");
-const f = fixtures[accept.includes("diff") ? path + "#diff" : path];
-const status = f ? (f.status || 200) : 404;
-const text = f ? (f.text !== undefined ? f.text : JSON.stringify(f.body === undefined ? null : f.body)) : '{"message":"Not Found"}';
-const raw = f && f.base64 !== undefined ? Buffer.from(f.base64, "base64") : Buffer.from(text);
-const headers = Object.entries((f && f.headers) || {}).map(([k, v]) => k + ": " + v + "\\r\\n").join("");
-process.stdout.write(Buffer.concat([Buffer.from("HTTP/2.0 " + status + " X\\r\\n" + headers + "\\r\\n"), raw]));
-process.exit(status < 300 ? 0 : 1);
-`;
+const outsideDir = () => realpathSync(mkdtempSync(join(tmpdir(), "ak-outside-")));
+const obligationsOf = (): Record<string, string> =>
+  Object.fromEntries(OBLIGATION_KEYS.map((key) => [key, `how the supervisor meets ${key}`]));
+const declarationOf = (name: string, over: JsonObject = {}): JsonObject => ({
+  contract: CONTRACT,
+  supervisor: name,
+  obligations: obligationsOf(),
+  ...over,
+});
 
-/** A stub `gh` on the search path: serves `fixtures` by request path and logs each request's method. */
-function stubGh(fixtures: FixtureMap, accounts = ["runner-bot"]) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-gh-stub-")));
-  writeFileSync(join(dir, "fixtures.json"), JSON.stringify({ fixtures, accounts }));
-  writeFileSync(join(dir, "gh"), STUB);
-  chmodSync(join(dir, "gh"), 0o755);
-  setEnv({ PATH: `${dir}:${process.env.PATH ?? ""}`, GH_TOKEN: undefined });
-  return () => (existsSync(join(dir, "log")) ? readFileSync(join(dir, "log"), "utf8").trim().split("\n") : []);
+/**
+ * Writes a declaration for `name` outside every checkout and names it in the environment. `value` replaces the
+ * declaration object and `text` replaces its bytes, for the cases that need an invalid one.
+ */
+function declareSupervisor(name = "firstmate", value?: Json, text?: string): string {
+  const file = join(outsideDir(), "declaration.json");
+  writeFileSync(file, text ?? `${JSON.stringify(value ?? declarationOf(name), null, 2)}\n`);
+  setEnv({ AK_LIFECYCLE_SUPERVISOR: name, AK_LIFECYCLE_SUPERVISOR_DECLARATION: file });
+  return file;
 }
 
 function ticketFile(cwd: string): string {
@@ -766,6 +246,7 @@ describe("selection and start (command seam)", () => {
 
   test("the environment selects it; another value is refused with exit 2", () => {
     const cwd = repo();
+    declareSupervisor();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const r = ak(cwd, "unattended", "check", "--phase", "super-ship");
     expect(r.code).toBe(0);
@@ -786,6 +267,7 @@ describe("selection and start (command seam)", () => {
     git(cwd, "update-ref", "refs/remotes/origin/main", tip);
     git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
     git(cwd, "checkout", "-q", "feature");
+    declareSupervisor();
     const r = ak(cwd, "unattended", "check", "--phase", "super-align");
     expect(r.code).toBe(0);
     const printed: unknown = JSON.parse(r.out);
@@ -804,9 +286,11 @@ describe("selection and start (command seam)", () => {
     expect(recordsOf(cwd, "feature", "align")).toEqual([]);
   });
 
-  test("AK_LIFECYCLE_SUPERVISOR records the supervisor on phase starts, runs, gate records, decisions and ship disclosure", () => {
+  test("the declared supervisor is recorded on phase starts, runs, gate records, decisions and the ship disclosure", () => {
     const cwd = repo();
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    const file = declareSupervisor("firstmate");
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const digest = sha(readFileSync(file));
     for (const phase of ["super-align", "super-bound", "super-ship"]) {
       const checked = ak(cwd, "unattended", "check", "--phase", phase);
       expect(checked.code).toBe(0);
@@ -814,6 +298,7 @@ describe("selection and start (command seam)", () => {
         policy: "unattended",
         source: "environment",
         supervisor: "firstmate",
+        declaration_digest: digest,
         phase,
       });
     }
@@ -822,6 +307,7 @@ describe("selection and start (command seam)", () => {
     expect(JSON.parse(modelPhase.out)).toEqual({
       policy: "unattended",
       supervisor: "firstmate",
+      declaration_digest: digest,
       phase: "super-scout",
       start: "model-started",
     });
@@ -830,6 +316,12 @@ describe("selection and start (command seam)", () => {
     const runRecord: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8"));
     expect(runRecord).toMatchObject({
       policy: { name: "unattended", source: "environment", supervisor: "firstmate" },
+      supervisor: {
+        name: "firstmate",
+        contract: "agent-kit/supervisor-contract@1",
+        declaration_path: realpathSync(file),
+        declaration_digest: digest,
+      },
     });
     for (const gate of [
       "align",
@@ -853,23 +345,6 @@ describe("selection and start (command seam)", () => {
       policy: { name: "unattended", source: "environment", supervisor: "firstmate" },
     });
 
-    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
-    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
-    const supervisedPull = {
-      [`repos/${REPO}/pulls/7`]: {
-        body: {
-          number: 7,
-          base: { ref: "main", sha: BASE },
-          head: { sha: HEAD },
-          body: `Change.\n\n${unattendedDisclosure("firstmate")}\n`,
-        },
-      },
-    };
-    const shipped = withFixtures({
-      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
-      ...supervisedPull,
-    });
-    stubGh(shipped);
     const preflight = ak(cwd, "record", "--gate", "ship-preflight");
     expect(preflight.code).toBe(0);
     expect(preflight.out).toContain(unattendedDisclosure("firstmate"));
@@ -878,52 +353,11 @@ describe("selection and start (command seam)", () => {
       source: "environment",
       supervisor: "firstmate",
     });
-    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
-
-    // The supervisor is a record only: a plain disclosure passes the final append, and no disclosure is refused.
-    const shippedCompare = {
-      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
-    };
-    stubGh(withFixtures(shippedCompare));
-    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
-    stubGh(
-      withFixtures({
-        ...shippedCompare,
-        [`repos/${REPO}/pulls/7`]: {
-          body: { number: 7, base: { ref: "main", sha: BASE }, head: { sha: HEAD }, body: "Change." },
-        },
-      }),
-    );
-    const noDisclosure = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
-    expect(noDisclosure.code).toBe(1);
-    expect(noDisclosure.err).toContain("disclosure");
-
-    // Standalone review-status without AK_LIFECYCLE_SUPERVISOR still accepts a supervised disclosure.
-    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined });
-    stubGh(withFixtures(supervisedPull));
-    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
-
-    // Standalone review-status accepts a supervisor name with a comma, and with AK_LIFECYCLE_SUPERVISOR set it
-    // still accepts the plain disclosure of a pull request prepared without a supervisor.
-    const commaPull = {
-      [`repos/${REPO}/pulls/7`]: {
-        body: {
-          number: 7,
-          base: { ref: "main", sha: BASE },
-          head: { sha: HEAD },
-          body: `Change.\n\n${unattendedDisclosure("firstmate, crew 3")}\n`,
-        },
-      },
-    };
-    stubGh(withFixtures(commaPull));
-    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
-    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
-    stubGh(withFixtures({}));
-    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
   }, 180_000);
 
   test("resolvePolicy refuses an AK_LIFECYCLE_SUPERVISOR containing LF, CR, ESC or DEL after trimming, and a non-string or control-character supervisor in run.json is omitted", () => {
     const cwd = repo();
+    declareSupervisor("firstmate");
     setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "\n firstmate \r\n" });
     const trimmed = ak(cwd, "unattended", "check", "--phase", "super-align");
     expect(trimmed.code).toBe(0);
@@ -934,7 +368,6 @@ describe("selection and start (command seam)", () => {
         ok: false,
         reason: "AK_LIFECYCLE_SUPERVISOR must not contain control characters",
       });
-      expect(unattendedDisclosure(bad)).toBe(DISCLOSURE);
       setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad });
       const checked = ak(cwd, "unattended", "check", "--phase", "super-align");
       expect(checked.code).toBe(2);
@@ -949,16 +382,16 @@ describe("selection and start (command seam)", () => {
       expect(recordsOf(cwd, "feature", "align")).toEqual([]);
     }
 
+    // With no declaration the run opens unstamped, and a stored supervisor that is not a clean string is left out.
     setEnv({
       AK_LIFECYCLE_POLICY: "unattended",
       AK_LIFECYCLE_SUPERVISOR: "firstmate",
-      AK_UNATTENDED_READ_TOKEN: "read-token",
+      AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined,
     });
     const run = fullRun(cwd);
     setEnv({ AK_LIFECYCLE_SUPERVISOR: undefined });
     const runPath = join(store(cwd), "runs", run, "run.json");
     const originalRunText = readFileSync(runPath, "utf8");
-    stubGh(withFixtures({}));
     for (const storedSupervisor of [42, ["firstmate"], "firstmate\ncrew", "firstmate\rcrew", "firstmate\x1b[31m"]) {
       writeFileSync(
         runPath,
@@ -977,17 +410,13 @@ describe("selection and start (command seam)", () => {
       });
       expect(checked.out).not.toContain('"supervisor"');
       const preflight = ak(cwd, "record", "--gate", "ship-preflight");
-      expect(preflight.code).toBe(0);
-      expect(preflight.out).toContain(DISCLOSURE);
-      expect(preflight.out).not.toContain("supervisor:");
-      expect(recordsOf(cwd, run, "ship-preflight").at(-1)?.policy).toEqual({
-        name: "unattended",
-        source: "environment",
-      });
+      expect(preflight.code).toBe(1);
+      expect(preflight.err).toContain("AK_LIFECYCLE_SUPERVISOR_DECLARATION is not set");
+      expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     }
   });
 
-  test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
+  test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records the declared supervisor across phases, and ships under the declaration", () => {
     const rootConfig = readFileSync(join(import.meta.dir, "../../ak.lifecycle.json"), "utf8");
     expect(JSON.parse(rootConfig)).toEqual({ policy: "unattended" });
 
@@ -1001,7 +430,8 @@ describe("selection and start (command seam)", () => {
     git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
     git(cwd, "checkout", "-q", "feature");
 
-    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    const file = declareSupervisor("firstmate");
+    setEnv({ AK_LIFECYCLE_POLICY: undefined });
     for (const phase of ["super-align", "super-bound"]) {
       const checked = ak(cwd, "unattended", "check", "--phase", phase);
       expect(checked.code).toBe(0);
@@ -1009,6 +439,7 @@ describe("selection and start (command seam)", () => {
         policy: "unattended",
         source: `default-branch:${tip}`,
         supervisor: "firstmate",
+        declaration_digest: sha(readFileSync(file)),
         phase,
       });
     }
@@ -1020,21 +451,14 @@ describe("selection and start (command seam)", () => {
       source: `default-branch:${tip}`,
       supervisor: "firstmate",
     });
-
-    stubGh(
-      withFixtures({
-        ...UNPROTECTED,
-        ...configWith({ policy: "unattended" }),
-        [`repos/${REPO}/branches/main`]: { body: { name: "main", commit: { sha: tip } } },
-        [`repos/${REPO}/compare/${tip}...${tip}`]: { body: { status: "identical" } },
-      }),
-    );
     const preflight = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(preflight.code).toBe(1);
-    expect(preflight.err).toContain("AK_UNATTENDED_READ_TOKEN is not set");
-    expect(preflight.err).toContain("a pull request with at least one approval is not required");
-    expect(preflight.err).toContain("ak.lifecycle.json: human_reviewers is empty");
-    expect(preflight.err).toContain("ak.lifecycle.json: independent_review.reviewer_model is missing");
+    expect(preflight.code).toBe(0);
+    expect(preflight.out).toContain(unattendedDisclosure("firstmate"));
+    expect(recordsOf(cwd, run, "ship-preflight")[0]?.policy).toEqual({
+      name: "unattended",
+      source: `default-branch:${tip}`,
+      supervisor: "firstmate",
+    });
   }, 180_000);
 
   test("a legacy run refuses an unattended record and an unattended check", () => {
@@ -1287,6 +711,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     ).toBe(0);
     const r = ak(cwd, "check");
     expect(r.err).toContain("host-unattested");
+    expect(r.err).toContain("whose boundary is the declared run supervisor");
     expect(r.code).toBe(0);
   });
 
@@ -1415,19 +840,13 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
 
   test("the fallback's coverage limit is recorded on the ship decision and printed in the ship disclosure", () => {
     const cwd = repo();
+    declareSupervisor();
     const { run, code } = bareTicketRun(cwd, ok);
     expect(code).toBe(0);
-    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
-    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
-    stubGh(
-      withFixtures({
-        [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
-      }),
-    );
-    const shipped = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(shipped.code).toBe(0);
+    const closed = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(closed.code).toBe(0);
     const limit = "ticket demo-bare has no acceptance criteria or named verification";
-    expect(shipped.out).toContain(`coverage limit: ${limit}`);
+    expect(closed.out).toContain(`coverage limit: ${limit}`);
     const decisions = join(store(cwd), run, "decisions");
     const decision: unknown = JSON.parse(readFileSync(join(decisions, readdirSync(decisions).at(-1) ?? ""), "utf8"));
     expect(decision).toMatchObject({ outcome: "allowed", reasons: [{ code: "coverage-limit" }] });
@@ -1491,385 +910,829 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
   });
 });
 
-describe("ship-preflight and final ship success (command seam)", () => {
-  test("against the unprotected live shape it refuses every item, writes nothing and makes only GET requests", () => {
+// ── the declared supervisor ─────────────────────────────────────────────────
+
+const runsOf = (cwd: string) => (existsSync(join(store(cwd), "runs")) ? readdirSync(join(store(cwd), "runs")) : []);
+const without = (value: JsonObject, key: string): JsonObject => {
+  const copy = { ...value };
+  Reflect.deleteProperty(copy, key);
+  return copy;
+};
+const withObligation = (key: string, text: Json | undefined): JsonObject => {
+  const obligations: JsonObject = { ...obligationsOf() };
+  if (text === undefined) Reflect.deleteProperty(obligations, key);
+  else obligations[key] = text;
+  return { ...declarationOf("firstmate"), obligations };
+};
+
+/** One way a declaration is refused: how the environment is set up and the item the refusal names. */
+interface Refusal {
+  name: string;
+  setup: (cwd: string) => void;
+  item: string;
+  /** The declaration is not set at all, so `open` opens the run unstamped instead of refusing. */
+  absent?: boolean;
+}
+
+function inCheckout(cwd: string, path: string, value: Json = declarationOf("firstmate")): void {
+  mkdirSync(join(cwd, path, ".."), { recursive: true });
+  writeFileSync(join(cwd, path), JSON.stringify(value));
+  setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate", AK_LIFECYCLE_SUPERVISOR_DECLARATION: join(cwd, path) });
+}
+
+const REFUSALS: Refusal[] = [
+  {
+    name: "the supervisor name is unset",
+    setup: () => {
+      declareSupervisor();
+      setEnv({ AK_LIFECYCLE_SUPERVISOR: undefined });
+    },
+    item: "AK_LIFECYCLE_SUPERVISOR is not set",
+  },
+  {
+    name: "the declaration path is unset",
+    setup: () => {
+      declareSupervisor();
+      setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined });
+    },
+    item: "AK_LIFECYCLE_SUPERVISOR_DECLARATION is not set",
+    absent: true,
+  },
+  {
+    name: "the declaration path is empty",
+    setup: () => {
+      declareSupervisor();
+      setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: "" });
+    },
+    item: "AK_LIFECYCLE_SUPERVISOR_DECLARATION is not set",
+    absent: true,
+  },
+  {
+    name: "the declaration path is relative",
+    setup: () => {
+      declareSupervisor();
+      setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: "declaration.json" });
+    },
+    item: "absolute",
+  },
+  {
+    name: "the declaration file does not exist",
+    setup: () => {
+      declareSupervisor();
+      setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: join(outsideDir(), "missing.json") });
+    },
+    item: "cannot be read",
+  },
+  {
+    name: "the declaration is invalid JSON",
+    setup: () => void declareSupervisor("firstmate", undefined, "{not json"),
+    item: "not valid JSON",
+  },
+  {
+    name: "the declaration is not an object",
+    setup: () => void declareSupervisor("firstmate", ["firstmate"]),
+    item: "must be a JSON object",
+  },
+  {
+    name: "the real path lies inside the checkout",
+    setup: (cwd) => inCheckout(cwd, "declaration.json"),
+    item: "outside the repository",
+  },
+  {
+    name: "the real path lies inside the git directory",
+    setup: (cwd) => inCheckout(cwd, ".git/declaration.json"),
+    item: "outside the repository",
+  },
+  {
+    name: "the real path lies inside another worktree",
+    setup: (cwd) => {
+      const other = join(outsideDir(), "other");
+      git(cwd, "worktree", "add", "-q", "-b", "other", other);
+      const file = join(other, "declaration.json");
+      writeFileSync(file, JSON.stringify(declarationOf("firstmate")));
+      setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate", AK_LIFECYCLE_SUPERVISOR_DECLARATION: file });
+    },
+    item: "outside the repository",
+  },
+  {
+    name: "a symlink outside whose target lies inside the checkout",
+    setup: (cwd) => {
+      writeFileSync(join(cwd, "target.json"), JSON.stringify(declarationOf("firstmate")));
+      const link = join(outsideDir(), "declaration.json");
+      symlinkSync(join(cwd, "target.json"), link);
+      setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate", AK_LIFECYCLE_SUPERVISOR_DECLARATION: link });
+    },
+    item: "outside the repository",
+  },
+  {
+    name: "the contract is wrong",
+    setup: () => void declareSupervisor("firstmate", declarationOf("firstmate", { contract: `${CONTRACT}0` })),
+    item: "contract",
+  },
+  {
+    name: "the contract is missing",
+    setup: () => void declareSupervisor("firstmate", without(declarationOf("firstmate"), "contract")),
+    item: "contract",
+  },
+  {
+    name: "the declared supervisor differs from the name in the environment",
+    setup: () => void declareSupervisor("firstmate", declarationOf("other-crew")),
+    item: "other-crew",
+  },
+  ...OBLIGATION_KEYS.map((key) => ({
+    name: `the obligation ${key} is missing`,
+    setup: () => void declareSupervisor("firstmate", withObligation(key, undefined)),
+    item: key,
+  })),
+  {
+    name: "an obligation is unknown",
+    setup: () => void declareSupervisor("firstmate", withObligation("deploys-for-you", "yes")),
+    item: "deploys-for-you",
+  },
+  {
+    name: "a top-level key is unknown",
+    setup: () => void declareSupervisor("firstmate", declarationOf("firstmate", { extra: "x" })),
+    item: "extra",
+  },
+  {
+    name: "an obligation text is empty",
+    setup: () => void declareSupervisor("firstmate", withObligation("disclosure", "")),
+    item: "disclosure",
+  },
+  {
+    name: "an obligation text spans lines",
+    setup: () => void declareSupervisor("firstmate", withObligation("seat-separation", "one\ntwo")),
+    item: "seat-separation",
+  },
+];
+
+describe("the declaration (AC-2)", () => {
+  test.each(REFUSALS)("is refused at the start check when $name", ({ setup, item }) => {
     const cwd = repo();
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
-    const run = fullRun(cwd);
-    const log = stubGh(withFixtures(UNPROTECTED));
-    const decisions = join(store(cwd), run, "decisions");
-    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    setup(cwd);
+    for (const phase of ["super-align", "super-bound", "super-ship"]) {
+      const r = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain(item);
+      expect(r.out).toBe("");
+    }
+  });
+
+  test.each(REFUSALS)("is refused at open, or opens an unstamped run, when $name", ({ setup, item, absent }) => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    setup(cwd);
+    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    if (absent === true) {
+      expect(opened.code).toBe(0);
+      expect(opened.err).toContain(
+        "note: no supervisor declaration; this run cannot pass ship-preflight under the unattended policy",
+      );
+      const stored: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", runId(opened.out), "run.json"), "utf8"));
+      expect(stored).not.toHaveProperty("supervisor");
+    } else {
+      expect(opened.code).toBe(1);
+      expect(opened.err).toContain(item);
+      expect(runsOf(cwd)).toEqual([]);
+    }
+  });
+
+  test("an unreadable declaration file is refused naming the read", () => {
+    if (process.getuid?.() === 0) return;
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const file = declareSupervisor();
+    chmodSync(file, 0o000);
+    try {
+      const r = ak(cwd, "unattended", "check", "--phase", "super-ship");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("cannot be read");
+    } finally {
+      chmodSync(file, 0o644);
+    }
+  });
+
+  test("a project that is not a git repository is refused naming that", () => {
+    const dir = outsideDir();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    declareSupervisor();
+    const r = ak(dir, "unattended", "check", "--phase", "super-ship");
     expect(r.code).toBe(1);
-    for (const item of ["code-owner", "required CI", CHECK]) expect(r.err).toContain(item);
-    for (const assumption of RESIDUAL) expect(r.err).toContain(assumption);
-    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
-    expect(existsSync(decisions) ? readdirSync(decisions) : []).toEqual([]);
-    expect(log().length).toBeGreaterThan(0);
-    for (const line of log()) expect(line).toMatch(/^(GET |CLIENT auth status$)/);
-    expect(log()).toContain(`GET ${PROTECTION_KEY} read`);
+    expect(r.err).toContain("not a git repository");
   });
 
-  test("a protected fixture passes, prints the disclosure and command summary; the final append validates the pull request", () => {
+  test("a valid declaration outside a linked worktree passes for the worktree and for the main checkout", () => {
     const cwd = repo();
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
-    const run = fullRun(cwd);
-    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
-    const shipped = withFixtures({
-      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
-    });
-    stubGh(shipped);
-    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    declareSupervisor();
+    const linked = join(outsideDir(), "linked");
+    git(cwd, "worktree", "add", "-q", "-b", "linked", linked);
+    for (const dir of [cwd, linked]) expect(ak(dir, "unattended", "check", "--phase", "super-ship").code).toBe(0);
+  });
+
+  test("a declaration is accepted only by its own name: the digest is of the file's raw bytes", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const file = declareSupervisor("firstmate", undefined, `${JSON.stringify(declarationOf("firstmate"))}\n\n`);
+    const r = ak(cwd, "unattended", "check", "--phase", "super-ship");
     expect(r.code).toBe(0);
-    expect(r.out).toContain(DISCLOSURE);
-    expect(r.out).toContain("align");
-    for (const assumption of RESIDUAL) expect(r.err).toContain(assumption);
-    expect(readdirSync(join(store(cwd), run, "decisions"))).toHaveLength(1);
-    expect(recordsOf(cwd, run, "ship-preflight")[0]?.commands?.[0]?.builtin).toBe("merge-gate");
+    const digest = sha(readFileSync(file));
+    expect(digest).toMatch(DIGEST);
+    expect(JSON.parse(r.out)).toMatchObject({ declaration_digest: digest });
+  });
+});
 
-    stubGh({ ...shipped, ...runsWith([]) });
-    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(3);
-
-    stubGh(shipped);
-    const final = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
-    expect(final.code).toBe(0);
-    expect(final.out).toContain("pipeline-bot");
-    const entries = recordsOf(cwd, run, "ship-preflight")[0]?.commands ?? [];
-    expect(entries.map((entry) => entry.builtin)).toEqual(["merge-gate", "final-ship"]);
-
-    stubGh({ ...shipped, [compareKey]: { body: { status: "diverged", commits: [] } } });
-    const diverged = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
-    expect(diverged.code).toBe(1);
-    expect(diverged.err).toContain("open a new run");
+describe("the start check (AC-3)", () => {
+  test("without the policy the human-started phases keep their refusal and the declaration changes nothing", () => {
+    const cwd = repo();
+    declareSupervisor();
+    for (const phase of ["super-align", "super-bound", "super-ship"]) {
+      const r = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("is human-started and needs its typed command or a grant to start");
+      expect(r.err).not.toContain("DECLARATION");
+    }
   });
 
-  test("a run the final ship closed refuses a fresh ship-preflight and keeps its record as it was", () => {
+  test("the model-started phases start with or without a declaration, naming it only when it is valid", () => {
     const cwd = repo();
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
-    const run = fullRun(cwd);
-    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
-    stubGh(
-      withFixtures({
-        [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const phases = ["super-scout", "super-review", "super-verify", "super-build"];
+    for (const phase of phases) {
+      const bare = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(bare.code).toBe(0);
+      expect(bare.out).not.toContain("declaration_digest");
+    }
+    const file = declareSupervisor();
+    for (const phase of phases) {
+      const r = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(r.code).toBe(0);
+      expect(JSON.parse(r.out)).toMatchObject({
+        supervisor: "firstmate",
+        declaration_digest: sha(readFileSync(file)),
+        start: "model-started",
+      });
+    }
+    setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: join(outsideDir(), "missing.json") });
+    for (const phase of phases) {
+      const r = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(r.code).toBe(0);
+      expect(r.out).not.toContain("declaration_digest");
+      expect(r.out).not.toContain("supervisor");
+    }
+  });
+});
+
+/** An unattended run with every gate recorded, ready for ship-preflight under the declaration `declare` wrote. */
+function ready(name = "firstmate") {
+  const cwd = repo();
+  const file = declareSupervisor(name);
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  const run = fullRun(cwd);
+  return { cwd, file, run };
+}
+const runFiles = (cwd: string, run: string) => {
+  const dir = join(store(cwd), run);
+  return readdirSync(dir, { recursive: true }).map(String).toSorted();
+};
+
+describe("binding at open and ship-preflight (AC-4)", () => {
+  test("open stamps the run with the supervisor, the declaration's real path and its digest", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const file = declareSupervisor();
+    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    expect(opened.code).toBe(0);
+    expect(opened.err).not.toContain("no supervisor declaration");
+    const stored: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", runId(opened.out), "run.json"), "utf8"));
+    const digest = sha(readFileSync(file));
+    expect(digest).toMatch(DIGEST);
+    expect(stored).toEqual(
+      expect.objectContaining({
+        supervisor: {
+          name: "firstmate",
+          contract: CONTRACT,
+          declaration_path: realpathSync(file),
+          declaration_digest: digest,
+        },
       }),
     );
-    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
-    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
-    const runJson = join(store(cwd), "runs", run, "run.json");
-    expect(readFileSync(runJson, "utf8")).toContain('"closed_at"');
-    const before = { run: readFileSync(runJson, "utf8"), records: recordsOf(cwd, run, "ship-preflight") };
-    expect(before.records[0]?.commands?.map((entry) => entry.builtin)).toEqual(["merge-gate", "final-ship"]);
+  });
 
+  test("a legacy run carries no supervisor stamp", () => {
+    const cwd = repo();
+    declareSupervisor();
+    const opened = ak(cwd, "open", "--ticket", ticketFile(cwd));
+    expect(opened.code).toBe(0);
+    const stored: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", runId(opened.out), "run.json"), "utf8"));
+    expect(stored).not.toHaveProperty("supervisor");
+  });
+
+  const PREFLIGHT_REFUSALS: [string, (ctx: ReturnType<typeof ready>) => void, string][] = [
+    ["no declaration is set", () => setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined }), "is not set"],
+    [
+      "the declaration is invalid",
+      ({ file }) => writeFileSync(file, `${JSON.stringify(withObligation("disclosure", undefined))}\n`),
+      "disclosure",
+    ],
+    [
+      "the declaration's digest differs from the run's stamp",
+      ({ file }) => writeFileSync(file, `${JSON.stringify(withObligation("disclosure", "changed text"), null, 1)}\n`),
+      "differs from the run's stamp",
+    ],
+    [
+      "the declaration file moved inside the checkout",
+      ({ cwd }) => inCheckout(cwd, "declaration.json"),
+      "outside the repository",
+    ],
+  ];
+
+  test.each(PREFLIGHT_REFUSALS)(
+    "ship-preflight refuses with exit 1 and writes nothing when %s",
+    (_name, change, item) => {
+      const ctx = ready();
+      const before = {
+        files: runFiles(ctx.cwd, ctx.run),
+        run: readFileSync(join(store(ctx.cwd), "runs", ctx.run, "run.json"), "utf8"),
+      };
+      change(ctx);
+      const r = ak(ctx.cwd, "record", "--gate", "ship-preflight");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain(item);
+      expect(r.err).toContain(RECOVERY);
+      expect(runFiles(ctx.cwd, ctx.run)).toEqual(before.files);
+      expect(readFileSync(join(store(ctx.cwd), "runs", ctx.run, "run.json"), "utf8")).toBe(before.run);
+      expect(recordsOf(ctx.cwd, ctx.run, "ship-preflight")).toEqual([]);
+    },
+  );
+
+  test("ship-preflight refuses a run that carries no stamped digest", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    declareSupervisor();
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("carries no supervisor stamp");
+    expect(r.err).toContain(RECOVERY);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a counted gate record that names a different supervisor", () => {
+    const { cwd, run, file } = ready();
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "other-crew", AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined });
+    expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate", AK_LIFECYCLE_SUPERVISOR_DECLARATION: file });
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("build-checks");
+    expect(r.err).toContain("other-crew");
+    expect(r.err).toContain(RECOVERY);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("a valid matching declaration records the supervisor entry, closes the run and prints the evidence", () => {
+    const { cwd, run, file } = ready();
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`recorded ship-preflight for run ${run} at ${snapshotOf(cwd).revision.slice(0, 12)}`);
+    expect(r.out).toContain(unattendedDisclosure("firstmate"));
+    expect(r.out).toContain("phase evidence (worker-attested, gate: command -> exit):");
+    expect(r.out).toContain("align: sh -c echo ok -> exit 0");
+    expect(readdirSync(join(store(cwd), run, "decisions"))).toHaveLength(1);
+    expect(readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8")).toContain('"closed_at"');
+    const [entry] = recordsOf(cwd, run, "ship-preflight")[0]?.commands ?? [];
+    expect(entry?.builtin).toBe("supervisor");
+    const stored: unknown = JSON.parse(
+      readFileSync(join(store(cwd), run, "artifacts", (entry?.output ?? "").slice(7)), "utf8"),
+    );
+    expect(stored).toEqual({
+      supervisor: "firstmate",
+      contract: CONTRACT,
+      declaration_path: realpathSync(file),
+      declaration_digest: sha(readFileSync(file)),
+    });
+  });
+
+  test("a run the preflight closed refuses a fresh ship-preflight and keeps its record as it was", () => {
+    const { cwd, run } = ready();
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    const runJson = join(store(cwd), "runs", run, "run.json");
+    const before = { run: readFileSync(runJson, "utf8"), records: recordsOf(cwd, run, "ship-preflight") };
     const again = ak(cwd, "record", "--gate", "ship-preflight");
     expect(again.code).toBe(1);
     expect(again.err).toContain("run closed; open a new run");
     expect(readFileSync(runJson, "utf8")).toBe(before.run);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual(before.records);
   });
+});
 
-  test("ship-preflight judges the run's own policy stamp: a repository source off the forge's default branch refuses", () => {
-    const cwd = repo();
-    git(cwd, "checkout", "-q", "main");
-    writeFileSync(join(cwd, "ak.lifecycle.json"), JSON.stringify({ policy: "unattended" }));
-    git(cwd, "add", "ak.lifecycle.json");
-    git(cwd, "commit", "-q", "-m", "opt in");
-    const stamped = git(cwd, "rev-parse", "HEAD");
-    git(cwd, "update-ref", "refs/remotes/origin/main", stamped);
-    git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
-    git(cwd, "checkout", "-q", "feature");
-    const run = fullRun(cwd);
-    const runRecord: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8"));
-    expect(runRecord).toMatchObject({ policy: { source: `default-branch:${stamped}` } });
-    // This invocation resolves the policy from the environment; the run was stamped from the repository.
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
-    stubGh(withFixtures({ [`repos/${REPO}/branches/main`]: { body: { commit: { sha: "e".repeat(40) } } } }));
-    const r = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(r.code).toBe(1);
-    expect(r.err).toContain(`read at ${stamped.slice(0, 12)}, which is not on main`);
-    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
-  });
+interface Shipped {
+  cwd: string;
+  run: string;
+  file: string;
+  head: string;
+}
+/** A run shipped by its preflight on a feature branch with a second commit, so ancestry can fail either way. */
+function shipped(): Shipped {
+  const cwd = repo();
+  git(cwd, "commit", "--allow-empty", "-q", "-m", "second");
+  const file = declareSupervisor();
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  const run = fullRun(cwd);
+  expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+  return { cwd, run, file, head: git(cwd, "rev-parse", "HEAD") };
+}
+const isObj = (v: Json | undefined): v is JsonObject => Object.prototype.toString.call(v) === "[object Object]";
+const REVIEW: JsonObject = {
+  result: "approve",
+  reviewer: "vendor-b/model-x",
+  authors: ["vendor-a/model-y"],
+  ref: "review report 12 in the supervisor's store",
+};
+const attestationOf = (head: string, over: JsonObject = {}): JsonObject => ({
+  contract: CONTRACT,
+  supervisor: "firstmate",
+  head,
+  pull_request: "https://example.invalid/acme/widget/pull/7",
+  validation: { result: "pass", ref: "validation run 41 on the supervisor's runner" },
+  review: REVIEW,
+  ...over,
+});
+const reviewOf = (head: string, over: JsonObject): JsonObject =>
+  attestationOf(head, { review: { ...REVIEW, ...over } });
+const bodyOf = (name = "firstmate") => `Change.\n\n${unattendedDisclosure(name)}\n`;
+/** Writes an attestation and a body outside the repository and returns the two flags. */
+function files(value: Json, body: string = bodyOf(), text?: string) {
+  const dir = outsideDir();
+  const attestation = join(dir, "attestation.json");
+  const bodyFile = join(dir, "body.md");
+  writeFileSync(attestation, text ?? `${JSON.stringify(value, null, 2)}\n`);
+  writeFileSync(bodyFile, body);
+  return { attestation, bodyFile, flags: ["--attestation", attestation, "--body-file", bodyFile] };
+}
+const finalShip = (cwd: string, flags: string[]) => ak(cwd, "record", "--gate", "ship-preflight", ...flags);
+const entriesOf = (s: Shipped) =>
+  (recordsOf(s.cwd, s.run, "ship-preflight")[0]?.commands ?? []).map((entry) => entry.builtin);
+const outputOf = (s: Shipped, index: number): JsonObject => {
+  const entry = recordsOf(s.cwd, s.run, "ship-preflight")[0]?.commands?.[index];
+  const parsed = parseJson(
+    readFileSync(join(store(s.cwd), s.run, "artifacts", (entry?.output ?? "").slice(7)), "utf8"),
+  );
+  return isObj(parsed) ? parsed : {};
+};
 
-  test("review-status is a standalone command for whoever merges", () => {
-    const cwd = repo();
-    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
-    stubGh(protectedFixtures());
-    const r = ak(cwd, "unattended", "review-status", "--pr", "7");
+describe("final ship (AC-5)", () => {
+  test("appends a final-ship entry naming the head, the pull request, both digests and the commits after", () => {
+    const s = shipped();
+    const record = recordsOf(s.cwd, s.run, "ship-preflight")[0];
+    const runJson = join(store(s.cwd), "runs", s.run, "run.json");
+    const runBefore = readFileSync(runJson, "utf8");
+    git(s.cwd, "commit", "--allow-empty", "-q", "-m", "third commit");
+    const head = git(s.cwd, "rev-parse", "HEAD");
+    const f = files(attestationOf(head), bodyOf());
+    const r = finalShip(s.cwd, f.flags);
+    expect(r.err).toBe("");
     expect(r.code).toBe(0);
-    for (const assumption of RESIDUAL) expect(r.err).toContain(assumption);
+    expect(r.out).toContain(head);
+    expect(r.out).toContain(`  ${head.slice(0, 12)} third commit`);
+    expect(entriesOf(s)).toEqual(["supervisor", "final-ship"]);
+    const after = recordsOf(s.cwd, s.run, "ship-preflight")[0];
+    expect(after?.snapshot).toEqual(record?.snapshot);
+    expect(after?.commands?.[0]).toEqual(record?.commands?.[0]);
+    expect(readFileSync(runJson, "utf8")).toBe(runBefore);
+    const output = outputOf(s, 1);
+    expect(output).toEqual({
+      head,
+      pull_request: "https://example.invalid/acme/widget/pull/7",
+      attestation_path: realpathSync(f.attestation),
+      attestation_digest: sha(readFileSync(f.attestation)),
+      body_digest: sha(readFileSync(f.bodyFile)),
+      commits_after: [{ sha: head, subject: "third commit" }],
+    });
+    expect(output.attestation_digest).toMatch(DIGEST);
+    expect(output.body_digest).toMatch(DIGEST);
   });
 
-  test("review-status hashes the comparison diff's raw bytes, not decoded text", () => {
+  test("a head equal to the shipped revision passes with no commits after, and the pull request is optional", () => {
+    const s = shipped();
+    const f = files(without(attestationOf(s.head), "pull_request"));
+    const r = finalShip(s.cwd, f.flags);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("0 commit(s) after the shipped revision");
+    const output = outputOf(s, 1);
+    expect(output).not.toHaveProperty("pull_request");
+    expect(output.commits_after).toEqual([]);
+  });
+
+  test("a later valid attestation for a descendant head appends a further entry", () => {
+    const s = shipped();
+    expect(finalShip(s.cwd, files(attestationOf(s.head)).flags).code).toBe(0);
+    git(s.cwd, "commit", "--allow-empty", "-q", "-m", "after review");
+    const next = git(s.cwd, "rev-parse", "HEAD");
+    const r = finalShip(s.cwd, files(attestationOf(next)).flags);
+    expect(r.code).toBe(0);
+    expect(entriesOf(s)).toEqual(["supervisor", "final-ship", "final-ship"]);
+    expect(outputOf(s, 2).head).toBe(next);
+    expect(recordsOf(s.cwd, s.run, "ship-preflight")).toHaveLength(1);
+  });
+
+  test("a run with no ship-preflight record refuses, and so does a run whose declaration changed", () => {
     const cwd = repo();
-    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
-    const raw = Buffer.concat([
-      Buffer.from("diff --git a/x b/x\n+"),
-      Buffer.from([0xff, 0xfe, 0x80]),
-      Buffer.from("\n"),
-    ]);
-    stubGh(
-      withFixtures({
-        [`repos/${REPO}/compare/${BASE}...${HEAD}#diff`]: { base64: raw.toString("base64") },
-        ...runsWith([checkRun(1, result({ diff_sha256: sha(raw) }))]),
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const open = fullRun(cwd);
+    const head = git(cwd, "rev-parse", "HEAD");
+    const none = finalShip(cwd, files(attestationOf(head)).flags);
+    expect(none.code).toBe(1);
+    expect(none.err).toContain("ship-preflight");
+    expect(recordsOf(cwd, open, "ship-preflight")).toEqual([]);
+
+    const s = shipped();
+    writeFileSync(s.file, `${JSON.stringify(withObligation("disclosure", "changed text"), null, 1)}\n`);
+    const moved = finalShip(s.cwd, files(attestationOf(s.head)).flags);
+    expect(moved.code).toBe(1);
+    expect(moved.err).toContain("differs from the run's stamp");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  const MALFORMED_REFUSALS: [string, (head: string) => JsonObject, string][] = [
+    ["a wrong contract", (h) => attestationOf(h, { contract: `${CONTRACT}0` }), "contract"],
+    ["a supervisor other than the run's", (h) => attestationOf(h, { supervisor: "other-crew" }), "other-crew"],
+    ["a head that is not 40 lower-case hex", (h) => attestationOf(h, { head: h.toUpperCase() }), "head"],
+    ["a failed validation", (h) => attestationOf(h, { validation: { result: "fail", ref: "r" } }), "validation.result"],
+    ["a rejected review", (h) => reviewOf(h, { result: "reject" }), "review.result"],
+    ["an unknown top-level key", (h) => attestationOf(h, { merged: true }), "merged"],
+    ["an unknown review key", (h) => reviewOf(h, { model: "x" }), "model"],
+    ["an empty pull request reference", (h) => attestationOf(h, { pull_request: "" }), "pull_request"],
+    ["a multi-line review ref", (h) => reviewOf(h, { ref: "a\nb" }), "review.ref"],
+    ["a non-canonical reviewer", (h) => reviewOf(h, { reviewer: " Vendor-B/Model-X" }), " Vendor-B/Model-X"],
+    ["a non-canonical author", (h) => reviewOf(h, { authors: ["Vendor-A/Model-Y"] }), "Vendor-A/Model-Y"],
+    ["no authors", (h) => reviewOf(h, { authors: [] }), "review.authors"],
+    [
+      "a reviewer that is also an author",
+      (h) => reviewOf(h, { authors: ["vendor-a/model-y", "vendor-b/model-x"] }),
+      "vendor-b/model-x",
+    ],
+  ];
+
+  test.each(MALFORMED_REFUSALS)("refuses %s, naming it, and appends nothing", (_name, make, item) => {
+    const s = shipped();
+    const r = finalShip(s.cwd, files(make(s.head)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(item);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("refuses an attestation that is not JSON or does not exist, naming the file", () => {
+    const s = shipped();
+    const bad = files(null, bodyOf(), "{not json");
+    const notJson = finalShip(s.cwd, bad.flags);
+    expect(notJson.code).toBe(1);
+    expect(notJson.err).toContain("not valid JSON");
+    const gone = finalShip(s.cwd, ["--attestation", join(outsideDir(), "none.json"), "--body-file", bad.bodyFile]);
+    expect(gone.code).toBe(1);
+    expect(gone.err).toContain("cannot be read");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("refuses an attestation inside the checkout, inside the git directory, inside another worktree or behind a symlink", () => {
+    const s = shipped();
+    const body = files(null).bodyFile;
+    const text = `${JSON.stringify(attestationOf(s.head))}\n`;
+    const place = (path: string) => {
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, text);
+      return path;
+    };
+    const other = join(outsideDir(), "other");
+    git(s.cwd, "worktree", "add", "-q", "-b", "other", other);
+    const link = join(outsideDir(), "attestation.json");
+    symlinkSync(place(join(s.cwd, "attestation.json")), link);
+    for (const path of [
+      place(join(s.cwd, "attestation.json")),
+      place(join(s.cwd, ".git", "attestation.json")),
+      place(join(other, "attestation.json")),
+      link,
+    ]) {
+      const r = finalShip(s.cwd, ["--attestation", path, "--body-file", body]);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("outside the repository");
+    }
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("refuses a head the local repository does not have, naming the commit to fetch", () => {
+    const s = shipped();
+    const missing = "c".repeat(40);
+    const r = finalShip(s.cwd, files(attestationOf(missing)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(missing);
+    expect(r.err).toContain("fetch");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("refuses a head that does not descend from the shipped revision", () => {
+    const s = shipped();
+    const older = git(s.cwd, "rev-parse", "HEAD~1");
+    const sibling = git(s.cwd, "commit-tree", `${s.head}^{tree}`, "-p", older, "-m", "elsewhere");
+    for (const head of [older, sibling]) {
+      const r = finalShip(s.cwd, files(attestationOf(head)).flags);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("does not descend from the shipped revision");
+      expect(r.err).toContain(head);
+    }
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  const SENTENCE = unattendedDisclosure("firstmate");
+  const BODY_REFUSALS: [string, string][] = [
+    ["the sentence is absent", "Change."],
+    ["the sentence is only inside an HTML comment", `<!--\n${SENTENCE}\n-->\n`],
+    ["the sentence is only inside a backtick fence", `\`\`\`\n${SENTENCE}\n\`\`\`\n`],
+    ["the sentence is only inside a tilde fence", `~~~\n${SENTENCE}\n~~~\n`],
+    ["the sentence names a longer supervisor", `Change.\n\n${unattendedDisclosure("firstmate-two")}\n`],
+    ["the sentence names another supervisor", `Change.\n\n${unattendedDisclosure("other-crew")}\n`],
+    ["the sentence is wrapped across lines", SENTENCE.replace("in place of", "in place\nof")],
+    ["the sentence has its spacing changed", SENTENCE.replace("no human", "no  human")],
+  ];
+
+  test.each(BODY_REFUSALS)("refuses the body when %s", (_name, body) => {
+    const s = shipped();
+    const r = finalShip(s.cwd, files(attestationOf(s.head), body).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("disclosure");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("accepts the sentence after a closed fence, a comment and inside a longer paragraph", () => {
+    const s = shipped();
+    const body = `<!-- note -->\n\`\`\`\ncode\n\`\`\`\nChange. ${SENTENCE} More text.\n`;
+    expect(finalShip(s.cwd, files(attestationOf(s.head), body).flags).code).toBe(0);
+  });
+
+  test("a body file that cannot be read refuses naming it", () => {
+    const s = shipped();
+    const f = files(attestationOf(s.head));
+    const r = finalShip(s.cwd, ["--attestation", f.attestation, "--body-file", join(outsideDir(), "none.md")]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("body");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("a relative body file is resolved against the working directory of the command", () => {
+    const s = shipped();
+    const f = files(attestationOf(s.head));
+    const relative = join(s.cwd, "body.md");
+    writeFileSync(relative, bodyOf());
+    expect(finalShip(s.cwd, ["--attestation", f.attestation, "--body-file", "body.md"]).code).toBe(0);
+  });
+
+  test("the flags are a usage error alone, without the policy, on another gate, and --pr is unknown", () => {
+    const s = shipped();
+    const f = files(attestationOf(s.head));
+    const ship = ["--gate", "ship-preflight"];
+    expect(ak(s.cwd, "record", ...ship, "--attestation", f.attestation).code).toBe(2);
+    expect(ak(s.cwd, "record", ...ship, "--body-file", f.bodyFile).code).toBe(2);
+    const other = ak(s.cwd, "record", "--gate", "build-checks", ...f.flags, "--", ...ok);
+    expect(other.code).toBe(2);
+    const pr = ak(s.cwd, "record", ...ship, "--pr", "7");
+    expect(pr.code).toBe(2);
+    expect(pr.err).toContain("--pr");
+    setEnv({ AK_LIFECYCLE_POLICY: undefined });
+    const legacy = finalShip(s.cwd, f.flags);
+    expect(legacy.code).toBe(2);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+});
+
+// ── the forge-free path and the rules the gate keeps (AC-1, AC-6) ───────────
+
+describe("the forge-free path (AC-1)", () => {
+  test("a repository with no remote ships end to end with no forge client run", () => {
+    const cwd = repo();
+    expect(git(cwd, "remote")).toBe("");
+    const file = declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    for (const phase of ["super-align", "super-bound", "super-ship"]) {
+      const r = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(r.code).toBe(0);
+      expect(JSON.parse(r.out)).toMatchObject({
+        phase,
+        supervisor: "firstmate",
+        declaration_digest: sha(readFileSync(file)),
+      });
+    }
+    const run = fullRun(cwd);
+    const pre = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(pre.code).toBe(0);
+    const head = git(cwd, "rev-parse", "HEAD");
+    const dir = outsideDir();
+    writeFileSync(
+      join(dir, "attestation.json"),
+      JSON.stringify({
+        contract: CONTRACT,
+        supervisor: "firstmate",
+        head,
+        validation: { result: "pass", ref: "validation run 41" },
+        review: { result: "approve", reviewer: "vendor-b/model-x", authors: ["vendor-a/model-y"], ref: "review 12" },
       }),
     );
-    const r = ak(cwd, "unattended", "review-status", "--pr", "7");
-    expect(r.err).not.toContain("diff digest");
-    expect(r.code).toBe(0);
-  });
-});
-
-interface Step {
-  name?: string;
-  id?: string;
-  uses?: string;
-  run?: string;
-  with?: { [key: string]: string | number };
-  env?: { [key: string]: string };
-}
-interface Job {
-  environment?: string;
-  permissions?: { [scope: string]: string };
-  outputs?: { [name: string]: string };
-  env?: { [key: string]: string };
-  steps: Step[];
-}
-interface Workflow {
-  on: { [event: string]: { types?: string[] } };
-  jobs: { review: Job; post: Job };
-}
-const ajv = new Ajv({ strict: false });
-const strings = { type: "object", additionalProperties: { type: "string" } };
-const jobSchema = {
-  type: "object",
-  required: ["steps"],
-  properties: {
-    environment: { type: "string" },
-    permissions: strings,
-    outputs: strings,
-    env: strings,
-    steps: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          id: { type: "string" },
-          uses: { type: "string" },
-          run: { type: "string" },
-          with: { type: "object", additionalProperties: { type: ["string", "number"] } },
-          env: strings,
-        },
-      },
-    },
-  },
-};
-const uses = (prefix: string) => (step: Step) => step.uses?.startsWith(prefix) === true;
-const isWorkflow = ajv.compile<Workflow>({
-  type: "object",
-  required: ["on", "jobs"],
-  properties: {
-    on: { type: "object" },
-    jobs: { type: "object", required: ["review", "post"], properties: { review: jobSchema, post: jobSchema } },
-  },
-});
-
-/** The check run the posting job sends. */
-const isPosted = ajv.compile<{ conclusion: string; output: { text: string } }>({
-  type: "object",
-  required: ["conclusion", "output"],
-  properties: {
-    conclusion: { type: "string" },
-    output: { type: "object", required: ["text"], properties: { text: { type: "string" } } },
-  },
-});
-
-/** The metadata file the review harness writes: the provider's reported model for the call. */
-const meta = (model: string) => JSON.stringify({ provider_model: model });
-/** A configuration whose reviewer is the alias `prov/latest`, written with stray case and space, for `target`. */
-const aliasing = (target: string): JsonObject => ({
-  ...CONFIG,
-  independent_review: { ...REVIEW, reviewer_model: "prov/latest", model_aliases: { "Prov/Latest ": target } },
-});
-
-describe("the review workflow template", () => {
-  const template = readFileSync(join(import.meta.dir, "../../skills/super-ship/assets/independent-review.yml"), "utf8");
-  const workflow: unknown = parse(template);
-  if (!isWorkflow(workflow)) throw new Error(`the template is not a workflow: ${ajv.errorsText(isWorkflow.errors)}`);
-  const { review, post } = workflow.jobs;
-  const postScript = post.steps.find((step) => step.env?.APP_TOKEN === "${{ steps.app.outputs.token }}")?.run ?? "";
-  const approve = JSON.stringify({ verdict: "approve", findings: [] });
-
-  test("runs only on pull_request_target and never checks out or runs pull-request code", () => {
-    expect(workflow.on).toEqual({ pull_request_target: { types: ["opened", "synchronize", "reopened"] } });
-    expect(Object.keys(workflow.jobs).toSorted()).toEqual(["post", "review"]);
-    for (const job of [review, post]) expect(job.steps.filter(uses("actions/checkout"))).toEqual([]);
-  });
-
-  test("the review step hands the reviewer the diff on standard input and keeps its verdict and metadata", () => {
-    const step = review.steps.find((s) => s.name === "Review the diff");
-    if (step?.run === undefined) throw new Error("the template has no review step");
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-review-")));
-    writeFileSync(join(dir, "diff.patch"), DIFF);
-    const p = Bun.spawnSync(["bash", "-c", step.run], {
-      cwd: dir,
-      env: {
-        ...process.env,
-        AK_REVIEW_COMMAND: `cat > seen.patch; printf '%s' '{"provider_model":"prov/model-b"}' > "$AK_REVIEW_METADATA_FILE"; printf '%s' '{"verdict":"approve"}'`,
-        AK_REVIEW_METADATA_FILE: join(dir, "meta.out"),
-      },
-    });
-    expect(p.exitCode).toBe(0);
-    expect(readFileSync(join(dir, "seen.patch"), "utf8")).toBe(DIFF);
-    expect(readFileSync(join(dir, "verdict.json"), "utf8")).toBe('{"verdict":"approve"}');
-    expect(readFileSync(join(dir, "metadata.json"), "utf8")).toBe('{"provider_model":"prov/model-b"}');
-  });
-
-  test("the review job holds no environment and reads only; the posting job holds the key and stamps identity itself", () => {
-    expect(review.environment).toBeUndefined();
-    expect(review.permissions).toEqual({ contents: "read", "pull-requests": "read" });
-    expect(post.environment).toBe("${{ vars.AK_REVIEW_ENVIRONMENT }}");
-    expect(post.permissions).toEqual({ contents: "read" });
-    expect(postScript).not.toBe("");
-  });
-
-  test("the result moves only as a file, and the posting job re-derives what it stamps and posts", () => {
-    expect(review.outputs).toBeUndefined();
-    expect(review.steps.find(uses("actions/upload-artifact@"))?.with).toMatchObject({
-      name: "review",
-      path: "verdict.json\nmetadata.json\n",
-    });
-    expect(post.steps.find(uses("actions/download-artifact@"))?.with).toEqual({ name: "review", path: "review" });
-    expect(post.env?.DEFAULT_BRANCH).toBe("${{ github.event.repository.default_branch }}");
-    const app = post.steps.find(uses("actions/create-github-app-token@"));
-    expect(app?.uses).toMatch(/@[0-9a-f]{40}$/);
-    expect(app?.id).toBe("app");
-    expect(app?.with).toEqual({
-      "app-id": "${{ vars.AK_REVIEW_APP_ID }}",
-      "private-key": "${{ secrets.AK_REVIEW_APP_KEY }}",
-    });
-    const stamped = stamp(CONFIG, { metadata: meta("prov/model-b"), verdict: approve });
-    expect(stamped.requests).toEqual([
-      {
-        token: "read-token",
-        args: ["api", "--method", "GET", "repos/o/r/contents/ak.lifecycle.json?ref=main", "--jq", ".content"],
-      },
-      {
-        token: "read-token",
-        args: [
-          "api",
-          "--method",
-          "GET",
-          "-H",
-          "Accept: application/vnd.github.diff",
-          `repos/o/r/compare/${BASE}...${HEAD}`,
-        ],
-      },
-      { token: "app-token", args: ["api", "--method", "POST", "repos/o/r/check-runs", "--input", "check.json"] },
+    writeFileSync(join(dir, "body.md"), `Change.\n\n${unattendedDisclosure("firstmate")}\n`);
+    const final = ak(
+      cwd,
+      "record",
+      "--gate",
+      "ship-preflight",
+      "--attestation",
+      join(dir, "attestation.json"),
+      "--body-file",
+      join(dir, "body.md"),
+    );
+    expect(final.code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")[0]?.commands?.map((entry) => entry.builtin)).toEqual([
+      "supervisor",
+      "final-ship",
     ]);
-    expect(stamped.posted).toMatchObject({ name: CHECK, head_sha: HEAD, status: "completed", conclusion: "success" });
-    expect(stamped.parsed).toMatchObject({ head_sha: HEAD, base_sha: BASE, diff_sha256: sha(DIFF) });
+    expect(existsSync(ghLog)).toBe(false);
+  }, 180_000);
+
+  test("the forge-side surfaces no longer exist", () => {
+    const removed = [
+      "READ_TOKEN_ENV",
+      "ACTIONS_APP_ID",
+      "ghForge",
+      "ghAccounts",
+      "resolveRepo",
+      "checkMergeGate",
+      "checkReviewStatus",
+      "compareShipped",
+      "visibleText",
+      "carriesDisclosure",
+      "canonicalModel",
+      "DISCLOSURE",
+      "DISCLOSURE_TAIL",
+      "RESIDUAL_ASSUMPTIONS",
+    ];
+    for (const name of removed) expect(unattended).not.toHaveProperty(name);
+    const cwd = repo();
+    const gone = ak(cwd, "unattended", "review-status", "--pr", "7");
+    expect(gone.code).toBe(2);
+    expect(existsSync(join(ROOT, "skills/super-ship/assets/independent-review.yml"))).toBe(false);
+    for (const file of ["src/lifecycle/unattended.ts", "src/lifecycle/gate.ts"]) {
+      const text = readFileSync(join(ROOT, file), "utf8");
+      for (const name of ["AK_UNATTENDED_READ_TOKEN", "ghForge", "review-status", "forgeIo", "gh api"])
+        expect(text).not.toContain(name);
+    }
   });
 
-  /**
-   * Runs the posting job's whole script over fixture metadata and verdict files, with a stub `gh` on the
-   * search path that serves `config` and the diff, records every request and keeps the posted check run.
-   */
-  function stamp(config: JsonObject, files: { metadata?: string; verdict: string }) {
-    if (Bun.which("jq") === null) throw new Error("jq is not on the search path; the template test needs it");
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-stamp-")));
-    mkdirSync(join(dir, "review"));
-    mkdirSync(join(dir, "bin"));
-    if (files.metadata !== undefined) writeFileSync(join(dir, "review", "metadata.json"), files.metadata);
-    writeFileSync(join(dir, "review", "verdict.json"), files.verdict);
-    writeFileSync(join(dir, "config.json"), JSON.stringify(config));
-    writeFileSync(join(dir, "diff.patch"), DIFF);
-    writeFileSync(
-      join(dir, "bin", "gh"),
-      [
-        "#!/usr/bin/env bash",
-        `jq -cn --arg token "$GH_TOKEN" '{token: $token, args: $ARGS.positional}' --args -- "$@" >> requests.jsonl`,
-        'case "$*" in',
-        "  *contents/ak.lifecycle.json*) base64 < config.json ;;",
-        "  *compare/*) cat diff.patch ;;",
-        "  *check-runs*) cp check.json posted.json ;;",
-        "  *) exit 1 ;;",
-        "esac",
-      ].join("\n"),
-      { mode: 0o755 },
-    );
-    const p = Bun.spawnSync(["bash", "-c", postScript], {
-      cwd: dir,
-      env: {
-        ...process.env,
-        PATH: `${join(dir, "bin")}:${process.env.PATH ?? ""}`,
-        REPO: "o/r",
-        HEAD_SHA: HEAD,
-        BASE_SHA: BASE,
-        DEFAULT_BRANCH: "main",
-        READ_TOKEN: "read-token",
-        APP_TOKEN: "app-token",
-      },
-    });
-    if (p.exitCode !== 0) throw new Error(`the template's posting script failed: ${p.stderr.toString()}`);
-    const requests: unknown = JSON.parse(
-      `[${readFileSync(join(dir, "requests.jsonl"), "utf8").trim().split("\n").join(",")}]`,
-    );
-    const posted: unknown = JSON.parse(readFileSync(join(dir, "posted.json"), "utf8"));
-    if (!isPosted(posted)) throw new Error(`the posted check run is malformed: ${ajv.errorsText(isPosted.errors)}`);
-    const { conclusion } = posted;
-    const { text } = posted.output;
-    const parsed: unknown = JSON.parse(text);
-    const status = reviewOf(
-      withFixtures({ ...configWith(config), ...runsWith([checkRun(1, result(), { conclusion, output: { text } })]) }),
-    );
-    return { conclusion, parsed, posted, requests, status };
-  }
+  test("the library spawns no process but local git", () => {
+    const text = readFileSync(join(ROOT, "src/lifecycle/unattended.ts"), "utf8");
+    // One process helper, `exec(command, args)`, and every use of it names git.
+    expect(text.match(/\b(?:spawnSync|execFileSync|execSync|spawn)\(/g)).toHaveLength(1);
+    const uses = [...text.matchAll(/\bexec\(\s*"([^"]*)"/g)].map((match) => match[1]);
+    expect(uses.length).toBeGreaterThan(0);
+    for (const command of uses) expect(command).toBe("git");
+    expect(text).not.toMatch(/\bfetch\(|node:https?|node:net/);
+  });
+});
 
-  test("a stamped approval passes the validator, the alias and case mapping agreeing in both implementations", () => {
-    const plain = stamp(CONFIG, { metadata: meta("prov/model-b"), verdict: approve });
-    expect(plain.conclusion).toBe("success");
-    expect(plain.status.failures).toEqual([]);
-    expect(plain.status.state).toBe("pass");
-    const viaAlias = stamp(aliasing("prov/model-b"), { metadata: meta(" PROV/MODEL-B"), verdict: approve });
-    expect(viaAlias.conclusion).toBe("success");
-    expect(viaAlias.status.failures).toEqual([]);
-    expect(viaAlias.parsed).toMatchObject({
-      schema: "independent-review",
-      head_sha: HEAD,
-      base_sha: BASE,
-      diff_sha256: sha(DIFF),
-      input: "diff-only",
-      reviewer: { sources: { configuration: "prov/latest", native_metadata: " PROV/MODEL-B" } },
-    });
+describe("the rules the gate keeps (AC-6)", () => {
+  test("evidence binds to the revision and diff it ran at: a change after the gates refuses the check", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    fullRun(cwd);
+    expect(ak(cwd, "check").code).toBe(0);
+    writeFileSync(join(cwd, "src/a.js"), "export const a = 2;\n");
+    expect(ak(cwd, "check").code).toBe(1);
   });
 
-  test("a reviewer that resolves to an author model is refused by the template and by the validator", () => {
-    const stamped = stamp(aliasing("prov/model-a"), { metadata: meta("prov/model-a"), verdict: approve });
-    expect(stamped.conclusion).toBe("failure");
-    expect(stamped.parsed).toMatchObject({ verdict: "unavailable" });
-    expect(stamped.status.state).toBe("refused");
-    expect(stamped.status.failures.join("\n")).toContain("is an author model");
-  });
-
-  test("absent native metadata is refused by the template and by the validator", () => {
-    const stamped = stamp(CONFIG, { verdict: approve });
-    expect(stamped.conclusion).toBe("failure");
-    expect(stamped.status.state).toBe("refused");
-    expect(stamped.status.failures.join("\n")).toContain("lacks its configuration or native metadata source");
-  });
-
-  test("a reviewer identity forged in verdict.json is ignored: the stamp comes from configuration and metadata", () => {
-    const forged = JSON.stringify({
-      verdict: "approve",
-      reviewer_model: "prov/model-b",
-      reviewer: { model: "prov/model-b", sources: { configuration: "prov/model-b", native_metadata: "prov/model-b" } },
-      findings: [{ text: "reviewed by prov/model-b" }],
-    });
-    const stamped = stamp(CONFIG, { metadata: meta("prov/model-a"), verdict: forged });
-    expect(stamped.parsed).toMatchObject({
-      reviewer: { model: "prov/model-b", sources: { configuration: "prov/model-b", native_metadata: "prov/model-a" } },
-    });
-    expect(stamped.conclusion).toBe("failure");
-    expect(stamped.status.state).toBe("refused");
-    expect(stamped.status.failures.join("\n")).toContain("disagree");
+  test("the reviewer-author comparison is string distinctness only: a similar identity passes, the same one does not", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    fullRun(cwd);
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    const head = git(cwd, "rev-parse", "HEAD");
+    const make = (authors: string[]) => {
+      const dir = outsideDir();
+      writeFileSync(
+        join(dir, "a.json"),
+        JSON.stringify({
+          contract: CONTRACT,
+          supervisor: "firstmate",
+          head,
+          validation: { result: "pass", ref: "v" },
+          review: { result: "approve", reviewer: "vendor-b/model-x", authors, ref: "r" },
+        }),
+      );
+      writeFileSync(join(dir, "b.md"), `${unattendedDisclosure("firstmate")}\n`);
+      return ["--attestation", join(dir, "a.json"), "--body-file", join(dir, "b.md")];
+    };
+    const same = ak(cwd, "record", "--gate", "ship-preflight", ...make(["vendor-b/model-x"]));
+    expect(same.code).toBe(1);
+    const similar = ak(cwd, "record", "--gate", "ship-preflight", ...make(["vendor-b/model-x-latest"]));
+    expect(similar.code).toBe(0);
   });
 });

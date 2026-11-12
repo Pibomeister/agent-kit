@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/supervisor-attestation.schema.json",
+  "title": "Supervisor attestation",
+  "description": "The file a run supervisor supplies at final ship: its attestation of the validation gate and the independent review at one head. Shape only: that the supervisor equals the run's, that the reviewer is not an author, that the head exists and descends from the shipped revision, and that the file sits outside the repository are checked by the gate. agent-kit checks the attestation but cannot authenticate it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "supervisor", "head", "validation", "review"],
+  "properties": {
+    "contract": {
+      "const": "agent-kit/supervisor-contract@1"
+    },
+    "supervisor": {
+      "type": "string",
+      "minLength": 1
+    },
+    "head": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "pull_request": {
+      "type": "string",
+      "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "ref"],
+      "properties": {
+        "result": {
+          "const": "pass"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "reviewer", "authors", "ref"],
+      "properties": {
+        "result": {
+          "const": "approve"
+        },
+        "reviewer": {
+          "type": "string",
+          "pattern": "^[^\\s/\\p{Lu}\\p{Lt}]+/[^\\s\\p{Lu}\\p{Lt}]+$"
+        },
+        "authors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\s/\\p{Lu}\\p{Lt}]+/[^\\s\\p{Lu}\\p{Lt}]+$"
+          }
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\u2028\\u2029]*\\S[^\\r\\n\\u2028\\u2029]*$"
+        }
+      }
+    }
+  }
+}

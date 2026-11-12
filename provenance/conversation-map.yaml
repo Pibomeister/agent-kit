@@ -1368,7 +1368,7 @@ capabilities:
       bounded-output wording carries no cited source and is plain guidance.
 
   - id: unattended-lifecycle
-    capability: An opt-in unattended policy under which a runner drives every lifecycle phase without a human start, each gate recording the evidence commands it ran, with the human gate moved to a live-checked merge
+    capability: An opt-in unattended policy under which a runner drives every lifecycle phase without a human start, each gate recording the evidence commands it ran, with the human gate moved to a declared run supervisor and whoever merges
     disposition: reference
     destination: references/unattended-lifecycle
     locator: G:L2050-2050; G:L2075-2075; G:L2095-2095; G:L2236-2236
@@ -1379,7 +1379,7 @@ capabilities:
     note: >-
       The locators describe a proxy user running the lifecycle, recording rulings and continuing instead
       of stalling, and merge staying a grant rather than a default. Removing the human start for align,
-      bound and ship, and the live merge-gate read that replaces it, are the owner's decision recorded in
+      bound and ship, and the declared run supervisor that replaces it, are the owner's decision recorded in
       docs/decisions/0014-unattended-lifecycle-policy.md.
 
   - id: knowledgebase-pr-linkage
