@@ -318,8 +318,9 @@ the files in `tools/test/integration-files.txt`. Each integration file runs in a
 Bun process with concurrency limited to one. This separates the learning role calls,
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
 suite and from each other. The runner does not retry a file or an assertion. A git spawn
-is tried again, at most three times, only when it does not finish or when a command that
-must print a path or a hash exits 0 with empty output. Both lanes finish even if an earlier file fails;
+is tried again, at most three times, only when it does not finish or when a read that
+must print a path or a hash exits 0 with empty output. A silent success, such as
+deleting or setting a symbolic ref, is left as it is. Both lanes finish even if an earlier file fails;
 the command then returns failure. CI and the configured gate use `bun run test`.
 
 The runner gives both lanes a private `TMPDIR` and removes it at exit. Shared fixture

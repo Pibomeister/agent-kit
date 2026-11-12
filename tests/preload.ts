@@ -13,7 +13,7 @@
  */
 import { installGitSpawnRetry } from "./helpers/git-spawn.ts";
 import { afterAll, beforeEach, expect } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { processScratch, removeProcessDir } from "./helpers/process-tmp.ts";
 
@@ -38,8 +38,14 @@ if (process.platform === "darwin" && Bun.which("git") === "/usr/bin/git") {
     const bin = join(root, "bin");
     mkdirSync(bin);
     // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
-    const quoted = `'${executable.replaceAll("'", "'\\''")}'`;
-    writeFileSync(join(bin, "git"), `#!/bin/sh\nexec ${quoted} "$@"\n`, { mode: 0o755 });
+    // The script execs the selected git, and retries a read that must print when that read
+    // exits 0 with empty output. Child processes inherit PATH, so a packaged gate gets the
+    // same retry the in-process wrapper gives spawnSync.
+    process.env.AK_GIT_REAL = executable;
+    process.env.AK_GIT_SHIM = "1";
+    const shim = join(bin, "git");
+    writeFileSync(shim, readFileSync(join(import.meta.dir, "helpers/git-retry.sh")));
+    chmodSync(shim, 0o755);
     process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
   }
 }
