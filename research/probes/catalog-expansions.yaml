@@ -131,7 +131,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 38
+  catalog: 40
   expansions:
     - ids: [case]
       reason: >-
@@ -211,6 +211,16 @@ schemas:
         An independent ticket cold read needs a declared run-artifact shape so a project that
         turns review.cold_read on can cite the record from the implementation ticket.
       commits: [82646648]
+    - ids: [supervisor-declaration]
+      reason: >-
+        A run supervisor writes this declaration outside every checkout, naming how it meets
+        the six obligations, so the unattended policy has one declared form to read and stamp.
+      commits: [d83f9d60]
+    - ids: [supervisor-attestation]
+      reason: >-
+        Final ship checks the attestation the run supervisor writes for one head: its validation
+        gate, its independent review, the reviewer and the authors.
+      commits: [d83f9d60]
 
 profiles:
   baseline: 4
@@ -223,7 +233,7 @@ profiles:
 
 adapters:
   baseline: 4
-  catalog: 12
+  catalog: 13
   expansions:
     - ids: [cursor]
       reason: >-
@@ -266,3 +276,9 @@ adapters:
         manifest and host limits need their own contract rather than the Claude Code bundle's.
       commits: [49015def3dc10bf18822bd34d6d90aa6b66f26e0]
       docs: [adapters/droid/CONTRACT.md]
+    - ids: [supervisor]
+      reason: >-
+        The run-supervisor contract under the unattended policy, which Firstmate and an external
+        factory both declare against, so the policy names a contract and no vendor or forge.
+      commits: [d83f9d60]
+      docs: [adapters/supervisor/CONTRACT.md]
