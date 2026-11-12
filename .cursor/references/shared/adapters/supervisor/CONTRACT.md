@@ -73,7 +73,9 @@ At final ship the supervisor writes one file outside the checkout.
 }
 ```
 
-Identities are lower-case `provider/model` strings. The reviewer must not be among the authors.
+Identities are lower-case `provider/model` strings. The schemas' `pattern` values are ECMA-262 regular
+expressions in unicode mode, as Ajv compiles them: the identity pattern uses `\p{Lu}\p{Lt}` classes, and the
+test fixtures must keep agreeing with it. The reviewer must not be among the authors.
 `pull_request` is optional. [`schemas/supervisor-declaration.schema.json`](../../schemas/supervisor-declaration.schema.json) and
 [`schemas/supervisor-attestation.schema.json`](../../schemas/supervisor-attestation.schema.json) carry the shape. The gate carries the rest.
 
@@ -91,22 +93,43 @@ The pull request body carries this sentence, with the supervisor's name in place
 > Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
 
 The check is an exact substring test on the body. Text in an HTML comment or a fenced code block does not
-count.
+count. Fences are recognised first, as in CommonMark: a comment opener inside a fence or an inline code span
+starts no comment, and a backtick fence line has no backtick in its info string. A fence nested in a block quote
+or a list item counts as a fence: the check strips the quote and list markers to find it, at any indent, and so
+it hides at least what a renderer hides.
 
 ## The sequence and its refusals
 
 1. `open --ticket` stamps the run with the declaration's name, path and digest. A declaration that is
    invalid refuses the open. No declaration opens the run, with a note: that run cannot pass ship-preflight.
-2. `unattended check --phase super-ship` refuses without a valid declaration.
+2. `unattended check --phase super-align`, `--phase super-bound` and `--phase super-ship` refuse without
+   a valid declaration.
 3. `record --gate ship-preflight` compares the declaration in force with the stamp. A changed file, a
-   missing stamp or a gate recorded under another supervisor refuses. Every such refusal ends with the same
-   recovery: open a new run with `open --ticket` under the declaration in force, and record the gates again.
-   On success it records the pre-ship gates, closes the run and prints the disclosure.
+   missing stamp, a gate recorded under another supervisor, or a working tree with uncommitted changes
+   refuses. The gate record is judged at the tree it ran at, so uncommitted changes would ship in no
+   revision: commit them and record the gates again. A refusal for the file, the stamp or another supervisor
+   ends with the same recovery: open a new run with `open --ticket` under the declaration in force, and
+   record the gates again. On success it checks the pre-ship gates, records `ship-preflight` with a
+   [`supervisor`](../../roles/supervisor/ROLE.md) entry that names the declaration, closes the run and prints the disclosure.
+   `record` also refuses, for any gate of an opened run, a supervisor name that differs from the one the
+   run was opened under.
 4. `record --gate ship-preflight --attestation <file> --body-file <file>` is final ship. It needs the
    closed run. It checks the declaration against the stamp, the attestation's shape, that the reviewer is
    not an author, that the head is present locally and descends from the shipped revision, and that the
    body carries the disclosure. It appends one entry and lists the commits after the shipped revision.
    A later attestation for a descendant head appends a further entry.
+
+Final ship invocation: `node <bundle>/bin/ak-gate.mjs record --gate ship-preflight --attestation <file>
+--body-file <file> --project <dir> --run <id> [--dir <store>]`. Run it in a process that has the policy and
+both supervisor variables set, with the declaration file unchanged since the run was opened. The `--attestation`
+path must be absolute. The exit status is 0 when it records, 1 when it refuses and 2 for a usage error. It
+never waits: every outcome is immediate.
+
+The final-ship git calls (`cat-file`, `merge-base` and `log`) read the worker's repository, which the worker can
+write. They run with `--no-replace-objects` and with signature display off, so replace refs cannot change the
+history they see and no program named in repository configuration, such as `gpg.program`, runs in the
+supervisor's process. These three commands read no other program-valued key. A key a later git version
+reads is outside this guarantee, and only OS user separation between the worker and the supervisor closes it.
 
 ## What agent-kit checks and what it does not
 
@@ -127,11 +150,15 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 
 - The gate does not see the forge, the posted pull request text or the merged head.
 - The body match does not detect text that renders hidden: raw HTML elements, collapsed details blocks,
-  indented code or link definitions.
+  indented code or link definitions. It judges inline code spans one line at a time.
 - The opt-in policy read from the local default-branch ref is not cross-checked against any forge.
 - The same-user limit: a party that runs as the same OS user can write both files. Both files are claims.
-- A final-ship refusal names its cause. Fix the cause and run the final-ship command again. A head that is
-  missing locally needs a fetch first.
+- A final-ship refusal names its cause. Two kinds of cause need different action:
+  - Fix the cause and run the final-ship command again: a head that is missing locally (fetch it first), an
+    attestation or body that fails a check, a reviewer among the authors.
+  - Open a new run: a head that does not descend from the shipped revision, or a run with no supervisor stamp.
+    These refusals print the same recovery line as the ship-preflight refusals: open a new run with
+    `open --ticket` under the declaration in force, and record the gates again.
 
 ## How an external factory declares itself
 

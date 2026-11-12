@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/supervisor-declaration.schema.json",
   "title": "Supervisor declaration",
-  "description": "The file a run supervisor keeps outside the checkout to declare how it meets the six obligations of the unattended policy (adapters/supervisor/CONTRACT.md). Shape only: that the supervisor equals AK_LIFECYCLE_SUPERVISOR, that the file sits outside the repository and that its bytes match the run's stamp are checked by the gate.",
+  "description": "The file a run supervisor keeps outside the checkout to declare how it meets the six obligations of the unattended policy (adapters/supervisor/CONTRACT.md). Shape only: that the supervisor equals AK_LIFECYCLE_SUPERVISOR, that the file sits outside the repository and that its bytes match the run's stamp are checked by the gate. Every pattern is an ECMA-262 regular expression in unicode mode, as Ajv compiles it.",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract", "supervisor", "obligations"],

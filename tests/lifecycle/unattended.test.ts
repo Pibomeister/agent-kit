@@ -22,8 +22,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
+import { loadCatalog } from "../../src/catalog/load.ts";
 import { runCli } from "../../src/cli.ts";
 import { defaultEvidenceDir, readRecords, takeSnapshot, type Gate, type Snapshot } from "../../src/lifecycle/gate.ts";
 import * as unattended from "../../src/lifecycle/unattended.ts";
@@ -34,6 +35,7 @@ import {
   resolvePolicy,
   unattendedDisclosure,
 } from "../../src/lifecycle/unattended.ts";
+import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 
@@ -58,6 +60,17 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 function git(cwd: string, ...args: string[]): string {
   const p = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd });
+  if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
+  return p.stdout.toString().trim();
+}
+
+/** Git's stdout for a command that reads `input` from standard input when given as a pair [args, input]. */
+function execGit(cwd: string, spec: [string[], string] | [string[]]): string {
+  const [args, input] = spec;
+  const p = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], {
+    cwd,
+    stdin: input === undefined ? undefined : new TextEncoder().encode(input),
+  });
   if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
   return p.stdout.toString().trim();
 }
@@ -133,8 +146,9 @@ function declareSupervisor(name = "firstmate", value?: Json, text?: string): str
   return file;
 }
 
-function ticketFile(cwd: string): string {
-  const path = join(cwd, "ticket.json");
+/** The ticket lives outside the checkout: a file in it would be an uncommitted change, which ship-preflight refuses. */
+function ticketFile(_cwd: string): string {
+  const path = join(realpathSync(mkdtempSync(join(tmpdir(), "ak-ticket-"))), "ticket.json");
   const ticket = {
     schema: "ticket",
     schema_version: 1,
@@ -461,6 +475,26 @@ describe("selection and start (command seam)", () => {
     });
   }, 180_000);
 
+  test("a run opened under the default-branch policy keeps that source on ship-preflight when the environment selects the policy", () => {
+    const cwd = repo();
+    git(cwd, "checkout", "-q", "main");
+    writeFileSync(join(cwd, "ak.lifecycle.json"), `${JSON.stringify({ policy: "unattended" })}\n`);
+    git(cwd, "add", "ak.lifecycle.json");
+    git(cwd, "commit", "-q", "-m", "opt in");
+    const tip = git(cwd, "rev-parse", "HEAD");
+    git(cwd, "update-ref", "refs/remotes/origin/main", tip);
+    git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(cwd, "checkout", "-q", "feature");
+    declareSupervisor("firstmate");
+    setEnv({ AK_LIFECYCLE_POLICY: undefined });
+    const run = fullRun(cwd);
+    expect(recordsOf(cwd, run, "align")[0]?.policy?.source).toBe(`default-branch:${tip}`);
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(preflight.code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")[0]?.policy?.source).toBe(`default-branch:${tip}`);
+  }, 180_000);
+
   test("a legacy run refuses an unattended record and an unattended check", () => {
     const cwd = repo();
     expect(ak(cwd, "open", "--ticket", ticketFile(cwd)).code).toBe(0);
@@ -480,8 +514,8 @@ describe("selection and start (command seam)", () => {
 const BARE = { acceptance_criteria: [], verification: [] };
 
 /** A ticket file with `fields` over the demo-bare identity. */
-function bareTicketFile(cwd: string, fields: JsonObject = BARE): string {
-  const path = join(cwd, "bare-ticket.json");
+function bareTicketFile(_cwd: string, fields: JsonObject = BARE): string {
+  const path = join(realpathSync(mkdtempSync(join(tmpdir(), "ak-ticket-"))), "bare-ticket.json");
   writeFileSync(path, `${JSON.stringify({ schema: "ticket", schema_version: 1, id: "demo-bare", ...fields })}\n`);
   return path;
 }
@@ -747,7 +781,10 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const run = fullRun(cwd);
-    const stored: unknown = JSON.parse(readFileSync(join(cwd, "ticket.json"), "utf8"));
+    const opened = readObject(join(store(cwd), "runs", run, "run.json"));
+    // The ticket hash is `sha256:<hex>`; the artifact file is named by the hex alone. JSON text adds a quote at each end.
+    const ticketHex = JSON.stringify(isObj(opened.ticket) ? opened.ticket.hash : "").slice('"sha256:'.length, -1);
+    const stored: unknown = JSON.parse(readFileSync(join(store(cwd), run, "artifacts", ticketHex), "utf8"));
     expect(stored).not.toHaveProperty("delegation");
     const r = ak(cwd, "check");
     expect(r.err).not.toContain("has no acceptance criteria or named verification");
@@ -1004,6 +1041,11 @@ const REFUSALS: Refusal[] = [
     item: "outside the repository",
   },
   {
+    name: "the real path lies in a checkout directory whose name starts with two dots",
+    setup: (cwd) => inCheckout(cwd, "..sup/declaration.json"),
+    item: "outside the repository",
+  },
+  {
     name: "the real path lies inside another worktree",
     setup: (cwd) => {
       const other = join(outsideDir(), "other");
@@ -1196,6 +1238,46 @@ const runFiles = (cwd: string, run: string) => {
   const dir = join(store(cwd), run);
   return readdirSync(dir, { recursive: true }).map(String).toSorted();
 };
+/** A JSON file that must hold an object. */
+function readObject(path: string): JsonObject {
+  const value = parseJson(readFileSync(path, "utf8"));
+  if (!isObj(value)) throw new Error(`${path} is not an object`);
+  return value;
+}
+/** Rewrites the supervisor every record of a gate names, as a file edit would: the record command refuses to. */
+function retag(cwd: string, run: string, gate: Gate, supervisor: string) {
+  const dir = join(store(cwd), run, gate);
+  for (const name of readdirSync(dir).filter((entry) => entry.endsWith(".json"))) {
+    const file = join(dir, name);
+    const record = readObject(file);
+    const policy = isObj(record.policy) ? record.policy : {};
+    writeFileSync(file, JSON.stringify({ ...record, policy: { ...policy, supervisor } }));
+  }
+}
+/** An opened run whose full review requested changes, with the review-delta recorded under `deltaSupervisor`. */
+function deltaUnder(deltaSupervisor: string) {
+  const cwd = repo();
+  declareSupervisor();
+  setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+  const ticketPath = ticketFile(cwd);
+  for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const opened = ak(cwd, "open", "--ticket", ticketPath).out;
+  const run = runId(opened);
+  expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
+  expect(ak(cwd, "record", "--gate", "review-full", "--verdict", "changes-requested", "--", ...ok).code).toBe(0);
+  expect(ak(cwd, "record", "--gate", "review-delta", "--", ...ok).code).toBe(0);
+  retag(cwd, run, "review-delta", deltaSupervisor);
+  expect(ak(cwd, "record", "--gate", "review-readiness", "--", ...ok).code).toBe(0);
+  const receipt = receiptFile(cwd, run, ticketPath);
+  expect(ak(cwd, "record", "--gate", "verify", "--receipt", receipt, "--", ...ok).code).toBe(0);
+  return { cwd, run };
+}
+
+/** Everything a refused ship-preflight must leave alone: the run's file list and its run.json text. */
+const runState = (cwd: string, run: string) => ({
+  files: runFiles(cwd, run),
+  run: readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8"),
+});
 
 describe("binding at open and ship-preflight (AC-4)", () => {
   test("open stamps the run with the supervisor, the declaration's real path and its digest", () => {
@@ -1272,24 +1354,91 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const run = fullRun(cwd);
     declareSupervisor();
+    const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
     expect(r.code).toBe(1);
     expect(r.err).toContain("carries no supervisor stamp");
     expect(r.err).toContain(RECOVERY);
+    expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
   test("ship-preflight refuses a counted gate record that names a different supervisor", () => {
-    const { cwd, run, file } = ready();
-    setEnv({ AK_LIFECYCLE_SUPERVISOR: "other-crew", AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined });
-    expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
-    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate", AK_LIFECYCLE_SUPERVISOR_DECLARATION: file });
+    const { cwd, run } = ready();
+    retag(cwd, run, "build-checks", "other-crew");
+    const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
     expect(r.code).toBe(1);
     expect(r.err).toContain("build-checks");
     expect(r.err).toContain("other-crew");
     expect(r.err).toContain(RECOVERY);
+    expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a covering review-delta that names a different supervisor, and writes nothing", () => {
+    const { cwd, run } = deltaUnder("other-crew");
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("review-delta");
+    expect(r.err).toContain("other-crew");
+    expect(r.err).toContain(RECOVERY);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("a covering review-delta under the declared supervisor ships", () => {
+    const { cwd, run } = deltaUnder("firstmate");
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
+  });
+
+  test("record refuses a supervisor other than the one the run was opened under", () => {
+    const { cwd, run } = ready();
+    const before = runState(cwd, run);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "other-crew", AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined });
+    const r = ak(cwd, "record", "--gate", "build-checks", "--", ...ok);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("was opened under supervisor");
+    expect(r.err).toContain("other-crew");
+    expect(runState(cwd, run)).toEqual(before);
+  });
+
+  test("ship-preflight refuses a tree with uncommitted changes, even when every gate was recorded at that tree", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("uncommitted changes");
+    expect(r.err).toContain("commit them and record the gates again");
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("a record made under a mistyped supervisor and re-recorded correctly at a later revision does not block ship-preflight", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const ticketPath = ticketFile(cwd);
+    for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+    const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+    expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
+    retag(cwd, run, "build-checks", "firstmte");
+    git(cwd, "commit", "--allow-empty", "-q", "-m", "second");
+    for (const g of ["align", "bound", "scout", "build-checks", "review-full", "review-readiness"])
+      expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+    expect(
+      ak(cwd, "record", "--gate", "verify", "--receipt", receiptFile(cwd, run, ticketPath), "--", ...ok).code,
+    ).toBe(0);
+    expect(ak(cwd, "check").code).toBe(0);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.err).toBe("");
+    expect(r.code).toBe(0);
   });
 
   test("a valid matching declaration records the supervisor entry, closes the run and prints the evidence", () => {
@@ -1512,6 +1661,7 @@ describe("final ship (AC-5)", () => {
     symlinkSync(place(join(s.cwd, "attestation.json")), link);
     for (const path of [
       place(join(s.cwd, "attestation.json")),
+      place(join(s.cwd, "..att", "attestation.json")),
       place(join(s.cwd, ".git", "attestation.json")),
       place(join(other, "attestation.json")),
       link,
@@ -1542,7 +1692,78 @@ describe("final ship (AC-5)", () => {
       expect(r.code).toBe(1);
       expect(r.err).toContain("does not descend from the shipped revision");
       expect(r.err).toContain(head);
+      expect(r.err).toContain(RECOVERY);
     }
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("final ship on a run with no supervisor stamp refuses and prints the new-run recovery", () => {
+    const s = shipped();
+    const runPath = join(store(s.cwd), "runs", s.run, "run.json");
+    const stored = readObject(runPath);
+    Reflect.deleteProperty(stored, "supervisor");
+    writeFileSync(runPath, JSON.stringify(stored));
+    const r = finalShip(s.cwd, files(attestationOf(s.head)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("carries no supervisor stamp");
+    expect(r.err).toContain(RECOVERY);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("final ship refuses a relative attestation path and names it", () => {
+    const s = shipped();
+    const f = files(attestationOf(s.head));
+    const r = finalShip(s.cwd, ["--attestation", relative(s.cwd, f.attestation), "--body-file", f.bodyFile]);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("must be an absolute path");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("final ship runs no program the worker configured: a signature program named in the repository's config stays unrun", () => {
+    const s = shipped();
+    const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
+    const signed = execGit(s.cwd, [
+      ["hash-object", "-t", "commit", "-w", "--stdin"],
+      [
+        `tree ${tree}`,
+        `parent ${s.head}`,
+        "author t <t@example.invalid> 1700000000 +0000",
+        "committer t <t@example.invalid> 1700000000 +0000",
+        "gpgsig -----BEGIN PGP SIGNATURE-----",
+        " ",
+        " AAAA",
+        " -----END PGP SIGNATURE-----",
+        "",
+        "signed by the worker",
+        "",
+      ].join("\n"),
+    ]);
+    const marker = join(outsideDir(), "marker");
+    const program = join(outsideDir(), "gpg-marker");
+    writeFileSync(program, `#!/bin/sh\necho ran > '${marker}'\nexit 0\n`);
+    chmodSync(program, 0o755);
+    git(s.cwd, "config", "log.showSignature", "true");
+    git(s.cwd, "config", "gpg.program", program);
+    const probe = Bun.spawnSync(["git", "log", "--format=%H", `${s.head}..${signed}`], { cwd: s.cwd });
+    expect(probe.exitCode).toBe(0);
+    expect(existsSync(marker)).toBe(true); // the repository's configuration does run it when asked
+    Bun.spawnSync(["rm", "-f", marker]);
+    const r = finalShip(s.cwd, files(attestationOf(signed)).flags);
+    expect(r.err).toBe("");
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("signed by the worker");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("final ship reads the history the forge has: a replace graft cannot make an unrelated head descend", () => {
+    const s = shipped();
+    const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
+    const unrelated = execGit(s.cwd, [["commit-tree", tree, "-m", "unrelated root"]]);
+    git(s.cwd, "replace", "--graft", unrelated, s.head);
+    expect(Bun.spawnSync(["git", "merge-base", "--is-ancestor", s.head, unrelated], { cwd: s.cwd }).exitCode).toBe(0);
+    const r = finalShip(s.cwd, files(attestationOf(unrelated)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("does not descend from the shipped revision");
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
@@ -1584,8 +1805,7 @@ describe("final ship (AC-5)", () => {
   test("a relative body file is resolved against the working directory of the command", () => {
     const s = shipped();
     const f = files(attestationOf(s.head));
-    const relative = join(s.cwd, "body.md");
-    writeFileSync(relative, bodyOf());
+    writeFileSync(join(s.cwd, "body.md"), bodyOf());
     expect(finalShip(s.cwd, ["--attestation", f.attestation, "--body-file", "body.md"]).code).toBe(0);
   });
 
@@ -1604,6 +1824,167 @@ describe("final ship (AC-5)", () => {
     const legacy = finalShip(s.cwd, f.flags);
     expect(legacy.code).toBe(2);
     expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+});
+
+// ── where the supervisor files may live: environment, nesting and letter case (review fix cycle 1) ─────────
+
+/** The bundled gate for the claude-code host, planned from this tree, written once outside every checkout. */
+let bundledGate: string | undefined;
+function gateScript(): string {
+  if (bundledGate !== undefined) return bundledGate;
+  const { catalog } = loadCatalog(ROOT);
+  if (catalog === null) throw new Error("no catalog");
+  const planned = planBundle({ root: ROOT, catalog }, "claude-code", {}).files.get(GATE_FILE);
+  if (planned === undefined) throw new Error(`no ${GATE_FILE} in the bundle`);
+  const script = join(outsideDir(), "ak-gate.mjs");
+  writeFileSync(script, planned.contents);
+  bundledGate = script;
+  return script;
+}
+/** The documented production form: the bundled gate under node. */
+function nodeGate(cwd: string, ...argv: string[]) {
+  const r = Bun.spawnSync(["node", gateScript(), ...argv], { cwd, env: { ...process.env } });
+  return { code: r.exitCode, out: r.stdout.toString(), err: r.stderr.toString() };
+}
+/** `path` with the case of every letter in its last segment swapped. */
+const swapLastCase = (path: string): string => {
+  const at = path.lastIndexOf("/") + 1;
+  const name = path.slice(at);
+  return (
+    path.slice(0, at) + Array.from(name, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase())).join("")
+  );
+};
+
+describe("supervisor-file containment: letter case under node, GIT_* variables and a nested project", () => {
+  test("a case-variant spelling of an in-checkout declaration is refused by the gate under node", () => {
+    const cwd = repo();
+    const variant = swapLastCase(cwd);
+    if (variant === cwd || !existsSync(variant) || realpathSync.native(variant) !== cwd) return; // a case-sensitive volume
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    inCheckout(cwd, "declaration.json");
+    const named = join(variant, "declaration.json");
+    setEnv({ AK_LIFECYCLE_SUPERVISOR_DECLARATION: named });
+    const r = nodeGate(cwd, "unattended", "check", "--phase", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("outside the repository");
+    expect(r.out).toBe("");
+  });
+
+  test("a case-variant spelling of an in-checkout attestation is refused by the gate under node", () => {
+    const s = shipped();
+    const variant = swapLastCase(s.cwd);
+    if (variant === s.cwd || !existsSync(variant) || realpathSync.native(variant) !== s.cwd) return; // a case-sensitive volume
+    const inside = join(s.cwd, "attestation.json");
+    writeFileSync(inside, `${JSON.stringify(attestationOf(s.head))}\n`);
+    const r = nodeGate(
+      s.cwd,
+      "record",
+      "--gate",
+      "ship-preflight",
+      "--attestation",
+      join(variant, "attestation.json"),
+      "--body-file",
+      files(null).bodyFile,
+    );
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("outside the repository");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("an exported GIT_DIR does not move the repository the declaration is judged against", () => {
+    const cwd = repo();
+    const elsewhere = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    inCheckout(cwd, "declaration.json");
+    setEnv({ GIT_DIR: join(elsewhere, ".git") });
+    try {
+      const r = ak(cwd, "unattended", "check", "--phase", "super-align");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("outside the repository");
+    } finally {
+      setEnv({ GIT_DIR: undefined });
+    }
+  });
+
+  test.each(["GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_CEILING_DIRECTORIES"])(
+    "an exported %s does not move the repository the declaration is judged against",
+    (name) => {
+      const cwd = repo();
+      const elsewhere = repo();
+      setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+      inCheckout(cwd, "declaration.json");
+      const value = name === "GIT_CEILING_DIRECTORIES" ? dirname(cwd) : join(elsewhere, ".git");
+      setEnv({ [name]: value });
+      try {
+        const r = ak(cwd, "unattended", "check", "--phase", "super-align");
+        expect(r.code).toBe(1);
+        expect(r.err).toContain("outside the repository");
+      } finally {
+        setEnv({ [name]: undefined });
+      }
+    },
+  );
+
+  test("a repository initialised inside the worktree and passed as --project does not hide a declaration inside the worktree", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    inCheckout(cwd, "declaration.json");
+    const nest = join(cwd, "nest");
+    mkdirSync(nest);
+    git(nest, "init", "-q", "-b", "main");
+    const r = ak(cwd, "unattended", "check", "--phase", "super-align", "--project", nest);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("outside the repository");
+  });
+
+  test("the same nested --project does not hide an attestation inside the worktree at final ship", () => {
+    const s = shipped();
+    const nest = join(s.cwd, "nest");
+    mkdirSync(nest);
+    git(nest, "init", "-q", "-b", "main");
+    const inside = join(s.cwd, "attestation.json");
+    writeFileSync(inside, `${JSON.stringify(attestationOf(s.head))}\n`);
+    const r = ak(
+      s.cwd,
+      "record",
+      "--gate",
+      "ship-preflight",
+      "--project",
+      nest,
+      "--dir",
+      store(s.cwd),
+      "--run",
+      s.run,
+      "--attestation",
+      inside,
+      "--body-file",
+      files(null).bodyFile,
+    );
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("outside the repository");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("the project's own directory is in the writable set when git reports nothing for it", () => {
+    const cwd = repo();
+    const sub = join(cwd, "pkg", "deep");
+    mkdirSync(sub, { recursive: true });
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    inCheckout(cwd, "pkg/deep/declaration.json");
+    const r = ak(sub, "unattended", "check", "--phase", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("outside the repository");
+  });
+
+  test("a declaration outside every enclosing checkout still passes from a nested repository", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    declareSupervisor();
+    const nest = join(cwd, "nest");
+    mkdirSync(nest);
+    git(nest, "init", "-q", "-b", "main");
+    expect(ak(cwd, "unattended", "check", "--phase", "super-align", "--project", nest).code).toBe(0);
   });
 });
 

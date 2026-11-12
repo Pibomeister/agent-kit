@@ -80,7 +80,7 @@ first remote call, as in `dry-run`, and every remote effect waits for the superv
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
 check --phase super-ship` exiting 0 is the start (an exception to ruling `entrypoint-phase-operation-split`).
 `record --gate ship-preflight` checks the supervisor declaration and closes the run only when it holds.
-Put the disclosure in the pull request text and record final ship with `--attestation <file> --body-file <file>`.
+Put the disclosure in the pull request text and record final ship with `--attestation <absolute path> --body-file <file>`.
 Detail: [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) and
 [the supervisor contract](../../adapters/supervisor/CONTRACT.md).
 

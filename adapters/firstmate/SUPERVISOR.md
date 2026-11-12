@@ -135,9 +135,11 @@ or deploy. Delete the file to revoke it. ADR-0008 has the design and its trust l
 ## Declaring Firstmate as the run supervisor
 
 Under the unattended policy Firstmate is the run supervisor (`adapters/supervisor/CONTRACT.md`). Name it with
-`AK_LIFECYCLE_SUPERVISOR=firstmate`. Write the declaration below to a path outside every worktree of the task,
-for example in the home's `data/<task-id>/`, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute
-path. Each worker is started with both variables.
+`AK_LIFECYCLE_SUPERVISOR=firstmate`. Write the declaration below to a path outside every checkout of every
+project the worker can reach, for example a per-task folder under the user's home directory such as
+`~/.firstmate-supervisor/<task-id>/`, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path. The
+Firstmate repository's own home, including its `data/` folder, sits inside a worktree: it must hold neither the
+declaration nor the attestation. Each worker is started with both variables.
 
 ```json
 {
@@ -154,8 +156,8 @@ path. Each worker is started with both variables.
 }
 ```
 
-At final ship Firstmate writes the attestation to the home, outside the worktree, and passes it with the body
-file to `record --gate ship-preflight`. Firstmate does not merge on agent-kit's behalf.
+At final ship Firstmate writes the attestation to the same kind of per-task folder, outside every checkout, and
+passes its absolute path with the body file to `record --gate ship-preflight` (CONTRACT.md has the full command). Firstmate does not merge on agent-kit's behalf.
 
 ## What the worker sends back
 

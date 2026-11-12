@@ -78,7 +78,8 @@ export const parseJson = (source: string): Json | undefined => {
 };
 
 /** `sha256:` and 64 lower-case hex digits over the bytes. */
-export const sha256Digest = (bytes: Uint8Array): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+export const sha256Digest = (bytes: Uint8Array | string): string =>
+  `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
 const exec = (cmd: string, args: readonly string[], cwd?: string) => {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -181,9 +182,15 @@ const identityFailure = (where: string, id: Json | undefined): string[] =>
     ? []
     : [`${where} ${shown(id)} is not a canonical provider/model identity (lower-case, no whitespace, provider/model)`];
 
-/** The shape of an attestation and its supervisor equality; keys are closed at every level. Empty means valid. */
-export function attestationFailures(value: Json | undefined, supervisor: string): string[] {
-  if (!isObject(value)) return ["attestation must be a JSON object"];
+/**
+ * One walk over an attestation: the shape and the supervisor equality, with keys closed at every level, and the typed
+ * attestation built from the same values. Each value is copied only once it passes its check.
+ */
+export function readAttestation(
+  value: Json | undefined,
+  supervisor: string,
+): { ok: true; attestation: Attestation } | { ok: false; failures: string[] } {
+  if (!isObject(value)) return { ok: false, failures: ["attestation must be a JSON object"] };
   const failures = unknownKeys("attestation", value, [
     "contract",
     "supervisor",
@@ -198,76 +205,141 @@ export function attestationFailures(value: Json | undefined, supervisor: string)
     failures.push(
       `supervisor ${shown(value.supervisor)} differs from the run's supervisor ${JSON.stringify(supervisor)}`,
     );
-  if (!isText(value.head) || !HEAD.test(value.head)) failures.push("head must be 40 lower-case hex characters");
-  if ("pull_request" in value && !singleLine(value.pull_request))
-    failures.push("pull_request must be a non-empty single-line string");
+  let head = "";
+  if (isText(value.head) && HEAD.test(value.head)) head = value.head;
+  else failures.push("head must be 40 lower-case hex characters");
+  let pullRequest: string | undefined;
+  if ("pull_request" in value) {
+    if (singleLine(value.pull_request)) pullRequest = value.pull_request;
+    else failures.push("pull_request must be a non-empty single-line string");
+  }
+  let validationRef = "";
   const validation = value.validation;
   if (!isObject(validation)) failures.push("validation must be a JSON object");
   else {
     failures.push(...unknownKeys("validation", validation, ["result", "ref"]));
     if (validation.result !== "pass")
       failures.push(`validation.result must be "pass", not ${shown(validation.result)}`);
-    if (!singleLine(validation.ref)) failures.push("validation.ref must be a non-empty single-line string");
+    if (singleLine(validation.ref)) validationRef = validation.ref;
+    else failures.push("validation.ref must be a non-empty single-line string");
   }
+  let reviewer = "";
+  let reviewRef = "";
+  const authors: string[] = [];
   const review = value.review;
   if (!isObject(review)) failures.push("review must be a JSON object");
   else {
     failures.push(...unknownKeys("review", review, ["result", "reviewer", "authors", "ref"]));
     if (review.result !== "approve") failures.push(`review.result must be "approve", not ${shown(review.result)}`);
     failures.push(...identityFailure("review.reviewer", review.reviewer));
+    if (isText(review.reviewer)) reviewer = review.reviewer;
     if (!Array.isArray(review.authors) || review.authors.length === 0)
       failures.push("review.authors must be a non-empty list of identities");
-    else review.authors.forEach((author, i) => failures.push(...identityFailure(`review.authors[${i}]`, author)));
-    if (!singleLine(review.ref)) failures.push("review.ref must be a non-empty single-line string");
+    else
+      review.authors.forEach((author, i) => {
+        failures.push(...identityFailure(`review.authors[${i}]`, author));
+        if (isText(author)) authors.push(author);
+      });
+    if (singleLine(review.ref)) reviewRef = review.ref;
+    else failures.push("review.ref must be a non-empty single-line string");
   }
-  return failures;
-}
-
-const textOf = (v: Json | undefined): string => (isText(v) ? v : "");
-
-/** The typed attestation when `value` passes `attestationFailures` for `supervisor`, else the failures. */
-export function readAttestation(
-  value: Json | undefined,
-  supervisor: string,
-): { ok: true; attestation: Attestation } | { ok: false; failures: string[] } {
-  const failures = attestationFailures(value, supervisor);
-  if (failures.length > 0 || !isObject(value)) return { ok: false, failures };
-  const { head, pull_request: pullRequest, validation, review } = value;
-  if (!isText(head) || !isObject(validation) || !isObject(review) || !Array.isArray(review.authors))
-    return { ok: false, failures: ["attestation is not readable after validation"] };
-  const authors = review.authors.filter(isText);
+  if (failures.length > 0) return { ok: false, failures };
   const attestation: Attestation = {
     contract: CONTRACT,
     supervisor,
     head,
-    validation: { result: "pass", ref: textOf(validation.ref) },
-    review: { result: "approve", reviewer: textOf(review.reviewer), authors, ref: textOf(review.ref) },
+    validation: { result: "pass", ref: validationRef },
+    review: { result: "approve", reviewer, authors, ref: reviewRef },
   };
-  if (isText(pullRequest)) attestation.pull_request = pullRequest;
+  if (pullRequest !== undefined) attestation.pull_request = pullRequest;
   return { ok: true, attestation };
 }
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+/** The shape of an attestation and its supervisor equality; keys are closed at every level. Empty means valid. */
+export function attestationFailures(value: Json | undefined, supervisor: string): string[] {
+  const read = readAttestation(value, supervisor);
+  return read.ok ? [] : read.failures;
+}
+
+/** A line that opens or closes a fenced block, once block-quote and list markers are stripped; the rest is its info string. */
+const FENCE = /^[ \t]*(`{3,}|~{3,})([\s\S]*)$/;
+/** One block-quote marker or one list marker (bullet or number) and the space after it. */
+const CONTAINER = /^[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]))[ \t]?/;
+
+/** The line without its block-quote and list markers, so a fence nested in a container is seen as a fence. */
+function unwrap(line: string): string {
+  let rest = line;
+  for (let match = CONTAINER.exec(rest); match !== null; match = CONTAINER.exec(rest))
+    rest = rest.slice(match[0].length);
+  return rest;
+}
 
 /**
- * Whether the body carries the disclosure sentence for `supervisor`: after HTML comments and backtick or tilde
- * fenced blocks are removed, an exact substring test with no whitespace normalisation. An unclosed comment or
- * fence hides the rest of the body. It does not see text that renders hidden by other means.
+ * The text of one line outside any fence that a renderer would show: inline code spans stay whole, so a comment
+ * opener inside one starts nothing, and everything from a comment opener to its closer is dropped. `state.comment`
+ * carries an open comment from line to line.
+ */
+function visibleText(line: string, state: { comment: boolean }): string {
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    if (state.comment) {
+      const end = line.indexOf("-->", i);
+      if (end < 0) return out;
+      state.comment = false;
+      i = end + 3;
+    } else if (line[i] === "`") {
+      let run = 1;
+      while (line[i + run] === "`") run += 1;
+      let close = -1;
+      for (let at = line.indexOf("`", i + run); at >= 0 && close < 0;) {
+        let length = 1;
+        while (line[at + length] === "`") length += 1;
+        if (length === run) close = at;
+        else at = line.indexOf("`", at + length);
+      }
+      const end = close < 0 ? i + run : close + run;
+      out += line.slice(i, end);
+      i = end;
+    } else if (line.startsWith("<!-->", i)) i += 5;
+    else if (line.startsWith("<!--->", i)) i += 6;
+    else if (line.startsWith("<!--", i)) {
+      state.comment = true;
+      i += 4;
+    } else {
+      out += line[i];
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether the body carries the disclosure sentence for `supervisor`: an exact substring test with no whitespace
+ * normalisation over the text that is outside backtick or tilde fences and outside HTML comments. Fences come
+ * first: a comment opener inside a fence starts no comment, and a fence line inside a comment starts no fence.
+ * A backtick fence line has no backtick in its info string, as in CommonMark, so a line of inline code opens
+ * nothing. Block-quote and list markers are stripped to find fences, at any indent, so the check hides at least
+ * what a renderer hides. An unclosed comment or fence hides the rest of the body. It does not see text that
+ * renders hidden by other means.
  */
 export function bodyCarriesDisclosure(body: string, supervisor: string): boolean {
   const shownLines: string[] = [];
+  const state = { comment: false };
   let open: { char: string; length: number } | undefined;
-  for (const line of body.replaceAll(/<!--[\s\S]*?(?:-->|$)/g, "").split("\n")) {
-    const fence = FENCE.exec(line)?.[1];
-    if (open === undefined) {
-      if (fence !== undefined) open = { char: fence[0] ?? "", length: fence.length };
-      else shownLines.push(line);
-    } else if (
-      fence?.[0] === open.char &&
-      fence.length >= open.length &&
-      line.slice(FENCE.exec(line)?.[0].length).trim() === ""
-    )
-      open = undefined;
+  for (const line of body.split("\n")) {
+    if (state.comment) {
+      shownLines.push(visibleText(line, state));
+      continue;
+    }
+    const fence = FENCE.exec(unwrap(line));
+    const marks = fence?.[1] ?? "";
+    const info = fence?.[2] ?? "";
+    if (open !== undefined) {
+      if (marks[0] === open.char && marks.length >= open.length && info.trim() === "") open = undefined;
+    } else if (marks !== "" && !(marks[0] === "`" && info.includes("`")))
+      open = { char: marks[0] ?? "", length: marks.length };
+    else shownLines.push(visibleText(line, state));
   }
   return shownLines.join("\n").includes(unattendedDisclosure(supervisor));
 }
