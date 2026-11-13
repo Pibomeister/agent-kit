@@ -26,6 +26,13 @@ const validateProject = schemas.validatorFor("project");
 if (validateTicket === undefined || validateProject === undefined)
   throw new Error("delegation schemas did not compile");
 
+function projectWithSurfaces(surfaces: { path: string; class: string; reason?: string; extra?: boolean }[]) {
+  return {
+    ...project,
+    guidance: { ...project.guidance, delegation: { ...project.guidance.delegation, shared_surfaces: surfaces } },
+  };
+}
+
 describe("delegation schema records", () => {
   test("the valid fixtures exercise every new ticket and project block", () => {
     expect(validateTicket(ticket)).toBe(true);
@@ -84,6 +91,30 @@ describe("delegation schema records", () => {
     ["a kind outside the vocabulary", projectCheckKind.checks],
   ])("a project check with %s is rejected", (_label, checks) => {
     expect(validateProject({ ...project, checks: [...project.checks, ...checks] })).toBe(false);
+  });
+
+  test("the project schema accepts shared surfaces and refuses a green floor, a missing reason and an unknown key", () => {
+    const surfaces = [{ path: "src/shared/**", class: "yellow-owner", reason: "Many features import it." }];
+    const withSurfaces = {
+      ...project,
+      guidance: { ...project.guidance, delegation: { ...project.guidance.delegation, shared_surfaces: surfaces } },
+    };
+    expect(validateProject(withSurfaces)).toBe(true);
+    expect(
+      validateProject(
+        projectWithSurfaces([{ path: "src/shared/**", class: "green", reason: "Many features import it." }]),
+      ),
+    ).toBe(false);
+    expect(validateProject(projectWithSurfaces([{ path: "src/shared/**", class: "red" }]))).toBe(false);
+    expect(
+      validateProject(projectWithSurfaces([{ path: "src/shared/**", class: "red", reason: "Core.", extra: true }])),
+    ).toBe(false);
+  });
+
+  test("the ticket schema accepts floor.shared_surfaces and still accepts a floor without it", () => {
+    const floor = { ...ticket.delegation.floor, shared_surfaces: ["src/shared/**"] };
+    expect(validateTicket({ ...ticket, delegation: { ...ticket.delegation, floor } })).toBe(true);
+    expect(validateTicket(ticket)).toBe(true);
   });
 
   test("the forbidden tier key is caught by the denylist", () => {

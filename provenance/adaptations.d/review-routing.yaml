@@ -5,3 +5,38 @@ adaptations:
       The owner's semaphore bullets, green a simple code review, yellow a multi-agent review that
       may enlist fewer agents and red the current review pipeline, became the pass_1.depth map of
       green to single, both yellow classes to reduced and red to full.
+  - path: references/delegation/REFERENCE.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: Sensitive surfaces and their overriding effect became the never-lowered delegation floor without importing the report's sample thresholds.
+  - path: references/delegation/REFERENCE.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-219
+    rationale: The evidenced factors, four classes and authorship meanings became the shared class vocabulary while project weights and cut points remain advisory.
+  - path: references/delegation/REFERENCE.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: Ticket-time and merge-time assessment, raise-only recomputation and named-human lowering became the two-snapshot lifecycle.
+  - path: references/delegation/REFERENCE.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L82-98
+    rationale: Transparent size, diffusion, hotspot and prior-fix inputs became optional complexity evidence rather than a learned or package-wide gate.
+  - path: references/delegation/REFERENCE.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: The six readiness criteria, vague-term pass and assumption resolution became per-ticket evidence and frontier questions.
+  - path: references/delegation/REFERENCE.md
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
+    rationale: The vertical-slice rule and the wide-refactor carve-out moved here from the super-bound body, where they now sit beside the ordered stack that the reports supply.
+  - path: references/delegation/REFERENCE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:resources/document_standards/implementation-readiness-standard.md
+    rationale: >-
+      The zero-decision rule and rewrite cap for listed decisions live here so super-bound step
+      13 can stay a pointer. Off and shadow do not change class or scorer inputs (phase 1b,
+      GS-004i).
+  - path: references/delegation/REFERENCE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/codebase_details.md
+    rationale: >-
+      Proposed files are not findings. exists versus proposed labelling, and the rule that
+      proposed-absent is not a defect, are stated here for the cold reader (phase 1b, GS-004i).
+  - path: references/delegation/REFERENCE.md
+    source: local:review-routing-owner-ask-2026-11-10@sha256:468cbcc7b448e36805874c3ca8e5c36784d0f1680f37e5f965e1e765d7695ad6#L16-18
+    rationale: >-
+      The owner's third semaphore factor, touching files that impact functionality across a bunch
+      of different features, became the shared-surface floor source the delegation reference names
+      beside the never-dropped packs and the required sensitive actions.
