@@ -11,7 +11,8 @@
  * It also makes every test that reaches no assertion fail (see the end of this file).
  * The git-spawn import is first so its retry wraps `spawnSync` before a test file binds it.
  */
-import { installGitSpawnRetry } from "./helpers/git-spawn.ts";
+import { bindSpawnObserver, installGitSpawnRetry } from "./helpers/git-spawn.ts";
+import { installSpawnJournal, recordNodeSpawn } from "./helpers/spawn-journal.ts";
 import { afterAll, beforeEach, expect } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,6 +21,8 @@ import { processScratch, removeProcessDir } from "./helpers/process-tmp.ts";
 // git-spawn.ts installs while its module is evaluated, which is before the imports
 // below. Calling it again is a no-op; the binding is what keeps the import live.
 installGitSpawnRetry();
+bindSpawnObserver(recordNodeSpawn);
+installSpawnJournal();
 
 // Bun test does not emit process exit events; a preload's teardown runs after all test files.
 afterAll(removeProcessDir, 60_000);

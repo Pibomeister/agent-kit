@@ -21,6 +21,7 @@ import { readJsonl } from "../../src/learn/core/store.ts";
 import { ClaudeMemSource, jsonList } from "../../src/learn/sources/claude-mem.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { gitRepo, MemFixture, projectScratch, scratch, stubRoles } from "./helpers.ts";
+import { armSpawnJournal, beginInvocation, disarmSpawnJournal, recordJudge } from "../helpers/spawn-journal.ts";
 
 describe("paths", () => {
   test("the two folder conventions differ exactly on underscores and dots", () => {
@@ -293,6 +294,7 @@ describe("judge call trace", () => {
 
   test("full tracing writes prompt and reply bodies under the call id", () => {
     const dir = projectScratch();
+    armSpawnJournal("judge-body");
     try {
       const script = join(dir, "judge.sh");
       writeFileSync(script, `printf '%s\\n' '{"result":"{\\"answer\\":\\"kept\\"}"}'\n`);
@@ -302,14 +304,27 @@ describe("judge call trace", () => {
         judgeTimeoutMs: 10_000,
       };
 
-      expect(
-        commandJudge(config)("private prompt", {
+      const invocation = beginInvocation("judge", config.judgeCommand, config.runtimeDir);
+      let reply: unknown = undefined;
+      try {
+        reply = commandJudge(config)("private prompt", {
           loop: "memory",
           role: "reflector",
           project: "shop",
           runId: null,
-        }),
-      ).toEqual({ answer: "kept" });
+        });
+      } finally {
+        recordJudge({
+          invocation,
+          prompt: "private prompt",
+          classification: reply === undefined ? "absent" : reply === null ? "null" : "object",
+          parsedText: reply === undefined || reply === null ? null : JSON.stringify(reply),
+          runtimeDir: config.runtimeDir,
+          timeoutMs: config.judgeTimeoutMs,
+          command: config.judgeCommand,
+        });
+      }
+      expect(reply).toEqual({ answer: "kept" });
 
       const rows = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
       const traced = rows.map((entry) => `${entry.attempt} ${entry.outcome} exit=${entry.exit_code}`).join("\n");
@@ -330,6 +345,7 @@ describe("judge call trace", () => {
         db.close();
       }
     } finally {
+      disarmSpawnJournal();
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -420,6 +436,7 @@ describe("judge call outcome", () => {
 describe("judge body retention", () => {
   test("bodies of calls rotated out of the metadata trace are removed with their rows", () => {
     const dir = projectScratch();
+    armSpawnJournal("judge-retention");
     try {
       const script = join(dir, "judge.sh");
       writeFileSync(script, `printf '%s\\n' '{"result":"{\\"answer\\":\\"kept\\"}"}'\n`);
@@ -432,7 +449,21 @@ describe("judge body retention", () => {
       const judge = commandJudge(config);
       const context = { loop: "review", role: "pattern-maintainer", project: "shop", runId: null } as const;
       for (const prompt of ["first", "second", "third"]) {
-        const reply = judge(prompt, context);
+        const invocation = beginInvocation("judge", config.judgeCommand, config.runtimeDir);
+        let reply: unknown = undefined;
+        try {
+          reply = judge(prompt, context);
+        } finally {
+          recordJudge({
+            invocation,
+            prompt,
+            classification: reply === undefined ? "absent" : reply === null ? "null" : "object",
+            parsedText: reply === undefined || reply === null ? null : JSON.stringify(reply),
+            runtimeDir: config.runtimeDir,
+            timeoutMs: config.judgeTimeoutMs,
+            command: config.judgeCommand,
+          });
+        }
         const traced = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"))
           .map((entry) => `${entry.prompt_chars} ${entry.attempt} ${entry.outcome} exit=${entry.exit_code}`)
           .join("\n");
@@ -452,6 +483,7 @@ describe("judge body retention", () => {
       }
       expect(existsSync(join(config.runtimeDir, "judge-bodies"))).toBe(false);
     } finally {
+      disarmSpawnJournal();
       rmSync(dir, { recursive: true, force: true });
     }
   });
