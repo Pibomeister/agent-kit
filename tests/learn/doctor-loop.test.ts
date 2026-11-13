@@ -64,7 +64,11 @@ const RULE = "Reduce the failing input before bisecting.";
 const CHANGE = "Makes reduction the first diagnostic step.";
 
 function git(cwd: string, ...args: string[]): string {
-  const result = run(["git", ...args], { cwd });
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_CEILING_DIRECTORIES;
+  const result = run(["git", ...args], { cwd, env });
   if (result.code !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
   return result.stdout.trim();
 }
@@ -161,6 +165,9 @@ fi
     cwd: repo,
     env: { HOME: base, PATH: `${bin}:${process.env.PATH ?? ""}`, ...options.env },
   });
+  delete ctx.env.GIT_DIR;
+  delete ctx.env.GIT_WORK_TREE;
+  delete ctx.env.GIT_CEILING_DIRECTORIES;
   const made: Fixture = {
     base,
     repo,
@@ -542,16 +549,24 @@ esac
     chmodSync(judge, 0o755);
     const previous = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = "fixture-value";
+    const lines: string[] = [];
     try {
       const code = await runLearn(
         ["doctor", "loop", "--out", f.out, "--repo", f.repo, "--claude-home", join(f.base, "claude"), "--publish"],
         {
           cwd: f.repo,
-          io: { out: () => undefined, err: () => undefined },
+          io: {
+            out: (line) => {
+              lines.push(line);
+            },
+            err: (line) => {
+              lines.push(line);
+            },
+          },
           env: { ...f.ctx.env, AK_LEARN_JUDGE: judge },
         },
       );
-      expect(code).toBe(0);
+      expect(code, lines.join("\n")).toBe(0);
     } finally {
       if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = previous;
@@ -559,7 +574,7 @@ esac
     const seen = readFileSync(log, "utf8");
     expect(seen).toContain("# learn/skill-rewriter key=absent");
     expect(seen).not.toContain("fixture-value");
-    expect(branches(f.gate)).toHaveLength(1);
+    expect(branches(f.gate), lines.join("\n")).toHaveLength(1);
   });
 });
 

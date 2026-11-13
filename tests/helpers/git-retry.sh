@@ -59,8 +59,10 @@ fi
 attempt=0
 while [ "$attempt" -lt 3 ]; do
   attempt=$((attempt + 1))
-  out=$(mktemp)
-  err=$(mktemp)
+  # The per-user temp dir collects entries until creates in it stall. The suite's own
+  # scratch already avoids it; these captures do too.
+  out=$(TMPDIR=/tmp mktemp)
+  err=$(TMPDIR=/tmp mktemp)
   "$real" "$@" >"$out" 2>"$err"
   status=$?
   if [ "$status" -eq 0 ] && [ "$attempt" -lt 3 ] && ! grep -q '[^[:space:]]' "$out" && ! grep -q '[^[:space:]]' "$err"; then
