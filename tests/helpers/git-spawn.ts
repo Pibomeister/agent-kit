@@ -100,14 +100,32 @@ function isArgv(value: readonly string[] | SpawnSyncOptions | undefined): value 
   return Array.isArray(value);
 }
 
+type SpawnObserver = (
+  command: string,
+  argv: readonly string[],
+  options: SpawnSyncOptions | undefined,
+  result: SpawnSyncReturns<string | Buffer>,
+  elapsedMs: number,
+) => void;
+
+let observeSpawn: SpawnObserver | undefined;
+
+/** Registered by the journal after this wrapper is installed, so the import does not bind `spawnSync` early. */
+export function bindSpawnObserver(observe: SpawnObserver): void {
+  observeSpawn = observe;
+}
+
 function callGit(
   original: GitSpawn,
   command: string,
   args: readonly string[] | SpawnSyncOptions | undefined,
   options: SpawnSyncOptions | undefined,
 ): SpawnSyncReturns<string | Buffer> {
-  if (isArgv(args)) return original(command, args, options);
-  return original(command, args);
+  // Record the raw return before retry reads it. The same object goes back to the caller.
+  const started = Date.now();
+  const result = isArgv(args) ? original(command, args, options) : original(command, args);
+  observeSpawn?.(command, isArgv(args) ? args : [], isArgv(args) ? options : args, result, Date.now() - started);
+  return result;
 }
 
 export function installGitSpawnRetry(): void {
