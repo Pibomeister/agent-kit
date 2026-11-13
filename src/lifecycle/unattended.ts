@@ -267,8 +267,8 @@ export function attestationFailures(value: Json | undefined, supervisor: string)
   return read.ok ? [] : read.failures;
 }
 
-/** A fence line from its first non-blank character: the fence characters, then the info string. */
-const FENCE = /^(`{3,}|~{3,})(.*)$/;
+/** A fence line from its first non-blank character: the fence characters, then the info string, which may hold a line separator. */
+const FENCE = /^(`{3,}|~{3,})(.*)$/s;
 /** A list marker, bullet or number, followed by a space, a tab or the end of the line. */
 const ITEM = /^(?:[-*+]|(\d{1,9})[.)])(?=[ \t]|$)/;
 /** A thematic break, which a line of three list markers is rather than a list item. */
@@ -352,14 +352,79 @@ function fenceOpener(line: string, from: Cursor): { char: string; length: number
 }
 
 /**
- * Whether a line that a paragraph could take starts a block instead, which ends the paragraph. `inside` is whether
- * the line continues every container the paragraph sits in; a lazy line is checked outside it, as in CommonMark.
+ * Whether a line that a paragraph could take starts a block instead, which ends the paragraph, or `SPLIT` where the
+ * readings part on an HTML block start there. `inside` is whether the line continues every container the paragraph
+ * sits in; a lazy line is checked outside it, as in CommonMark, so a type 7 HTML block may start there.
  */
-function startsBlock(line: string, from: Cursor, inside: boolean): boolean {
+function startsBlock(line: string, from: Cursor, inside: boolean): boolean | typeof SPLIT {
   const blank = skipBlank(line, from);
   const rest = line.slice(blank.at);
   if (BLANK.test(rest) || opens(line, from, inside) !== undefined || fenceOpener(line, from) !== undefined) return true;
-  return blank.column - from.base <= 3 && (rest.startsWith("<!--") || THEMATIC.test(rest) || HEADING.test(rest));
+  if (blank.column - from.base > 3) return false;
+  const html = htmlStart(rest, inside);
+  return html === SPLIT ? SPLIT : html !== undefined || THEMATIC.test(rest) || HEADING.test(rest);
+}
+
+/** The tag names of a type 6 HTML block in both readings; `PARTED_TAGS` holds the names the readings part on. */
+const BLOCK_TAGS = new Set(
+  "address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav noframes ol optgroup option p param section summary table tbody td tfoot th thead title tr track ul".split(
+    " ",
+  ),
+);
+/** `source` is a type 6 name only in 0.29, `search` only in 0.31, and `textarea` a type 1 name only in 0.31. */
+const PARTED_TAGS = new Set(["source", "search", "textarea"]);
+/** The type 1 names. Their block ends at a line that holds an end tag of any of them; 0.31 also ends it at `</textarea>`. */
+const RAW_TAGS = new Set(["pre", "script", "style"]);
+const RAW_END = /<\/(?:pre|script|style)>/i;
+const TEXTAREA_END = /<\/textarea>/i;
+const TAG_NAME = /^<\/?([A-Za-z\u212a][A-Za-z0-9-]*)/;
+const CLOSE_TAG = /<\/[A-Za-z][A-Za-z0-9-]*[ \t]*>/y;
+
+/**
+ * An HTML block. A line that `end` matches ends it: `RAW_END` for type 1 and the end marker for types 2 to 5. With no
+ * `end` it is type 6 or 7 and ends before a blank line. `marker` is the length of the marker that opens it, and only
+ * a type 2 block, which opens with a comment, shows the text past that comment.
+ */
+interface HtmlBlock {
+  end: RegExp | undefined;
+  marker: number;
+  comment: boolean;
+}
+
+/**
+ * The HTML block that `rest` opens, read from the line's first non-blank character 0 to 3 columns in, by the seven
+ * CommonMark start conditions. With `paragraph` a paragraph would take the line, which type 7 cannot interrupt.
+ * `SPLIT` where the readings part on the start: a declaration whose letter is lower case, a `PARTED_TAGS` name, a
+ * control character other than a tab on a line that starts with a tag name (0.29 reads a vertical tab or a form feed
+ * as a space in a tag), a Kelvin sign on such a line or after `<!` (pandoc lower-cases it to `k`), and a lone tag
+ * named `pre`, `script` or `style`, which the spec leaves to a paragraph and pandoc reads as a type 7 block.
+ */
+function htmlStart(rest: string, paragraph: boolean): HtmlBlock | typeof SPLIT | undefined {
+  if (rest.startsWith("<!--")) return { end: /-->/, marker: 4, comment: true };
+  if (rest.startsWith("<?")) return { end: /\?>/, marker: 2, comment: false };
+  if (rest.startsWith("<![CDATA[")) return { end: /\]\]>/, marker: 9, comment: false };
+  if (/^<![A-Z]/.test(rest)) return { end: />/, marker: 2, comment: false };
+  if (/^<![a-z\u212a]/.test(rest)) return SPLIT;
+  const name = TAG_NAME.exec(rest);
+  if (name === null) return undefined;
+  const tag = (name[1] ?? "").toLowerCase();
+  const after = rest.slice(name[0].length);
+  if (PARTED_TAGS.has(tag) || rest.includes("\u212a") || hasControlChar(rest.replaceAll("\t", ""))) return SPLIT;
+  const closing = rest[1] === "/";
+  if (!closing && RAW_TAGS.has(tag) && /^(?:[ \t>]|$)/.test(after))
+    return { end: RAW_END, marker: name[0].length, comment: false };
+  if (BLOCK_TAGS.has(tag) && /^(?:[ \t>]|\/>|$)/.test(after)) return { end: undefined, marker: 0, comment: false };
+  if (paragraph) return undefined;
+  const tagEnd = matchAt(closing ? CLOSE_TAG : OPEN_TAG, rest, 0);
+  if (tagEnd === NONE || !BLANK.test(rest.slice(tagEnd))) return undefined;
+  return RAW_TAGS.has(tag) ? SPLIT : { end: undefined, marker: 0, comment: false };
+}
+
+/** Whether `text` holds what ends `block`, or `SPLIT` at a `</textarea>` that only 0.31 ends a type 1 block at. */
+function blockEnds(block: HtmlBlock, text: string): boolean | typeof SPLIT {
+  if (block.end === undefined) return BLANK.test(text);
+  if (block.end.test(text)) return true;
+  return block.end === RAW_END && TEXTAREA_END.test(text) ? SPLIT : false;
 }
 
 /** What a line reads while it is scanned: a comment the current block opened, and one the page is still inside. */
@@ -369,82 +434,303 @@ interface CommentState {
 }
 
 /**
- * The text of one line outside any fence that a browser shows. `state.comment` is a comment that this block
+ * The text of one block outside any fence that a browser shows. `state.comment` is a comment that this block
  * opened, which ends at `-->`. `state.raw` is a comment that an earlier HTML block left open in the rendered page:
  * the page hides everything until a later HTML block line carries `-->`. Renderers differ on which inline text
- * reaches the page as raw HTML, so no paragraph ends it. Outside an HTML block, inline code spans stay whole, so a
- * comment opener inside one starts nothing.
+ * reaches the page as raw HTML, so no paragraph ends it. An HTML block line is read by `hideComments`; a paragraph or
+ * heading by `inlineText`.
  */
-function visibleText(line: string, state: CommentState, html = false): string {
-  if (state.raw && !html) return "";
+function visibleText(text: string, state: CommentState, html = false): string {
+  if (html) return hideComments(text, state, "");
+  return state.raw ? "" : inlineText(text, state);
+}
+
+/**
+ * `text` with every comment hidden and `gap` in place of each: an opener hides to the next `-->`, or to the end with
+ * `state.comment` left set, and `<!-->` and `<!--->` hide themselves. No backtick opens a code span. Every comment of
+ * both CommonMark readings falls inside one that this hides, so with a line break for `gap` it shows no sentence that
+ * a renderer hides in a comment.
+ */
+function hideComments(text: string, state: CommentState, gap: string): string {
   let out = "";
   let i = 0;
-  while (i < line.length) {
-    if (state.comment || (html && state.raw)) {
-      const end = line.indexOf("-->", i);
+  while (i < text.length) {
+    if (state.comment || state.raw) {
+      const end = text.indexOf("-->", i);
       if (end < 0) return out;
       state.comment = false;
       state.raw = false;
+      out += gap;
       i = end + 3;
-    } else if (line[i] === "`" && !html) {
-      let run = 1;
-      while (line[i + run] === "`") run += 1;
-      let close = -1;
-      for (let at = line.indexOf("`", i + run); at >= 0 && close < 0;) {
-        let length = 1;
-        while (line[at + length] === "`") length += 1;
-        if (length === run) close = at;
-        else at = line.indexOf("`", at + length);
-      }
-      const end = close < 0 ? i + run : close + run;
-      out += line.slice(i, end);
-      i = end;
-    } else if (line.startsWith("<!-->", i) || line.startsWith("<!--->", i)) {
-      i += line.startsWith("<!-->", i) ? 5 : 6;
-    } else if (line.startsWith("<!--", i)) {
+    } else if (text.startsWith("<!-->", i) || text.startsWith("<!--->", i)) {
+      out += gap;
+      i += text.startsWith("<!-->", i) ? 5 : 6;
+    } else if (text.startsWith("<!--", i)) {
       state.comment = true;
       i += 4;
     } else {
-      out += line[i];
+      out += text[i];
       i += 1;
     }
   }
   return out;
 }
 
+/** ASCII punctuation, which a backslash escapes. */
+const PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+/**
+ * Spaces or tabs with at most one line ending, as a tag allows them; `SPACE` takes at least one. Each splits a run
+ * of blanks one way only, so a tag that does not close fails in time linear in its length.
+ */
+const GAP = String.raw`[ \t]*(?:\n[ \t]*)?`;
+const SPACE = String.raw`(?=[ \t\n])${GAP}`;
+const ATTRIBUTE = String.raw`${SPACE}[A-Za-z_:][\w.:-]*(?:${GAP}=${GAP}(?:[^ \t\n"'=<>\x60]+|'[^']*'|"[^"]*"))?`;
+const OPEN_TAG = new RegExp(String.raw`<[A-Za-z][A-Za-z0-9-]*(?:${ATTRIBUTE})*${GAP}\/?>`, "y");
+const URI_AUTOLINK = /<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^ \t\n<>]*>/y;
+const EMAIL_AUTOLINK =
+  /<[\w.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*>/y;
+/** A declaration both readings take; the 0.31 reading also takes a lower-case one or one with no space after it. */
+const DECLARATION = /<![A-Z]+[ \t\n][^>]*>/y;
+const LOOSE_DECLARATION = /<![A-Za-z][^>]*>/y;
+/** No construct starts here. */
+const NONE = -1;
+/** The renderers part on the construct here, or the check does not model what it takes. */
+const SPLIT = -2;
+/** A comment opener with no `-->` after it: no renderer reads a comment, and the check hides the rest. */
+const OPEN = -3;
+
+/** The end of the match of sticky `pattern` at `at`, or `NONE`. */
+function matchAt(pattern: RegExp, text: string, at: number): number {
+  pattern.lastIndex = at;
+  return pattern.test(text) ? pattern.lastIndex : NONE;
+}
+
+/** The end of the backtick run at `at`, or of the code span it opens when a later run of the same length closes it. */
+function codeSpanEnd(text: string, at: number): number {
+  let run = 1;
+  while (text[at + run] === "`") run += 1;
+  for (let next = text.indexOf("`", at + run); next >= 0;) {
+    let length = 1;
+    while (text[next + length] === "`") length += 1;
+    if (length === run) return next + run;
+    next = text.indexOf("`", next + length);
+  }
+  return at + run;
+}
+
+/**
+ * The end of the comment or other raw HTML at `at`, `NONE` when `<` is text, `OPEN` or `SPLIT`. A closing tag holds
+ * no backtick and no comment, so it is read as text. The two CommonMark readings in use, 0.29 in cmark-gfm and 0.31
+ * in pandoc, part on a comment that holds `--` or ends in `-`, a processing instruction that ends in `?`, a CDATA
+ * section that holds `]`, and a declaration that is lower case or has no space after its name. Only 0.31 reads
+ * `<!-->` and `<!--->` as comments, but both readings go on after them alike.
+ */
+function rawHtmlEnd(text: string, at: number): number {
+  if (text.startsWith("<!--", at)) {
+    if (text.startsWith("<!-->", at) || text.startsWith("<!--->", at)) return at + (text[at + 4] === ">" ? 5 : 6);
+    const close = text.indexOf("-->", at + 4);
+    if (close < 0) return OPEN;
+    const inner = text.slice(at + 4, close);
+    return inner.includes("--") || inner.endsWith("-") ? SPLIT : close + 3;
+  }
+  if (text.startsWith("<?", at)) {
+    const close = text.indexOf("?>", at + 2);
+    if (close < 0) return NONE;
+    return text[close - 1] === "?" && close > at + 2 ? SPLIT : close + 2;
+  }
+  if (text.startsWith("<![CDATA[", at)) {
+    const close = text.indexOf("]]>", at + 9);
+    if (close < 0) return NONE;
+    return text.slice(at + 9, close).includes("]") ? SPLIT : close + 3;
+  }
+  if (text.startsWith("<!", at)) {
+    const end = matchAt(DECLARATION, text, at);
+    if (end !== NONE) return end;
+    return matchAt(LOOSE_DECLARATION, text, at) === NONE ? NONE : SPLIT;
+  }
+  return matchAt(OPEN_TAG, text, at);
+}
+
+/** The index past spaces and tabs with at most one line ending, from `at`. */
+function skipLinkSpace(text: string, at: number): number {
+  let i = at;
+  while (text[i] === " " || text[i] === "\t") i += 1;
+  if (text[i] === "\n") i += 1;
+  while (text[i] === " " || text[i] === "\t") i += 1;
+  return i;
+}
+
+/** The end of the destination at `at`, `NONE` when it is not one, or `SPLIT` where cmark and the spec part. */
+function destinationEnd(text: string, at: number): number {
+  let i = at;
+  if (text[i] === "<") {
+    for (i += 1; i < text.length; i += 1) {
+      const char = text[i];
+      if (char === ">") return i + 1;
+      if (char === "\n" || char === "<") return NONE;
+      if (char === "\\" && text[i + 1] === "\n") return SPLIT;
+      if (char === "\\" && PUNCTUATION.includes(text[i + 1] ?? " ")) i += 1;
+    }
+    return NONE;
+  }
+  let depth = 0;
+  for (; i < text.length && text[i] !== " " && text[i] !== "\t" && text[i] !== "\n"; i += 1) {
+    const char = text[i];
+    if (char === "\\" && PUNCTUATION.includes(text[i + 1] ?? " ")) i += 1;
+    else if (char === "(") depth += 1;
+    else if (char === ")" && depth === 0) break;
+    else if (char === ")") depth -= 1;
+    if (depth > 32) return SPLIT;
+  }
+  return depth === 0 ? i : NONE;
+}
+
+/** The end of the title at `at`, or `NONE`: a `"`, `'` or parenthesised string whose closer is not escaped. */
+function titleEnd(text: string, at: number): number {
+  const open = text[at];
+  const close = open === "(" ? ")" : open;
+  if (open !== '"' && open !== "'" && open !== "(") return NONE;
+  for (let i = at + 1; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === close) return i + 1;
+    if (char === "(" && close === ")") return NONE;
+    if (char === "\\" && PUNCTUATION.includes(text[i + 1] ?? " ")) i += 1;
+  }
+  return NONE;
+}
+
+/**
+ * The end of an inline link's `(destination "title")` at `at`, `NONE` when there is none, or `SPLIT`. A title right
+ * after an angle-bracket destination, with no space between, is `SPLIT`: cmark-gfm and the spec form no link there,
+ * and pandoc forms one.
+ */
+function linkTailEnd(text: string, at: number): number {
+  if (text[at] !== "(") return NONE;
+  const start = skipLinkSpace(text, at + 1);
+  const destination = destinationEnd(text, start);
+  if (destination < 0) return destination;
+  let i = skipLinkSpace(text, destination);
+  if (i === destination && `"'(`.includes(text[i] ?? " ")) return SPLIT;
+  if (i > destination && text[i] !== ")") {
+    const title = titleEnd(text, i);
+    if (title === NONE) return NONE;
+    i = skipLinkSpace(text, title);
+  }
+  return text[i] === ")" ? i + 1 : NONE;
+}
+
+/**
+ * The text of a paragraph or heading that a browser shows, read left to right as CommonMark reads inline content: a
+ * backslash escape, raw HTML, an autolink and an inline link's destination and title take their backticks before a
+ * code span can open. A comment hides; a tag and a link's destination and title leave a line break, so no sentence
+ * spans them; the rest is shown as written. From a construct that the readings part on or that this does not model,
+ * the rest is read by `hideComments` with a line break for each comment. Those are a control character other than a
+ * tab, a `$` (math in pandoc and on GitHub), a footnote `[^`, a bare `://` or `www.` (an extended autolink), a
+ * reference link `][`, a bracket that a defined reference would turn into a link inside a link, and a link
+ * definition at the start of a paragraph.
+ */
+function inlineText(text: string, state: CommentState): string {
+  const controls = hasControlChar(text.replaceAll("\t", "").replaceAll("\n", ""));
+  if (controls || (text.startsWith("[") && text.includes("]:"))) return hideComments(text, state, "\n");
+  const openers: { image: boolean; active: boolean }[] = [];
+  let out = "";
+  let i = 0;
+  const rest = () => out + hideComments(text.slice(i), state, "\n");
+  while (i < text.length) {
+    const char = text[i] ?? "";
+    let end = i + 1;
+    if (char === "\\" && PUNCTUATION.includes(text[i + 1] ?? " ")) end = i + 2;
+    else if (char === "`") end = codeSpanEnd(text, i);
+    else if (char === "$" || text.startsWith("://", i) || text.slice(i, i + 4).toLowerCase() === "www.") return rest();
+    else if (char === "<") {
+      const link = Math.max(matchAt(URI_AUTOLINK, text, i), matchAt(EMAIL_AUTOLINK, text, i));
+      const html = link === NONE ? rawHtmlEnd(text, i) : NONE;
+      if (html === SPLIT) return rest();
+      if (html === OPEN) {
+        state.comment = true;
+        return out;
+      }
+      if (html !== NONE) {
+        // A comment that both readings take hides; `<!-->`, `<!--->` and other raw HTML leave a line break.
+        out += text.startsWith("<!--", i) && html > i + 6 ? "" : "\n";
+        i = html;
+        continue;
+      }
+      if (link !== NONE) end = link;
+    } else if (char === "[" || text.startsWith("![", i)) {
+      const image = char === "!";
+      if (text[image ? i + 2 : i + 1] === "^") return rest();
+      openers.push({ image, active: true });
+      end = image ? i + 2 : i + 1;
+    } else if (char === "]") {
+      const opener = openers.pop();
+      const tail = opener?.active === true ? linkTailEnd(text, i + 1) : NONE;
+      if (tail === SPLIT) return rest();
+      if (opener?.active === true && tail === NONE) {
+        const nested = !opener.image && openers.some((o) => !o.image && o.active);
+        if (text[i + 1] === "[" || nested) return rest();
+      }
+      if (opener !== undefined && tail !== NONE) {
+        if (!opener.image) for (const o of openers) if (!o.image) o.active = false;
+        out += "]\n";
+        i = tail;
+        continue;
+      }
+    }
+    out += text.slice(i, end);
+    i = end;
+  }
+  return out;
+}
+
 /**
  * Whether the body carries the disclosure sentence for `supervisor`: an exact substring test with no whitespace
- * normalisation over the text a CommonMark renderer shows outside code blocks and HTML comments. The check follows
- * the block structure that decides where those start and end. Block quotes and list items are containers: a later
- * line continues a quote with its marker and a list item with a blank line or the item's indent, and a paragraph
- * also takes a lazy line. A fence opens and closes only 0 to 3 columns past its container's markers; a line four
- * columns past them is indented code, which hides as a fence does. A backtick fence line has no backtick in its info
- * string. A fence ends at its closer or at the first line that does not continue its container, and that line is
- * read as ordinary text. Inside a fence no marker is stripped, and a comment opener starts nothing. A comment opener
- * at the start of a block opens an HTML block that ends at the line holding `-->` or where its container ends. A
- * comment that such a block leaves open hides the rest of the page until a later HTML block line carries `-->`. A
- * paragraph is read whole, so an inline code span or comment may cross its lines, and a comment opener inside it
- * hides text to its closer or to the end of the paragraph. Renderers differ on whether `<!-->` or `<!--->` ends the
- * HTML block it opens, so the sentence must show under both readings. The check does not see text that renders
- * hidden by other means, such as raw HTML elements or link definitions.
+ * normalisation over the text a CommonMark renderer shows outside code blocks, HTML comments and HTML blocks that
+ * open with anything other than a comment. The check follows the block structure that decides where those start and
+ * end. A leading byte order mark is dropped and a CRLF is one line ending. Block quotes and list items are
+ * containers: a later line continues a quote with its marker and a list item with a blank line or the item's indent,
+ * and a paragraph also takes a lazy line. A fence opens and closes only 0 to 3 columns past its container's markers;
+ * a line four columns past them is indented code, which hides as a fence does. A backtick fence line has no backtick
+ * in its info string. A fence ends at its closer or at the first line that does not continue its container, and that
+ * line is read as ordinary text. Inside a fence no marker is stripped, and a comment opener starts nothing. A line 0
+ * to 3 columns past the markers opens an HTML block by any of the seven CommonMark start conditions, save that a lone
+ * tag (type 7) does not interrupt a paragraph. A block of types 1 to 5 ends at the line that holds its end marker, one
+ * of type 6 or 7 before a blank line, and any block where its container ends. Its lines are read raw: no code span
+ * forms, every comment opener hides, and only a block that opens with a comment shows text, past that comment. A
+ * comment that an HTML block leaves open hides the rest of the page until a later HTML block line carries `-->`. A
+ * paragraph is read whole and left to right, as CommonMark reads inline content, so a code span or a comment may
+ * cross its lines. A backslash escape, raw HTML, an autolink and an inline link's destination and title take their
+ * backticks before a code span opens; a comment opener inside a code span starts nothing, and one outside hides text
+ * to its closer or to the end of the paragraph. Raw HTML and a link's destination and title count as not shown. From
+ * a construct that the readings part on or that the check does not model, such as a `$`, an extended autolink or a
+ * link definition, the rest of the paragraph is read with no code span and every comment opener hiding. The sentence
+ * must show under both CommonMark readings in use, 0.29 in cmark-gfm and 0.31 in pandoc. The body is read twice:
+ * once with `<!-->`, `<!--->` and `<?>` ending the HTML block they open at their own line, and once with it running
+ * on. At an HTML block start or end that the readings part on, and at a lone carriage return, reading stops and
+ * nothing from that line on counts. The check does not see text that renders hidden by other means, such as a tag or
+ * an attribute in that fallback reading, the content of an element that a browser hides, an image description, and a
+ * footnote or link definition that no reference uses, and it reads a table as paragraph text.
  */
 export function bodyCarriesDisclosure(body: string, supervisor: string): boolean {
   const sentence = unattendedDisclosure(supervisor);
-  // Renderers differ on whether the `-->` inside `<!-->` or `<!--->` ends the HTML block it opens: read it both ways.
+  // Renderers differ on whether the end marker inside `<!-->`, `<!--->` or `<?>` ends the block it opens: read both ways.
   return shownText(body, false).includes(sentence) && shownText(body, true).includes(sentence);
 }
 
 /**
  * The text that a renderer shows outside code blocks and comments, with line breaks between its lines and blocks.
- * With `emptyRunsOn`, an HTML block that opens with `<!-->` or `<!--->` and holds no other `-->` on that line runs on
- * past it.
+ * With `emptyRunsOn`, an HTML block whose start line holds its end marker only inside the marker that opens it, as
+ * `<!-->`, `<!--->` and `<?>` do, runs on past that line. A leading byte order mark is dropped and a CRLF is one line
+ * ending. Where the readings part, at a lone carriage return or at an HTML block start or end that `htmlStart` or
+ * `blockEnds` calls `SPLIT`, reading stops there and the open paragraph is dropped, so nothing from that line on
+ * counts as shown.
  */
 function shownText(body: string, emptyRunsOn: boolean): string {
   const shownLines: string[] = [];
   const state: CommentState = { comment: false, raw: false };
   const stack: Container[] = [];
   let fence: { char: string; length: number } | undefined;
-  let htmlBlock = false;
+  let html: HtmlBlock | undefined;
   let paragraph = false;
   /** The lines of the open paragraph, read together because an inline code span or a comment may cross lines. */
   const lines: string[] = [];
@@ -452,15 +738,25 @@ function shownText(body: string, emptyRunsOn: boolean): string {
     if (lines.length > 0) shownLines.push(visibleText(lines.join("\n"), state));
     lines.length = 0;
   };
-  /** Reads one line of an HTML block and says whether the block goes on: it ends at the line that holds `-->`. */
-  const htmlLine = (text: string, ends = text.includes("-->")): boolean => {
-    shownLines.push(visibleText(text, state, true));
+  /**
+   * Reads one line of an HTML block raw and says whether the block goes on past it. Every line keeps the comment
+   * state; only a block that opens with a comment shows text. A comment the block leaves open stays open in the page.
+   */
+  const htmlLine = (block: HtmlBlock, text: string, ends: boolean): boolean => {
+    const lineShown = visibleText(text, state, true);
+    if (block.comment) shownLines.push(lineShown);
     if (!ends) return true;
     state.raw ||= state.comment;
     state.comment = false;
     return false;
   };
-  for (const line of body.split("\n")) {
+  const bodyText = body.replace(/^\uFEFF/, "").replaceAll("\r\n", "\n");
+  for (const line of bodyText.split("\n")) {
+    if (line.includes("\r")) {
+      // cmark-gfm ends a line at a lone carriage return and pandoc drops it.
+      lines.length = 0;
+      break;
+    }
     let cursor: Cursor = { at: 0, column: 0, base: 0 };
     let matched = 0;
     for (const container of stack) {
@@ -475,24 +771,35 @@ function shownText(body: string, emptyRunsOn: boolean): string {
       if (closer?.char === fence.char && closer.length >= fence.length && BLANK.test(info)) fence = undefined;
       continue;
     }
-    if (htmlBlock && matched === stack.length) {
-      htmlBlock = htmlLine(line.slice(cursor.at));
+    const text = line.slice(cursor.at);
+    if (html !== undefined && matched === stack.length) {
+      const ends = blockEnds(html, text);
+      if (ends === SPLIT) break;
+      if (!htmlLine(html, text, ends)) html = undefined;
       continue;
     }
-    if (fence === undefined && !htmlBlock && paragraph && !startsBlock(line, cursor, matched === stack.length)) {
-      // A setext underline ends the paragraph as a heading; any other line continues it, lazily past a container.
-      const lead = skipBlank(line, cursor);
-      paragraph = matched < stack.length || lead.column - cursor.base > 3 || !SETEXT.test(line.slice(lead.at));
-      lines.push(line.slice(cursor.at));
-      if (!paragraph) endParagraph();
-      continue;
+    if (fence === undefined && html === undefined && paragraph) {
+      const starts = startsBlock(line, cursor, matched === stack.length);
+      if (starts === SPLIT) {
+        lines.length = 0;
+        break;
+      }
+      if (!starts) {
+        // A setext underline ends the paragraph as a heading; any other line continues it, lazily past a container.
+        const lead = skipBlank(line, cursor);
+        paragraph = matched < stack.length || lead.column - cursor.base > 3 || !SETEXT.test(line.slice(lead.at));
+        lines.push(text);
+        if (!paragraph) endParagraph();
+        continue;
+      }
     }
     const interrupts = paragraph && matched === stack.length;
     endParagraph();
-    // An HTML block that its container ends leaves its comment open in the page; an inline one never closed is text.
-    if (htmlBlock) state.raw ||= state.comment;
+    // An HTML block that a blank line or its container ends leaves its comment open in the page; an inline one never
+    // closed is text.
+    if (html !== undefined) state.raw ||= state.comment;
     fence = undefined;
-    htmlBlock = false;
+    html = undefined;
     paragraph = false;
     state.comment = false;
     stack.length = matched;
@@ -505,8 +812,12 @@ function shownText(body: string, emptyRunsOn: boolean): string {
     fence = fenceOpener(line, cursor);
     if (fence !== undefined || BLANK.test(rest)) continue;
     if (blank.column - cursor.base > 3) continue; // indented code
-    if (rest.startsWith("<!--")) {
-      htmlBlock = htmlLine(rest, (emptyRunsOn ? rest.slice(4) : rest).includes("-->"));
+    const start = htmlStart(rest, false);
+    if (start === SPLIT) break;
+    if (start !== undefined) {
+      const ends = blockEnds(start, emptyRunsOn ? rest.slice(start.marker) : rest);
+      if (ends === SPLIT) break;
+      if (htmlLine(start, rest, ends)) html = start;
       continue;
     }
     paragraph = !HEADING.test(rest) && !THEMATIC.test(rest);
