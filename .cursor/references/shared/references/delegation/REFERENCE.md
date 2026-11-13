@@ -94,6 +94,17 @@ For the merge-stage record, run instead:
 .cursor/bin/ak delegation <ticket> --project <project-record> --stage merge --base <rev> [--head <rev>] [--evidence <file>]
 ```
 
+Run in the implementation repository. `--head` defaults to `HEAD`; both revisions must resolve to
+commits. The diff is `<base>...<head>`, excluding uncommitted changes. The optional evidence file
+is a JSON object accepting only `factors`, `floor` and `lowered_by`, using the corresponding
+[`ticket delegation schema`](../../schemas/ticket.schema.json) definitions, except that `floor`
+may omit members. Supplied `factors` replaces all five factors; omitted factors and lowering retain
+the ticket's values. Explicit `lowered_by: null` clears the lowering. Evidence floor members add to
+the ticket floor; they never remove it. `class` and `stage` are not accepted in evidence. Malformed
+evidence is refused before scoring. Without evidence, the command retains the ticket's factors;
+it does not derive new factor scores or discover packs and sensitive actions from the diff. Supply
+the re-evidenced factors and additional packs and actions when they differ at merge time.
+
 Persist the command's complete JSON output as the ticket's `delegation` block. Cite the ticket and
 project artifact references used for the run wherever another artifact consumes the result. A body
 must not reproduce the formula, weights, cut points, floor table or lowering logic. A missing or
@@ -136,11 +147,16 @@ ticket with no tests scores 0.
 | `spec` | The six readiness criteria, vague terms and unresolved assumptions below. | Decisions exposed by the diff that the approved ticket did not settle. |
 | `verification` | Existing tests, the planned oracle and named verification path. | Receipts for tests, fail-before evidence, static checks and integration coverage. |
 
-A project declares its shared surfaces in the project record; where it declares none, the absence
-is recorded and no measurement is invented. Each surface `path` is a glob matched against the whole
-repository-relative path, so a directory is declared as `src/core/**`, not `src/core`. The merge
-stage reads changed paths from the branch's own diff against the merge base, with renames split
-into the deleted source and the added destination.
+A project declares shared surfaces in `guidance.delegation.shared_surfaces`; each entry has
+`path`, `class` and `reason` as defined by the
+[`project schema`](../../schemas/project.schema.json). Where none are declared, the absence is
+recorded and no measurement is invented. Each `path` matches the whole repository-relative path:
+`*` stays within one segment, `?` matches one non-slash character, `**` spans directories and
+`**/` may match no directory. Other pattern characters are literal. Declare a directory as
+`src/core/**`, not `src/core`. The ticket's `floor.shared_surfaces` lists declared patterns, not
+individual changed paths; undeclared entries are refused. Repeated declarations keep the highest
+class, regardless of order. Merge scoring adds matching patterns automatically from the branch's
+diff against the merge base, with renames split into the deleted source and added destination.
 
 Hotspot overlap and prior-fix density are transparent evidence when a project can supply them. Their
 absence is recorded; a body does not invent either measurement.
