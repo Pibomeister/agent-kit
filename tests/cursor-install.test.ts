@@ -47,6 +47,10 @@ function scratchHome() {
   };
 }
 
+function allowTimeout(home: string) {
+  writeFileSync(join(home, "trap-bin", "timeout"), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
+}
+
 function writeFakeBun(path: string, version: string, mark: string) {
   writeFileSync(
     path,
@@ -115,6 +119,7 @@ describe("tools/cursor/install.sh", () => {
 
   test("clone_donors reuses clone.sh and continues when it fails", () => {
     const fx = scratchHome();
+    allowTimeout(fx.home);
     const scratch = processScratch("ak-cursor-clone-");
     mkdirSync(join(scratch, "tools/donors"), { recursive: true });
     writeFileSync(join(scratch, "tools/donors/clone.sh"), "#!/bin/sh\necho clone-failed >&2\nexit 1\n", {
@@ -179,6 +184,7 @@ exec "$@"
 
   test("clone_donors runs the lock pin clone script", () => {
     const fx = scratchHome();
+    allowTimeout(fx.home);
     const scratch = processScratch("ak-cursor-clone-ok-");
     mkdirSync(join(scratch, "tools/donors"), { recursive: true });
     writeFileSync(
