@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { withStagedRenames } from "../tools/oxlint/growth.ts";
 import { lint, readBaseline } from "../tools/oxlint/ratchet.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
 
@@ -203,6 +204,10 @@ function gitEnv(): NodeJS.ProcessEnv {
   delete env.GIT_DIR;
   delete env.GIT_WORK_TREE;
   delete env.GIT_CEILING_DIRECTORIES;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_COMMON_DIR;
+  delete env.GIT_OBJECT_DIRECTORY;
+  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
   return env;
 }
 
@@ -381,6 +386,14 @@ describe("baseline growth since the merge base", () => {
     });
     gitIn(root, "mv", "src/a.ts", "src/b.ts");
     writeFileSync(join(root, BASELINE_PATH), recorded({ "src/b.ts": { r: 2 } }));
-    expect(check(root).status).toBe(0);
+    const run = check(root);
+    expect(run.status, run.out).toBe(0);
+  });
+
+  test("a staged rename the worktree diff reports as a delete and an add still carries its counts", () => {
+    const worktree = "D\0src/a.ts\0A\0src/b.ts\0M\0tools/oxlint/baseline.json\0";
+    const cached = "R100\0src/a.ts\0src/b.ts\0";
+    expect(withStagedRenames(worktree, cached, () => true).get("src/b.ts")).toBe("src/a.ts");
+    expect(withStagedRenames(worktree, cached, () => false).has("src/b.ts")).toBe(false);
   });
 });
