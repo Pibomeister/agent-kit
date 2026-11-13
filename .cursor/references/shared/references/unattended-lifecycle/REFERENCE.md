@@ -155,6 +155,15 @@ Nothing here is done by an agent or by agent-kit.
    Environments read. A runner that shares the operator's account or credentials does not meet
    the assumptions below; an app-token CI job needs a machine-user account.
 
+## Human-only steps: the stall class
+
+A held human-only step — sign-in, an auth prompt, a verification code, an OTP, an approval or a
+captcha — is a stall class distinct from normal work, classified by `src/lifecycle/human-step-stall.ts`.
+At or over 10 minutes (`HUMAN_STEP_STALL_THRESHOLD_MS`) it must escalate: through the human-needed
+or page channel during the day, and into the morning handoff overnight, never a page overnight.
+A PR or deploy is never blocked on such a step, and an interactive auth prompt is never held open.
+No supervisor calls the module yet; wiring into the supervisor contract follows once S6 lands.
+
 ## Limits
 
 The forge does not show that a designated account is operated by a person, that the review
