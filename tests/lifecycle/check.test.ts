@@ -93,8 +93,7 @@ const record = (cwd: string, ...gates: Gate[]) => {
       const run = JSON.parse(readFileSync(pointer, "utf8")).run_id as string;
       const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
       const named = join(cwd, `${metadata.ticket.id}.json`);
-      const parked = join(cwd, ".git", `${metadata.ticket.id}.json`);
-      const ticketPath = existsSync(named) ? named : parked;
+      const ticketPath = existsSync(named) ? named : join(cwd, ".git", named.slice(named.lastIndexOf("/") + 1));
       const recorded = ak(cwd, "record", "--gate", g, "--receipt", receipt(cwd, run, ticketPath));
       expect(recorded.code, recorded.err).toBe(0);
     } else {
