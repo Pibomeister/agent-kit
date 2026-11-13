@@ -32,10 +32,10 @@ intent goes to the supervisor as needs-decision, because the intent is not the w
 
 ## Review depth
 
-Delegation-based lifecycle review depth is an accepted design awaiting implementation
-(ADR-0017, ruling `review-depth-follows-delegation-class`). `policies/review.yaml` `pass_1.depth`
-owns its activation conditions and class map. The handoff does not depend on the depth: the same
-gates are recorded at the handoff head for every class.
+The lifecycle review's depth follows the delegation class (ruling
+`review-depth-follows-delegation-class`). The handoff does not depend on the depth: the same
+gates are recorded at the handoff head for every class. `policies/review.yaml` `pass_1.depth`
+holds the depth each class seats.
 
 The pipeline's Review runs the same way for every class. It is never skipped, shortened or
 configured per change because the lifecycle review was light. ADR-0012 governs this path: the
