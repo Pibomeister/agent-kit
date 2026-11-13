@@ -69,6 +69,41 @@ describe("git spawn retry", () => {
     expect(version.stdout).toContain("git version");
   });
 
+  test("an empty ls-tree is tried again, and a path that stays empty is still empty", () => {
+    expect(commandMustPrint(["ls-tree", "--full-tree", "-z", "abc", "--", "missing"])).toBe(true);
+    const previous = process.env.AK_GIT_SHIM;
+    delete process.env.AK_GIT_SHIM;
+    try {
+      let absent = 0;
+      const missing = retryGitSpawn(["ls-tree", "--full-tree", "-z", "abc", "--", "missing"], () => {
+        absent += 1;
+        return { status: 0, stdout: "", stderr: "" };
+      });
+      expect(absent).toBe(GIT_SPAWN_ATTEMPTS);
+      expect(missing.status).toBe(0);
+      expect(missing.stdout).toBe("");
+      let found = 0;
+      const listed = retryGitSpawn(["ls-tree", "HEAD", "--", "skills/kept"], () => {
+        found += 1;
+        if (found < 2) return { status: 0, stdout: "", stderr: "" };
+        return { status: 0, stdout: "100644 blob abc\tskills/kept\0", stderr: "" };
+      });
+      expect(found).toBe(2);
+      expect(listed.status).toBe(0);
+      expect(listed.stdout).toContain("skills/kept");
+      let failed = 0;
+      const fatal = retryGitSpawn(["ls-tree", "HEAD", "--", "skills/kept"], () => {
+        failed += 1;
+        return { status: 128, stdout: "", stderr: "fatal" };
+      });
+      expect(failed).toBe(1);
+      expect(fatal.status).toBe(128);
+    } finally {
+      if (previous === undefined) delete process.env.AK_GIT_SHIM;
+      else process.env.AK_GIT_SHIM = previous;
+    }
+  });
+
   test("a silent success is not a lost read", () => {
     expect(commandMustPrint(["symbolic-ref", "-d", "refs/remotes/origin/HEAD"])).toBe(false);
     expect(commandMustPrint(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"])).toBe(false);
@@ -121,6 +156,63 @@ exit 0
         "symbolic-ref -d refs/remotes/origin/HEAD",
       ]);
       expect(lines.filter((line) => line.includes("rev-parse"))).toHaveLength(3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the path shim retries an empty ls-tree and keeps a path that is still missing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ak-git-ls-tree-"));
+    try {
+      const log = join(dir, "log");
+      const fake = join(dir, "git-real");
+      writeFileSync(log, "");
+      writeFileSync(
+        fake,
+        `#!/bin/sh
+printf '%s\\n' "$*" >> "${log}"
+case "$*" in
+  *best-practice*)
+    n=$(grep -c best-practice "${log}")
+    if [ "$n" -lt 2 ]; then exit 0; fi
+    printf '100644 blob f52ec051\\tskills/best-practice-research/SKILL.md\\n'
+    exit 0
+    ;;
+  *missing*)
+    exit 0
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+`,
+        { mode: 0o755 },
+      );
+      chmodSync(fake, 0o755);
+      const shim = join(import.meta.dir, "git-retry.sh");
+      const env = { ...process.env, AK_GIT_REAL: fake };
+      const recovered = spawnSync(
+        shim,
+        ["ls-tree", "--full-tree", "-z", "pin", "--", "skills/best-practice-research/SKILL.md"],
+        {
+          env,
+          encoding: "utf8",
+        },
+      );
+      expect(recovered.status).toBe(0);
+      expect(recovered.stdout).toContain("skills/best-practice-research/SKILL.md");
+      const absent = spawnSync(shim, ["ls-tree", "--full-tree", "-z", "pin", "--", "missing"], {
+        env,
+        encoding: "utf8",
+      });
+      expect(absent.status).toBe(0);
+      expect(absent.stdout).toBe("");
+      const fatal = spawnSync(shim, ["ls-tree", "HEAD"], { env, encoding: "utf8" });
+      expect(fatal.status).toBe(2);
+      const lines = readFileSync(log, "utf8").trim().split("\n");
+      expect(lines.filter((line) => line.includes("best-practice"))).toHaveLength(2);
+      expect(lines.filter((line) => line.includes("missing"))).toHaveLength(3);
+      expect(lines.filter((line) => line === "ls-tree HEAD")).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
