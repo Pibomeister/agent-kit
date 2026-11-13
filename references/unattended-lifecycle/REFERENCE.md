@@ -157,12 +157,18 @@ Nothing here is done by an agent or by agent-kit.
 
 ## Human-only steps: the stall class
 
-A held human-only step — sign-in, an auth prompt, a verification code, an OTP, an approval or a
-captcha — is a stall class distinct from normal work, classified by `src/lifecycle/human-step-stall.ts`.
-At or over 10 minutes (`HUMAN_STEP_STALL_THRESHOLD_MS`) it must escalate: through the human-needed
-or page channel during the day, and into the morning handoff overnight, never a page overnight.
-A PR or deploy is never blocked on such a step, and an interactive auth prompt is never held open.
-No supervisor calls the module yet; wiring into the supervisor contract follows once S6 lands.
+This PR delivers the stall-class definition and its contract tests only
+(`src/lifecycle/human-step-stall.ts`). It is a dependency for the supervisor wiring. The stall
+rule is not yet enforced by any supervisor.
+
+The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
+an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive
+approval challenge the worker hits, for example a device or consent approval prompt. It is never
+pull-request review or merge approval, which stays the owner gate. At or over 10 minutes
+(`HUMAN_STEP_STALL_THRESHOLD_MS`) the definition requires escalation through the human-needed or
+page channel during the day, and into the morning handoff overnight. Overnight, only the morning
+handoff satisfies escalation, and a page is a violation. A PR or deploy is never blocked on such
+a step, and an interactive auth prompt is never held open.
 
 ## Limits
 

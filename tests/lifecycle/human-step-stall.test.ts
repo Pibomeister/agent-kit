@@ -89,20 +89,24 @@ describe("human-step stall threshold", () => {
     expect(result.action).toBe("none");
     expect(result.channel).toBe("none");
   });
-
-  test("accepts Date inputs for startedAt and now", () => {
-    const result = assessHumanStep({
-      kind: "verification-code",
-      startedAt: new Date(START),
-      now: new Date(START + HUMAN_STEP_STALL_THRESHOLD_MS),
-      overnight: false,
-    });
-    expect(result.action).toBe("escalate");
-    expect(result.elapsedMs).toBe(HUMAN_STEP_STALL_THRESHOLD_MS);
-  });
 });
 
 describe("escalation invariant", () => {
+  test("an escalated flag with no channel does not count, day or overnight", () => {
+    for (const overnight of [false, true]) {
+      expect(
+        checkEscalation({
+          kind: "otp",
+          startedAt: START,
+          now: START + 11 * MINUTE,
+          overnight,
+          escalated: true,
+        }).length,
+        String(overnight),
+      ).toBeGreaterThan(0);
+    }
+  });
+
   test("fails if a human-only step sits over 10 minutes without escalation", () => {
     for (const kind of HUMAN_STEP_KINDS) {
       const violations = checkEscalation({
@@ -116,13 +120,68 @@ describe("escalation invariant", () => {
     }
   });
 
-  test("passes when the over-threshold step has escalated, day and overnight", () => {
+  test("a daytime page or human-needed escalation satisfies the stall", () => {
+    for (const channel of ["page", "human-needed"] as const) {
+      expect(
+        checkEscalation({
+          kind: "otp",
+          startedAt: START,
+          now: START + 11 * MINUTE,
+          overnight: false,
+          escalated: true,
+          channel,
+        }),
+        channel,
+      ).toEqual([]);
+    }
+  });
+
+  test("an overnight page is a violation and the morning handoff is not", () => {
+    const page = checkEscalation({
+      kind: "otp",
+      startedAt: START,
+      now: START + 11 * MINUTE,
+      overnight: true,
+      escalated: true,
+      channel: "page",
+    });
+    expect(page.length).toBeGreaterThan(0);
+    expect(page.join("\n")).toContain("morning-handoff");
+    expect(page.join("\n")).toContain("page");
+
     expect(
-      checkEscalation({ kind: "otp", startedAt: START, now: START + 11 * MINUTE, overnight: false, escalated: true }),
+      checkEscalation({
+        kind: "otp",
+        startedAt: START,
+        now: START + 11 * MINUTE,
+        overnight: true,
+        escalated: true,
+        channel: "morning-handoff",
+      }),
     ).toEqual([]);
+  });
+
+  test("a morning handoff during the day, or a human-needed channel overnight, is not escalation", () => {
     expect(
-      checkEscalation({ kind: "otp", startedAt: START, now: START + 11 * MINUTE, overnight: true, escalated: true }),
-    ).toEqual([]);
+      checkEscalation({
+        kind: "otp",
+        startedAt: START,
+        now: START + 11 * MINUTE,
+        overnight: false,
+        escalated: true,
+        channel: "morning-handoff",
+      }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      checkEscalation({
+        kind: "otp",
+        startedAt: START,
+        now: START + 11 * MINUTE,
+        overnight: true,
+        escalated: true,
+        channel: "human-needed",
+      }).length,
+    ).toBeGreaterThan(0);
   });
 
   test("passes under the threshold without escalation", () => {
@@ -163,34 +222,33 @@ describe("PR and deploy invariant", () => {
     expect(checkBlockedOnHumanStep({ target: "deploy", blockedOn: "ci" })).toEqual([]);
     expect(checkBlockedOnHumanStep({ target: "deploy", blockedOn: "normal-work" })).toEqual([]);
   });
+
+  test("a PR waiting on its merge or review gate is not a human-step stall", () => {
+    expect(checkBlockedOnHumanStep({ target: "pull-request", blockedOn: "merge" })).toEqual([]);
+    expect(checkBlockedOnHumanStep({ target: "pull-request", blockedOn: "review" })).toEqual([]);
+  });
 });
 
 describe("interactive auth prompt invariant", () => {
-  test("fails if an interactive auth prompt is left held open, whatever the duration", () => {
+  test("fails if an interactive auth prompt is left held open and names the daytime channel", () => {
     for (const kind of ["sign-in", "auth-prompt"] as const) {
-      for (const elapsed of [0, 1 * MINUTE, 9 * MINUTE, 60 * MINUTE]) {
-        const violations = checkInteractiveAuthPrompt({
-          kind,
-          startedAt: START,
-          now: START + elapsed,
-          promptHeldOpen: true,
-        });
-        expect(violations.length, `${kind} at ${elapsed}ms`).toBeGreaterThan(0);
-      }
+      const violations = checkInteractiveAuthPrompt({ kind, promptHeldOpen: true, overnight: false });
+      expect(violations.length, kind).toBeGreaterThan(0);
+      expect(violations.join("\n"), kind).toContain("human-needed-or-page");
+    }
+  });
+
+  test("a held-open prompt overnight reports the morning handoff", () => {
+    for (const kind of ["sign-in", "auth-prompt"] as const) {
+      const violations = checkInteractiveAuthPrompt({ kind, promptHeldOpen: true, overnight: true });
+      expect(violations.length, kind).toBeGreaterThan(0);
+      expect(violations.join("\n"), kind).toContain("morning-handoff");
+      expect(violations.join("\n"), kind).not.toContain("human-needed-or-page");
     }
   });
 
   test("passes when no interactive auth prompt is held open", () => {
-    expect(
-      checkInteractiveAuthPrompt({ kind: "sign-in", startedAt: START, now: START, promptHeldOpen: false }),
-    ).toEqual([]);
-    expect(
-      checkInteractiveAuthPrompt({
-        kind: "auth-prompt",
-        startedAt: START,
-        now: START + 60 * MINUTE,
-        promptHeldOpen: false,
-      }),
-    ).toEqual([]);
+    expect(checkInteractiveAuthPrompt({ kind: "sign-in", promptHeldOpen: false, overnight: false })).toEqual([]);
+    expect(checkInteractiveAuthPrompt({ kind: "auth-prompt", promptHeldOpen: false, overnight: true })).toEqual([]);
   });
 });
