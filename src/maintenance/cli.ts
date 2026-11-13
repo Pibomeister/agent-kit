@@ -17,7 +17,7 @@ import {
   type BindingValidators,
   type TrackerBinding,
 } from "../tracker/binding.ts";
-import { scoreDelegationFiles } from "../delegation.ts";
+import { delegationRunProblem, scoreDelegationRun, type DelegationRun } from "../delegation.ts";
 import { findKbProjectRoot, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
 import { IN_REPO_MISSING_REMEDY } from "../kb/in-repo.ts";
 import { runKb } from "../kb/cli.ts";
@@ -738,10 +738,42 @@ function doctorFlags(flags: readonly string[]): { json: boolean; lessons?: strin
   return { json, lessons };
 }
 
+const DELEGATION_FLAGS = new Set(["project", "stage", "base", "head", "evidence"]);
+
+/** One ticket path and the delegation flags, each with a value; anything else is the usage line. */
+function delegationRun(args: readonly string[]): DelegationRun | null {
+  const positional: string[] = [];
+  const values = new Map<string, string>();
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i] ?? "";
+    if (!token.startsWith("--")) {
+      positional.push(token);
+      continue;
+    }
+    const [name = "", inline] = token.slice(2).split("=", 2);
+    const value = inline ?? args[i + 1];
+    if (!DELEGATION_FLAGS.has(name) || values.has(name) || value === undefined || value.startsWith("--")) return null;
+    if (inline === undefined) i += 1;
+    values.set(name, value);
+  }
+  const project = values.get("project");
+  const ticket = positional[0];
+  if (ticket === undefined || positional.length !== 1 || project === undefined) return null;
+  return {
+    ticket,
+    project,
+    stage: values.get("stage"),
+    base: values.get("base"),
+    head: values.get("head"),
+    evidence: values.get("evidence"),
+  };
+}
+
 if (import.meta.main) {
   const action = process.argv[2];
   const flags = process.argv.slice(3);
   const doctorArgs = action === "doctor" ? doctorFlags(flags) : null;
+  const delegation = action === "delegation" ? delegationRun(flags) : null;
   if (action === "learn") {
     // The learning runtime travels in this bundle so a plugin install can run it without a checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
@@ -765,17 +797,24 @@ if (import.meta.main) {
     // The plugin's Stop hook: hookMain printed the host output.
   } else if (doctorArgs !== null) process.exitCode = await doctor(doctorArgs.json, doctorArgs.lessons);
   else if (action === "update" && flags.length === 0) process.exitCode = await update();
-  else if (action === "delegation" && flags.length === 3 && flags[1] === "--project") {
-    // The bundle's only `ak`: super-bound runs the scorer from an install that has no repository checkout.
-    try {
-      console.log(JSON.stringify(scoreDelegationFiles(flags[0] ?? "", flags[2] ?? ""), null, 2));
-    } catch (cause) {
-      console.error(`ak delegation: ${cause instanceof Error ? cause.message : String(cause)}`);
+  else if (delegation !== null) {
+    // The bundle's only `ak`: super-bound runs the scorer, and a merge check runs it with --stage merge,
+    // from an install that has no repository checkout.
+    const problem = delegationRunProblem(delegation);
+    if (problem !== null) {
+      console.error(problem);
       process.exitCode = 1;
+    } else {
+      try {
+        console.log(JSON.stringify(scoreDelegationRun(delegation, process.cwd()), null, 2));
+      } catch (cause) {
+        console.error(`ak delegation: ${cause instanceof Error ? cause.message : String(cause)}`);
+        process.exitCode = 1;
+      }
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]",
+      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]",
     );
     process.exitCode = 2;
   }

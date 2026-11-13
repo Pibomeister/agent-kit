@@ -216,6 +216,27 @@ describe("shared-surface floor", () => {
   });
 });
 
+function declare(...classes: ("red" | "yellow-agent")[]): DelegationProject {
+  return {
+    guidance: {
+      delegation: {
+        ...sharedGuidance(),
+        shared_surfaces: classes.map((declared) => ({
+          path: "src/core/**",
+          class: declared,
+          reason: "A declaration.",
+        })),
+      },
+    },
+  };
+}
+
+function sharedGuidance(): NonNullable<DelegationProject["guidance"]["delegation"]> {
+  const guidance = SHARED_PROJECT.guidance.delegation;
+  if (guidance === undefined) throw new Error("SHARED_PROJECT has no delegation guidance");
+  return guidance;
+}
+
 describe("merge-stage scoring", () => {
   test("merge stage raises above the ticket class when a changed path matches a declared surface", () => {
     const merged = scoreMergeStage(ticket("green"), SHARED_PROJECT, ["src/core/runtime.ts"]);
@@ -248,6 +269,18 @@ describe("merge-stage scoring", () => {
     expect(merged.floor.sensitive_actions).toEqual(["dependency-add"]);
     expect(merged.floor.shared_surfaces).toEqual(["src/shared/**", "src/core/**"]);
     expect(merged.class).toBe("red");
+  });
+
+  test("a surface declared twice keeps the higher class in either order", () => {
+    for (const project of [declare("red", "yellow-agent"), declare("yellow-agent", "red")]) {
+      expect(scoreMergeStage(ticket("green"), project, ["src/core/a.ts"]).class).toBe("red");
+      const listed = ticket(
+        "green",
+        {},
+        { floor: { packs: [], sensitive_actions: [], shared_surfaces: ["src/core/**"] } },
+      );
+      expect(scoreDelegation(listed, project).class).toBe("red");
+    }
   });
 
   test("a named human's merge-stage lowering returns to the ticket class and does not cross a shared-surface floor", () => {
@@ -525,3 +558,121 @@ test("the bare scorer command the packaged super-bound body names scores with a 
   });
   expect(ak(command, "ticket.json", bun).error).toMatchObject({ code: "ENOENT" });
 }, 60_000);
+
+/** An evidence file as a person might write it: the members may be of the wrong type. */
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+interface EvidenceFile {
+  floor?: { [key: string]: JsonValue };
+  factors?: { [key: string]: JsonValue };
+}
+
+function mergeRepo(evidence?: EvidenceFile) {
+  const root = fixtureTree();
+  gitIn(root, ["init", "-b", "main", "."]);
+  gitIn(root, ["config", "user.email", "t@example.invalid"]);
+  gitIn(root, ["config", "user.name", "T"]);
+  gitIn(root, ["add", "."]);
+  gitIn(root, ["commit", "-m", "base"]);
+  if (evidence !== undefined) writeFileSync(join(root, "evidence.json"), JSON.stringify(evidence));
+  return { root, base: gitIn(root, ["rev-parse", "HEAD"]) };
+}
+
+describe("merge-stage evidence validation", () => {
+  const refused: [string, EvidenceFile][] = [
+    ["a non-array floor member", { floor: { packs: { not: "array" } } }],
+    ["a number as a floor member", { floor: { packs: 42 } }],
+    ["a null floor member", { floor: { sensitive_actions: null } }],
+    ["an unknown floor key", { floor: { sensitive_action: ["money-movement"] } }],
+    ["an unknown sensitive action", { floor: { sensitive_actions: ["not-an-action"] } }],
+    ["a malformed factor", { factors: { size: 1 } }],
+  ];
+  for (const [label, evidence] of refused) {
+    test(`${label} is refused, naming the file and the schema cause`, () => {
+      const { root, base } = mergeRepo(evidence);
+      const result = runDelegation(
+        root,
+        "ticket.json",
+        "--project",
+        "project.json",
+        "--stage",
+        "merge",
+        "--base",
+        base,
+        "--evidence",
+        "evidence.json",
+      );
+      expect(result.code).toBe(1);
+      expect(result.out).toBe("");
+      expect(result.err).toContain("evidence evidence.json does not match its schema:");
+      expect(result.err).not.toContain("Spread syntax");
+    });
+  }
+
+  test("a well-formed partial floor is accepted and unioned", () => {
+    const { root, base } = mergeRepo({ floor: { sensitive_actions: ["money-movement"] } });
+    const result = runDelegation(
+      root,
+      "ticket.json",
+      "--project",
+      "project.json",
+      "--stage",
+      "merge",
+      "--base",
+      base,
+      "--evidence",
+      "evidence.json",
+    );
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.out)).toMatchObject({ class: "red", floor: { sensitive_actions: ["money-movement"] } });
+  });
+});
+
+describe("the generated ak command at the merge stage", () => {
+  test("accepts --stage merge with --base, --head and --evidence, and refuses what the repository CLI refuses", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    const { files } = planBundle({ root: REPO, catalog }, "claude-code", {});
+    const script = files.get("bin/ak");
+    if (script === undefined) throw new Error("the bundle lacks bin/ak");
+    const { root } = sharedSurfaceRepo();
+    const base = gitIn(root, ["rev-parse", "HEAD"]);
+    writeFileSync(join(root, "src", "shared", "util.ts"), "export const shared = 2;\n");
+    gitIn(root, ["commit", "-am", "touch the shared helper"]);
+    mkdirSync(join(root, "path"));
+    writeFileSync(join(root, "path", "ak"), script.contents, { mode: 0o755 });
+    writeFileSync(join(root, "evidence.json"), JSON.stringify({ floor: { sensitive_actions: ["dependency-add"] } }));
+    writeFileSync(join(root, "bad-evidence.json"), JSON.stringify({ floor: { packs: null } }));
+    const ak = (...argv: string[]) =>
+      spawnSync(join(root, "path", "ak"), ["delegation", "ticket.json", "--project", "project.json", ...argv], {
+        cwd: root,
+        encoding: "utf8",
+        env: { PATH: `${join(root, "path")}:${dirname(process.execPath)}:/usr/bin:/bin` },
+      });
+
+    const scored = ak("--stage", "merge", "--base", base);
+    expect({ status: scored.status, stderr: scored.stderr }).toEqual({ status: 0, stderr: "" });
+    expect(JSON.parse(scored.stdout)).toMatchObject({
+      class: "red",
+      stage: "merge",
+      floor: { shared_surfaces: ["src/shared/**"] },
+    });
+
+    const withEvidence = ak("--stage", "merge", "--base", base, "--head", "HEAD", "--evidence", "evidence.json");
+    expect(withEvidence.status).toBe(0);
+    expect(JSON.parse(withEvidence.stdout)).toMatchObject({ floor: { sensitive_actions: ["dependency-add"] } });
+
+    const head = gitIn(root, ["rev-parse", "HEAD"]);
+    const unchanged = ak("--stage", "merge", "--base", head, "--head", head);
+    expect(unchanged.status).toBe(0);
+    expect(JSON.parse(unchanged.stdout)).not.toMatchObject({ floor: { shared_surfaces: ["src/shared/**"] } });
+
+    expect(ak("--stage", "merge")).toMatchObject({ status: 1 });
+    expect(ak("--stage", "merge").stderr).toContain("--base");
+    expect(ak("--base", base)).toMatchObject({ status: 1 });
+    expect(ak("--stage", "merge", "--base", base, "--evidence", "bad-evidence.json").stderr).toContain(
+      "evidence bad-evidence.json does not match its schema:",
+    );
+    expect(ak("--stage", "sideways").status).toBe(1);
+    expect(ak("--bogus", "x").status).toBe(2);
+  }, 60_000);
+});

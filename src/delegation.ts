@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -81,7 +82,10 @@ function highest(...classes: DelegationClass[]): DelegationClass {
 type SharedSurface = { path: string; class: DelegationClass; reason: string };
 
 function floorClass(floor: DelegationRecord["floor"], declared?: SharedSurface[]): DelegationClass {
-  const surfaces = new Map((declared ?? []).map((surface) => [surface.path, surface.class]));
+  // A path declared twice keeps the higher class, whichever declaration comes first.
+  const surfaces = new Map<string, DelegationClass>();
+  for (const surface of declared ?? [])
+    surfaces.set(surface.path, highest(surfaces.get(surface.path) ?? "green", surface.class));
   const shared = (floor.shared_surfaces ?? []).map((path) => {
     const declaredClass = surfaces.get(path);
     if (declaredClass === undefined)
@@ -255,15 +259,27 @@ export function scoreMergeDelegationFiles(
       );
     }
     if (evidenceValidator === null) {
-      evidenceValidator = makeValidation().compile<DelegationEvidence>({
+      // SAFETY: the evidence object is the ticket's delegation block with its class and stage left out and
+      // its floor partial. Each member keeps the ticket schema's own definition and its closed-object rule,
+      // so a typo or a wrong type is refused here, before anything is unioned into the record.
+      const block = ticketSchema.properties.delegation;
+      const { required: _floorRequired, ...partialFloor } = block.properties.floor;
+      const schema = {
+        $id: ticketSchema.$id,
         type: "object",
         additionalProperties: false,
-        properties: { factors: { type: "object" }, floor: { type: "object" }, lowered_by: {} },
-      });
+        properties: {
+          factors: block.properties.factors,
+          floor: partialFloor,
+          lowered_by: block.properties.lowered_by,
+        },
+        $defs: ticketSchema.$defs,
+      };
+      evidenceValidator = makeValidation().compile<DelegationEvidence>(schema);
     }
     if (!evidenceValidator(parsed))
       throw new Error(`evidence ${evidenceInput} does not match its schema: ${schemaDetail(evidenceValidator.errors)}`);
-    // The candidate built from this object is validated against the delegation schema in
+    // The candidate built from this object is validated against the delegation schema again in
     // scoreMergeStage before it is scored.
     evidence = parsed;
   }
@@ -274,4 +290,44 @@ export function scoreMergeDelegationFiles(
       throw new Error(`evidence ${evidenceInput} does not match its schema: ${cause.message}`, { cause });
     throw cause;
   }
+}
+
+/** The merge-stage paths: the three-dot range from the base, with renames split so a move out of a surface counts. */
+export function gitChangedPaths(cwd: string, base: string, head: string): string[] {
+  for (const revision of [base, head]) {
+    const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+    if (check.status !== 0) throw new Error(`cannot resolve revision ${revision}`);
+  }
+  const range = `${base}...${head}`;
+  const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
+  if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
+  return (diff.stdout ?? "").split("\0").filter((path) => path.length > 0);
+}
+
+export interface DelegationRun {
+  ticket: string;
+  project: string;
+  stage?: string;
+  base?: string;
+  head?: string;
+  evidence?: string;
+}
+
+/** The refusal for a flag combination, or null. The repository CLI and the bundled `ak` share it. */
+export function delegationRunProblem(run: DelegationRun): string | null {
+  if (run.stage !== undefined && run.stage !== "ticket" && run.stage !== "merge")
+    return "ak delegation: --stage must be ticket or merge";
+  if (run.stage !== "merge" && (run.base !== undefined || run.head !== undefined || run.evidence !== undefined))
+    return "ak delegation: --base, --head and --evidence require --stage merge";
+  if (run.stage === "merge" && run.base === undefined) return "ak delegation: --stage merge requires --base <rev>";
+  return null;
+}
+
+/** Score one run: the ticket stage reads the ticket alone, the merge stage adds the diff and any evidence. */
+export function scoreDelegationRun(run: DelegationRun, cwd: string): DelegationRecord {
+  if (run.stage === "merge" && run.base !== undefined) {
+    const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
+    return scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+  }
+  return scoreDelegationFiles(run.ticket, run.project, cwd);
 }

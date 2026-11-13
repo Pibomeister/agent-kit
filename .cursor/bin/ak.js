@@ -17554,11 +17554,11 @@ var init_local_git_schema = __esm(() => {
 });
 
 // src/kb/git.ts
-import { spawnSync as spawnSync2 } from "child_process";
+import { spawnSync as spawnSync3 } from "child_process";
 import { realpathSync as realpathSync2 } from "fs";
 function git2(root, args, input) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  const run = spawnSync2("git", ["--literal-pathspecs", "-C", root, ...args], {
+  const run = spawnSync3("git", ["--literal-pathspecs", "-C", root, ...args], {
     encoding: "utf8",
     env,
     input,
@@ -23591,12 +23591,12 @@ var init_context = __esm(() => {
 });
 
 // src/learn/core/proc.ts
-import { spawnSync as spawnSync3 } from "child_process";
+import { spawnSync as spawnSync4 } from "child_process";
 function run(cmd, options = {}) {
   const [bin, ...args] = cmd;
   if (bin === undefined)
     throw new Error("run: empty command");
-  const result = spawnSync3(bin, args, {
+  const result = spawnSync4(bin, args, {
     cwd: options.cwd,
     input: options.input,
     env: options.env ?? process.env,
@@ -26842,7 +26842,7 @@ function statusFor(meta, activeAt) {
 function isIndependentReviewer(reviewer) {
   return !BOT_REVIEWER.test(reviewer) && !RUNTIME_AUTHOR.test(reviewer);
 }
-function union(values, add) {
+function union2(values, add) {
   return [...new Set([...values, add])].sort();
 }
 function evidenceRef(event) {
@@ -26863,14 +26863,14 @@ function addEvidence(meta, body, event, activeAt) {
   const next = { ...meta };
   next.count = num(meta, "count") + 1;
   next.last_seen = (event.ts ?? nowIso()).slice(0, 10);
-  next.sources = union(list2(meta, "sources"), event.source);
+  next.sources = union2(list2(meta, "sources"), event.source);
   const token = sessionToken(event);
   if (token !== null)
-    next.sessions = union(list2(meta, "sessions"), token);
+    next.sessions = union2(list2(meta, "sessions"), token);
   if (event.pr && sourceFamily(event.source) !== null)
-    next.prs = union(list2(meta, "prs").map(String), String(event.pr));
+    next.prs = union2(list2(meta, "prs").map(String), String(event.pr));
   if (event.author && sourceFamily(event.source) !== null)
-    next.reviewers = union(list2(meta, "reviewers"), event.author);
+    next.reviewers = union2(list2(meta, "reviewers"), event.author);
   next.status = statusFor(next, activeAt);
   return { meta: next, body: withLine };
 }
@@ -37781,7 +37781,7 @@ var init_cli5 = __esm(() => {
 init_common_schema();
 var import_ajv17 = __toESM(require_ajv(), 1);
 var import__202014 = __toESM(require_2020(), 1);
-import { spawnSync as spawnSync6 } from "child_process";
+import { spawnSync as spawnSync7 } from "child_process";
 import { existsSync as existsSync41, readFileSync as readFileSync41, realpathSync as realpathSync18 } from "fs";
 import { homedir as homedir6 } from "os";
 import { basename as basename23, isAbsolute as isAbsolute18, join as join53, relative as relative16 } from "path";
@@ -38202,8 +38202,38 @@ init_ticket_schema();
 init_verification_recipe_schema();
 var import__20203 = __toESM(require_2020(), 1);
 var import_ajv_formats2 = __toESM(require_dist(), 1);
+import { spawnSync as spawnSync2 } from "child_process";
 import { existsSync as existsSync3, readFileSync as readFileSync2 } from "fs";
 import { resolve } from "path";
+
+// src/util/glob.ts
+function globToRegExp(glob) {
+  const special = new Set(".+^${}()|[]\\");
+  let out = "^";
+  for (let i = 0;i < glob.length; i++) {
+    const ch = glob.charAt(i);
+    if (ch === "*") {
+      if (glob.charAt(i + 1) === "*") {
+        if (glob.charAt(i + 2) === "/") {
+          out += "(?:[\\s\\S]*/)?";
+          i += 2;
+        } else {
+          out += "[\\s\\S]*";
+          i += 1;
+        }
+      } else
+        out += "[^/]*";
+    } else if (ch === "?")
+      out += "[^/]";
+    else if (special.has(ch))
+      out += `\\${ch}`;
+    else
+      out += ch;
+  }
+  return new RegExp(`${out}$`);
+}
+
+// src/delegation.ts
 var PACK_FLOORS = new Map([
   ["pack-api", "yellow-agent"],
   ["pack-data", "yellow-agent"],
@@ -38227,7 +38257,9 @@ function highest(...classes) {
   return classes.reduce((left, right) => CLASS_RANK[right] > CLASS_RANK[left] ? right : left, "green");
 }
 function floorClass(floor, declared) {
-  const surfaces = new Map((declared ?? []).map((surface) => [surface.path, surface.class]));
+  const surfaces = new Map;
+  for (const surface of declared ?? [])
+    surfaces.set(surface.path, highest(surfaces.get(surface.path) ?? "green", surface.class));
   const shared = (floor.shared_surfaces ?? []).map((path) => {
     const declaredClass = surfaces.get(path);
     if (declaredClass === undefined)
@@ -38278,6 +38310,45 @@ function makeValidation() {
   validation.addSchema(verification_recipe_schema_default);
   return validation;
 }
+var blockValidator = null;
+function validateDelegationBlock(block) {
+  if (blockValidator === null) {
+    const schema = { $id: ticket_schema_default.$id, ...ticket_schema_default.properties.delegation, $defs: ticket_schema_default.$defs };
+    blockValidator = makeValidation().compile(schema);
+  }
+  if (!blockValidator(block))
+    throw new Error(`ticket delegation does not match its schema: ${schemaDetail(blockValidator.errors)}`);
+}
+function union(first, second) {
+  return [...new Set([...first, ...second])];
+}
+function scoreMergeStage(ticket, project, changedPaths, evidence) {
+  const guidance = project.guidance.delegation;
+  if (guidance === undefined)
+    throw new Error("project has no guidance.delegation block (weights and cut points)");
+  const source = ticket.delegation;
+  if (source === undefined)
+    throw new Error("ticket has no delegation block to score");
+  const declared = guidance.shared_surfaces ?? [];
+  const matched = declared.filter((surface) => changedPaths.some((path) => globToRegExp(surface.path).test(path))).map((surface) => surface.path);
+  const sharedSurfaces = union(union(source.floor.shared_surfaces ?? [], evidence?.floor?.shared_surfaces ?? []), matched);
+  const hasSurfaces = source.floor.shared_surfaces !== undefined || evidence?.floor?.shared_surfaces !== undefined || matched.length > 0;
+  const floor = {
+    packs: union(source.floor.packs, evidence?.floor?.packs ?? []),
+    sensitive_actions: union(source.floor.sensitive_actions, evidence?.floor?.sensitive_actions ?? [])
+  };
+  if (hasSurfaces)
+    floor.shared_surfaces = sharedSurfaces;
+  const candidate = {
+    class: source.class,
+    stage: "merge",
+    floor,
+    factors: evidence?.factors ?? source.factors,
+    lowered_by: evidence !== undefined && "lowered_by" in evidence ? evidence.lowered_by ?? null : source.lowered_by
+  };
+  validateDelegationBlock(candidate);
+  return scoreDelegation({ delegation: candidate }, project);
+}
 function loadDocuments(ticketInput, projectInput, cwd) {
   const ticketPath = resolve(cwd, ticketInput);
   const projectPath = resolve(cwd, projectInput);
@@ -38293,6 +38364,76 @@ function loadDocuments(ticketInput, projectInput, cwd) {
 function scoreDelegationFiles(ticketInput, projectInput, cwd = process.cwd()) {
   const { ticket, project } = loadDocuments(ticketInput, projectInput, cwd);
   return scoreDelegation(ticket, project);
+}
+var evidenceValidator = null;
+function scoreMergeDelegationFiles(ticketInput, projectInput, changedPaths, evidenceInput, cwd = process.cwd()) {
+  const { ticket, project } = loadDocuments(ticketInput, projectInput, cwd);
+  let evidence;
+  if (evidenceInput !== undefined) {
+    const evidencePath = resolve(cwd, evidenceInput);
+    if (!existsSync3(evidencePath))
+      throw new Error(`evidence does not exist: ${evidenceInput}`);
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync2(evidencePath, "utf8"));
+    } catch (cause) {
+      throw new Error(`evidence ${evidenceInput} does not match its schema: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    }
+    if (evidenceValidator === null) {
+      const block = ticket_schema_default.properties.delegation;
+      const { required: _floorRequired, ...partialFloor } = block.properties.floor;
+      const schema = {
+        $id: ticket_schema_default.$id,
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          factors: block.properties.factors,
+          floor: partialFloor,
+          lowered_by: block.properties.lowered_by
+        },
+        $defs: ticket_schema_default.$defs
+      };
+      evidenceValidator = makeValidation().compile(schema);
+    }
+    if (!evidenceValidator(parsed))
+      throw new Error(`evidence ${evidenceInput} does not match its schema: ${schemaDetail(evidenceValidator.errors)}`);
+    evidence = parsed;
+  }
+  try {
+    return scoreMergeStage(ticket, project, changedPaths, evidence);
+  } catch (cause) {
+    if (evidenceInput !== undefined && cause instanceof Error && cause.message.includes("does not match its schema"))
+      throw new Error(`evidence ${evidenceInput} does not match its schema: ${cause.message}`, { cause });
+    throw cause;
+  }
+}
+function gitChangedPaths(cwd, base, head) {
+  for (const revision of [base, head]) {
+    const check = spawnSync2("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+    if (check.status !== 0)
+      throw new Error(`cannot resolve revision ${revision}`);
+  }
+  const range = `${base}...${head}`;
+  const diff = spawnSync2("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
+  if (diff.status !== 0)
+    throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
+  return (diff.stdout ?? "").split("\x00").filter((path) => path.length > 0);
+}
+function delegationRunProblem(run) {
+  if (run.stage !== undefined && run.stage !== "ticket" && run.stage !== "merge")
+    return "ak delegation: --stage must be ticket or merge";
+  if (run.stage !== "merge" && (run.base !== undefined || run.head !== undefined || run.evidence !== undefined))
+    return "ak delegation: --base, --head and --evidence require --stage merge";
+  if (run.stage === "merge" && run.base === undefined)
+    return "ak delegation: --stage merge requires --base <rev>";
+  return null;
+}
+function scoreDelegationRun(run, cwd) {
+  if (run.stage === "merge" && run.base !== undefined) {
+    const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
+    return scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+  }
+  return scoreDelegationFiles(run.ticket, run.project, cwd);
 }
 
 // src/maintenance/cli.ts
@@ -40951,7 +41092,7 @@ var isEffectConfig = ajv6.compile({
 });
 
 // src/runner/snapshot.ts
-import { spawnSync as spawnSync4 } from "child_process";
+import { spawnSync as spawnSync5 } from "child_process";
 import { createHash as createHash10 } from "crypto";
 import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync5, readFileSync as readFileSync31, readlinkSync as readlinkSync3, realpathSync as realpathSync11 } from "fs";
 import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join44, relative as relative11, resolve as resolve15 } from "path";
@@ -41016,7 +41157,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     GIT_NO_REPLACE_OBJECTS: "1",
     LC_ALL: "C"
   };
-  const proc = spawnSync4(context.binary, [
+  const proc = spawnSync5(context.binary, [
     "-c",
     `safe.directory=${realpathSync11(project)}`,
     "-c",
@@ -44042,7 +44183,7 @@ import { readdirSync as readdirSync14, readFileSync as readFileSync40 } from "fs
 import { join as join52 } from "path";
 
 // src/review-isolation-probe/host-cli.ts
-import { spawnSync as spawnSync5 } from "child_process";
+import { spawnSync as spawnSync6 } from "child_process";
 import { accessSync as accessSync2, constants as constants2 } from "fs";
 import { join as join51 } from "path";
 var VERSION_TIMEOUT_MS = 5000;
@@ -44092,7 +44233,7 @@ function captureHostVersion(binaries, versionArgs, options) {
   const bin = which(binaries, env.PATH);
   if (bin === null)
     return HOST_VERSION_NOT_ON_PATH;
-  const result2 = spawnSync5(bin, [...versionArgs], {
+  const result2 = spawnSync6(bin, [...versionArgs], {
     encoding: "utf8",
     timeout: timeoutMs,
     killSignal: "SIGKILL",
@@ -44336,7 +44477,7 @@ function finding(level, check2, detail, remedy) {
 }
 function command(binary2, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary2 === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
-  const run3 = spawnSync6(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
+  const run3 = spawnSync7(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run3.status === 0, output: (run3.stdout || run3.stderr || run3.error?.message || "").trim() };
 }
 function parseJson3(source, validate) {
@@ -44693,10 +44834,42 @@ function doctorFlags(flags) {
   }
   return { json, lessons };
 }
+var DELEGATION_FLAGS = new Set(["project", "stage", "base", "head", "evidence"]);
+function delegationRun(args) {
+  const positional = [];
+  const values = new Map;
+  for (let i = 0;i < args.length; i += 1) {
+    const token = args[i] ?? "";
+    if (!token.startsWith("--")) {
+      positional.push(token);
+      continue;
+    }
+    const [name = "", inline] = token.slice(2).split("=", 2);
+    const value = inline ?? args[i + 1];
+    if (!DELEGATION_FLAGS.has(name) || values.has(name) || value === undefined || value.startsWith("--"))
+      return null;
+    if (inline === undefined)
+      i += 1;
+    values.set(name, value);
+  }
+  const project = values.get("project");
+  const ticket = positional[0];
+  if (ticket === undefined || positional.length !== 1 || project === undefined)
+    return null;
+  return {
+    ticket,
+    project,
+    stage: values.get("stage"),
+    base: values.get("base"),
+    head: values.get("head"),
+    evidence: values.get("evidence")
+  };
+}
 if (import.meta.main) {
   const action = process.argv[2];
   const flags = process.argv.slice(3);
   const doctorArgs2 = action === "doctor" ? doctorFlags(flags) : null;
+  const delegation = action === "delegation" ? delegationRun(flags) : null;
   if (action === "learn") {
     const io = { out: (line2) => console.log(line2), err: (line2) => console.error(line2) };
     const argv = process.argv.slice(2);
@@ -44717,15 +44890,21 @@ if (import.meta.main) {
     process.exitCode = await doctor2(doctorArgs2.json, doctorArgs2.lessons);
   else if (action === "update" && flags.length === 0)
     process.exitCode = await update();
-  else if (action === "delegation" && flags.length === 3 && flags[1] === "--project") {
-    try {
-      console.log(JSON.stringify(scoreDelegationFiles(flags[0] ?? "", flags[2] ?? ""), null, 2));
-    } catch (cause) {
-      console.error(`ak delegation: ${cause instanceof Error ? cause.message : String(cause)}`);
+  else if (delegation !== null) {
+    const problem = delegationRunProblem(delegation);
+    if (problem !== null) {
+      console.error(problem);
       process.exitCode = 1;
+    } else {
+      try {
+        console.log(JSON.stringify(scoreDelegationRun(delegation, process.cwd()), null, 2));
+      } catch (cause) {
+        console.error(`ak delegation: ${cause instanceof Error ? cause.message : String(cause)}`);
+        process.exitCode = 1;
+      }
     }
   } else {
-    console.error("Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak semantic-lint hook [--host codex]");
+    console.error("Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak semantic-lint hook [--host codex]");
     process.exitCode = 2;
   }
 }
