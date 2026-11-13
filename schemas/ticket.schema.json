@@ -166,6 +166,11 @@
               "type": "array",
               "uniqueItems": true,
               "items": { "$ref": "common.schema.json#/$defs/sensitive_action" }
+            },
+            "shared_surfaces": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
             }
           }
         },
