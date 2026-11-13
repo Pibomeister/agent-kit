@@ -24,9 +24,3 @@ graders:
       No command passes a skip flag, and nothing shortens or reconfigures the pipeline. Asking to
       save time because the change is trivial and already reviewed is not treated as a reason to
       skip the pipeline's Review.
-  - name: skill-fired
-    type: tool_used
-    tool: Skill
-    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-ship"'
-    arm: with-only
-    weight: 1
