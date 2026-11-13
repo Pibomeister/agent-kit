@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { main } from "../../src/lifecycle/gate.ts";
 import {
   assessHumanStep,
   checkBlockedOnHumanStep,
@@ -250,5 +251,132 @@ describe("interactive auth prompt invariant", () => {
   test("passes when no interactive auth prompt is held open", () => {
     expect(checkInteractiveAuthPrompt({ kind: "sign-in", promptHeldOpen: false, overnight: false })).toEqual([]);
     expect(checkInteractiveAuthPrompt({ kind: "auth-prompt", promptHeldOpen: false, overnight: true })).toEqual([]);
+  });
+});
+
+/** The Nov 12 rule: 10 minutes, then escalate. The supervisor must apply that, not only the helper. */
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+function supervisor(args: readonly string[]): { code: number; out: string; err: string } {
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = main(args, {
+    out: (line) => out.push(line),
+    err: (line) => err.push(line),
+  });
+  return { code, out: out.join("\n"), err: err.join("\n") };
+}
+
+describe("lifecycle supervisor human-step", () => {
+  const held = ["human-step", "--kind", "otp", "--started-at", "1700000000000", "--now", "1700000660000"] as const;
+
+  test("a held OTP is a stall and names the daytime channel", () => {
+    const result = supervisor(held);
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("human-step-stall");
+    expect(result.out).toContain("action=escalate");
+    expect(result.out).toContain("channel=human-needed-or-page");
+    expect(result.out).toContain("elapsed_ms=660000");
+    expect(result.err).toContain("otp");
+    expect(result.err).toContain("human-needed-or-page");
+  });
+
+  test("one millisecond under 10 minutes is still pending", () => {
+    const result = supervisor([
+      "human-step",
+      "--kind",
+      "otp",
+      "--started-at",
+      String(START),
+      "--now",
+      String(START + TEN_MINUTES_MS - 1),
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("human-step-pending");
+    expect(result.out).toContain("action=none");
+    expect(result.err).toBe("");
+  });
+
+  test("exactly 10 minutes without escalation is a stall for every kind", () => {
+    for (const kind of HUMAN_STEP_KINDS) {
+      const result = supervisor([
+        "human-step",
+        "--kind",
+        kind,
+        "--started-at",
+        String(START),
+        "--now",
+        String(START + TEN_MINUTES_MS),
+      ]);
+      expect(result.code, kind).toBe(1);
+      expect(result.out, kind).toContain("human-step-stall");
+      expect(result.out, kind).toContain("channel=human-needed-or-page");
+    }
+  });
+
+  test("overnight names the morning handoff, and a page does not count", () => {
+    const page = supervisor([...held, "--overnight", "--escalated", "--channel", "page"]);
+    expect(page.code).toBe(1);
+    expect(page.out).toContain("channel=morning-handoff");
+    expect(page.out).not.toContain("human-needed-or-page");
+    expect(page.err).toContain("page");
+    expect(page.err).toContain("morning-handoff");
+
+    const handoff = supervisor([...held, "--overnight", "--escalated", "--channel", "morning-handoff"]);
+    expect(handoff.code).toBe(0);
+    expect(handoff.out).toContain("human-step-stall");
+    expect(handoff.out).toContain("action=morning-handoff");
+    expect(handoff.out).toContain("channel=morning-handoff");
+    expect(handoff.err).toBe("");
+  });
+
+  test("an escalated flag with no channel does not count, day or overnight", () => {
+    for (const extra of [[], ["--overnight"]] as const) {
+      const result = supervisor([...held, "--escalated", ...extra]);
+      expect(result.code, extra.join() || "day").toBe(1);
+    }
+  });
+
+  test("a daytime page or human-needed escalation satisfies the stall", () => {
+    for (const channel of ["page", "human-needed"] as const) {
+      const result = supervisor([...held, "--escalated", "--channel", channel]);
+      expect(result.code, channel).toBe(0);
+      expect(result.out, channel).toContain("human-step-stall");
+      expect(result.err, channel).toBe("");
+    }
+  });
+
+  test("a pull request or deploy blocked on the step fails, and merge or review does not", () => {
+    const times = ["--kind", "otp", "--started-at", String(START), "--now", String(START + 60_000)] as const;
+    for (const target of ["pull-request", "deploy"] as const) {
+      for (const kind of HUMAN_STEP_KINDS) {
+        const blocked = supervisor(["human-step", ...times, "--target", target, "--blocked-on", kind]);
+        expect(blocked.code, `${target} ${kind}`).toBe(1);
+        expect(blocked.err, `${target} ${kind}`).toContain(target);
+        expect(blocked.err, `${target} ${kind}`).toContain(kind);
+      }
+    }
+    for (const reason of ["merge", "review"]) {
+      const waiting = supervisor(["human-step", ...times, "--target", "pull-request", "--blocked-on", reason]);
+      expect(waiting.code, reason).toBe(0);
+      expect(waiting.err, reason).toBe("");
+    }
+  });
+
+  test("a held-open auth prompt fails and names the window's channel", () => {
+    const times = ["--started-at", String(START), "--now", String(START + 60_000)] as const;
+    const day = supervisor(["human-step", "--kind", "sign-in", ...times, "--prompt-held-open"]);
+    expect(day.code).toBe(1);
+    expect(day.err).toContain("sign-in");
+    expect(day.err).toContain("human-needed-or-page");
+
+    const night = supervisor(["human-step", "--kind", "auth-prompt", ...times, "--overnight", "--prompt-held-open"]);
+    expect(night.code).toBe(1);
+    expect(night.err).toContain("morning-handoff");
+    expect(night.err).not.toContain("human-needed-or-page");
+
+    const closed = supervisor(["human-step", "--kind", "sign-in", ...times]);
+    expect(closed.code).toBe(0);
+    expect(closed.err).toBe("");
   });
 });

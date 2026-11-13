@@ -1,7 +1,5 @@
 /**
- * Stall-class definition for a held human-only step, and the contract its tests check.
- * This PR delivers that definition and its contract tests only. It is a dependency for the
- * supervisor wiring. The stall rule is not yet enforced by any supervisor.
+ * Stall class for a held human-only step. `ak lifecycle human-step` runs these checks.
  *
  * A captain or crewmate that hits a human-only step (sign-in, an auth prompt, a verification
  * code, an OTP, an approval or a captcha) escalates within about 10 minutes, through its
@@ -11,7 +9,7 @@
  * the owner gate. Unrelated work keeps moving, a PR or deploy is never blocked on the step,
  * and an interactive auth prompt is never held open.
  *
- * Self-contained and importing only `node:` built-ins, so it can later be bundled with `gate.ts`.
+ * Self-contained and importing only `node:` built-ins, so `gate.ts` can bundle it.
  */
 
 /** How long a human-only step may sit before it is a stall that must escalate. */

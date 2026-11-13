@@ -86,6 +86,16 @@ import {
   resolvePool,
 } from "./gate-lanes.ts";
 import { verificationValidator } from "./verification-schema.ts";
+import {
+  assessHumanStep,
+  checkBlockedOnHumanStep,
+  checkEscalation,
+  checkInteractiveAuthPrompt,
+  isHumanStepKind,
+  type EscalationChannel,
+  type HumanStepAssessment,
+  type ShipTarget,
+} from "./human-step-stall.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
 
@@ -2072,6 +2082,9 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle lanes status [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle lanes release [--lane <name>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle lanes unpublished [--max-age-minutes <n>] [--project <dir>] [--json]",
+  "  ak lifecycle human-step --kind <kind> --started-at <epoch-ms> --now <epoch-ms> [--overnight] [--escalated]",
+  "    [--channel page|human-needed|morning-handoff] [--target pull-request|deploy] [--blocked-on <reason>]",
+  "    [--prompt-held-open]",
   "",
   "  Gate lanes (issue #194): `lanes run` is the supported entry point for a gate caller that wants one lock per",
   "  worktree+branch; only callers that wrap their run in it are covered. --lane and --label only describe the holder.",
@@ -2098,6 +2111,12 @@ export const LIFECYCLE_USAGE = [
   "  publish-scan checks pull-request text for internal markers unless the repository is private or internal and its",
   "  owner is configured; --visibility defaults to public, --markers to $AK_PUBLISH_MARKERS, else",
   "  ~/.agent-kit/publish-markers: one `owner:`, `marker:`, `instructions: <file>` or `allow:` entry per line.",
+  "",
+  "  human-step classifies a held human-only step. Kinds: sign-in, auth-prompt, verification-code, otp, approval",
+  "  (an interactive device or consent prompt, never pull-request review or merge) and captcha. At or over 10 minutes",
+  "  the step is a stall, not normal work: escalate through the human-needed or page channel by day, and the morning",
+  "  handoff overnight. A page overnight does not count. Exit 1 when that escalation is missing, when the named pull",
+  "  request or deploy is blocked on the step, or when an interactive auth prompt (sign-in or auth-prompt) is held open.",
   "",
   "Exit 0 when the record was written, every gate is current or the text is clean, 1 when refused, 2 on bad usage.",
 ];
@@ -2129,7 +2148,114 @@ const FLAGS: Record<string, readonly string[]> = {
   "lanes status": ["dir", "project", "json"],
   "lanes release": ["lane", "dir", "project"],
   "lanes unpublished": ["max-age-minutes", "project", "json"],
+  "human-step": [
+    "kind",
+    "started-at",
+    "now",
+    "overnight",
+    "escalated",
+    "channel",
+    "target",
+    "blocked-on",
+    "prompt-held-open",
+  ],
 };
+
+/** Flags that take no value. Presence is true. */
+const BOOLEAN_FLAGS = new Set(["json", "evidence", "overnight", "escalated", "prompt-held-open"]);
+
+const ESCALATION_CHANNELS = ["page", "human-needed", "morning-handoff"] as const;
+const SHIP_TARGETS = ["pull-request", "deploy"] as const;
+
+const isEscalationChannel = (value: string): value is EscalationChannel =>
+  (ESCALATION_CHANNELS as readonly string[]).includes(value);
+
+const isShipTarget = (value: string): value is ShipTarget => (SHIP_TARGETS as readonly string[]).includes(value);
+
+/** Epoch milliseconds from a flag. Anything else is usage, not a stall. */
+function epochFlag(raw: string, name: string): number {
+  if (!/^-?\d+$/.test(raw)) throw new TypeError(`--${name} must be epoch milliseconds`);
+  const value = Number(raw);
+  if (!Number.isFinite(value)) throw new TypeError(`--${name} must be a finite epoch millisecond time`);
+  return value;
+}
+
+/**
+ * The supervisor's stall check. Prints the classification and the channel the window requires,
+ * and exits 1 when escalation is missing, a pull request or deploy is blocked on the step, or an
+ * interactive auth prompt is held open.
+ */
+function runHumanStep(io: Io, flags: Map<string, string | true>): number {
+  const kind = flags.get("kind");
+  const startedRaw = flags.get("started-at");
+  const nowRaw = flags.get("now");
+  if (typeof kind !== "string" || typeof startedRaw !== "string" || typeof nowRaw !== "string") {
+    io.err("ak lifecycle human-step: --kind, --started-at and --now are required");
+    return 2;
+  }
+  if (!isHumanStepKind(kind)) {
+    io.err(
+      `ak lifecycle human-step: unknown kind '${kind}'; valid: sign-in, auth-prompt, verification-code, otp, approval, captcha`,
+    );
+    return 2;
+  }
+  const channelRaw = flags.get("channel");
+  if (typeof channelRaw === "string" && !isEscalationChannel(channelRaw)) {
+    io.err("ak lifecycle human-step: --channel must be page, human-needed or morning-handoff");
+    return 2;
+  }
+  const targetRaw = flags.get("target");
+  if (typeof targetRaw === "string" && !isShipTarget(targetRaw)) {
+    io.err("ak lifecycle human-step: --target must be pull-request or deploy");
+    return 2;
+  }
+  const blockedOn = flags.get("blocked-on");
+  if (typeof blockedOn === "string" && typeof targetRaw !== "string") {
+    io.err("ak lifecycle human-step: --blocked-on needs --target pull-request or deploy");
+    return 2;
+  }
+  let startedAt: number;
+  let now: number;
+  try {
+    startedAt = epochFlag(startedRaw, "started-at");
+    now = epochFlag(nowRaw, "now");
+  } catch (error) {
+    io.err(`ak lifecycle human-step: ${error instanceof Error ? error.message : String(error)}`);
+    return 2;
+  }
+  const overnight = flags.get("overnight") === true;
+  const escalated = flags.get("escalated") === true;
+  const promptHeldOpen = flags.get("prompt-held-open") === true;
+  let assessment: HumanStepAssessment;
+  try {
+    assessment = assessHumanStep({ kind, startedAt, now, overnight });
+  } catch (error) {
+    io.err(`ak lifecycle human-step: ${error instanceof Error ? error.message : String(error)}`);
+    return 2;
+  }
+  const violations = [
+    ...checkEscalation({
+      kind,
+      startedAt,
+      now,
+      overnight,
+      escalated,
+      channel: typeof channelRaw === "string" ? channelRaw : undefined,
+    }),
+    ...(typeof targetRaw === "string"
+      ? checkBlockedOnHumanStep({
+          target: targetRaw,
+          blockedOn: typeof blockedOn === "string" ? blockedOn : null,
+        })
+      : []),
+    ...checkInteractiveAuthPrompt({ kind, promptHeldOpen, overnight }),
+  ];
+  io.out(
+    `${assessment.classification} kind=${assessment.kind} elapsed_ms=${assessment.elapsedMs} action=${assessment.action} channel=${assessment.channel}`,
+  );
+  for (const violation of violations) io.err(`ak lifecycle human-step: ${violation}`);
+  return violations.length === 0 ? 0 : 1;
+}
 
 const UNATTENDED_PHASES: readonly string[] = [...HUMAN_STARTED_PHASES, ...MODEL_STARTED_PHASES];
 
@@ -2316,7 +2442,7 @@ export function main(
       io.err(`ak lifecycle ${sub}: unexpected ${token}`);
       return 2;
     }
-    if (name === "json" || name === "evidence") {
+    if (BOOLEAN_FLAGS.has(name)) {
       flags.set(name, true);
       continue;
     }
@@ -2333,6 +2459,8 @@ export function main(
     const v = flags.get(n);
     return typeof v === "string" ? v : undefined;
   };
+
+  if (sub === "human-step") return runHumanStep(io, flags);
 
   const project = resolve(cwd, str("project") ?? ".");
   if (sub === "publish-scan") {
