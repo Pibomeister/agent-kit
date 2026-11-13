@@ -190,15 +190,14 @@ The lifecycle is seven skills, not twenty. Each has one job, one required output
 | `super-scout` | Bounded read-only exploration into a revision-bound evidence dossier | Reports coverage limits and unknowns — **never an architectural verdict** |
 | `super-build` | Execute an approved ticket under TDD in an owned worktree | No self-approval, no silent scope expansion |
 | `super-verify` | Acceptance-to-evidence matrix with command, exit status, revision | An agent's description of green tests is not a receipt |
-| `super-review` | Specialist panel (full) or two-axis delta on a fix — first pass seats by review depth when routing is on | Reviewers cannot edit |
+| `super-review` | Specialist panel (full) or two-axis delta on a fix | Reviewers cannot edit |
 | `super-ship` | Release checks and PR preparation | Merge and deploy are separate capabilities |
 
 The agent starts `super-review` full and readiness as part of the work. No slash command or grant
 is required. See [review authority](skills/super-review/SKILL.md#authority) for start rules and
-the boundary between starting a review and approving it. The project setting `review.routing`
-takes `off`, `shadow` or `on` and defaults to `off`. The delegation class selects how many
-baseline seats sit; activated risk seats always sit, and the delivery pipeline's Review is
-unchanged ([ADR-0017](docs/decisions/0017-review-depth-follows-delegation-class.md)).
+the boundary between starting a review and approving it. Delegation-based review depth is an
+accepted design awaiting implementation; [ADR-0017](docs/decisions/0017-review-depth-follows-delegation-class.md)
+owns its rollout rules and the unchanged delivery-pipeline Review requirement.
 
 Plus `autopilot`: a human-started supervisor pair, or a Firstmate-started one under a
 runner-validated standing grant in a captain-approved charter. It exercises delegated checkpoint
