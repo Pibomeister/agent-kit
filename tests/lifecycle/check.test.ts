@@ -4,8 +4,18 @@
  * home, binding or ledger anywhere.
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -32,8 +42,9 @@ setDefaultTimeout(60_000);
 const REPO = join(import.meta.dir, "..", "..");
 
 function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(["git", ...args], {
+  const run = spawnSync("git", args, {
     cwd,
+    encoding: "utf8",
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: "t",
@@ -42,8 +53,8 @@ function git(cwd: string, ...args: string[]): string {
       GIT_COMMITTER_EMAIL: "t@example.invalid",
     },
   });
-  if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
-  return p.stdout.toString().trim();
+  if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr ?? ""}`);
+  return (run.stdout ?? "").trim();
 }
 
 /** A repository on branch `feature`, one commit in, with the work uncommitted on top as a session leaves it. */
@@ -81,8 +92,10 @@ const record = (cwd: string, ...gates: Gate[]) => {
     if (g === "verify" && existsSync(pointer)) {
       const run = JSON.parse(readFileSync(pointer, "utf8")).run_id as string;
       const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
-      const ticketPath = join(cwd, `${metadata.ticket.id}.json`);
-      expect(ak(cwd, "record", "--gate", g, "--receipt", receipt(cwd, run, ticketPath)).code).toBe(0);
+      const named = join(cwd, `${metadata.ticket.id}.json`);
+      const ticketPath = existsSync(named) ? named : join(cwd, ".git", named.slice(named.lastIndexOf("/") + 1));
+      const recorded = ak(cwd, "record", "--gate", g, "--receipt", receipt(cwd, run, ticketPath));
+      expect(recorded.code, recorded.err).toBe(0);
     } else {
       expect(ak(cwd, "record", "--gate", g).code).toBe(0);
     }
@@ -1618,12 +1631,14 @@ describe("ak lifecycle check, standalone", () => {
     ] as const) {
       const dir = repo();
       git(dir, "checkout", "-q", "-b", branch);
-      const ticketPath = ticket(dir, "separator-branch");
+      const written = ticket(dir, "separator-branch");
+      const ticketPath = join(dir, ".git", "separator-branch.json");
+      renameSync(written, ticketPath);
       const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
       expect(run).toMatch(shape);
       record(dir, ...PRE_SHIP_GATES);
       const checked = ak(dir, "check", "--json");
-      expect(checked.code).toBe(0);
+      expect(checked.code, checked.err).toBe(0);
       expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ run_id: run, outcome: "allowed" });
     }
   });

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   closeSync,
   constants,
@@ -61,7 +61,11 @@ const PAGE = "# Queue the exports\n\nExports run on a queue, because a request c
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env, maxBuffer: Infinity });
+  const run = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env, maxBuffer: Infinity });
+  if (run.error !== undefined || run.status !== 0) {
+    throw new Error(`Command failed: git -C ${dir} ${args.join(" ")}\n${run.stderr ?? run.error?.message ?? ""}`);
+  }
+  return run.stdout ?? "";
 }
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
@@ -685,7 +689,8 @@ describe("readContext", () => {
 
   test("reads what is committed, never an uncommitted file in the checkout", () => {
     const fx = registered();
-    publishPage(fx, fx.project, page(fx));
+    const publishedPage = publishPage(fx, fx.project, page(fx));
+    expect(publishedPage.code, `${publishedPage.out}\n${publishedPage.err}`).toBe(0);
     const dir = join(fx.kb, "projects", "example-project", "documents", "billing", "exports", "adr");
     writeFileSync(join(dir, "draft.md"), "---\nref: doc:x\n---\n\nnot committed\n");
     const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));

@@ -17,6 +17,7 @@ import { runCli } from "../src/cli.ts";
 import { runValidation } from "../src/validation/run.ts";
 import type { Issue } from "../src/validation/types.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
+import { armSpawnJournal, beginInvocation, disarmSpawnJournal, finishInvocation } from "./helpers/spawn-journal.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const FIXTURES = join(import.meta.dir, "fixtures", "constitution");
@@ -79,10 +80,21 @@ function packagerErrors(project: string): string[] {
   return errorRules(issues.filter((i) => i.severity === "error"));
 }
 
-function summary(argv: string[]): string {
+/** The summary line, and the error lines a later failure would otherwise discard. */
+function summary(argv: string[]) {
   const out: string[] = [];
-  runCli(argv, { cwd: ROOT, io: { out: (l) => out.push(l), err: (l) => out.push(l) } });
-  return out.findLast((l) => l.startsWith("ak validate:")) ?? "";
+  const id = beginInvocation("runCli", argv, ROOT);
+  try {
+    const status = runCli(argv, { cwd: ROOT, io: { out: (l) => out.push(l), err: (l) => out.push(l) } });
+    finishInvocation(id, status, out);
+    return {
+      line: out.findLast((l) => l.startsWith("ak validate:")) ?? "",
+      errors: out.filter((l) => l.startsWith("ERROR")).join("\n"),
+    };
+  } catch (error) {
+    finishInvocation(id, null, out, false);
+    throw error;
+  }
 }
 
 describe("a registry the record names", () => {
@@ -295,12 +307,21 @@ describe("where the registry is", () => {
 });
 
 describe("with no registry configured", () => {
+  // Two full `ak validate` runs. On a loaded host the 60s budget fired while the
+  // second run was still going, so this uses the same 300s allowance the lifecycle
+  // gate already states for a case that runs long under load.
   test("`ak validate --project` on a record without one prints the summary `ak validate` prints", () => {
-    const record = writeRecord(freshRepository(), null);
-    const plain = summary(["validate"]);
-    expect(plain).toMatch(/^ak validate: \d+ errors?/);
-    expect(summary(["validate", "--project", record])).toBe(plain);
-  }, 60_000);
+    armSpawnJournal("constitution-summary");
+    try {
+      const record = writeRecord(freshRepository(), null);
+      const plain = summary(["validate"]);
+      const named = summary(["validate", "--project", record]);
+      expect(plain.line).toMatch(/^ak validate: \d+ errors?/);
+      expect(named.line, `${plain.errors}\n${named.errors}`).toBe(plain.line);
+    } finally {
+      disarmSpawnJournal();
+    }
+  }, 300_000);
 
   test("no project record at all runs the check and reports nothing", () => {
     expect(constitutionIssues(undefined)).toEqual([]);

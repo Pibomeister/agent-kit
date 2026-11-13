@@ -9,11 +9,20 @@
  * the operator's real directories, so a test that writes a judge call or a span
  * passes a config built from the environment, never `loadConfig({})`.
  * It also makes every test that reaches no assertion fail (see the end of this file).
+ * The git-spawn import is first so its retry wraps `spawnSync` before a test file binds it.
  */
+import { bindSpawnObserver, installGitSpawnRetry } from "./helpers/git-spawn.ts";
+import { installSpawnJournal, recordNodeSpawn } from "./helpers/spawn-journal.ts";
 import { afterAll, beforeEach, expect } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { processScratch, removeProcessDir } from "./helpers/process-tmp.ts";
+
+// git-spawn.ts installs while its module is evaluated, which is before the imports
+// below. Calling it again is a no-op; the binding is what keeps the import live.
+installGitSpawnRetry();
+bindSpawnObserver(recordNodeSpawn);
+installSpawnJournal();
 
 // Bun test does not emit process exit events; a preload's teardown runs after all test files.
 afterAll(removeProcessDir, 60_000);
@@ -24,18 +33,43 @@ for (const key of ["AK_LIFECYCLE_POLICY", "AK_UNATTENDED_READ_TOKEN"]) Reflect.d
 const root = processScratch("ak-test-env-");
 // /usr/bin/git on macOS launches the selected developer tool on every call. Resolve
 // that same tool once; thousands of fixture calls otherwise pay for the launcher.
-// A private PATH entry changes only git, and tests can still prepend their stubs.
-if (process.platform === "darwin" && Bun.which("git") === "/usr/bin/git") {
-  const selected = Bun.spawnSync(["/usr/bin/xcrun", "--find", "git"]);
-  const executable = selected.stdout.toString().trim();
-  if (selected.exitCode === 0 && executable !== "/usr/bin/git" && executable.startsWith("/")) {
-    const bin = join(root, "bin");
-    mkdirSync(bin);
-    // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
-    const quoted = `'${executable.replaceAll("'", "'\\''")}'`;
-    writeFileSync(join(bin, "git"), `#!/bin/sh\nexec ${quoted} "$@"\n`, { mode: 0o755 });
-    process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+// The suite runner prepends a symlink to that tool, so `which git` is no longer
+// /usr/bin/git and a check for only the launcher would leave Bun.spawnSync with no
+// retry. A private PATH entry changes only git, and tests can still prepend their stubs.
+function selectedGit(found: string): string | undefined {
+  if (found === "/usr/bin/git") {
+    const selected = Bun.spawnSync(["/usr/bin/xcrun", "--find", "git"]);
+    const executable = selected.stdout.toString().trim();
+    if (selected.exitCode !== 0 || executable === "/usr/bin/git" || !executable.startsWith("/")) return undefined;
+    return executable;
   }
+  try {
+    const executable = realpathSync(found);
+    return executable.startsWith("/") ? executable : undefined;
+  } catch {
+    return undefined;
+  }
+}
+const foundGit = process.env.AK_GIT_SHIM === "1" ? undefined : Bun.which("git");
+const resolvedGit =
+  process.platform === "darwin" && foundGit !== null && foundGit !== undefined ? selectedGit(foundGit) : undefined;
+if (resolvedGit !== undefined) {
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
+  // The script execs the selected git, and retries a read that must print when that read
+  // exits 0 with empty output. The real path is written into the script: the runner
+  // resolves this entry as its git and starts it with a cleared environment.
+  process.env.AK_GIT_REAL = resolvedGit;
+  process.env.AK_GIT_SHIM = "1";
+  const shim = join(bin, "git");
+  const marker = "real=${AK_GIT_REAL:?}";
+  const source = readFileSync(join(import.meta.dir, "helpers/git-retry.sh"), "utf8");
+  if (!source.includes(marker)) throw new Error("git retry shim lost its real-git marker");
+  const quoted = `'${resolvedGit.replaceAll("'", "'\\''")}'`;
+  writeFileSync(shim, source.replace(marker, `real=${quoted}`));
+  chmodSync(shim, 0o755);
+  process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
 }
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");

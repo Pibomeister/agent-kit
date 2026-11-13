@@ -8,6 +8,7 @@ import { runCli } from "../src/cli.ts";
 import { runValidation } from "../src/validation/run.ts";
 import { skippedChecks } from "../src/validation/types.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
+import { armSpawnJournal, beginInvocation, disarmSpawnJournal, finishInvocation } from "./helpers/spawn-journal.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const HOOK = join(ROOT, "tools/hooks/pre-push");
@@ -96,12 +97,19 @@ function makeDonorClone(dir: string): string {
 
 function summaryOf(root: string) {
   const lines: string[] = [];
-  const status = runCli(["validate"], {
-    cwd: root,
-    io: { out: (line) => lines.push(line), err: (line) => lines.push(line) },
-  });
-  const line = lines.filter((entry) => entry.startsWith("ak validate:")).at(-1) ?? "";
-  return { status, line };
+  const id = beginInvocation("runCli", ["validate"], root);
+  try {
+    const status = runCli(["validate"], {
+      cwd: root,
+      io: { out: (line) => lines.push(line), err: (line) => lines.push(line) },
+    });
+    finishInvocation(id, status, lines);
+    const line = lines.filter((entry) => entry.startsWith("ak validate:")).at(-1) ?? "";
+    return { status, line, lines };
+  } catch (error) {
+    finishInvocation(id, null, lines, false);
+    throw error;
+  }
 }
 
 describe("CI clones donors before it validates", () => {
@@ -121,18 +129,23 @@ describe("pre-push extract_for_gate", () => {
   test.if(donorsPresent || donorsRequired)(
     "an extract with donors at the lock pins has no donor-paths skip",
     () => {
-      expect(existsSync(join(ROOT, ".donors"))).toBe(true);
-      const dest = processScratch("ak-extract-with-donors-");
-      const sha = git(ROOT, "rev-parse", "HEAD").trim();
-      const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${ROOT}"`);
-      expect(prepared.status, prepared.stderr).toBe(0);
-      expect(prepared.stderr).toContain("pre-push: pin check will run");
-      expect(existsSync(join(dest, ".donors"))).toBe(true);
-      symlinkSync(join(ROOT, "node_modules"), join(dest, "node_modules"));
-      const summary = summaryOf(dest);
-      expect(summary.status).toBe(0);
-      expect(summary.line).not.toContain("donor paths at pin");
-      expect(summary.line).toMatch(/0 checks skipped/);
+      armSpawnJournal("extract-donors");
+      try {
+        expect(existsSync(join(ROOT, ".donors"))).toBe(true);
+        const dest = processScratch("ak-extract-with-donors-");
+        const sha = git(ROOT, "rev-parse", "HEAD").trim();
+        const prepared = sourceExtract(`extract_for_gate "${sha}" "${dest}" "${ROOT}"`);
+        expect(prepared.status, prepared.stderr).toBe(0);
+        expect(prepared.stderr).toContain("pre-push: pin check will run");
+        expect(existsSync(join(dest, ".donors"))).toBe(true);
+        symlinkSync(join(ROOT, "node_modules"), join(dest, "node_modules"));
+        const summary = summaryOf(dest);
+        expect(summary.status, summary.lines.join("\n")).toBe(0);
+        expect(summary.line).not.toContain("donor paths at pin");
+        expect(summary.line).toMatch(/0 checks skipped/);
+      } finally {
+        disarmSpawnJournal();
+      }
     },
     180_000,
   );

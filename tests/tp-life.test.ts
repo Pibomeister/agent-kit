@@ -124,14 +124,53 @@ function startFixture(broken?: string): Promise<string> {
   });
 }
 
-function evidenceAt(receiptsDir: string) {
-  return runScript(["evidence", "--receipts-dir", receiptsDir]);
+function evidenceAt(receiptsDir: string, repo = REPO) {
+  return runScript(["evidence", "--cwd", repo, "--receipts-dir", receiptsDir]);
 }
 
 interface WrittenOracle {
   oracle: string;
   receipt: string;
   status: number;
+  repo: string;
+}
+
+/** Git env for a fixture repo: cwd is the repo, and the crowded per-user temp dir is not used. */
+function isolatedGitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    TMPDIR: "/tmp",
+  };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_CEILING_DIRECTORIES;
+  return env;
+}
+
+/**
+ * A private one-commit checkout with this repo's schemas, package.json and evidence template.
+ * Receipt binding snapshots whatever `--cwd` names. The suite's other files run git in the
+ * working tree at the same time, and a snapshot that fails operationally exits 1, which is
+ * the code a diff_hash refusal is not. Binding against this checkout keeps that snapshot
+ * off the shared work tree.
+ */
+function boundRepo(): string {
+  const work = processScratch("ak-tp-life-bound-");
+  cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
+  copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
+  mkdirSync(join(work, "research/tp-life"), { recursive: true });
+  copyFileSync(join(REPO, TEMPLATE_REL), join(work, TEMPLATE_REL));
+  const env = isolatedGitEnv();
+  const git = (args: string[]): void => {
+    const result = spawnSync("git", ["-C", work, ...args], { env, encoding: "utf8" });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+  };
+  git(["init", "-q"]);
+  git(["add", "-A"]);
+  git(["-c", "user.email=td@example.invalid", "-c", "user.name=td", "commit", "-qm", "bound"]);
+  return work;
 }
 
 function allCases(failId?: string): CaseResult[] {
@@ -191,14 +230,14 @@ function isConnRefused(err: Error): boolean {
   return false;
 }
 
-function writeOracle(base: string, dir: string, name: string): WrittenOracle {
+function writeOracle(base: string, dir: string, name: string, repo = boundRepo()): WrittenOracle {
   const oracleJson = join(dir, `${name}.oracle.json`);
   const receiptPath = join(dir, `${name}.json`);
   const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
-  const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]);
-  expect(written.status).toBe(0);
+  const written = runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", receiptPath]);
+  expect(written.status, written.stderr).toBe(0);
   expect(written.stderr.includes("will stale")).toBe(false);
-  return { oracle: oracleJson, receipt: receiptPath, status: oracle.status ?? 1 };
+  return { oracle: oracleJson, receipt: receiptPath, status: oracle.status ?? 1, repo };
 }
 
 describe("independence", () => {
@@ -284,9 +323,9 @@ describe("bound receipts", () => {
     const dir = processScratch("ak-tp-life-r-");
     const written = writeOracle(base, dir, "receipt");
     expect(written.status).toBe(0);
-    const check = runScript(["receipt", "check", written.receipt]);
-    expect(check.status).toBe(0);
-    const cwdFirst = runScript(["receipt", "check", "--cwd", REPO, written.receipt]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, written.receipt]);
+    expect(check.status, check.stderr).toBe(0);
+    const cwdFirst = runScript(["receipt", "check", "--cwd", written.repo, written.receipt]);
     expect(cwdFirst.status).toBe(0);
     const schemas = compileSchemas(REPO);
     const validate = schemas.validatorFor("verification");
@@ -388,11 +427,12 @@ describe("bound receipts", () => {
     if (parsed === null) return;
     parsed.base_url = "http://x:tok_d42@127.0.0.1:9";
     writeFileSync(oracleJson, `${JSON.stringify(parsed, null, 2)}\n`);
+    const repo = boundRepo();
     const prev = process.env.AK_TP_LIFE_HOST_LOGIN;
     process.env.AK_TP_LIFE_HOST_LOGIN = "not-a-host";
     try {
       const out = join(dir, "receipt.json");
-      const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", out]);
+      const written = runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", out]);
       expect(written.status).toBe(0);
       const raw = readFileSync(out, "utf8");
       expect(raw.includes("tok_d42")).toBe(false);
@@ -400,7 +440,9 @@ describe("bound receipts", () => {
       expect(raw.includes('\\"host_login\\":\\"unrecorded\\"')).toBe(true);
       process.env.AK_TP_LIFE_HOST_LOGIN = "claude";
       const allowed = join(dir, "receipt-claude.json");
-      expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", allowed]).status).toBe(0);
+      expect(runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", allowed]).status).toBe(
+        0,
+      );
       expect(readFileSync(allowed, "utf8").includes('\\"host_login\\":\\"claude\\"')).toBe(true);
     } finally {
       if (prev === undefined) delete process.env.AK_TP_LIFE_HOST_LOGIN;
@@ -480,7 +522,7 @@ describe("bound receipts", () => {
     const dir = processScratch("ak-tp-life-null-");
     const path = join(dir, "null.json");
     writeFileSync(path, "null\n");
-    const check = runScript(["receipt", "check", path]);
+    const check = runScript(["receipt", "check", "--cwd", boundRepo(), path]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("receipt is not an object")).toBe(true);
   });
@@ -489,7 +531,7 @@ describe("bound receipts", () => {
     const dir = processScratch("ak-tp-life-arr-");
     const path = join(dir, "array.json");
     writeFileSync(path, "[]\n");
-    const check = runScript(["receipt", "check", path]);
+    const check = runScript(["receipt", "check", "--cwd", boundRepo(), path]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("receipt is not an object")).toBe(true);
   });
@@ -499,6 +541,8 @@ describe("bound receipts", () => {
     const run = runScript([
       "receipt",
       "write",
+      "--cwd",
+      boundRepo(),
       "--oracle-json",
       join(dir, "missing-oracle.json"),
       "--out",
@@ -511,7 +555,7 @@ describe("bound receipts", () => {
 
   test("a missing receipt prints one line and exits non-zero", () => {
     const dir = processScratch("ak-tp-life-miss-receipt-");
-    const run = runScript(["receipt", "check", join(dir, "missing-receipt.json")]);
+    const run = runScript(["receipt", "check", "--cwd", boundRepo(), join(dir, "missing-receipt.json")]);
     expect(run.status).toBe(1);
     expect(run.stderr.includes("cannot read")).toBe(true);
     expect(run.stderr.includes("\n    at ")).toBe(false);
@@ -526,6 +570,8 @@ describe("bound receipts", () => {
     const run = runScript([
       "receipt",
       "write",
+      "--cwd",
+      boundRepo(),
       "--oracle-json",
       oracleJson,
       "--out",
@@ -546,7 +592,7 @@ describe("bound receipts", () => {
       '"revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("refused")).toBe(true);
   });
@@ -558,7 +604,7 @@ describe("bound receipts", () => {
     const missingPath = join(dir, "missing-hash.json");
     const missing = readFileSync(written.receipt, "utf8").replace(/,\s*"diff_hash": "sha256:[0-9a-f]+"/, "");
     writeFileSync(missingPath, missing);
-    const check = runScript(["receipt", "check", missingPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, missingPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("diff_hash is missing")).toBe(true);
     expect(check.stderr.includes("is invalid")).toBe(false);
@@ -574,7 +620,7 @@ describe("bound receipts", () => {
       '"diff_hash": "not-a-hash"',
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("diff_hash is invalid")).toBe(true);
     expect(check.stderr.includes("is missing")).toBe(false);
@@ -590,7 +636,7 @@ describe("bound receipts", () => {
       `"revision": "${"z".repeat(40)}"`,
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("revision is invalid")).toBe(true);
   });
@@ -605,8 +651,8 @@ describe("bound receipts", () => {
       `"diff_hash": "sha256:${"b".repeat(64)}"`,
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
-    expect(check.status).toBe(2);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
+    expect(check.status, check.stderr).toBe(2);
     expect(check.stderr.includes("different working tree")).toBe(true);
   });
 
@@ -618,9 +664,9 @@ describe("bound receipts", () => {
     const written = writeOracle(base, dir, "receipt");
     expect(written.status).toBe(0);
     copyFileSync(written.receipt, join(receiptsDir, "passed.json"));
-    const check = runScript(["receipt", "check", join(receiptsDir, "passed.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "passed.json")]);
     expect(check.status).toBe(0);
-    const evidence = evidenceAt(receiptsDir);
+    const evidence = evidenceAt(receiptsDir, written.repo);
     expect(evidence.status).toBe(0);
     const printed = parseEvidenceRecord(evidence.stdout);
     expect(printed === null).toBe(false);
@@ -669,9 +715,9 @@ describe("G4 evidence", () => {
     const written = writeOracle(base, dir, "receipt");
     const forged = readFileSync(written.receipt, "utf8").replace(/"id": "tp-life-oracle"/, '"id": "forged-receipt"');
     writeFileSync(join(receiptsDir, "forged.json"), forged);
-    const check = runScript(["receipt", "check", join(receiptsDir, "forged.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "forged.json")]);
     expect(check.status).toBe(0);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, written.repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -687,9 +733,9 @@ describe("G4 evidence", () => {
     const written = writeOracle(base, dir, "failed");
     expect(written.status).toBe(1);
     copyFileSync(written.receipt, join(receiptsDir, "failed.json"));
-    const check = runScript(["receipt", "check", join(receiptsDir, "failed.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "failed.json")]);
     expect(check.status).toBe(0);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, written.repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -703,14 +749,15 @@ describe("G4 evidence", () => {
     const dir = processScratch("ak-tp-life-pair-");
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
-    const failed = writeOracle(failedBase, dir, "failed");
+    const repo = boundRepo();
+    const failed = writeOracle(failedBase, dir, "failed", repo);
     expect(failed.status).toBe(1);
-    const passed = writeOracle(passedBase, dir, "passed");
+    const passed = writeOracle(passedBase, dir, "passed", repo);
     expect(passed.status).toBe(0);
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed-copy.json"));
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -732,13 +779,14 @@ describe("G4 evidence", () => {
     const dir = processScratch("ak-tp-life-success-pair-");
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
-    const failed = writeOracle(failedBase, dir, "failed");
+    const repo = boundRepo();
+    const failed = writeOracle(failedBase, dir, "failed", repo);
     expect(failed.status).toBe(1);
-    const passed = writeOracle(passedBase, dir, "passed");
+    const passed = writeOracle(passedBase, dir, "passed", repo);
     expect(passed.status).toBe(0);
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -751,9 +799,10 @@ describe("G4 evidence", () => {
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
     const failedBase = await startFixture("duplicate");
-    const failed = writeOracle(failedBase, dir, "failed");
+    const repo = boundRepo();
+    const failed = writeOracle(failedBase, dir, "failed", repo);
     expect(failed.status).toBe(1);
-    const passed = writeOracle(base, dir, "passed");
+    const passed = writeOracle(base, dir, "passed", repo);
     expect(passed.status).toBe(0);
     const mutated = readFileSync(passed.receipt, "utf8").replace(
       '\\"id\\":\\"success\\",\\"verdict\\":\\"pass\\"',
@@ -761,7 +810,7 @@ describe("G4 evidence", () => {
     );
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     writeFileSync(join(receiptsDir, "passed.json"), mutated);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.oracle_sub_verdict).toBe("incomplete");
@@ -867,9 +916,9 @@ describe("G4 evidence", () => {
       '"kind": "probe",\n  "probe": { "name": "tp-life", "target": "jobs" }',
     );
     writeFileSync(join(receiptsDir, "probe.json"), mutated);
-    const check = runScript(["receipt", "check", join(receiptsDir, "probe.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "probe.json")]);
     expect(check.status).toBe(0);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, written.repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.oracle_sub_verdict).toBe("incomplete");
@@ -886,7 +935,7 @@ describe("G4 evidence", () => {
       "$1https://example.invalid/other$3",
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("different repo")).toBe(true);
   });

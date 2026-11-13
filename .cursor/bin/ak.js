@@ -22456,6 +22456,18 @@ function committedScopes(kb) {
   }
   return [...scopes].toSorted();
 }
+function listedNames(root, dir) {
+  const args = ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`];
+  let listed = git2(root, args);
+  for (let attempt = 1;listed.status === 0 && listed.stdout === "" && attempt < 3; attempt++) {
+    const tree = git2(root, ["rev-parse", "--verify", "--quiet", `HEAD:${dir}`]);
+    if (tree.status !== 0 || tree.stdout.trim() === "")
+      return listed;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    listed = git2(root, args);
+  }
+  return listed;
+}
 function readContext(kb, kinds, scope) {
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined)
@@ -22482,7 +22494,7 @@ function readContext(kb, kinds, scope) {
   for (const at of scopes) {
     for (const kind of kinds) {
       const dir = ["projects", project, "documents", ...at, kind].join("/");
-      const listed = git2(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
+      const listed = listedNames(kb.root, dir);
       if (listed.status !== 0)
         return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\x00").filter((name) => name.endsWith(".md"))) {

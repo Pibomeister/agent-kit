@@ -9,6 +9,7 @@
  * and logs every request's method.
  */
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -577,9 +578,12 @@ describe("independent review status (pure)", () => {
 // ── the command seam ─────────────────────────────────────────────────────────
 
 function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd });
-  if (p.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${p.stderr.toString()}`);
-  return p.stdout.toString().trim();
+  const run = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
+  if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr ?? ""}`);
+  return (run.stdout ?? "").trim();
 }
 
 function repo(): string {
@@ -650,7 +654,7 @@ function stubGh(fixtures: FixtureMap, accounts = ["runner-bot"]) {
 }
 
 function ticketFile(cwd: string): string {
-  const path = join(cwd, "ticket.json");
+  const path = join(cwd, ".git", "ticket.json");
   const ticket = {
     schema: "ticket",
     schema_version: 1,
@@ -820,7 +824,7 @@ const BARE = { acceptance_criteria: [], verification: [] };
 
 /** A ticket file with `fields` over the demo-bare identity. */
 function bareTicketFile(cwd: string, fields: JsonObject = BARE): string {
-  const path = join(cwd, "bare-ticket.json");
+  const path = join(cwd, ".git", "bare-ticket.json");
   writeFileSync(path, `${JSON.stringify({ schema: "ticket", schema_version: 1, id: "demo-bare", ...fields })}\n`);
   return path;
 }
@@ -842,7 +846,10 @@ function bareTicketRun(
   for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
   const run = runId(ak(cwd, "open", "--ticket", bareTicketFile(cwd, fields)).out);
   expect(ak(cwd, "record", "--gate", "build-checks", ...(seats.build ?? []), "--", ...ok).code).toBe(0);
-  for (const g of ["review-full", "review-readiness"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  for (const g of ["review-full", "review-readiness"]) {
+    const recorded = ak(cwd, "record", "--gate", g, "--", ...ok);
+    expect(recorded.code, recorded.err).toBe(0);
+  }
   if (verify !== undefined) ak(cwd, "record", "--gate", "verify", ...(seats.verify ?? VERIFIER_SEAT), "--", ...verify);
   return { ...ak(cwd, "check"), run };
 }
@@ -1085,7 +1092,7 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const run = fullRun(cwd);
-    const stored: unknown = JSON.parse(readFileSync(join(cwd, "ticket.json"), "utf8"));
+    const stored: unknown = JSON.parse(readFileSync(join(cwd, ".git", "ticket.json"), "utf8"));
     expect(stored).not.toHaveProperty("delegation");
     const r = ak(cwd, "check");
     expect(r.err).not.toContain("has no acceptance criteria or named verification");
@@ -1142,7 +1149,8 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
       const cwd = repo();
       const { run, code } = bareTicketRun(cwd, ok, BARE, { build: UNSCORED_SEAT, verify: first });
       expect(code).toBe(1);
-      expect(ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...mine).code).toBe(0);
+      const rerecorded = ak(cwd, "record", "--gate", "verify", ...VERIFIER_SEAT, "--", ...mine);
+      expect(rerecorded.code, rerecorded.err).toBe(0);
       expect(verifyArgv(cwd, run)).toEqual([mine]);
       expect(ak(cwd, "check").code).toBe(0);
     }
