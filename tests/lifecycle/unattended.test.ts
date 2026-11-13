@@ -1784,6 +1784,25 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
+  test("final ship refuses a supervisor other than the run's, in the environment or the attestation, and a retry with the run's records", () => {
+    const s = shipped();
+    const f = files(attestationOf(s.head));
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "other-crew" });
+    const environment = finalShip(s.cwd, f.flags);
+    expect(environment.code).toBe(1);
+    expect(environment.err).toContain("was opened under supervisor");
+    expect(environment.err).toContain("other-crew");
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    const attested = finalShip(s.cwd, files(attestationOf(s.head, { supervisor: "other-crew" })).flags);
+    expect(attested.code).toBe(1);
+    expect(attested.err).toContain("differs from the run's supervisor");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+    const retry = finalShip(s.cwd, f.flags);
+    expect(retry.err).toBe("");
+    expect(retry.code).toBe(0);
+    expect(entriesOf(s)).toEqual(["supervisor", "final-ship"]);
+  });
+
   test("final ship runs no program the worker configured: a signature program named in the repository's config stays unrun", () => {
     const s = shipped();
     const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
@@ -1847,9 +1866,11 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
-  test("final ship fetches nothing for a commit missing between the shipped revision and the head", () => {
+  test("final ship refuses a head over a commit missing between the shipped revision and the head", () => {
     const s = shipped();
-    const marker = promisorMarker(s.cwd);
+    // A partial clone, where a commit can be missing. git 2.50.1 does not lazy-fetch on this walk even without
+    // --no-lazy-fetch, so this test holds the refusal only; the missing-head and policy-read tests hold the switch.
+    promisorMarker(s.cwd);
     const middle = missingCommit(s.cwd, s.head, "middle, never written");
     const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
     const head = execGit(s.cwd, [
@@ -1867,7 +1888,6 @@ describe("final ship (AC-5)", () => {
     const r = finalShip(s.cwd, files(attestationOf(head)).flags);
     expect(r.code).toBe(1);
     expect(r.err).toContain("does not descend from the shipped revision");
-    expect(existsSync(marker)).toBe(false);
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
@@ -1913,6 +1933,25 @@ describe("final ship (AC-5)", () => {
       `Summary.\n\n- \`\`\`\n<!--\n- \`\`\`\n${SENTENCE}\n-->\n`,
     ],
     ["a top-level fence holds it past a quoted fence line", `Summary.\n\n\`\`\`\n> \`\`\`\n${SENTENCE}\n\`\`\`\n`],
+    // A backtick that an escape, a tag, an autolink or a link title takes opens no code span, so the comment hides it.
+    ["a comment holds it after an escaped backtick", `Summary \\\`<!--\n${SENTENCE}\n\` -->\n`],
+    [
+      "a comment holds it after a backtick in a tag attribute",
+      `Summary <span title="\`"></span><!--\n${SENTENCE}\n\` -->\n`,
+    ],
+    ["a one-line comment holds it after an escaped backtick", `Summary \\\`<!-- ${SENTENCE} \` -->\n`],
+    [
+      "a one-line comment holds it after a backtick in a tag attribute",
+      `Summary <span title="\`"></span><!-- ${SENTENCE} \` -->\n`,
+    ],
+    [
+      "a comment holds it after a backtick in an autolink",
+      `Summary <https://example.invalid/\`><!--\n${SENTENCE}\n\` -->\n`,
+    ],
+    [
+      "a comment holds it after a backtick in a link title",
+      `Summary [x](https://example.invalid "\`")<!--\n${SENTENCE}\n\` -->\n`,
+    ],
   ];
 
   test.each(BODY_REFUSALS)("refuses the body when %s", (_name, body) => {
@@ -1926,6 +1965,12 @@ describe("final ship (AC-5)", () => {
   test("accepts the sentence after a closed fence, a comment and inside a longer paragraph", () => {
     const s = shipped();
     const body = `<!-- note -->\n\`\`\`\ncode\n\`\`\`\nChange. ${SENTENCE} More text.\n`;
+    expect(finalShip(s.cwd, files(attestationOf(s.head), body).flags).code).toBe(0);
+  });
+
+  test("accepts the sentence after a paragraph whose code span crosses a line", () => {
+    const s = shipped();
+    const body = `Summary \`a\nb\` done.\n\n${SENTENCE}\n`;
     expect(finalShip(s.cwd, files(attestationOf(s.head), body).flags).code).toBe(0);
   });
 

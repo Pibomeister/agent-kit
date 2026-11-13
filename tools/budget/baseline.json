@@ -48,8 +48,8 @@
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 12498,
-      "tokens": 3124
+      "bytes": 14502,
+      "tokens": 3625
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -943,8 +943,8 @@
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 12498,
-      "tokens": 3124
+      "bytes": 14502,
+      "tokens": 3625
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1838,8 +1838,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 12498,
-      "tokens": 3124
+      "bytes": 14502,
+      "tokens": 3625
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2733,8 +2733,8 @@
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 12498,
-      "tokens": 3124
+      "bytes": 14502,
+      "tokens": 3625
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3628,8 +3628,8 @@
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 12498,
-      "tokens": 3124
+      "bytes": 14502,
+      "tokens": 3625
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4523,8 +4523,8 @@
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 12498,
-      "tokens": 3124
+      "bytes": 14502,
+      "tokens": 3625
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",

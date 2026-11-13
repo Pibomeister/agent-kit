@@ -2,7 +2,11 @@
  * The supervisor contract's two file shapes (docs/decisions/0014-unattended-lifecycle-policy.md, amendment of
  * 2026-11-11; adapters/supervisor/CONTRACT.md): the JSON schemas and the gate's validators accept and reject the
  * same shape fixtures, the canonical identity pattern is pinned, and the examples in the two documents pass the
- * gate's own validators and the gate's start check unchanged.
+ * gate's own validators and the gate's start check unchanged. The disclosure tables call `bodyCarriesDisclosure`
+ * directly: bodies that show the sentence, and bodies that hide it in a comment, a code block or an HTML block of any
+ * of the seven CommonMark types, including where a backslash escape, raw HTML, an autolink or a link takes a backtick
+ * before a code span can open, where lines end in CRLF or a byte order mark leads, and where the two CommonMark
+ * readings in use part on an HTML block. The digest helper is pinned too.
  *
  * The schemas cover shape only. Containment, readability, name equality, reviewer-author distinctness and head
  * ancestry live in the gate, so no fixture here depends on them.
@@ -346,8 +350,132 @@ describe("the disclosure sentence in a body", () => {
       "after an HTML block that opens with an empty comment, when either reading of the block shows it",
       `<!--->\n\n${sentence()}\n`,
     ],
+    ["after a code span that crosses a line", `Summary \`a\nb\` done.\n\n${sentence()}\n`],
+    [
+      "after a code span that holds a comment opener in the same paragraph",
+      `Use \`<!--\` to open one. ${sentence()}\n`,
+    ],
+    ["after a link and a code span that holds a comment opener", `See [x](/u "t") and \`<!--\`. ${sentence()}\n`],
+    ["after an escaped backtick", `Summary \\\` done. ${sentence()}\n`],
+    ["after a tag and an inline empty comment", `Summary <b>x</b> <!--> ${sentence()}\n`],
+    ["as the text of a link", `[${sentence()}](/u)\n`],
+    ["after a comment on the line that opens its HTML block", `<!-- note --> ${sentence()}\n`],
+    ["on a paragraph line four columns in that starts with a block tag", `Summary\n    <div> ${sentence()}\n`],
   ])("is carried %s", (_name, body) => {
     expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(true);
+  });
+
+  const tick = "`";
+  // Each construct is read whole, so the code span after it opens and the comment opener in that span starts nothing.
+  test.each([
+    ["a processing instruction", "<?x?>"],
+    ["a CDATA section", "<![CDATA[x]]>"],
+    ["a declaration", "<!DOCTYPE x>"],
+    ["a closed comment", "<!-- x -->"],
+    ["an inline empty comment", "<!-->"],
+    ["an inline empty dash comment", "<!--->"],
+    ["a URI autolink", "<https://x.invalid/>"],
+    ["an email autolink", "<a@x.invalid>"],
+    ["an open tag", '<b title="x">'],
+    ["an inline link", '[x](/u "t")'],
+    ["an image", "![x](/u)"],
+    ["an escaped comment opener", "\\<!--"],
+  ])("is carried after %s and a code span that holds a comment opener", (_name, before) => {
+    const body = `Summary ${before} ${tick}<!--${tick} ${sentence()}\n`;
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(true);
+  });
+
+  // CommonMark reads a backslash escape, raw HTML, an autolink and a link's destination, title or label before a code
+  // span, so a backtick they take opens none and the comment hides the sentence (rows read X<!--, sentence, ` -->).
+  test.each([
+    ["a backslash escape", `\\${tick}`],
+    ["a tag attribute", `<span title="${tick}"></span>`],
+    ["a URI autolink", `<https://example.invalid/${tick}>`],
+    ["a double-quoted link title", `[x](https://example.invalid "${tick}")`],
+    ["an angle-bracket link destination with an escaped line ending", `[x](<a\\\nb${tick}>)`],
+    ["a processing instruction", `<?x ${tick}?>`],
+    ["a CDATA section", `<![CDATA[${tick}]]>`],
+    ["an upper-case declaration", `<!DOCTYPE ${tick}>`],
+    ["a lower-case declaration, which only the 0.31 reading takes", `<!doctype ${tick}>`],
+    ["an email autolink", `<a${tick}b@example.invalid>`],
+    ["an angle-bracket link destination", `[x](<${tick}>)`],
+    ["a bare link destination", `[x](/u${tick})`],
+    ["a single-quoted link title", `[x](/u '${tick}')`],
+    ["a parenthesised link title", `[x](/u (${tick}))`],
+    ["a link title past an escaped quote", `[x](/u "a\\"${tick}")`],
+    ["a bare link destination past an escaped parenthesis", `[x](/u\\)${tick})`],
+    ["an angle-bracket link destination past an escaped >", `[x](<a\\>${tick}>)`],
+    ["an autolink that holds a delete character", `<https://x.invalid/\u007f${tick}>`],
+    ["an extended autolink after ://", `https://example.invalid/${tick}`],
+    ["an extended autolink after www.", `www.example.invalid/${tick}`],
+    ["math between dollar signs", `$a${tick}b$`],
+  ])("is not carried in a comment after a backtick in %s", (_name, before) => {
+    const body = `Summary ${before}<!--\n${sentence()}\n${tick} -->\n`;
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
+  });
+
+  // A construct that does not form leaves its backtick to open a code span with the next one, and the comment after
+  // that span hides the sentence (rows read X, ` <!--, sentence, ` -->).
+  test.each([
+    ["a destination past the parenthesis limit", `[x](${"(".repeat(33)}a${tick}${")".repeat(33)})`],
+    ["an angle-bracket destination that holds <", `[x](<a<${tick}>)`],
+    ["an angle-bracket destination that crosses a line", `[x](<a\nb${tick}>)`],
+    ["a parenthesised title that holds (", `[x](/u (a(${tick}))`],
+    ["a tag whose unquoted attribute value holds the backtick", `<a b=c${tick}d>`],
+    ["a link whose text holds a link", `[a [b](y) c](x${tick})`],
+  ])("is not carried in a comment when %s forms no construct", (_name, before) => {
+    const body = `Summary ${before} ${tick} <!--\n${sentence()}\n${tick} -->\n`;
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
+  });
+
+  test.each([
+    ["a defined reference label", `Summary [x][y${tick}]<!--\n${sentence()}\n${tick} -->\n\n[y${tick}]: /u\n`],
+    ["a footnote label", `Summary [^a${tick}]<!--\n${sentence()}\n${tick} -->\n\n[^a${tick}]: note\n`],
+    ["a link definition title", `[a]: /u "${tick}"\nx <!--\n${sentence()}\n${tick} -->\n`],
+    [
+      "a link that a defined reference inside its text stops forming",
+      `Summary [a [b] c](x${tick}) ${tick} <!--\n${sentence()}\n${tick} -->\n\n[b]: /u\n`,
+    ],
+  ])("is not carried in a comment after %s that takes a backtick", (_name, body) => {
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
+  });
+
+  // Where cmark-gfm (CommonMark 0.29) and pandoc (0.31) part, one shows the sentence and the other hides it. With
+  // `pandocShows` the construct takes the backtick only in pandoc, which then shows the sentence in a code span; with
+  // `cmarkShows` only cmark-gfm leaves the backtick to pair with the one after the sentence.
+  const pandocShows = (before: string) => `Summary ${before} ${tick} <!--\n${sentence()}\n${tick} -->\n`;
+  const cmarkShows = (before: string) => `Summary ${before}<!--\n${sentence()}\n${tick} -->\n`;
+  const split = (opener: string) => `Summary ${sentence().replace(" ", ` ${opener}`)}\n`;
+  test.each([
+    ["a comment that holds --, where pandoc shows it", pandocShows(`<!-- a -- ${tick} -->`)],
+    ["a comment that holds --, where cmark-gfm shows it", cmarkShows(`<!-- a -- ${tick} -->`)],
+    ["a comment that ends in -, where pandoc shows it", pandocShows(`<!-- a ${tick} --->`)],
+    ["a comment that ends in -, where cmark-gfm shows it", cmarkShows(`<!-- a ${tick} --->`)],
+    ["a processing instruction that ends in ?, where pandoc shows it", pandocShows(`<?a${tick}??>`)],
+    ["a processing instruction that ends in ?, where cmark-gfm shows it", cmarkShows(`<?a${tick}??>`)],
+    ["a CDATA section that holds ], where pandoc shows it", pandocShows(`<![CDATA[a${tick}]]]>`)],
+    ["a CDATA section that holds ], where cmark-gfm shows it", cmarkShows(`<![CDATA[a${tick}]]]>`)],
+    ["a lower-case declaration, where pandoc shows it", pandocShows(`<!doctype a${tick}>`)],
+    [
+      "a tag whose unquoted value holds a control character, where pandoc shows it",
+      pandocShows(`<a b=c\u0001 d="${tick}">`),
+    ],
+    ["a title right after an angle-bracket destination, where pandoc shows it", pandocShows(`[x](<u>"${tick}")`)],
+    ["a title right after an angle-bracket destination, where cmark-gfm shows it", cmarkShows(`[x](<u>"${tick}")`)],
+    [
+      "a parenthesised title right after an empty angle-bracket destination, where cmark-gfm shows it",
+      cmarkShows(`[x](<>(${tick}))`),
+    ],
+    ["an inline empty comment inside it", split("<!-->")],
+    ["an inline empty dash comment inside it", split("<!--->")],
+    ["a comment that holds -- inside it", split("<!-- a -- x -->")],
+    [
+      "a comment that holds -- inside it, after a control character",
+      split("<!-- a -- x -->").replace("Summary", "\u0001"),
+    ],
+    ["an inline empty comment inside it, after a dollar sign", split("<!-->").replace("Summary", "$")],
+  ])("is not carried where the renderers part on %s", (_name, body) => {
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
   });
 
   test.each([
@@ -397,7 +525,144 @@ describe("the disclosure sentence in a body", () => {
       `<!--->\n\`<!--\`\n\n${sentence()}\n`,
     ],
     ["in a comment past an inline code span that crosses lines", `Note \` a\nb \` <!-- ${sentence()} --> \`\n`],
+    ["only in a tag attribute", `Summary <span title="${sentence()}"></span>\n`],
+    ["only in a comment inside a tag attribute", `Summary <span title="<!-- ${sentence()} -->"></span>\n`],
+    ["only in a comment inside a link title", `Summary [x](/u "<!-- ${sentence()} -->")\n`],
+    ["only in a comment inside a declaration", `Summary <!X <!-- ${sentence()} -->\n`],
+    ["only inside a fence whose lines end in CRLF", `\`\`\`\r\n${sentence()}\r\n\`\`\`\r\n`],
+    ["only inside a fence after a byte order mark", `\ufeff\`\`\`\n${sentence()}\n\`\`\`\n`],
+    ["only inside a fence whose info string holds a line separator", `~~~\u2028x\n${sentence()}\n~~~\n`],
+    [
+      "past a comment opener that its paragraph does not close, in a footnote definition that no reference uses",
+      `Summary <!-- x\n[^a]: note\n${sentence()}\n`,
+    ],
+    [
+      "past a comment opener that its paragraph does not close, in a tag attribute after an extended autolink",
+      `Summary <!-- x www.a <span title="${sentence()}"></span>\n`,
+    ],
   ])("is not carried when it is %s", (_name, body) => {
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
+  });
+
+  // An HTML block of any of the seven CommonMark types passes its lines through raw: no code span forms there, so a
+  // comment opener inside backticks opens a page comment, and a block that ends at its own line leaves the next
+  // indented line to indented code. Each row's block hides the sentence in the render.
+  const opener = `${tick}<!--${tick}`;
+  test.each([
+    [
+      "a declaration block whose line in a block quote leaves a comment open",
+      `<!DOCTYPE x>\n> <!DOCTYPE ${tick}>${opener}[x](/u${tick})\n- ${sentence()}\n`,
+    ],
+    [
+      "a declaration block that ends at its own line, before an indented line",
+      `<!DOCTYPE ${tick}> x <b>\n    ${sentence()}\n`,
+    ],
+    ["a pre block whose content opens a comment", `<pre>\n${opener}\n</pre>\n\n${sentence()}\n`],
+    ["a pre block that ends at its own line, before an indented line", `<pre>x</pre>\n    ${sentence()}\n`],
+    ["a style block that opens a comment after its end tag", `<style>x</style> ${opener}\n\n${sentence()}\n`],
+    ["an upper-case pre block that another end tag ends", `<PRE>\nx\n</style> ${opener}\n\n${sentence()}\n`],
+    ["a processing instruction block that opens a comment after its end", `<?x ?> ${opener}\n\n${sentence()}\n`],
+    ["a CDATA block that opens a comment after its end", `<![CDATA[x]]> ${opener}\n\n${sentence()}\n`],
+    ["a comment block that ends at its end marker, before an indented line", `<!--\nx\n-->\n    ${sentence()}\n`],
+    ["a div block whose next line opens a comment", `<div>\n${opener}\n\n${sentence()}\n`],
+    ["an upper-case div block that interrupts a paragraph", `Summary\n<DIV>${opener}\n\n${sentence()}\n`],
+    ["a block that a closing div tag opens", `</div> ${opener}\n\n${sentence()}\n`],
+    ["a block that a self-closing div tag opens", `<div/>${opener}\n\n${sentence()}\n`],
+    ["a span tag alone on its line", `<span>\n${opener}\n\n${sentence()}\n`],
+    ["a closing span tag alone on its line", `</span>\n${opener}\n\n${sentence()}\n`],
+    ["a tag with attributes alone on its line", `<a href="x" title='y' z>\n${opener}\n\n${sentence()}\n`],
+    ["a span tag alone on a lazy line after a block quote", `> Summary\n<span>\n${opener}\n\n${sentence()}\n`],
+    ["a div block in a list item", `- <div>\n  ${opener}\n\n${sentence()}\n`],
+  ])("is not carried after %s", (_name, body) => {
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
+  });
+
+  test("is not carried in an attribute of a tag that crosses the lines of an HTML block", () => {
+    expect(lib.bodyCarriesDisclosure(`<div title="\n${sentence()}\n">\n`, "firstmate")).toBe(false);
+  });
+
+  // The check fails closed here: a browser shows the text of a div, but no text inside an HTML block that opens with
+  // anything other than a comment counts, because a tag or an attribute value there may cross the block's lines.
+  test("is not carried inside an HTML block that opens with no comment, though a browser shows it", () => {
+    expect(lib.bodyCarriesDisclosure(`<div>\n${sentence()}\n</div>\n`, "firstmate")).toBe(false);
+  });
+
+  // Each row's block ends where CommonMark ends it, so the backticks on the next line form a code span again.
+  test.each([
+    ["a div block that a blank line ends", `<div>\n\n${opener}\n\n${sentence()}\n`],
+    ["a div block that a CRLF blank line ends", `<div>\r\n\r\n${opener}\r\n\r\n${sentence()}\r\n`],
+    ["a div block that its block quote ends", `> <div>\n${opener}\n\n${sentence()}\n`],
+    ["a pre block that ends at its end tag", `<pre>\nx\n</pre>\n${opener}\n\n${sentence()}\n`],
+    ["a processing instruction block that ends at its end marker", `<?x\n?>\n${opener}\n\n${sentence()}\n`],
+    ["a declaration block that ends at its own line", `<!DOCTYPE x>\n${opener}\n\n${sentence()}\n`],
+    ["a CDATA block that ends at its end marker", `<![CDATA[\nx]]>\n${opener}\n\n${sentence()}\n`],
+    ["an HTML block line that closes a comment a block quote left open", `> <!--\n\n<div>-->\n\n${sentence()}\n`],
+    ["a paragraph that a span tag alone on its line continues", `Summary\n<span>\n${opener}\n\n${sentence()}\n`],
+    ["a paragraph that starts with a tag that text follows", `<span>x</span> ${opener}\n\n${sentence()}\n`],
+    ["a paragraph that starts with a longer tag name than div", `<divx> ${opener}\n\n${sentence()}\n`],
+    ["a paragraph that starts with a longer tag name than pre", `<prex> ${opener}\n\n${sentence()}\n`],
+    ["a paragraph that starts with <! and no letter", `<!1 ${opener}\n\n${sentence()}\n`],
+    ["a paragraph whose lines end in CRLF", `Summary.\r\n\r\n${sentence()}\r\n`],
+    [
+      "a div block with a tab after its name that a blank line ends",
+      `<div\tclass="x">\n\n${opener}\n\n${sentence()}\n`,
+    ],
+    ["a comment block that holds a textarea end tag", `<!--\n</textarea>\n-->\n${sentence()}\n`],
+  ])("is carried after %s", (_name, body) => {
+    expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(true);
+  });
+
+  // Where CommonMark 0.29 (cmark-gfm) and 0.31 (pandoc), or a renderer and the spec, part on an HTML block start or end
+  // or on a line ending, one reading hides the sentence. The check stops reading at that line and drops the paragraph
+  // it might continue.
+  test.each([
+    ["a lower-case declaration, a block only in 0.31", `<!doctype x>\n    ${sentence()}\n`],
+    [
+      "a textarea block, which only 0.31 runs past a blank line",
+      `<textarea>\n\n</textarea> ${opener}\n\n${sentence()}\n`,
+    ],
+    ["a search block, which only 0.31 lets interrupt a paragraph", `Summary\n<search>\n${opener}\n\n${sentence()}\n`],
+    ["a source block, which only 0.29 lets interrupt a paragraph", `Summary\n<source>\n${opener}\n\n${sentence()}\n`],
+    ["a Kelvin sign that pandoc lower-cases to k in link", `Summary\n<lin\u212a>\n${opener}\n\n${sentence()}\n`],
+    ["a Kelvin sign that pandoc lower-cases to k in a lone tag", `<\u212a>\n${opener}\n\n${sentence()}\n`],
+    ["a Kelvin sign that pandoc lower-cases to k after <!", `<!\u212a x>\n    ${sentence()}\n`],
+    ["a vertical tab after a block tag name, a space only in 0.29", `<div\u000b>\n${opener}\n\n${sentence()}\n`],
+    [
+      "a textarea end tag, which ends a pre block only in 0.31",
+      `<pre>\n</textarea>\n\n${opener}\n</pre>\n\n${sentence()}\n`,
+    ],
+    [
+      "a self-closing pre tag, which pandoc reads as a block and the spec does not",
+      `<pre/>\n${opener}\n\n${sentence()}\n`,
+    ],
+    ["a lone carriage return, a line ending in cmark-gfm that pandoc drops", `<div>\r\r${opener}\n\n${sentence()}\n`],
+    ["an empty processing instruction, which pandoc runs on past its line", `<?>\n${opener}\n\n${sentence()}\n`],
+    ["a paragraph line that a lower-case declaration may continue", `Summary <a title="${sentence()}\n<!doctype x">\n`],
+    [
+      "a self-closing pre tag before a fence line, a block in pandoc and a paragraph in the spec",
+      `<pre/>\n~~~\n\n${sentence()}\n`,
+    ],
+    [
+      "a lone pre end tag before a fence line, a block in pandoc and a paragraph in the spec",
+      `</pre>\n~~~\n\n${sentence()}\n`,
+    ],
+    [
+      "a Kelvin sign in a lone tag before a fence line, a block in pandoc and a paragraph in the spec",
+      `<\u212a>\n~~~\n\n${sentence()}\n`,
+    ],
+    [
+      "a textarea end tag in a pre block before a fence line, which only 0.31 ends the block at",
+      `<pre>\n</textarea>\n~~~\n</pre>\n${sentence()}\n`,
+    ],
+    [
+      "a textarea end tag on the line that opens a pre block, which only 0.31 ends the block at",
+      `<pre></textarea>\n\n${opener}\n</pre>\n\n${sentence()}\n`,
+    ],
+    [
+      "a lone carriage return after the sentence's line, where pandoc reads a tag across it",
+      `Summary <a title="${sentence()}\n\r">\n`,
+    ],
+  ])("is not carried where the renderers part on %s", (_name, body) => {
     expect(lib.bodyCarriesDisclosure(body, "firstmate")).toBe(false);
   });
 

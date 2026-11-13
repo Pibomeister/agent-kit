@@ -97,13 +97,26 @@ The pull request body carries this sentence, with the supervisor's name in place
 
 > Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
 
-The check is an exact substring test on the body. Text in an HTML comment or a code block does not count. The
-check follows the CommonMark block structure that decides where those start and end. Block quotes and list items
-are containers. A fence opens and closes only 0 to 3 columns past its container's markers, and it ends where its
-container ends. A line four columns past them is indented code. A comment opener inside a fence or an inline code
-span starts no comment, and a backtick fence line has no backtick in its info string. A comment that an HTML block
-leaves open hides the rest of the page until a later HTML block line closes it. Renderers differ on whether
-`<!-->` or `<!--->` ends the HTML block it opens, so the sentence must show under both readings.
+The check is an exact substring test on the body. Text in an HTML comment, a code block or an HTML block that opens
+with anything other than a comment does not count. The check follows the CommonMark block structure that decides
+where those start and end. Block quotes and list items are containers. A fence opens and closes only 0 to 3 columns
+past its container's markers, and it ends where its container ends. A line four columns past them is indented code.
+A line 0 to 3 columns past them opens an HTML block by any of the seven CommonMark start conditions, save that a
+lone tag does not interrupt a paragraph. A block that opens with `<pre`, `<script`, `<style`, `<!--`, `<?`, `<!`
+and a letter, or `<![CDATA[` ends at the line that holds its end marker. Any other HTML block ends before a blank
+line, and every one ends where its container ends. Its lines are read raw: no code span forms there and every
+comment opener hides. A comment opener inside a fence or an inline code span starts no comment, and a backtick
+fence line has no backtick in its info string. In a paragraph, any other comment opener hides text to its closer or
+to the end of the paragraph. A backslash escape, raw HTML, an autolink and an inline link's destination and title
+take their backticks before a code span opens. Raw HTML and a link's destination and title count as not shown. From
+a construct the check does not model, such as an extended autolink or a link definition, it reads the rest of the
+paragraph in a fallback reading: no code span forms and every comment opener hides. A comment that an HTML block
+leaves open hides the rest of the page until a later HTML block line closes it. The sentence must show under both
+CommonMark readings in use, 0.29 in cmark-gfm and 0.31 in pandoc. They differ on whether `<!-->`, `<!--->` or `<?>`
+ends the HTML block it opens, so the check reads the body both ways. Where they part on an HTML block start or end,
+such as `<!` and a lower-case letter, the tag names `source`, `search` and `textarea`, or a lone end tag or
+self-closing tag named `pre`, `script` or `style`, nothing from that line on counts. The same holds from a lone
+carriage return. A leading byte order mark is dropped, and a CRLF is one line ending.
 
 ## The sequence and its refusals
 
@@ -160,13 +173,18 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 ### Residual limits
 
 - The gate does not see the forge, the posted pull request text or the merged head.
-- The body match does not detect text that renders hidden by other means: raw HTML elements, collapsed details
-  blocks or link definitions. Its reading of tabs and of lazy continuation lines is approximate.
+- The body match does not detect text that renders hidden by other means. These are a tag or an attribute in the
+  fallback reading that follows a construct the check does not model, raw HTML that leaves open an element a
+  browser hides (such as `script`, `style` or `title`) or an attribute value that runs on into later text,
+  collapsed details blocks and image descriptions. They also include footnote and link definitions that no
+  reference uses, which the renderer drops with the lines that continue them. The match reads a table as paragraph
+  text. Its reading of tabs and of lazy continuation lines is approximate.
 - The opt-in policy read from the local default-branch ref is not cross-checked against any forge.
 - The same-user limit: a party that runs as the same OS user can write both files. Both files are claims.
 - A final-ship refusal names its cause. Two kinds of cause need different action:
   - Fix the cause and run the final-ship command again. The causes are a declaration that is absent, invalid
-    or changed since the run was opened (restore the stamped file), a run that ship-preflight has not closed
+    or changed since the run was opened (restore the stamped file), a supervisor name in the environment or
+    the attestation other than the run's (use the run's supervisor), a run that ship-preflight has not closed
     (record ship-preflight first), a relative attestation path, an attestation inside the repository or a
     repository that encloses it, a `.git` entry above the project that git cannot read, an attestation or body
     that cannot be read or fails a check, a reviewer among the authors, and a head that is missing locally
