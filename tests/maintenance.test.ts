@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { createServer, type AddressInfo } from "node:net";
+
+/** `address()` is a pipe path or a TCP address. A pipe is a string; a TCP port is on the object. */
+function isTcpAddress(address: string | AddressInfo | null): address is AddressInfo {
+  return address !== null && Object(address) === address;
+}
 import { join } from "node:path";
 import Ajv from "ajv";
 
@@ -296,8 +301,8 @@ describe("ak doctor checks", () => {
         stalled.listen(0, "127.0.0.1", () => resolve());
       });
       const address = stalled.address();
-      const port = address !== null && "port" in address ? address.port : undefined;
-      if (port === undefined) throw new Error("stall server has no port");
+      if (!isTcpAddress(address)) throw new Error("stall server has no port");
+      const port = address.port;
       const start = Date.now();
       const result = await fetchManifest("codex", `http://127.0.0.1:${port}`, 100);
       expect(result.failure?.reason, JSON.stringify(result.failure)).toBe("network");
