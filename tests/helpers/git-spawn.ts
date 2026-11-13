@@ -10,12 +10,14 @@
  * A null status is a signal or a spawn that produced no process. A spawn error
  * is the same class (`EAGAIN`, `EMFILE`, and the rest). A read that must print
  * a path or a hash (`rev-parse`, a `symbolic-ref` read, `merge-base` other than
- * `--is-ancestor`, `blame --porcelain`, a hash `--format`) exits 0 only with
- * output. Empty output there is that same lost spawn, which is how a loaded
- * host reports "not a git checkout" with nothing after the colon and then
- * copies the work tree itself as if it were the index. Setting or deleting a
- * symbolic ref, and an ancestor check, exit 0 with no output; those are not
- * tried again.
+ * `--is-ancestor`, `blame --porcelain`, a hash `--format`, `ls-tree`) exits 0
+ * only with output. Empty output there is that same lost spawn, which is how a
+ * loaded host reports "not a git checkout" with nothing after the colon and
+ * then copies the work tree itself as if it were the index. `ls-tree` of a path
+ * the pin does not contain also exits 0 with nothing; that result is returned
+ * after the attempts, so the missing path is still reported missing. Setting or
+ * deleting a symbolic ref, and an ancestor check, exit 0 with no output; those
+ * are not tried again.
  */
 import { Buffer } from "node:buffer";
 
@@ -51,7 +53,7 @@ function positionalsAfter(args: readonly string[], command: string): string[] {
 
 /** Commands whose successful run always writes a path or a hash. */
 export function commandMustPrint(args: readonly string[]): boolean {
-  if (args.includes("rev-parse")) return true;
+  if (args.includes("rev-parse") || args.includes("ls-tree")) return true;
   if (args.includes("merge-base")) return !args.includes("--is-ancestor");
   if (args.includes("symbolic-ref")) {
     const writing =

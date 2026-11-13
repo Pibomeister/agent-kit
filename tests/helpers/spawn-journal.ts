@@ -84,9 +84,15 @@ function errnoFields(error: NodeJS.ErrnoException) {
   };
 }
 
+type Directory = NonNullable<SpawnSyncOptions["cwd"]>;
+
+function isUrlDirectory(value: Directory): value is Extract<Directory, { href: string }> {
+  return value instanceof URL;
+}
+
 function cwdText(cwd: SpawnSyncOptions["cwd"]): string | null {
   if (cwd === undefined) return null;
-  if (cwd instanceof URL) return cwd.href;
+  if (isUrlDirectory(cwd)) return cwd.href;
   return cwd;
 }
 
@@ -292,7 +298,7 @@ function observeExec(
   argv: readonly string[],
   options: ExecFileSyncOptions | undefined,
   elapsedMs: number,
-  body: JournalEntry,
+  body: { [key: string]: JournalJson },
 ): void {
   if (armed === null) return;
   quietly(() =>
@@ -308,22 +314,31 @@ function observeExec(
   );
 }
 
+function isExecArgv(value: readonly string[] | ExecFileSyncOptions): value is readonly string[] {
+  return Array.isArray(value);
+}
+
 /** `execFileSync` does not go through `spawnSync`. Same observation, no retry. */
 function installExecFile(): void {
   const childProcess = process.getBuiltinModule("node:child_process");
   const original = childProcess.execFileSync;
   function wrapped(file: string, args?: readonly string[] | ExecFileSyncOptions, options?: ExecFileSyncOptions) {
     const started = Date.now();
-    const argv = Array.isArray(args) ? args : [];
-    const opts = Array.isArray(args) ? options : args;
+    let argv: readonly string[] = [];
+    let opts: ExecFileSyncOptions | undefined;
     try {
-      const result = Array.isArray(args)
-        ? original(file, args, options)
-        : args === undefined
-          ? original(file)
-          : original(file, args);
+      let result: string | Buffer;
+      if (args === undefined) {
+        result = original(file);
+      } else if (isExecArgv(args)) {
+        argv = args;
+        opts = options;
+        result = options === undefined ? original(file, args) : original(file, args, options);
+      } else {
+        opts = args;
+        result = original(file, args);
+      }
       observeExec(file, argv, opts, Date.now() - started, {
-        kind: "spawn",
         threw: false,
         stdout: payload(result),
         stderrCaptured: false,
@@ -332,7 +347,6 @@ function installExecFile(): void {
     } catch (caught) {
       const failure = caught instanceof Error && isExecThrown(caught) ? caught : undefined;
       observeExec(file, argv, opts, Date.now() - started, {
-        kind: "spawn",
         threw: true,
         error:
           failure === undefined
@@ -450,7 +464,7 @@ function tracesOf(runtimeDir: string) {
   return traces;
 }
 
-function bodyDigests(runtimeDir: string) {
+function bodyDigests(runtimeDir: string): JournalJson {
   const file = join(runtimeDir, "trace.sqlite");
   if (!existsSync(file)) return { present: false };
   const db = new Database(file, { readonly: true });
