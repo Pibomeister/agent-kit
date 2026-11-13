@@ -79,10 +79,14 @@ function packagerErrors(project: string): string[] {
   return errorRules(issues.filter((i) => i.severity === "error"));
 }
 
-function summary(argv: string[]): string {
+/** The summary line, and the error lines a later failure would otherwise discard. */
+function summary(argv: string[]) {
   const out: string[] = [];
   runCli(argv, { cwd: ROOT, io: { out: (l) => out.push(l), err: (l) => out.push(l) } });
-  return out.findLast((l) => l.startsWith("ak validate:")) ?? "";
+  return {
+    line: out.findLast((l) => l.startsWith("ak validate:")) ?? "",
+    errors: out.filter((l) => l.startsWith("ERROR")).join("\n"),
+  };
 }
 
 describe("a registry the record names", () => {
@@ -301,8 +305,9 @@ describe("with no registry configured", () => {
   test("`ak validate --project` on a record without one prints the summary `ak validate` prints", () => {
     const record = writeRecord(freshRepository(), null);
     const plain = summary(["validate"]);
-    expect(plain).toMatch(/^ak validate: \d+ errors?/);
-    expect(summary(["validate", "--project", record])).toBe(plain);
+    const named = summary(["validate", "--project", record]);
+    expect(plain.line).toMatch(/^ak validate: \d+ errors?/);
+    expect(named.line, `${plain.errors}\n${named.errors}`).toBe(plain.line);
   }, 300_000);
 
   test("no project record at all runs the check and reports nothing", () => {
