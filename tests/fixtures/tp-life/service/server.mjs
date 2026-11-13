@@ -9,7 +9,6 @@ const html = readFileSync(join(here, "public/index.html"));
 const argv = process.argv.slice(2);
 const BROKEN = new Set(["pending", "success", "failure", "disconnect", "duplicate", "unknown"]);
 const FINISH_MS = 80;
-const HANG_FINISH_MS = 25;
 const SLOW_BODY_MS = 1500;
 
 let port = Number(process.env.PORT ?? 0);
@@ -72,12 +71,6 @@ function scheduleFinish(job) {
     setTimeout(() => {
       job.status = "failure";
     }, FINISH_MS);
-    return;
-  }
-  if (job.op === "hang" && broken === "pending") {
-    setTimeout(() => {
-      job.status = "success";
-    }, HANG_FINISH_MS);
   }
 }
 
@@ -151,6 +144,10 @@ async function handle(req, res) {
       sendJson(res, 404, { error: "unknown job" });
       return;
     }
+    // A hang stays pending. The broken pending fault is that it does not: the
+    // oracle's second poll must already see success. A short timer loses that
+    // race whenever this process is scheduled late, and the case then passes.
+    if (broken === "pending" && job.op === "hang") job.status = "success";
     if (url.searchParams.get("slow") === "1") {
       let finished = false;
       res.writeHead(200, { "content-type": "application/json" });

@@ -192,8 +192,22 @@ const GIT_ISOLATION = [
   "core.hooksPath=/dev/null",
 ];
 
+/** Fixture git ignores an inherited git dir, so rev-parse cannot walk to another repository. */
+function gitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TMPDIR: "/tmp",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_CEILING_DIRECTORIES;
+  return env;
+}
+
 function gitIn(root: string, ...args: string[]) {
-  const run = spawnSync("git", [...GIT_ISOLATION, ...args], { cwd: root, encoding: "utf8" });
+  const run = spawnSync("git", [...GIT_ISOLATION, ...args], { cwd: root, encoding: "utf8", env: gitEnv() });
   if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
 }
 
@@ -212,7 +226,7 @@ function commit(root: string, message: string) {
 }
 
 function check(root: string, ref = "base") {
-  const run = spawnSync("bun", [GROWTH, "--root", root, ref], { encoding: "utf8" });
+  const run = spawnSync("bun", [GROWTH, "--root", root, ref], { encoding: "utf8", env: gitEnv() });
   return { status: run.status, out: `${run.stdout}${run.stderr}` };
 }
 
@@ -313,7 +327,8 @@ describe("baseline growth since the merge base", () => {
     writeFileSync(join(root, BASELINE_PATH), recorded({ "src/a.ts": { r: 1 } }));
     commit(root, "main fixes two");
     gitIn(root, "checkout", "-q", "topic");
-    expect(check(root, "main").status).toBe(0);
+    const run = check(root, "main");
+    expect(run.status, run.out).toBe(0);
   });
 
   test("a ref with no merge base is a usage error that says to fetch history", () => {
