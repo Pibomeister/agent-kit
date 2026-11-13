@@ -15,6 +15,32 @@
 # pre-push hook's build gate fires only for pushes to main, so feature-branch
 # pushes rely on this command for it.
 
+# Generated bundle output is out of review (and document) coverage:
+# `ignore_patterns` is no-mistakes' supported exclusion for those steps.
+# The committed bundle is the `.cursor/` overlay vendored from
+# `ak build --host cursor` by tools/cursor/self-host.sh, plus the gitignored
+# `dist/` build output. Drift is already proven without a reviewer: the
+# `check` job in .github/workflows/ci.yml runs `bun run build` and then
+# `tools/cursor/self-host.sh --check`, which diffs `.cursor/` against the
+# rebuilt bundle (and publish-bundle.yml's `build` job re-runs
+# `ak build --check`). `.cursor/environment.json` is repo-owned and
+# hand-written, so it is deliberately not listed and stays in coverage.
+# The entries below mirror the bundle's current top-level outputs; when
+# the packager adds a new top-level bundle entry, add it here too.
+ignore_patterns:
+  - "dist/**"
+  - ".cursor/adapters/**"
+  - ".cursor/agents/**"
+  - ".cursor/bin/**"
+  - ".cursor/catalog.yaml"
+  - ".cursor/licenses/**"
+  - ".cursor/references/**"
+  - ".cursor/roles/**"
+  - ".cursor/rules/**"
+  - ".cursor/schemas/**"
+  - ".cursor/skills/**"
+  - ".cursor/templates/**"
+
 commands:
   prepare: "bun install --frozen-lockfile"
   test: "bun run test"
