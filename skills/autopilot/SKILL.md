@@ -106,7 +106,12 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    tick re-reads this skill and `./references/checkpoints.md` at the recorded bundle version,
    probes side effects, and replaces an overdue silent delegate through its private loop adapter.
    A report of activity without a side effect does not reset the stuck test. Keep ticking until
-   every delegated owner and child is finished.
+   every delegated owner and child is finished. A failed probe or replacement retries on the next
+   tick and the run stays autonomous while a delegate remains active and
+   `limits.delegate_replacements` is unspent. Status goes guided only when that cap is spent, and
+   it names `delegate-replacements`. The failed attempt approves nothing. Until the next successful
+   tick, `decide` is refused with `audit retry in progress`; retry it after one cadence. This is a
+   transient wait, not a guided handoff.
 6. At each checkpoint, freeze a decision card: the question, two to six bounded options, the one
    option that approves, the evidence refs and the affected artifact hashes
    (`schemas/decision.schema.json`). Only the approving option advances the run.
@@ -162,7 +167,10 @@ when unconfigured, and that lifts the ceiling on a capability, never on authorit
 
 Gate: a missing live event consumer, supervisor loop or charter cadence leaves the run guided.
 The runner refuses unattended `decide` when the charter requested a cadence and either adapter is
-absent. An event payload is still a claim, not authority.
+absent. An event payload is still a claim, not authority. A failed loop adapter approves no
+checkpoint. While `limits.delegate_replacements` is unspent the run stays autonomous and the next
+cadence tick retries; once that cap is spent, status names `delegate-replacements` and the run is
+guided.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|

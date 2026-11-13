@@ -295,6 +295,7 @@ async function execute(
   decisions: Map<string, Promise<unknown>>,
   activeChildren: Set<number>,
   autonomousAvailable: boolean,
+  auditRetryOpen: boolean,
 ) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
@@ -407,8 +408,11 @@ async function execute(
       if (
         charter.audit_cadence_seconds !== undefined &&
         (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery"))
-      )
+      ) {
+        if (auditRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
+          throw new Error("audit retry in progress; checkpoint not approved; retry decide after the next tick");
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
+      }
       const cardId = str(a, "card_id");
       const pending =
         decisions.get(cardId) ??
@@ -426,6 +430,10 @@ async function execute(
 function flag(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(`--${name}`);
   return index < 0 ? undefined : argv[index + 1];
+}
+
+function auditFailure(cause: unknown): string {
+  return `ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`;
 }
 
 async function serve(argv: readonly string[], io: Io): Promise<number> {
@@ -603,59 +611,103 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   };
   let auditTimer: ReturnType<typeof setInterval> | null = null;
   let auditRunning = false;
-  let auditHealthy = true;
+  let auditHalted = false;
+  let auditBlock: "ok" | "retry" | "cap" | "failed" = "ok";
+  const recoveryBudget = () => {
+    try {
+      const run = runner.status(runId);
+      return {
+        cap: run.charter.limits.delegate_replacements,
+        spent: run.budget_consumption["delegate_replacements"] ?? 0,
+      };
+    } catch {
+      return { cap: undefined, spent: 0 };
+    }
+  };
+  const haltAudit = (block: "cap" | "failed") => {
+    auditBlock = block;
+    auditHalted = true;
+    if (auditTimer !== null) clearInterval(auditTimer);
+    auditTimer = null;
+  };
+  const applyPersistedCap = () => {
+    const { cap, spent } = recoveryBudget();
+    if (cap !== undefined && spent > 0 && spent >= cap) haltAudit("cap");
+  };
   const runAudit = async () => {
-    if (loopCommand === null || auditRunning) return;
+    if (loopCommand === null || auditRunning || auditHalted) return;
     auditRunning = true;
     try {
-      const before = runner.auditTick(runId);
+      applyPersistedCap();
+      if (auditHalted) return;
+      let before: ReturnType<Runner["auditTick"]>;
+      try {
+        before = runner.auditTick(runId);
+      } catch (cause) {
+        haltAudit("failed");
+        io.err(auditFailure(cause));
+        return;
+      }
       if (before.drained) {
         if (auditTimer !== null) clearInterval(auditTimer);
         auditTimer = null;
+        auditBlock = "ok";
         return;
       }
-      const probe = await spawnPiped(
-        loopCommand,
-        runner.stateDir,
-        JSON.stringify({ action: "probe", run: runId, delegates: before.active, procedure: before.procedure }),
-        privateChildEnv(runner),
-        activeChildren,
-        loopTimeoutMs ?? undefined,
-      );
-      if (probe.exitCode !== 0) throw new Error(`audit probe exited ${probe.exitCode}`);
-      const observed: unknown = JSON.parse(probe.stdout.toString());
-      if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
-        throw new Error("audit probe did not cover every active delegate");
-      for (const progress of observed.progress) {
-        runner.recordProgress(runId, progress.delegate, progress.kind, progress.ref);
-      }
-      const tick = runner.auditTick(runId);
-      for (const delegate of tick.replace) {
-        const key = sha256Hex(`${runId}\0replace\0${delegate}`);
-        const replaced = await spawnPiped(
+      try {
+        const probe = await spawnPiped(
           loopCommand,
           runner.stateDir,
-          JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }),
+          JSON.stringify({ action: "probe", run: runId, delegates: before.active, procedure: before.procedure }),
           privateChildEnv(runner),
           activeChildren,
           loopTimeoutMs ?? undefined,
         );
-        if (replaced.exitCode !== 0) throw new Error(`replacement adapter exited ${replaced.exitCode}`);
-        const value: unknown = JSON.parse(replaced.stdout.toString());
-        if (!isAuditReplacementReply(value) || value.key !== key)
-          throw new Error("replacement lacked matching read-back");
-        runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+        if (probe.exitCode !== 0) throw new Error(`audit probe exited ${probe.exitCode}`);
+        const observed: unknown = JSON.parse(probe.stdout.toString());
+        if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
+          throw new Error("audit probe did not cover every active delegate");
+        runner.recordProgressBatch(runId, observed.progress);
+        const tick = runner.auditTick(runId);
+        for (const delegate of tick.replace) {
+          const key = sha256Hex(`${runId}\0replace\0${delegate}`);
+          const replaced = await spawnPiped(
+            loopCommand,
+            runner.stateDir,
+            JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }),
+            privateChildEnv(runner),
+            activeChildren,
+            loopTimeoutMs ?? undefined,
+          );
+          if (replaced.exitCode !== 0) throw new Error(`replacement adapter exited ${replaced.exitCode}`);
+          const value: unknown = JSON.parse(replaced.stdout.toString());
+          if (!isAuditReplacementReply(value) || value.key !== key)
+            throw new Error("replacement lacked matching read-back");
+          runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+        }
+        auditBlock = "ok";
+      } catch (cause) {
+        try {
+          const outcome = runner.recordAuditAdapterFailure(runId);
+          if (outcome.cap !== undefined && !outcome.exhausted) auditBlock = "retry";
+          else if (outcome.cap !== undefined) haltAudit("cap");
+          else auditBlock = "failed";
+        } catch (recordCause) {
+          haltAudit("failed");
+          io.err(
+            `ak runner: audit failure was not recorded: ${recordCause instanceof Error ? recordCause.message : String(recordCause)}`,
+          );
+        }
+        io.err(auditFailure(cause));
       }
-      auditHealthy = true;
-    } catch (cause) {
-      auditHealthy = false;
-      io.err(`ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     } finally {
       auditRunning = false;
     }
   };
   const armAudit = () => {
-    if (loopCommand === null || auditTimer !== null) return;
+    if (auditHalted || loopCommand === null || auditTimer !== null) return;
+    applyPersistedCap();
+    if (auditHalted) return;
     try {
       const run = runner.status(runId);
       if (
@@ -680,6 +732,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         const requestValue: unknown = JSON.parse(line);
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
+        const adaptersReady = eventCommand !== null && loopCommand !== null && deliveryHealthy;
+        const auditRetryOpen = adaptersReady && auditBlock === "retry";
         const result = await execute(
           runner,
           request,
@@ -692,7 +746,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           effectAdapters,
           decisions,
           activeChildren,
-          eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy,
+          adaptersReady && auditBlock === "ok",
+          auditRetryOpen,
         );
         const missing = [
           eventCommand === null ? "event-adapter" : null,
@@ -704,7 +759,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined
             ? "charter-cadence"
             : null,
-          !auditHealthy ? "audit-failed" : null,
+          auditBlock === "cap" ? "delegate-replacements" : null,
+          auditBlock === "failed" ? "audit-failed" : null,
         ].filter((part): part is string => part !== null);
         const visibleStatus = () => {
           const run = runner.status(runId);

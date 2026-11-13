@@ -338,7 +338,10 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
     },
     approvals: [{ artifact_hash: "", by: "human", authority: "explicit", at: "2026-10-01T00:00:00Z" }],
   };
-  const charter: typeof initialCharter & { audit_cadence_seconds?: number } = initialCharter;
+  const charter: typeof initialCharter & {
+    audit_cadence_seconds?: number;
+    limits: { delegate_replacements?: number };
+  } = initialCharter;
   charter.immutability.hash = artifactHash({ ...charter, immutability: { ...charter.immutability, hash: "" } });
   const approval = charter.approvals[0];
   if (approval === undefined) throw new Error("toy charter approval missing");
@@ -365,8 +368,54 @@ function standing(f: ReturnType<typeof fixture>): StandingGrant {
   };
 }
 
-function withAuditCadence(f: ReturnType<typeof fixture>) {
+function serveLoop(f: ReturnType<typeof fixture>, script: string, stamp: string) {
+  const socket = join(f.privateDir, "runner.sock");
+  const eventConfig = join(f.privateDir, "event.json");
+  const loopConfig = join(f.privateDir, "loop.json");
+  const tokenFile = join(f.privateDir, "admin.token");
+  const workerToken = "b".repeat(48);
+  writeFileSync(tokenFile, "a".repeat(48), { mode: 0o600 });
+  writeFileSync(
+    eventConfig,
+    JSON.stringify({
+      timeout_ms: 10_000,
+      command: [
+        "bun",
+        "-e",
+        "const e=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({run:e.run,key:e.key}));",
+      ],
+    }),
+  );
+  writeFileSync(loopConfig, JSON.stringify({ timeout_ms: 10_000, command: ["bun", "-e", script, stamp] }));
+  const service = spawnLive(
+    [
+      "bun",
+      "src/cli.ts",
+      "runner",
+      "serve",
+      "--socket",
+      socket,
+      "--state-dir",
+      f.privateDir,
+      "--worker-root",
+      f.worker,
+      "--run-id",
+      "toy-run",
+      "--admin-token-file",
+      tokenFile,
+      "--event-config",
+      eventConfig,
+      "--loop-config",
+      loopConfig,
+    ],
+    { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+  );
+  return { socket, service, workerToken, request: join(f.requestDir, "audit.json") };
+}
+
+function withAuditCadence(f: ReturnType<typeof fixture>, delegateReplacements?: number) {
   f.charter.audit_cadence_seconds = 1;
+  if (delegateReplacements !== undefined) f.charter.limits.delegate_replacements = delegateReplacements;
   f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
   const approval = f.charter.approvals[0];
   if (approval === undefined) throw new Error("toy charter approval missing");
@@ -999,7 +1048,7 @@ describe("runner guards", () => {
 
   test("live charter tick calls the supervisor adapter to replace an overdue delegate", async () => {
     const f = fixture();
-    withAuditCadence(f);
+    withAuditCadence(f, 3);
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
     f.runner.registerDelegate("toy-run", "owner-1", 1, undefined, Date.now() - 3_000);
     const socket = join(f.privateDir, "runner.sock");
@@ -1026,7 +1075,7 @@ describe("runner guards", () => {
         command: [
           "bun",
           "-e",
-          "const x=JSON.parse(await Bun.stdin.text()); if(x.action==='probe') console.log(JSON.stringify({probed:x.delegates,progress:[]})); else { await Bun.write(process.argv[1],JSON.stringify(x)); console.log(JSON.stringify({stood_down:true,replacement:'owner-2',expected_runtime_seconds:10,key:x.key})); }",
+          "const x=JSON.parse(await Bun.stdin.text()); if(x.action==='probe') console.log(JSON.stringify({probed:x.delegates,progress:[]})); else { await Bun.write(process.argv[1],JSON.stringify(x)); console.log(JSON.stringify({stood_down:true,replacement:'owner-2',expected_runtime_seconds:3600,key:x.key})); }",
           replacementLog,
         ],
       }),
@@ -1069,6 +1118,227 @@ describe("runner guards", () => {
       );
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("replaced");
       expect(f.runner.status("toy-run").delegates?.["owner-2"]?.state).toBe("active");
+      expect(autonomyOf(callRunnerCli("status", request, socket, "b".repeat(48)))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("one probe failure followed by a successful retry keeps autonomous mode", async () => {
+    const f = fixture();
+    withAuditCadence(f, 20);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "probe-attempt");
+    const release = `${stamp}.release`;
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "const fs=await import('node:fs');",
+      "const stamp=process.argv[1];",
+      "if(x.action!=='probe') process.exit(2);",
+      "if(!fs.existsSync(stamp)) fs.writeFileSync(stamp,'failed');",
+      "if(!fs.existsSync(stamp+'.release')){",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+      "}",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'observed-report'}]}));",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the failed probe to be spent",
+        () => (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1,
+      );
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(release, "go\n");
+      await waitUntil(
+        "the retry to record the observed report",
+        () =>
+          f.runner
+            .status("toy-run")
+            .delegates?.["owner-1"]?.progress.some((entry) => entry.ref === "observed-report") === true,
+      );
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress.map((entry) => entry.ref)).toEqual([
+        "observed-report",
+      ]);
+      const spent = f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0;
+      expect(spent).toBeGreaterThanOrEqual(1);
+      expect(spent).toBeLessThan(20);
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a probe reply with one unobserved side effect records none of its progress", async () => {
+    const f = fixture();
+    withAuditCadence(f, 20);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[",
+      "{delegate:'owner-1',kind:'store-report',ref:'r1'},",
+      "{delegate:'owner-1',kind:'commit',ref:'0000000000000000000000000000000000000000'}]}));",
+    ].join("");
+    const { socket, service } = serveLoop(f, script, join(f.privateDir, "unused"));
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the partly invalid probe to be spent",
+        () => (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1,
+      );
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a zero replacement cap still probes until the first failure", async () => {
+    const f = fixture();
+    withAuditCadence(f, 0);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'seen'}]}));",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, join(f.privateDir, "unused"));
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the probe to record progress",
+        () => (f.runner.status("toy-run").delegates?.["owner-1"]?.progress.length ?? 0) > 0,
+      );
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("exhausting delegate-replacements leaves a guided stop that names the cap", async () => {
+    const f = fixture();
+    withAuditCadence(f, 1);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "probe-fail");
+    const script = [
+      "const fs=await import('node:fs');",
+      "fs.appendFileSync(process.argv[1],'x');",
+      "console.log(JSON.stringify({probed:[],progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the replacement cap to be spent",
+        () => (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1,
+      );
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["delegate-replacements"],
+      });
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("active");
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+      expect(f.runner.status("toy-run").run_state).not.toBe("cap-reached");
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a charter without a replacement cap goes guided on the first loop failure and names audit-failed", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "probe-fail");
+    const script = [
+      "const fs=await import('node:fs');",
+      "fs.appendFileSync(process.argv[1],'x');",
+      "console.log(JSON.stringify({probed:[],progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil("the failed probe to run", () => existsSync(stamp));
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      await waitUntil("status to name audit-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      );
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["audit-failed"],
+      });
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"]).toBeUndefined();
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("active");
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a failed loop adapter approves no checkpoint", async () => {
+    const f = fixture();
+    withAuditCadence(f, 30);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    card(f, "audit-align");
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "probe-refuse");
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "const fs=await import('node:fs');",
+      "if(!fs.existsSync(process.argv[1])) fs.writeFileSync(process.argv[1],'failed');",
+      "console.log(JSON.stringify({ok:true,approved:true,probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the failed adapter attempt to be recorded",
+        () => (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1,
+      );
+      expect(f.runner.status("toy-run").decisions).toEqual([]);
+      writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "audit-align" }));
+      const refused = callRunnerCli("decide", request, socket, workerToken);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr.toString()).toContain("checkpoint not approved");
+      expect(refused.stderr.toString()).toContain("retry decide after the next tick");
+      expect(f.runner.status("toy-run").decisions).toEqual([]);
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("active");
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      const autonomy = autonomyOf(callRunnerCli("status", request, socket, workerToken));
+      expect(autonomy.mode).toBe("autonomous");
+      expect(autonomy.missing).not.toContain("delegate-replacements");
     } finally {
       service.kill("SIGTERM");
       await service.exited;

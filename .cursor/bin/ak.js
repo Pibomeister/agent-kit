@@ -17815,7 +17815,12 @@ var init_charter_schema = __esm(() => {
             type: "integer",
             minimum: 1
           },
-          review_rounds: { type: "integer", minimum: 1, maximum: 5 }
+          review_rounds: { type: "integer", minimum: 1, maximum: 5 },
+          delegate_replacements: {
+            description: "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. A cap of N allows N failed attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed probe records no progress, and a failed replacement records no replacement for its delegate. Effects of earlier steps in the same tick stand. No failed attempt approves a checkpoint.",
+            type: "integer",
+            minimum: 0
+          }
         }
       },
       audit_cadence_seconds: {
@@ -42467,17 +42472,22 @@ class Runner {
     return delegate;
   }
   recordProgress(id, delegateId, kind, ref, now = Date.now()) {
+    this.recordProgressBatch(id, [{ delegate: delegateId, kind, ref }], now);
+  }
+  recordProgressBatch(id, entries, now = Date.now()) {
     const run2 = this.load(id);
-    const delegate = run2.delegates?.[delegateId];
-    if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
-      throw new Error("progress must identify an active delegate and a side effect");
-    if (kind === "commit") {
-      const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
-      if (observed.code !== 0 || observed.text !== "commit")
-        throw new Error("commit side effect was not observed");
+    for (const { delegate: delegateId, kind, ref } of entries) {
+      const delegate = run2.delegates?.[delegateId];
+      if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
+        throw new Error("progress must identify an active delegate and a side effect");
+      if (kind === "commit") {
+        const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
+        if (observed.code !== 0 || observed.text !== "commit")
+          throw new Error("commit side effect was not observed");
+      }
+      if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
+        delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     }
-    if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
-      delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     this.save(run2);
   }
   auditTick(id, now = Date.now()) {
@@ -42528,6 +42538,19 @@ class Runner {
     delegates[replacementId] = replacement;
     this.save(run2);
     return replacement;
+  }
+  recordAuditAdapterFailure(id) {
+    const run2 = this.load(id);
+    const cap = run2.charter.limits.delegate_replacements;
+    if (cap === undefined)
+      return { cap, spent: 0, exhausted: true };
+    const current = run2.budget_consumption["delegate_replacements"] ?? 0;
+    if (!Number.isSafeInteger(current) || current < 0)
+      throw new Error("delegate replacement count is corrupt");
+    const spent = current + 1;
+    run2.budget_consumption["delegate_replacements"] = spent;
+    this.save(run2);
+    return { cap, spent, exhausted: spent >= cap };
   }
   finishDelegate(id, delegateId) {
     const run2 = this.load(id);
@@ -43036,7 +43059,7 @@ function workerRun(run2) {
     decisions: run2.decisions.map((decision) => ({ ...decision, card: workerCard(decision.card) }))
   };
 }
-async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable) {
+async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable, auditRetryOpen) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken))
     throw new Error("unauthorized runner request");
@@ -43128,8 +43151,11 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
     }
     case "decide": {
       const charter = runner.status(str4(a, "run")).charter;
-      if (charter.audit_cadence_seconds !== undefined && (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery")))
+      if (charter.audit_cadence_seconds !== undefined && (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery"))) {
+        if (auditRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
+          throw new Error("audit retry in progress; checkpoint not approved; retry decide after the next tick");
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
+      }
       const cardId = str4(a, "card_id");
       const pending = decisions.get(cardId) ?? decideCard(runner, str4(a, "run"), cardId, launchers, council, activeChildren).finally(() => decisions.delete(cardId));
       decisions.set(cardId, pending);
@@ -43142,6 +43168,9 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
 function flag2(argv, name) {
   const index = argv.indexOf(`--${name}`);
   return index < 0 ? undefined : argv[index + 1];
+}
+function auditFailure(cause) {
+  return `ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`;
 }
 async function serve(argv, io) {
   const socket = flag2(argv, "socket");
@@ -43308,49 +43337,98 @@ async function serve(argv, io) {
   };
   let auditTimer = null;
   let auditRunning = false;
-  let auditHealthy = true;
+  let auditHalted = false;
+  let auditBlock = "ok";
+  const recoveryBudget = () => {
+    try {
+      const run2 = runner.status(runId);
+      return {
+        cap: run2.charter.limits.delegate_replacements,
+        spent: run2.budget_consumption["delegate_replacements"] ?? 0
+      };
+    } catch {
+      return { cap: undefined, spent: 0 };
+    }
+  };
+  const haltAudit = (block) => {
+    auditBlock = block;
+    auditHalted = true;
+    if (auditTimer !== null)
+      clearInterval(auditTimer);
+    auditTimer = null;
+  };
+  const applyPersistedCap = () => {
+    const { cap, spent } = recoveryBudget();
+    if (cap !== undefined && spent > 0 && spent >= cap)
+      haltAudit("cap");
+  };
   const runAudit = async () => {
-    if (loopCommand === null || auditRunning)
+    if (loopCommand === null || auditRunning || auditHalted)
       return;
     auditRunning = true;
     try {
-      const before = runner.auditTick(runId);
+      applyPersistedCap();
+      if (auditHalted)
+        return;
+      let before;
+      try {
+        before = runner.auditTick(runId);
+      } catch (cause) {
+        haltAudit("failed");
+        io.err(auditFailure(cause));
+        return;
+      }
       if (before.drained) {
         if (auditTimer !== null)
           clearInterval(auditTimer);
         auditTimer = null;
+        auditBlock = "ok";
         return;
       }
-      const probe = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "probe", run: runId, delegates: before.active, procedure: before.procedure }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
-      if (probe.exitCode !== 0)
-        throw new Error(`audit probe exited ${probe.exitCode}`);
-      const observed = JSON.parse(probe.stdout.toString());
-      if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
-        throw new Error("audit probe did not cover every active delegate");
-      for (const progress of observed.progress) {
-        runner.recordProgress(runId, progress.delegate, progress.kind, progress.ref);
+      try {
+        const probe = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "probe", run: runId, delegates: before.active, procedure: before.procedure }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
+        if (probe.exitCode !== 0)
+          throw new Error(`audit probe exited ${probe.exitCode}`);
+        const observed = JSON.parse(probe.stdout.toString());
+        if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
+          throw new Error("audit probe did not cover every active delegate");
+        runner.recordProgressBatch(runId, observed.progress);
+        const tick2 = runner.auditTick(runId);
+        for (const delegate of tick2.replace) {
+          const key = sha256Hex(`${runId}\x00replace\x00${delegate}`);
+          const replaced = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
+          if (replaced.exitCode !== 0)
+            throw new Error(`replacement adapter exited ${replaced.exitCode}`);
+          const value = JSON.parse(replaced.stdout.toString());
+          if (!isAuditReplacementReply(value) || value.key !== key)
+            throw new Error("replacement lacked matching read-back");
+          runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+        }
+        auditBlock = "ok";
+      } catch (cause) {
+        try {
+          const outcome = runner.recordAuditAdapterFailure(runId);
+          if (outcome.cap !== undefined && !outcome.exhausted)
+            auditBlock = "retry";
+          else if (outcome.cap !== undefined)
+            haltAudit("cap");
+          else
+            auditBlock = "failed";
+        } catch (recordCause) {
+          haltAudit("failed");
+          io.err(`ak runner: audit failure was not recorded: ${recordCause instanceof Error ? recordCause.message : String(recordCause)}`);
+        }
+        io.err(auditFailure(cause));
       }
-      const tick2 = runner.auditTick(runId);
-      for (const delegate of tick2.replace) {
-        const key = sha256Hex(`${runId}\x00replace\x00${delegate}`);
-        const replaced = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
-        if (replaced.exitCode !== 0)
-          throw new Error(`replacement adapter exited ${replaced.exitCode}`);
-        const value = JSON.parse(replaced.stdout.toString());
-        if (!isAuditReplacementReply(value) || value.key !== key)
-          throw new Error("replacement lacked matching read-back");
-        runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
-      }
-      auditHealthy = true;
-    } catch (cause) {
-      auditHealthy = false;
-      io.err(`ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     } finally {
       auditRunning = false;
     }
   };
   const armAudit = () => {
-    if (loopCommand === null || auditTimer !== null)
+    if (auditHalted || loopCommand === null || auditTimer !== null)
+      return;
+    applyPersistedCap();
+    if (auditHalted)
       return;
     try {
       const run2 = runner.status(runId);
@@ -43374,14 +43452,17 @@ async function serve(argv, io) {
         if (!isRequest(requestValue))
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
-        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
+        const adaptersReady = eventCommand !== null && loopCommand !== null && deliveryHealthy;
+        const auditRetryOpen = adaptersReady && auditBlock === "retry";
+        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && auditBlock === "ok", auditRetryOpen);
         const missing2 = [
           eventCommand === null ? "event-adapter" : null,
           !deliveryHealthy ? "event-delivery-failed" : null,
           loopCommand === null ? "loop-adapter" : null,
           !runner.status(runId).charter.allowed_capabilities.includes("event-delivery") ? "charter-event-delivery" : null,
           loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined ? "charter-cadence" : null,
-          !auditHealthy ? "audit-failed" : null
+          auditBlock === "cap" ? "delegate-replacements" : null,
+          auditBlock === "failed" ? "audit-failed" : null
         ].filter((part) => part !== null);
         const visibleStatus = () => {
           const run2 = runner.status(runId);

@@ -285,10 +285,20 @@ start; drift refuses the tick. The adapter probes every active owner and child a
 observed side effects: commit, push, PR change, check change, or stored report. Narration is not
 progress. A delegate with no side effect within its expected runtime is sent to the adapter
 with a stable replacement key; only a matching stand-down and replacement read-back records the
-new delegate. The next tick audits the replacement too. A failed probe or replacement leaves the
-work active and the service in guided mode until a successful tick. The timer drains only when
-no active delegate remains. The adapter owns the actual process stop and replacement; the runner
-owns the policy and durable record. Neither an event nor a probe result is authority for a phase.
+new delegate. The next tick audits the replacement too. A failed probe records no progress, and a
+failed replacement records no replacement for its delegate, which stays active. Effects of earlier
+steps in the same tick stand. No failure approves a checkpoint. While a failed attempt waits for its
+retry tick, `decide` is refused with `audit retry in progress` until the next successful tick, and the
+supervisor retries `decide` after one cadence. This is a transient wait, not a guided handoff. When the charter
+sets `limits.delegate_replacements`, the next cadence tick retries and status stays autonomous
+while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
+spent, and `autonomy.missing` names `delegate-replacements`. A cap of N allows N failed
+attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later
+success. A charter that omits the cap supplies no retry budget, so the first failure goes guided
+and names `audit-failed` until a later tick succeeds. The timer drains only when no active
+delegate remains, and it stops when that cap is spent. The adapter owns the actual process stop
+and replacement; the runner owns the policy and durable record. Neither an event nor a probe
+result is authority for a phase.
 
 ### `tracker-access`
 

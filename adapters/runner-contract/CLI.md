@@ -88,13 +88,22 @@ the timeout; the runner guesses no cap. Its command receives
 `{"run":"r","key":"event-key","payload":"..."}` on stdin and returns a matching
 `{"run":"r","key":"event-key"}` only after handing the wake to the controller. It receives a
 run-scoped worker socket token, never the admin token. The private loop config has the same
-command and timeout shape. A timed-out consumer or loop command leaves status guided until a
-successful retry. On a charter cadence the loop receives a `probe` request listing every active delegate
+command and timeout shape. A timed-out event consumer leaves status guided until a successful
+retry. A timed-out or failed loop command stays autonomous and retries on the charter cadence
+while `limits.delegate_replacements` is unspent and a delegate remains active. Status goes guided
+when that cap is spent and names `delegate-replacements`. A cap of N allows N failed attempts,
+and the Nth one halts the audit, so a cap of 1 allows no retry. A charter that omits the cap supplies no
+retry budget, so the first loop failure goes guided and names `audit-failed` until a later tick
+succeeds. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
 whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
 effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
-`stood_down:true`, a replacement id and its expected runtime after read-back. Failure leaves the
-delegate active and status guided. Both config files must be outside the worker root and shared
+`stood_down:true`, a replacement id and its expected runtime after read-back. A failed probe
+records no progress, and a failed replacement records no replacement for its delegate, which stays
+active. Effects of earlier steps in the same tick stand. No failure approves a checkpoint. While a
+failed attempt waits for its retry tick, `decide` is refused with `audit retry in progress` until the
+next successful tick; the supervisor retries `decide` after one cadence. This is a transient wait, not a
+guided handoff. Both config files must be outside the worker root and shared
 Git directory. Restarting the service replays unacknowledged events and resumes the audit timer
 for active delegates.
 
