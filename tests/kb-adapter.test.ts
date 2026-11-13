@@ -689,7 +689,8 @@ describe("readContext", () => {
 
   test("reads what is committed, never an uncommitted file in the checkout", () => {
     const fx = registered();
-    publishPage(fx, fx.project, page(fx));
+    const publishedPage = publishPage(fx, fx.project, page(fx));
+    expect(publishedPage.code, `${publishedPage.out}\n${publishedPage.err}`).toBe(0);
     const dir = join(fx.kb, "projects", "example-project", "documents", "billing", "exports", "adr");
     writeFileSync(join(dir, "draft.md"), "---\nref: doc:x\n---\n\nnot committed\n");
     const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));

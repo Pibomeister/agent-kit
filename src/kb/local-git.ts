@@ -340,6 +340,23 @@ export function committedScopes(kb: ResolvedKb): string[] {
 }
 
 /**
+ * Names in `dir` at HEAD. An absent tree lists nothing, and that empty result is
+ * the scope having no pages. A tree that exists must list its names: a status-0
+ * empty listing of a tree that is there is a lost read, and is retried.
+ */
+function listedNames(root: string, dir: string): ReturnType<typeof git> {
+  const args = ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`] as const;
+  let listed = git(root, args);
+  for (let attempt = 1; listed.status === 0 && listed.stdout === "" && attempt < 3; attempt++) {
+    const tree = git(root, ["rev-parse", "--verify", "--quiet", `HEAD:${dir}`]);
+    if (tree.status !== 0 || tree.stdout.trim() === "") return listed;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    listed = git(root, args);
+  }
+  return listed;
+}
+
+/**
  * `readContext`: the committed pages of the given kinds at `scope` and at each
  * scope above it, most specific first. A project with no pages returns an
  * empty list, which is a fact and not an error.
@@ -367,7 +384,7 @@ export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: str
   for (const at of scopes) {
     for (const kind of kinds) {
       const dir = ["projects", project, "documents", ...at, kind].join("/");
-      const listed = git(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
+      const listed = listedNames(kb.root, dir);
       if (listed.status !== 0) return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\0").filter((name) => name.endsWith(".md"))) {
         const content = committed(kb.root, path);
