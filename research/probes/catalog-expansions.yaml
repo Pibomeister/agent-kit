@@ -215,12 +215,12 @@ schemas:
       reason: >-
         A run supervisor writes this declaration outside every checkout, naming how it meets
         the six obligations, so the unattended policy has one declared form to read and stamp.
-      commits: [d83f9d60]
+      commits: [c773a3c94120c6a8687020818c86a0cbd2432667]
     - ids: [supervisor-attestation]
       reason: >-
         Final ship checks the attestation the run supervisor writes for one head: its validation
         gate, its independent review, the reviewer and the authors.
-      commits: [d83f9d60]
+      commits: [c773a3c94120c6a8687020818c86a0cbd2432667]
 
 profiles:
   baseline: 4
@@ -280,5 +280,5 @@ adapters:
       reason: >-
         The run-supervisor contract under the unattended policy, which Firstmate and an external
         factory both declare against, so the policy names a contract and no vendor or forge.
-      commits: [d83f9d60]
+      commits: [c773a3c94120c6a8687020818c86a0cbd2432667]
       docs: [adapters/supervisor/CONTRACT.md]

@@ -1761,9 +1761,33 @@ describe("the gate a bundle carries", () => {
     expect(legacy.exitCode).toBe(1);
     expect(legacy.stderr.toString()).toContain("typed command");
 
+    const declaration = join(
+      makeTree({
+        "supervisor.json": JSON.stringify({
+          contract: "agent-kit/supervisor-contract@1",
+          supervisor: "fixture-crew",
+          obligations: Object.fromEntries(
+            [
+              "launch-and-watch",
+              "validation-gate",
+              "independent-review",
+              "seat-separation",
+              "head-bound-evidence",
+              "disclosure",
+            ].map((key) => [key, "fixture supervisor obligation"]),
+          ),
+        }),
+      }),
+      "supervisor.json",
+    );
     const unattended = Bun.spawnSync(argv, {
       cwd,
-      env: { ...process.env, AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "fixture-token" },
+      env: {
+        ...process.env,
+        AK_LIFECYCLE_POLICY: "unattended",
+        AK_LIFECYCLE_SUPERVISOR: "fixture-crew",
+        AK_LIFECYCLE_SUPERVISOR_DECLARATION: declaration,
+      },
     });
     expect(unattended.exitCode, unattended.stderr.toString()).toBe(0);
     expect(JSON.parse(unattended.stdout.toString())).toMatchObject({ policy: "unattended", phase: "super-align" });
