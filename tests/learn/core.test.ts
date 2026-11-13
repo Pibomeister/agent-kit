@@ -311,8 +311,11 @@ describe("judge call trace", () => {
         }),
       ).toEqual({ answer: "kept" });
 
-      const row = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"))[0];
-      if (row === undefined) throw new Error("expected a judge trace row");
+      const rows = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
+      const traced = rows.map((entry) => `${entry.attempt} ${entry.outcome} exit=${entry.exit_code}`).join("\n");
+      // An empty first spawn is retried. The body belongs to the attempt that returned the answer.
+      const row = rows.findLast((entry) => entry.outcome === "ok");
+      if (row === undefined) throw new Error(`no successful judge attempt\n${traced}`);
       const db = new Database(join(config.runtimeDir, JUDGE_BODIES_FILE), { readonly: true });
       try {
         expect(
@@ -321,6 +324,7 @@ describe("judge call trace", () => {
               "SELECT prompt, reply FROM judge_bodies WHERE call_id = ?1",
             )
             .get(row.call_id),
+          traced,
         ).toEqual({ prompt: "private prompt", reply: '{"answer":"kept"}' });
       } finally {
         db.close();
@@ -427,7 +431,13 @@ describe("judge body retention", () => {
       };
       const judge = commandJudge(config);
       const context = { loop: "review", role: "pattern-maintainer", project: "shop", runId: null } as const;
-      for (const prompt of ["first", "second", "third"]) expect(judge(prompt, context)).toEqual({ answer: "kept" });
+      for (const prompt of ["first", "second", "third"]) {
+        const reply = judge(prompt, context);
+        const traced = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"))
+          .map((entry) => `${entry.prompt_chars} ${entry.attempt} ${entry.outcome} exit=${entry.exit_code}`)
+          .join("\n");
+        expect(reply, traced).toEqual({ answer: "kept" });
+      }
 
       const retained = ["judge-calls.1.jsonl", "judge-calls.jsonl"].flatMap((name) =>
         readJsonl<JudgeTraceRow>(join(config.runtimeDir, name)).map((row) => row.call_id),
