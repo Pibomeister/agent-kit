@@ -13,7 +13,7 @@
  */
 import { installGitSpawnRetry } from "./helpers/git-spawn.ts";
 import { afterAll, beforeEach, expect } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { processScratch, removeProcessDir } from "./helpers/process-tmp.ts";
 
@@ -30,28 +30,43 @@ for (const key of ["AK_LIFECYCLE_POLICY", "AK_UNATTENDED_READ_TOKEN"]) Reflect.d
 const root = processScratch("ak-test-env-");
 // /usr/bin/git on macOS launches the selected developer tool on every call. Resolve
 // that same tool once; thousands of fixture calls otherwise pay for the launcher.
-// A private PATH entry changes only git, and tests can still prepend their stubs.
-if (process.platform === "darwin" && Bun.which("git") === "/usr/bin/git") {
-  const selected = Bun.spawnSync(["/usr/bin/xcrun", "--find", "git"]);
-  const executable = selected.stdout.toString().trim();
-  if (selected.exitCode === 0 && executable !== "/usr/bin/git" && executable.startsWith("/")) {
-    const bin = join(root, "bin");
-    mkdirSync(bin);
-    // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
-    // The script execs the selected git, and retries a read that must print when that read
-    // exits 0 with empty output. The real path is written into the script: the runner
-    // resolves this entry as its git and starts it with a cleared environment.
-    process.env.AK_GIT_REAL = executable;
-    process.env.AK_GIT_SHIM = "1";
-    const shim = join(bin, "git");
-    const marker = "real=${AK_GIT_REAL:?}";
-    const source = readFileSync(join(import.meta.dir, "helpers/git-retry.sh"), "utf8");
-    if (!source.includes(marker)) throw new Error("git retry shim lost its real-git marker");
-    const quoted = `'${executable.replaceAll("'", "'\\''")}'`;
-    writeFileSync(shim, source.replace(marker, `real=${quoted}`));
-    chmodSync(shim, 0o755);
-    process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+// The suite runner prepends a symlink to that tool, so `which git` is no longer
+// /usr/bin/git and a check for only the launcher would leave Bun.spawnSync with no
+// retry. A private PATH entry changes only git, and tests can still prepend their stubs.
+function selectedGit(found: string): string | undefined {
+  if (found === "/usr/bin/git") {
+    const selected = Bun.spawnSync(["/usr/bin/xcrun", "--find", "git"]);
+    const executable = selected.stdout.toString().trim();
+    if (selected.exitCode !== 0 || executable === "/usr/bin/git" || !executable.startsWith("/")) return undefined;
+    return executable;
   }
+  try {
+    const executable = realpathSync(found);
+    return executable.startsWith("/") ? executable : undefined;
+  } catch {
+    return undefined;
+  }
+}
+const foundGit = process.env.AK_GIT_SHIM === "1" ? undefined : Bun.which("git");
+const resolvedGit =
+  process.platform === "darwin" && foundGit !== null && foundGit !== undefined ? selectedGit(foundGit) : undefined;
+if (resolvedGit !== undefined) {
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
+  // The script execs the selected git, and retries a read that must print when that read
+  // exits 0 with empty output. The real path is written into the script: the runner
+  // resolves this entry as its git and starts it with a cleared environment.
+  process.env.AK_GIT_REAL = resolvedGit;
+  process.env.AK_GIT_SHIM = "1";
+  const shim = join(bin, "git");
+  const marker = "real=${AK_GIT_REAL:?}";
+  const source = readFileSync(join(import.meta.dir, "helpers/git-retry.sh"), "utf8");
+  if (!source.includes(marker)) throw new Error("git retry shim lost its real-git marker");
+  const quoted = `'${resolvedGit.replaceAll("'", "'\\''")}'`;
+  writeFileSync(shim, source.replace(marker, `real=${quoted}`));
+  chmodSync(shim, 0o755);
+  process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
 }
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");

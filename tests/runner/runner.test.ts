@@ -941,7 +941,11 @@ describe("runner guards", () => {
       );
       service = spawnLive(launch, options);
       await waitForPath(socket, service);
-      await waitForPath(delivered, service);
+      await waitUntil(
+        "replayed wake-1 to be written",
+        () => existsSync(delivered) && readFileSync(delivered, "utf8") === "wake-1",
+        20_000,
+      );
       expect(readFileSync(delivered, "utf8")).toBe("wake-1");
       await waitUntil("the replayed event to be acknowledged", () => f.runner.pendingEvents("toy-run").length === 0);
     } finally {

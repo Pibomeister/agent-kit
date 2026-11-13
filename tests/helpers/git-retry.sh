@@ -59,10 +59,11 @@ fi
 attempt=0
 while [ "$attempt" -lt 3 ]; do
   attempt=$((attempt + 1))
-  # The per-user temp dir collects entries until creates in it stall. The suite's own
-  # scratch already avoids it; these captures do too.
-  out=$(TMPDIR=/tmp mktemp)
-  err=$(TMPDIR=/tmp mktemp)
+  # macOS mktemp without a template ignores TMPDIR and uses the per-user temp
+  # dir, which collects entries until creates in it stall. A template is what
+  # places these captures in /tmp.
+  out=$(mktemp /tmp/ak-git-out.XXXXXX) || exit 1
+  err=$(mktemp /tmp/ak-git-err.XXXXXX) || exit 1
   "$real" "$@" >"$out" 2>"$err"
   status=$?
   if [ "$status" -eq 0 ] && [ "$attempt" -lt 3 ] && ! grep -q '[^[:space:]]' "$out" && ! grep -q '[^[:space:]]' "$err"; then

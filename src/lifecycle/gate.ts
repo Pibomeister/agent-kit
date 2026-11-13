@@ -220,7 +220,8 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
   const indexPath = git(project, ["rev-parse", "--git-path", "index"]);
-  if (indexPath.code !== 0) return `cannot locate the index of ${project}`;
+  // An empty path joins back to the project directory, and copying that directory throws.
+  if (indexPath.code !== 0 || indexPath.text === "") return `cannot locate the index of ${project}`;
   const index = isAbsolute(indexPath.text) ? indexPath.text : join(project, indexPath.text);
 
   const scratch = mkdtempSync(join(tmpdir(), "ak-index-"));
