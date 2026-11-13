@@ -1551,7 +1551,7 @@ function bundledGateScript(): string {
 test(`the bundled ${GATE_FILE} carries bypass and refuses an absent grant under node`, () => {
   const s = setup();
   const script = bundledGateScript();
-  const node = (...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd: s.worktree });
+  const node = (...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd: s.worktree, env: process.env });
   // The bundle resolves the account's real ledger, so nothing here runs `grant`: a regression in its
   // guards would write there. The grant itself is exercised above against a temp ledger.
   expect(node().stderr.toString()).toContain("ak lifecycle bypass grant");
