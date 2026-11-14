@@ -41370,6 +41370,7 @@ var HASH = /^sha256:[a-f0-9]{64}$/;
 var REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
 var ID = /^[a-z0-9][a-z0-9-]*$/;
 var EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+var PRIORITY_QUESTION_MS = 600000;
 var HUMAN_REFUSAL = "no";
 var HUMAN_RETRY = "retry";
 function isDesignReportBytes(bytes) {
@@ -41895,6 +41896,41 @@ class Runner {
   }
   status(id) {
     return this.load(id);
+  }
+  question(id, questionId, need, answer2, now = Date.now()) {
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state) && run2.run_state !== "needs-input" || !ID.test(questionId) || !need.trim())
+      throw new Error("priority question needs an active run, id and blocker text");
+    const previous = run2.priority_question;
+    if (previous !== undefined && previous.id !== questionId && previous.answer === undefined)
+      throw new Error("resolve the open priority question before replacing it");
+    if (previous?.id === questionId && previous.need !== need)
+      throw new Error("priority question changed");
+    const question = previous?.id === questionId ? previous : { id: questionId, need, started_at: new Date(now).toISOString() };
+    const resolution = answer2 ?? question.answer;
+    if (resolution !== undefined) {
+      if (!["order", "code", "evidence"].includes(resolution.source) || !resolution.text.trim() || !resolution.ref.trim())
+        throw new Error("priority answer needs text and a reference to the order, code or authorized evidence");
+      question.answer = resolution;
+      run2.priority_question = question;
+      this.save(run2);
+      return { action: "continue", answer: resolution.text, evidence: resolution.ref };
+    }
+    run2.priority_question = question;
+    this.save(run2);
+    const deadline = Date.parse(question.started_at) + PRIORITY_QUESTION_MS;
+    return { action: now >= deadline ? "blocked" : "investigate", need, deadline_at: new Date(deadline).toISOString() };
+  }
+  questionDeadline(id) {
+    const run2 = this.load(id);
+    const question = run2.priority_question;
+    return run2.run_state === "complete" || run2.run_state === "cancelled" || question === undefined || question.answer !== undefined ? null : Date.parse(question.started_at) + PRIORITY_QUESTION_MS;
+  }
+  emitQuestionBlocker(id, emit, now = Date.now()) {
+    const deadline = this.questionDeadline(id);
+    const question = this.load(id).priority_question;
+    if (deadline !== null && now >= deadline && question !== undefined)
+      emit(question.need);
   }
   collect(id, evidenceId, sourcePath, revision, kind) {
     const run2 = this.load(id);
@@ -42884,7 +42920,7 @@ var ADMIN = new Set([
   "finish",
   "verdict"
 ]);
-var WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
+var WORKER = new Set(["status", "ledger", "packet", "question", "prepare", "decide", "sync", "run-verify"]);
 function equal(a, b) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -43120,6 +43156,10 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
       return runner.ledger(str4(a, "run"));
     case "packet":
       return runner.packet(str4(a, "run"), str4(a, "card_id"));
+    case "question": {
+      const answer2 = a.rationale === undefined && a.kind === undefined && a.evidence === undefined ? undefined : { text: str4(a, "rationale"), source: str4(a, "kind"), ref: str4(a, "evidence") };
+      return runner.question(str4(a, "run"), str4(a, "id"), str4(a, "source"), answer2);
+    }
     case "prepare": {
       if (a.card === undefined)
         throw new Error("card is required");
@@ -43306,6 +43346,25 @@ async function serve(argv, io) {
       delivering = false;
     });
   };
+  let questionAlarm = null;
+  const armQuestionAlarm = () => {
+    if (questionAlarm !== null)
+      clearTimeout(questionAlarm);
+    questionAlarm = null;
+    try {
+      const deadline = runner.questionDeadline(runId);
+      if (deadline === null)
+        return;
+      if (deadline <= Date.now()) {
+        runner.emitQuestionBlocker(runId, io.err);
+        return;
+      }
+      questionAlarm = setTimeout(armQuestionAlarm, Math.max(1, deadline - Date.now()));
+    } catch (cause) {
+      if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT"))
+        io.err(`ak runner: priority alarm failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  };
   let auditTimer = null;
   let auditRunning = false;
   let auditHealthy = true;
@@ -43374,6 +43433,7 @@ async function serve(argv, io) {
         if (!isRequest(requestValue))
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
+        const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
         const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
         const missing2 = [
           eventCommand === null ? "event-adapter" : null,
@@ -43394,6 +43454,8 @@ async function serve(argv, io) {
           wakeEvents();
         if (request.verb === "delegate" || request.verb === "start")
           armAudit();
+        if (request.verb === "start" || request.verb === "cancel" || request.verb === "complete" || request.verb === "question" && questionDeadline !== runner.questionDeadline(runId))
+          armQuestionAlarm();
       } catch (cause) {
         connection.end(`${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}
 `);
@@ -43418,8 +43480,11 @@ async function serve(argv, io) {
     io.out(`ak runner: listening on ${socketPath}`);
     wakeEvents();
     armAudit();
+    armQuestionAlarm();
   });
   const close = () => {
+    if (questionAlarm !== null)
+      clearTimeout(questionAlarm);
     if (auditTimer !== null)
       clearInterval(auditTimer);
     for (const pid of activeChildren)

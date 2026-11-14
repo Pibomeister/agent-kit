@@ -74,6 +74,7 @@ const HASH = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
 const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+const PRIORITY_QUESTION_MS = 600_000;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
 
@@ -669,6 +670,58 @@ export class Runner {
 
   status(id: string): Run {
     return this.load(id);
+  }
+
+  question(
+    id: string,
+    questionId: string,
+    need: string,
+    answer?: { text: string; source: string; ref: string },
+    now = Date.now(),
+  ) {
+    const run = this.load(id);
+    if ((STOPPED.has(run.run_state) && run.run_state !== "needs-input") || !ID.test(questionId) || !need.trim())
+      throw new Error("priority question needs an active run, id and blocker text");
+    const previous = run.priority_question;
+    if (previous !== undefined && previous.id !== questionId && previous.answer === undefined)
+      throw new Error("resolve the open priority question before replacing it");
+    if (previous?.id === questionId && previous.need !== need) throw new Error("priority question changed");
+    const question: NonNullable<Run["priority_question"]> =
+      previous?.id === questionId ? previous : { id: questionId, need, started_at: new Date(now).toISOString() };
+    const resolution = answer ?? question.answer;
+    if (resolution !== undefined) {
+      if (
+        !["order", "code", "evidence"].includes(resolution.source) ||
+        !resolution.text.trim() ||
+        !resolution.ref.trim()
+      )
+        throw new Error("priority answer needs text and a reference to the order, code or authorized evidence");
+      question.answer = resolution;
+      run.priority_question = question;
+      this.save(run);
+      return { action: "continue", answer: resolution.text, evidence: resolution.ref };
+    }
+    run.priority_question = question;
+    this.save(run);
+    const deadline = Date.parse(question.started_at) + PRIORITY_QUESTION_MS;
+    return { action: now >= deadline ? "blocked" : "investigate", need, deadline_at: new Date(deadline).toISOString() };
+  }
+
+  questionDeadline(id: string): number | null {
+    const run = this.load(id);
+    const question = run.priority_question;
+    return run.run_state === "complete" ||
+      run.run_state === "cancelled" ||
+      question === undefined ||
+      question.answer !== undefined
+      ? null
+      : Date.parse(question.started_at) + PRIORITY_QUESTION_MS;
+  }
+
+  emitQuestionBlocker(id: string, emit: (text: string) => void, now = Date.now()): void {
+    const deadline = this.questionDeadline(id);
+    const question = this.load(id).priority_question;
+    if (deadline !== null && now >= deadline && question !== undefined) emit(question.need);
   }
 
   collect(id: string, evidenceId: string, sourcePath: string, revision: string, kind: string): Evidence {

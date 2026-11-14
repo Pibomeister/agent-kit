@@ -8,7 +8,9 @@ and retains the deprecated patched binding interface for existing users (ruling
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
 dispatcher, no watcher and no merge path, and it never writes Firstmate's state files. The runner
 and run ledger live in `src/runner/`; this binding adapter does not start that service or dispatch
-its supervisor seats. Firstmate may operate it separately through `ak runner` as described in
+its supervisor seats. Firstmate immediately assigns P0 and prioritized orders dedicated end-to-end
+owners, watches each every cycle, keeps other lanes running, and displays runner blocker output.
+Firstmate may operate it separately through `ak runner` as described in
 [`adapters/runner-contract/CONTRACT.md`](../runner-contract/CONTRACT.md) §9.
 
 ## Stock Firstmate path

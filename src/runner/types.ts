@@ -169,6 +169,12 @@ export interface Run {
   procedure?: ProcedureIdentity;
   verified_base_revision?: string;
   verdict?: PatchVerdict;
+  priority_question?: {
+    id: string;
+    need: string;
+    started_at: string;
+    answer?: { text: string; source: string; ref: string };
+  };
   open_escalation: Escalation | null;
   cancellation?: { by: string; rationale: string; at: string };
   resume?: { run_state: string; next_permitted_action: string | null };

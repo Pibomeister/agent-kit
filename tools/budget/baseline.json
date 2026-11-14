@@ -13,8 +13,8 @@
     },
     "bundle/claude-code:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -33,8 +33,8 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/claude-code:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -533,8 +533,8 @@
     },
     "bundle/claude-code:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/claude-code:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -888,8 +888,8 @@
     },
     "bundle/codex:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -908,8 +908,8 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -938,8 +938,8 @@
     },
     "bundle/codex:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/codex:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -1408,8 +1408,8 @@
     },
     "bundle/codex:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/codex:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -1763,8 +1763,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21272,
-      "tokens": 5314
+      "bytes": 21446,
+      "tokens": 5358
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1783,8 +1783,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34996,
-      "tokens": 8720
+      "bytes": 35215,
+      "tokens": 8775
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1813,8 +1813,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18970,
+      "tokens": 4735
     },
     "bundle/cursor:.cursor/references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -2278,8 +2278,8 @@
     },
     "bundle/cursor:.cursor/skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/cursor:.cursor/skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -2638,8 +2638,8 @@
     },
     "bundle/droid:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -2658,8 +2658,8 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2688,8 +2688,8 @@
     },
     "bundle/droid:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/droid:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -3158,8 +3158,8 @@
     },
     "bundle/droid:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/droid:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -3513,8 +3513,8 @@
     },
     "bundle/grok:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -3533,8 +3533,8 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3563,8 +3563,8 @@
     },
     "bundle/grok:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/grok:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -4033,8 +4033,8 @@
     },
     "bundle/grok:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/grok:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -4388,8 +4388,8 @@
     },
     "bundle/kimi:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -4408,8 +4408,8 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4438,8 +4438,8 @@
     },
     "bundle/kimi:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/kimi:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -4908,8 +4908,8 @@
     },
     "bundle/kimi:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/kimi:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -5263,8 +5263,8 @@
     },
     "firstmate:adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 10537,
-      "tokens": 2629
+      "bytes": 10891,
+      "tokens": 2718
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",
@@ -5273,8 +5273,8 @@
     },
     "firstmate:stock-brief": {
       "file": "src/firstmate/stock.ts",
-      "bytes": 2442,
-      "tokens": 611
+      "bytes": 2722,
+      "tokens": 681
     },
     "hook:semantic-lint-questions": {
       "file": "src/semantic-lint/client.ts",
