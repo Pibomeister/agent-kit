@@ -374,6 +374,36 @@ function withAuditCadence(f: ReturnType<typeof fixture>) {
   writeFileSync(f.path, JSON.stringify(f.charter));
 }
 
+function copyKit(): string {
+  const kit = mkdtempSync(join(scratchRoot, "ak-kit-"));
+  cpSync(join(root, "schemas"), join(kit, "schemas"), { recursive: true });
+  mkdirSync(join(kit, "policies"), { recursive: true });
+  cpSync(join(root, "policies/invocation.yaml"), join(kit, "policies/invocation.yaml"));
+  cpSync(join(root, "package.json"), join(kit, "package.json"));
+  cpSync(join(root, "skills/autopilot"), join(kit, "skills/autopilot"), { recursive: true });
+  return kit;
+}
+
+function procedureKit() {
+  const kit = copyKit();
+  const f = fixture();
+  withAuditCadence(f);
+  return { ...f, kit, runner: new Runner(f.privateDir, f.worker, kit) };
+}
+
+function upgradeProcedure(kit: string, change: { skill?: boolean; version?: boolean } = {}) {
+  const skillPath = join(kit, "skills/autopilot/SKILL.md");
+  const originalSkill = readFileSync(skillPath, "utf8");
+  if (change.skill !== false) writeFileSync(skillPath, `${originalSkill}\n# upgraded procedure\n`);
+  const manifestPath = join(kit, "package.json");
+  const originalManifest = readFileSync(manifestPath, "utf8");
+  if (!/"version"\s*:\s*"[^"]+"/.test(originalManifest)) throw new Error("copied kit has no package version");
+  if (change.version !== false) {
+    writeFileSync(manifestPath, originalManifest.replace(/("version"\s*:\s*")([^"]+)/, "$1$2-upgraded"));
+  }
+  return { skillPath, originalSkill, manifestPath, originalManifest };
+}
+
 function card(
   f: ReturnType<typeof ready>,
   id = "card-1",
@@ -1170,6 +1200,87 @@ describe("runner guards", () => {
     f.runner.finishDelegate("toy-run", "owner-2");
     f.runner.replaceDelegate("toy-run", "child-2", "child-3", 10, started + 4_000);
     expect(f.runner.status("toy-run").delegates?.["child-3"]?.state).toBe("active");
+  });
+
+  // GAP-20 closed for audit-cadence runs; residue: a run without audit_cadence_seconds never
+  // re-checks its recorded bundle procedure, and nothing else does. policies/invocation.yaml
+  // is an unhashed input the captain can choose to add later.
+  test("an audit tick stops when the recorded bundle procedure changes", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    expect(before.procedure.bundle_version).toBeDefined();
+    expect(before.procedure.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    upgradeProcedure(f.kit);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("an audit tick stops when only the recorded bundle version changes", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    const skillPath = join(f.kit, "skills/autopilot/SKILL.md");
+    const skillBefore = readFileSync(skillPath, "utf8");
+    upgradeProcedure(f.kit, { skill: false });
+    expect(readFileSync(skillPath, "utf8")).toBe(skillBefore);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("an audit tick stops when the recorded skill changes without a version bump", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    const upgraded = upgradeProcedure(f.kit, { version: false });
+    expect(readFileSync(upgraded.manifestPath, "utf8")).toBe(upgraded.originalManifest);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("an audit tick stops when only the recorded checkpoints procedure changes", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const before = f.runner.auditTick("toy-run");
+    const skillPath = join(f.kit, "skills/autopilot/SKILL.md");
+    const skillBefore = readFileSync(skillPath, "utf8");
+    const manifestPath = join(f.kit, "package.json");
+    const manifestBefore = readFileSync(manifestPath, "utf8");
+    const checkpointsPath = join(f.kit, "skills/autopilot/references/checkpoints.md");
+    writeFileSync(checkpointsPath, `${readFileSync(checkpointsPath, "utf8")}\n# upgraded checkpoints\n`);
+    expect(readFileSync(skillPath, "utf8")).toBe(skillBefore);
+    expect(readFileSync(manifestPath, "utf8")).toBe(manifestBefore);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").procedure).toEqual(before.procedure);
+  });
+
+  test("an audit stop for a changed procedure does not rewrite blocked decisions or evidence", () => {
+    const f = procedureKit();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const log = join(f.privateDir, "log.txt");
+    writeFileSync(log, "independently collected verification");
+    f.runner.collect("toy-run", "e1", log, f.revision, "source");
+    expect(split(f, "split", ["yes", "no"]).status).toBe("needs-input");
+    const decisionFile = join(f.privateDir, "toy-run-split.decision.json");
+    const blocked = parseJson(readFileSync(decisionFile, "utf8"));
+    if (!(blocked instanceof Object) || Array.isArray(blocked)) throw new Error("expected decision object");
+    expect(blocked).toMatchObject({ status: "blocked" });
+    const evidence = f.runner.status("toy-run").evidence["e1"];
+    expect(evidence?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const recorded = f.runner.status("toy-run").procedure;
+    if (recorded === undefined) throw new Error("run recorded no procedure");
+    const upgraded = upgradeProcedure(f.kit);
+    expect(() => f.runner.auditTick("toy-run")).toThrow("recorded bundle procedure changed; audit cannot continue");
+    expect(f.runner.status("toy-run").run_state).toBe("needs-input");
+    expect(f.runner.status("toy-run").evidence["e1"]).toEqual(evidence);
+    expect(JSON.parse(readFileSync(decisionFile, "utf8"))).toMatchObject({ status: "blocked" });
+    writeFileSync(upgraded.skillPath, upgraded.originalSkill);
+    writeFileSync(upgraded.manifestPath, upgraded.originalManifest);
+    const resumed = f.runner.auditTick("toy-run");
+    expect(resumed.procedure).toEqual(recorded);
+    expect(f.runner.status("toy-run").run_state).toBe("needs-input");
+    expect(f.runner.status("toy-run").evidence["e1"]).toEqual(evidence);
+    expect(JSON.parse(readFileSync(decisionFile, "utf8"))).toMatchObject({ status: "blocked" });
   });
 
   test("live charter tick calls the supervisor adapter to replace an overdue delegate", async () => {
