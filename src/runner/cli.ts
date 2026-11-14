@@ -632,7 +632,6 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     if (loopCommand === null || auditRunning) return;
     auditRunning = true;
     try {
-      runner.emitQuestionBlocker(runId, io.err);
       const before = runner.auditTick(runId);
       if (before.drained) {
         if (auditTimer !== null) clearInterval(auditTimer);
@@ -705,6 +704,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         const requestValue: unknown = JSON.parse(line);
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
+        const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
         const result = await execute(
           runner,
           request,
@@ -742,7 +742,13 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         connection.end(`${JSON.stringify({ ok: true, result: presented })}\n`);
         if (request.verb === "event" || request.verb === "start") wakeEvents();
         if (request.verb === "delegate" || request.verb === "start") armAudit();
-        armQuestionAlarm();
+        if (
+          request.verb === "start" ||
+          request.verb === "cancel" ||
+          request.verb === "complete" ||
+          (request.verb === "question" && questionDeadline !== runner.questionDeadline(runId))
+        )
+          armQuestionAlarm();
       } catch (cause) {
         connection.end(
           `${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}\n`,

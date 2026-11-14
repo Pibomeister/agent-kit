@@ -43372,7 +43372,6 @@ async function serve(argv, io) {
       return;
     auditRunning = true;
     try {
-      runner.emitQuestionBlocker(runId, io.err);
       const before = runner.auditTick(runId);
       if (before.drained) {
         if (auditTimer !== null)
@@ -43433,6 +43432,7 @@ async function serve(argv, io) {
         if (!isRequest(requestValue))
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
+        const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
         const result = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
         const missing = [
           eventCommand === null ? "event-adapter" : null,
@@ -43453,7 +43453,8 @@ async function serve(argv, io) {
           wakeEvents();
         if (request.verb === "delegate" || request.verb === "start")
           armAudit();
-        armQuestionAlarm();
+        if (request.verb === "start" || request.verb === "cancel" || request.verb === "complete" || request.verb === "question" && questionDeadline !== runner.questionDeadline(runId))
+          armQuestionAlarm();
       } catch (cause) {
         connection.end(`${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}
 `);

@@ -1030,8 +1030,25 @@ describe("runner guards", () => {
     expect(f.runner.questionDeadline("toy-run")).toBe(start + 600_000);
   });
 
-  test("priority question service displays an alarm without another worker call", async () => {
-    const f = ready();
+  test("priority question service emits once despite status requests, question retries and audit ticks", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3600);
+    const loopConfig = join(f.privateDir, "loop.json");
+    writeFileSync(
+      loopConfig,
+      JSON.stringify({
+        timeout_ms: 2000,
+        command: [
+          "bun",
+          "-e",
+          `const input=JSON.parse(await Bun.stdin.text());
+        console.log(JSON.stringify({probed:input.delegates,
+          progress:[{delegate:input.delegates[0],kind:"store-report",ref:"probe-"+Date.now()}]}));`,
+        ],
+      }),
+    );
     const need = "Exact priority blocker";
     f.runner.question("toy-run", "q1", need, undefined, Date.now() - 598_000);
     const socket = join(f.privateDir, "runner.sock");
@@ -1053,22 +1070,41 @@ describe("runner guards", () => {
         "toy-run",
         "--admin-token-file",
         tokenFile,
+        "--loop-config",
+        loopConfig,
       ],
       { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: "b".repeat(48) } },
     );
+    const reader = service.stderr.getReader();
     try {
       await waitForPath(socket, service);
       const request = join(f.requestDir, "question.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", id: "q1", source: need }));
       expect(callRunnerCli("question", request, socket, "b".repeat(48)).exitCode).toBe(0);
-      const reader = service.stderr.getReader();
       const output = await reader.read();
       expect(new TextDecoder().decode(output.value).trim()).toBe(need);
-      reader.releaseLock();
+      const probesBefore = f.runner.status("toy-run").delegates?.["owner-1"]?.progress.length ?? 0;
+      const statusRequest = join(f.requestDir, "status.json");
+      writeFileSync(statusRequest, JSON.stringify({ run: "toy-run" }));
+      expect(callRunnerCli("status", statusRequest, socket, "b".repeat(48)).exitCode).toBe(0);
+      expect(callRunnerCli("status", statusRequest, socket, "b".repeat(48)).exitCode).toBe(0);
+      expect(callRunnerCli("question", request, socket, "b".repeat(48)).exitCode).toBe(0);
+      await waitUntil(
+        "another audit probe",
+        () => (f.runner.status("toy-run").delegates?.["owner-1"]?.progress.length ?? 0) > probesBefore,
+      );
     } finally {
       service.kill("SIGTERM");
       await service.exited;
     }
+    const remaining: string[] = [];
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      remaining.push(new TextDecoder().decode(chunk.value));
+    }
+    reader.releaseLock();
+    expect(remaining.join("")).toBe("");
   }, 30_000);
 
   test("audit replaces silent owners and stalled replacements, then drains only after children finish", () => {
