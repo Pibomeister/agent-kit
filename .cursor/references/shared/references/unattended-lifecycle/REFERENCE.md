@@ -16,6 +16,10 @@ when `ak.lifecycle.json` on the repository's default branch (read at `refs/remot
 never the working tree) has `"policy": "unattended"`. Any other value of the variable is refused.
 `open --ticket` stamps the run with the policy and its source, and a record or check under another
 policy is refused. A bypass grant is refused under the policy.
+`AK_LIFECYCLE_SUPERVISOR=<name>`, such as `firstmate` (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`; any
+other value is refused), records who supervises in place of a human. It is a record only and grants
+no authority. The run, its gate records and decisions carry it, and the ship disclosure then reads
+`Unattended lifecycle policy (supervisor: <name>, in place of a human): ...`.
 
 ## Starting a phase
 

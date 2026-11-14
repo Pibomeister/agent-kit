@@ -60,7 +60,6 @@ import {
   checkMergeGate,
   checkReviewStatus,
   compareShipped,
-  DISCLOSURE,
   ghAccounts,
   ghForge,
   HUMAN_STARTED_PHASES,
@@ -71,6 +70,8 @@ import {
   RESIDUAL_ASSUMPTIONS,
   resolvePolicy,
   resolveRepo,
+  SUPERVISOR_PATTERN,
+  unattendedDisclosure,
 } from "./unattended.ts";
 import { isDesignReport } from "./design-report.ts";
 import {
@@ -473,6 +474,11 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
   const ticket = value.ticket as Record<string, unknown>;
   if (typeof ticket.id !== "string" || typeof ticket.hash !== "string") return undefined;
   if (value.closed_at !== undefined && typeof value.closed_at !== "string") return undefined;
+  const policy = object(value.policy);
+  if (policy !== undefined && "supervisor" in policy) {
+    if (!(nonempty(policy.supervisor) && SUPERVISOR_PATTERN.test(policy.supervisor)))
+      Reflect.deleteProperty(policy, "supervisor");
+  }
   return value as unknown as RunRecord;
 }
 
@@ -859,7 +865,10 @@ export function readRecords(dir: string, run: string, gate: Gate): GateRecord[] 
       implementerWellFormed(g.implementer) &&
       (g.verdict === undefined || (g.gate === "review-full" && REVIEW_VERDICTS.includes(g.verdict))) &&
       bypassWellFormed(g.authority) &&
-      (g.policy === undefined || g.policy?.name === "unattended") &&
+      (g.policy === undefined ||
+        (g.policy?.name === "unattended" &&
+          (g.policy.supervisor === undefined ||
+            (nonempty(g.policy.supervisor) && SUPERVISOR_PATTERN.test(g.policy.supervisor))))) &&
       (g.commands === undefined ||
         (Array.isArray(g.commands) &&
           g.commands.every(
@@ -2150,7 +2159,10 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
   const forge = forgeIo();
   io.err(`note: ${RESIDUAL_ASSUMPTIONS}`);
   // The run's stamp, not this invocation's resolution, says where the run's policy was read.
-  const source = readRunRecord(dir, run)?.policy?.source ?? policy.source;
+  const runPolicy = readRunRecord(dir, run)?.policy;
+  const source = runPolicy?.source ?? policy.source;
+  const supervisor = runPolicy?.supervisor ?? policy.supervisor;
+  const stampedPolicy = supervisor === undefined ? { ...policy, source } : { ...policy, source, supervisor };
   if (prFlag === undefined) {
     const gate = checkMergeGate(forge, repo.repo, { identity: true, policySource: source });
     if (gate.failures.length > 0) {
@@ -2167,7 +2179,7 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
       run,
       gate: "ship-preflight",
       project,
-      policy,
+      policy: stampedPolicy,
       builtin: {
         name: "merge-gate",
         argv: ["agent-kit", "merge-gate", repo.repo],
@@ -2186,7 +2198,7 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     closeRun(dir, run, r.record.recorded_at);
     for (const line of [...pre.notes, ...gate.notes.map((text) => `note: ${text}`)]) io.err(line);
     io.out(`recorded ship-preflight for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
-    io.out(DISCLOSURE);
+    io.out(unattendedDisclosure(supervisor));
     for (const reason of pre.decision?.reasons ?? [])
       if (reason.code === "coverage-limit") io.out(`coverage limit: ${reason.detail}`);
     io.out("phase evidence (worker-attested, gate: command -> exit):");
@@ -2455,7 +2467,11 @@ export function main(
       return 2;
     }
     if (MODEL_STARTED_PHASES.some((started) => started === phase)) {
-      io.out(JSON.stringify({ policy: policy?.name ?? "legacy", phase, start: "model-started" }, null, 2));
+      const started =
+        policy?.supervisor === undefined
+          ? { policy: policy?.name ?? "legacy", phase, start: "model-started" }
+          : { policy: policy.name, supervisor: policy.supervisor, phase, start: "model-started" };
+      io.out(JSON.stringify(started, null, 2));
       return 0;
     }
     if (policy === undefined) {
@@ -2464,7 +2480,11 @@ export function main(
       );
       return 1;
     }
-    io.out(JSON.stringify({ policy: policy.name, source: policy.source, phase }, null, 2));
+    const started =
+      policy.supervisor === undefined
+        ? { policy: policy.name, source: policy.source, phase }
+        : { policy: policy.name, source: policy.source, supervisor: policy.supervisor, phase };
+    io.out(JSON.stringify(started, null, 2));
     return 0;
   }
   if (sub === "unattended review-status") {
@@ -2825,7 +2845,8 @@ export function main(
       bypass,
     };
     if (policy !== undefined) {
-      recordArgs.policy = policy;
+      recordArgs.policy =
+        opened?.policy?.supervisor === undefined ? policy : { ...policy, supervisor: opened.policy.supervisor };
       recordArgs.command = command;
     }
     const r = recordGate(recordArgs);

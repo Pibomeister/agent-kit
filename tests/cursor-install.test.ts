@@ -33,17 +33,22 @@ function runFn(
 function scratchHome() {
   const home = processScratch("ak-cursor-install-");
   const trap = join(home, "trap-bin");
+  const fallback = join(home, "fallback-bin");
   const sudoLog = join(home, "sudo.log");
   mkdirSync(join(home, ".bun/bin"), { recursive: true });
   mkdirSync(trap, { recursive: true });
+  mkdirSync(fallback, { recursive: true });
   writeFileSync(join(trap, "sudo"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${sudoLog}'\nexit 0\n`, {
+    mode: 0o755,
+  });
+  writeFileSync(join(fallback, "timeout"), '#!/bin/sh\nshift\nexec "$@"\n', {
     mode: 0o755,
   });
   return {
     home,
     sudoLog,
     bun: join(home, ".bun/bin/bun"),
-    path: `${trap}:${home}/.bun/bin:/usr/bin:/bin`,
+    path: `${trap}:${home}/.bun/bin:${fallback}:/usr/bin:/bin`,
   };
 }
 

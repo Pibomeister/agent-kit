@@ -20,7 +20,8 @@ afterAll(removeProcessDir, 60_000);
 
 for (const key of Object.keys(process.env)) if (key.startsWith("AK_LEARN_")) Reflect.deleteProperty(process.env, key);
 // A runner opted into the unattended lifecycle policy runs this suite as gate evidence; its opt-in is not the tests'.
-for (const key of ["AK_LIFECYCLE_POLICY", "AK_UNATTENDED_READ_TOKEN"]) Reflect.deleteProperty(process.env, key);
+for (const key of ["AK_LIFECYCLE_POLICY", "AK_LIFECYCLE_SUPERVISOR", "AK_UNATTENDED_READ_TOKEN"])
+  Reflect.deleteProperty(process.env, key);
 const root = processScratch("ak-test-env-");
 // /usr/bin/git on macOS launches the selected developer tool on every call. Resolve
 // that same tool once; thousands of fixture calls otherwise pay for the launcher.
