@@ -968,9 +968,28 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").run_state).toBe(before.run_state);
   });
 
-  test("priority question emits the exact blocker at ten minutes including investigation", () => {
+  test("priority question continues an order answer and emits the blocker at a fixed ten-minute deadline", () => {
     const f = ready();
-    const start = Date.now();
+    const start = Date.parse("2026-11-14T10:00:00.000Z");
+    const before = f.runner.status("toy-run");
+    const output: string[] = [];
+    expect(
+      f.runner.question(
+        "toy-run",
+        "answered",
+        "Which command?",
+        {
+          text: "bun test",
+          source: "order",
+          ref: "order:verification",
+        },
+        start,
+      ),
+    ).toEqual({ action: "continue", answer: "bun test", evidence: "order:verification" });
+    f.runner.emitQuestionBlocker("toy-run", (text) => output.push(text), start);
+    expect(output).toEqual([]);
+    expect(f.runner.status("toy-run").run_state).toBe(before.run_state);
+    expect(f.runner.status("toy-run").next_permitted_action).toBe(before.next_permitted_action);
     const need = "Missing environment access\nScope: staging";
     expect(f.runner.question("toy-run", "q1", need, undefined, start).action).toBe("investigate");
     expect(f.runner.question("toy-run", "q1", need, undefined, start + 599_999).action).toBe("investigate");
@@ -979,7 +998,6 @@ describe("runner guards", () => {
     );
     expect(() => f.runner.question("toy-run", "q1", "replacement", undefined, start + 599_999)).toThrow("changed");
     const restarted = new Runner(f.privateDir, f.worker, root);
-    const output: string[] = [];
     restarted.emitQuestionBlocker("toy-run", (text) => output.push(text), start + 599_999);
     expect(output).toEqual([]);
     expect(restarted.question("toy-run", "q1", need, undefined, start + 600_000).action).toBe("blocked");
