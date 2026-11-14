@@ -1,0 +1,36 @@
+{
+  "procedure": "T4-HELD-OUT",
+  "gate": "G3",
+  "suite": "T4",
+  "verdict": "not-run",
+  "reason": "No curator-held corpus and no blind adjudication records are bound to this head. Empty slots are not a pass.",
+  "human_steps": "research/held-out/HUMAN-STEPS.md",
+  "commands": {
+    "evidence": "scripts/t4-held-out.sh evidence"
+  },
+  "corpus": {
+    "documents": 24,
+    "defects": 12,
+    "controls": 12,
+    "reps": 3,
+    "runs_per_host": 144,
+    "keys_holder": "curator",
+    "location": null
+  },
+  "adjudication": {
+    "adjudicators": 2,
+    "tie_breaker": "domain-owner",
+    "blind": true,
+    "records": []
+  },
+  "metrics": {
+    "material_recall": null
+  },
+  "scores": null,
+  "hosts": [],
+  "who_fills": {
+    "curator": "Holds the 24 documents and their keys outside author and reviewer access. Does not live in this tree.",
+    "adjudicators": "Two blind adjudicators score independently. The domain owner breaks ties. A published blinded score is the record, not an author summary.",
+    "harness": "Agents run scripts/t4-held-out.sh evidence only. They do not fill scores and they do not mark passed."
+  }
+}

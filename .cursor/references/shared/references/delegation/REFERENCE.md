@@ -41,7 +41,8 @@ lives in `goal` and `non_goals`. Naming a human owner alone is not that boundary
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A
 never-dropped pack or required sensitive action sets a floor that no factor or lowering may cross;
 re-evaluate that floor from the actual diff before closure (ruling
-`sensitive-surface-sets-the-floor`).
+`sensitive-surface-sets-the-floor`). A path the project declares as a shared surface is the third
+floor source, beside the never-dropped packs and the required sensitive actions.
 
 ## Two snapshots and lowering
 
@@ -51,7 +52,11 @@ verification. It decides how the work may be staffed before implementation.
 
 The merge-time snapshot carries `stage: merge`. It uses the actual diff and verification evidence.
 It may raise the class automatically. It does not inherit a lower ticket-time result when the diff
-requires a higher one (ruling `delegation-class-is-authority-not-finding`).
+requires a higher one (ruling `delegation-class-is-authority-not-finding`). Obtain it with the
+merge-stage command below: its seed is the approved ticket's persisted class, and its floor is the
+union of the ticket-stage floor and what the diff shows. That record selects the review depth
+(ruling `review-depth-follows-delegation-class`); see `pass_1.depth` in
+[`policies/review.yaml`](../../policies/review.yaml).
 
 `lowered_by` is normally `null`. A lowering records:
 
@@ -82,6 +87,23 @@ hand-derived class. Then run:
 ```text
 .cursor/bin/ak delegation <ticket> --project <project-record>
 ```
+
+For the merge-stage record, run instead:
+
+```text
+.cursor/bin/ak delegation <ticket> --project <project-record> --stage merge --base <rev> [--head <rev>] [--evidence <file>]
+```
+
+Run in the implementation repository. `--head` defaults to `HEAD`; both revisions must resolve to
+commits. The diff is `<base>...<head>`, excluding uncommitted changes. The optional evidence file
+is a JSON object accepting only `factors`, `floor` and `lowered_by`, using the corresponding
+[`ticket delegation schema`](../../schemas/ticket.schema.json) definitions, except that `floor`
+may omit members. Supplied `factors` replaces all five factors; omitted factors and lowering retain
+the ticket's values. Explicit `lowered_by: null` clears the lowering. Evidence floor members add to
+the ticket floor; they never remove it. `class` and `stage` are not accepted in evidence. Malformed
+evidence is refused before scoring. Without evidence, the command retains the ticket's factors;
+it does not derive new factor scores or discover packs and sensitive actions from the diff. Supply
+the re-evidenced factors and additional packs and actions when they differ at merge time.
 
 Persist the command's complete JSON output as the ticket's `delegation` block. Cite the ticket and
 project artifact references used for the run wherever another artifact consumes the result. A body
@@ -124,6 +146,17 @@ ticket with no tests scores 0.
 | `complexity` | Concurrency, caching, distributed state, known hotspots and prior fixes. | Complexity delta, churn, prior-fix evidence and new stateful constructs. |
 | `spec` | The six readiness criteria, vague terms and unresolved assumptions below. | Decisions exposed by the diff that the approved ticket did not settle. |
 | `verification` | Existing tests, the planned oracle and named verification path. | Receipts for tests, fail-before evidence, static checks and integration coverage. |
+
+A project declares shared surfaces in `guidance.delegation.shared_surfaces`; each entry has
+`path`, `class` and `reason` as defined by the
+[`project schema`](../../schemas/project.schema.json). Where none are declared, the absence is
+recorded and no measurement is invented. Each `path` matches the whole repository-relative path:
+`*` stays within one segment, `?` matches one non-slash character, `**` spans directories and
+`**/` may match no directory. Other pattern characters are literal. Declare a directory as
+`src/core/**`, not `src/core`. The ticket's `floor.shared_surfaces` lists declared patterns, not
+individual changed paths; undeclared entries are refused. Repeated declarations keep the highest
+class, regardless of order. Merge scoring adds matching patterns automatically from the branch's
+diff against the merge base, with renames split into the deleted source and added destination.
 
 Hotspot overlap and prior-fix density are transparent evidence when a project can supply them. Their
 absence is recorded; a body does not invent either measurement.

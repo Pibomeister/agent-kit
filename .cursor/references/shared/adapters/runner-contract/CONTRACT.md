@@ -400,6 +400,10 @@ card and ask `decide` to apply the next validated grant. `sync` observes the wor
 revision and diff; `run-verify` executes only the supervisor-configured command and stores its
 output privately.
 
+Workers may also register and answer prioritized questions under the
+[CLI question rules](CLI.md#prioritized-questions). These source attestations do not become
+trusted gate evidence or lift an existing approval stop.
+
 The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable bits and index
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.

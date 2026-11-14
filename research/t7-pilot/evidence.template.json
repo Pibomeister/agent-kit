@@ -1,0 +1,28 @@
+{
+  "procedure": "T7-PILOT",
+  "gate": "G5",
+  "suite": "T7",
+  "verdict": "not-run",
+  "reason": "No maintainer-named repos, matched baseline, or human-recorded measures are bound to this head. Empty slots are not a pass.",
+  "human_steps": "research/t7-pilot/HUMAN-STEPS.md",
+  "commands": {
+    "evidence": "scripts/t7-pilot.sh evidence"
+  },
+  "pilot": {
+    "changes_required": 20,
+    "repos_required": 2,
+    "repos": [],
+    "matched_baseline": null,
+    "changes": []
+  },
+  "measures": {
+    "rework": null,
+    "cost": null,
+    "attention": null
+  },
+  "who_fills": {
+    "maintainer": "Names the two repos and the matched baseline. Owns product decisions and disputed adjudication.",
+    "humans": "Record rework, cost and attention. Agents must not self-report rework.",
+    "harness": "Agents run scripts/t7-pilot.sh evidence only. They do not fill measures and they do not mark passed."
+  }
+}

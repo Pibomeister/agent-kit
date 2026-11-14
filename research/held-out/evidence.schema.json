@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/research/held-out/evidence.schema.json",
+  "title": "T4 held-out eval evidence",
+  "description": "G3 / GAP-14. The command always emits not-run. A human curator and two blind adjudicators fill scores. This schema rejects a pass or fail with empty records. A pass also requires a non-empty hosts list. The passed record shape is provisional: no gate may treat parseT4Evidence plus verdict passed as proof until the maintainer names those keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "procedure",
+    "gate",
+    "suite",
+    "verdict",
+    "reason",
+    "human_steps",
+    "corpus",
+    "adjudication",
+    "metrics",
+    "scores",
+    "who_fills"
+  ],
+  "properties": {
+    "procedure": { "const": "T4-HELD-OUT" },
+    "gate": { "const": "G3" },
+    "suite": { "const": "T4" },
+    "verdict": { "enum": ["not-run", "passed", "failed"] },
+    "reason": { "type": "string", "minLength": 1 },
+    "human_steps": { "type": "string", "minLength": 1 },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documents", "defects", "controls", "reps", "runs_per_host", "keys_holder", "location"],
+      "properties": {
+        "documents": { "const": 24 },
+        "defects": { "const": 12 },
+        "controls": { "const": 12 },
+        "reps": { "const": 3 },
+        "runs_per_host": { "const": 144 },
+        "keys_holder": { "const": "curator" },
+        "location": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "adjudication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adjudicators", "tie_breaker", "blind", "records"],
+      "properties": {
+        "adjudicators": { "const": 2 },
+        "tie_breaker": { "const": "domain-owner" },
+        "blind": { "const": true },
+        "records": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["material_recall"],
+      "properties": {
+        "material_recall": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+    "scores": { "type": ["object", "null"] },
+    "hosts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "who_fills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["curator", "adjudicators", "harness"],
+      "properties": {
+        "curator": { "type": "string", "minLength": 1 },
+        "adjudicators": { "type": "string", "minLength": 1 },
+        "harness": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "not-run" } }, "required": ["verdict"] },
+      "then": {
+        "properties": {
+          "corpus": { "properties": { "location": { "type": "null" } } },
+          "adjudication": { "properties": { "records": { "maxItems": 0 } } },
+          "metrics": { "properties": { "material_recall": { "type": "null" } } },
+          "scores": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "enum": ["passed", "failed"] } }, "required": ["verdict"] },
+      "then": {
+        "properties": {
+          "corpus": { "properties": { "location": { "type": "string", "minLength": 1 } } },
+          "adjudication": { "properties": { "records": { "minItems": 1 } } },
+          "metrics": { "properties": { "material_recall": { "type": "number" } } },
+          "scores": { "type": "object", "minProperties": 1 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "passed" } }, "required": ["verdict"] },
+      "then": {
+        "required": ["hosts"],
+        "properties": {
+          "hosts": { "minItems": 1 }
+        }
+      }
+    }
+  ]
+}
