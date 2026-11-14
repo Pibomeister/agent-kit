@@ -164,8 +164,8 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git(top, ["merge-base", "HEAD", baseSha]);
-  // git merge-base exits 1 when the two share no ancestor, and higher when git itself failed.
-  if (merged.status === 1) {
+  // Unrelated histories exit 1 silently; unreadable ancestors can also exit 1, with diagnostics.
+  if (merged.status === 1 && merged.stderr.trim() === "") {
     return {
       location: null,
       top,

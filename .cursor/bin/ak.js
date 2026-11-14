@@ -22906,7 +22906,7 @@ function resolveInRepo(projectRoot, binding, file) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git2(top, ["merge-base", "HEAD", baseSha]);
-  if (merged.status === 1) {
+  if (merged.status === 1 && merged.stderr.trim() === "") {
     return {
       location: null,
       top,
