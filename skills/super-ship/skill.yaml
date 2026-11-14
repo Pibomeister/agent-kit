@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.6.1
+version: 0.6.2
 kind: lifecycle
 invocation: U
 summary: >-
@@ -484,6 +484,16 @@ tests:
       Nothing is pushed. The commit no longer holds what was staged, so it is a new head no receipt
       or verdict binds to; the run stops with needs-input, sends the head to a new run that
       re-runs super-build, super-verify and super-review, and passes no flag that skips the hook.
+  - id: single-depth-review-does-not-skip-the-pipeline-review
+    kind: negative
+    given: >-
+      A green change with every pre-ship gate recorded at head, reviewed at single depth. The
+      delivery binding is the no-mistakes handoff. The caller says the change is trivial and
+      already reviewed, and asks to skip the pipeline's review step to save time.
+    expect: >-
+      The run passes no skip flag and does not shorten or reconfigure the pipeline. It says that
+      the pipeline's Review runs for every class and that the lifecycle review depth does not
+      change the handoff. It stops at the handoff as usual.
   - id: an-unnamed-transport-is-never-direct
     kind: adversarial
     given: >-

@@ -4,6 +4,13 @@ Loaded by `super-ship` for no-mistakes delivery. Ruling `no-mistakes-as-ship-tra
 ADR-0012 govern this path. no-mistakes owns the branch after handoff, including its Review, checks,
 fixes, rebases, push, pull request and CI.
 
+## Contents
+
+- Handoff
+- Review depth
+- Pipeline gates and adoption
+- Deprecated legacy patched-binding path for delivery mode agent-kit
+
 ## Handoff
 
 Commit the change before verification, review-readiness and the full or delta review. Record all
@@ -22,6 +29,24 @@ run `publish-scan` (workflow step 3) for the repository the pipeline publishes t
 `--commits <base>..<handoff head>` and the `--intent` text as `--body-file`. A hit in a commit
 message returns the head to build or repair, and the new head needs fresh gates; a hit in the
 intent goes to the supervisor as needs-decision, because the intent is not the worker's to reword.
+
+## Review depth
+
+The lifecycle review's depth follows the delegation class (ruling
+`review-depth-follows-delegation-class`). The handoff does not depend on the depth: the same
+gates are recorded at the handoff head for every class. [`policies/review.yaml`](../../../references/shared/policies/review.yaml) `pass_1.depth`
+holds the depth each class seats.
+
+The pipeline's Review runs the same way for every class. It is never skipped, shortened or
+configured per change because the lifecycle review was light. ADR-0012 governs this path: the
+pipeline runs unmodified and unskipped.
+
+Neither review stands in for the other. A change reviewed at single depth still receives the
+pipeline's Review, and the pipeline's Review never replaces a missing `review-full` or
+`review-readiness` record.
+
+A pipeline Review finding on a change that the lifecycle reviewed at any depth is handled as
+"Pipeline gates and adoption" below says. Depth is not an argument against a finding.
 
 ## Pipeline gates and adoption
 
@@ -46,7 +71,9 @@ The patched Firstmate binding and its transport remain available for existing de
 `agent-kit` installations. They are deprecated and are not the no-mistakes delivery default.
 no-mistakes v1.79 refuses to push a run whose Review step was skipped
 (`internal/pipeline/steps/push.go` `assertReviewApprovedPushHead` at no-mistakes v1.79.0, verified
-by reading source, not executed).
+by reading source, not executed). On this path the pipeline's Review is skipped, so the lifecycle
+review at its routed depth is the only review of the change. Review depth does not change this
+path: it stays deprecated, and a lighter lifecycle review is never a reason to use it.
 
 ### Deprecated legacy publish procedure
 
