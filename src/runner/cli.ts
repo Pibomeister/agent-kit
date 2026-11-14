@@ -50,7 +50,7 @@ const ADMIN = new Set([
   "finish",
   "verdict",
 ]);
-const WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
+const WORKER = new Set(["status", "ledger", "packet", "question", "prepare", "decide", "sync", "run-verify"]);
 type StringKey =
   | "run"
   | "charter"
@@ -397,6 +397,13 @@ async function execute(
       return runner.ledger(str(a, "run"));
     case "packet":
       return runner.packet(str(a, "run"), str(a, "card_id"));
+    case "question": {
+      const answer =
+        a.rationale === undefined && a.kind === undefined && a.evidence === undefined
+          ? undefined
+          : { text: str(a, "rationale"), source: str(a, "kind"), ref: str(a, "evidence") };
+      return runner.question(str(a, "run"), str(a, "id"), str(a, "source"), answer);
+    }
     case "prepare": {
       if (a.card === undefined) throw new Error("card is required");
       const card = runner.prepare(str(a, "run"), a.card);
@@ -601,6 +608,23 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         delivering = false;
       });
   };
+  let questionAlarm: ReturnType<typeof setTimeout> | null = null;
+  const armQuestionAlarm = () => {
+    if (questionAlarm !== null) clearTimeout(questionAlarm);
+    questionAlarm = null;
+    try {
+      const deadline = runner.questionDeadline(runId);
+      if (deadline === null) return;
+      if (deadline <= Date.now()) {
+        runner.emitQuestionBlocker(runId, io.err);
+        return;
+      }
+      questionAlarm = setTimeout(armQuestionAlarm, Math.max(1, deadline - Date.now()));
+    } catch (cause) {
+      if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+        io.err(`ak runner: priority alarm failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  };
   let auditTimer: ReturnType<typeof setInterval> | null = null;
   let auditRunning = false;
   let auditHealthy = true;
@@ -608,6 +632,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     if (loopCommand === null || auditRunning) return;
     auditRunning = true;
     try {
+      runner.emitQuestionBlocker(runId, io.err);
       const before = runner.auditTick(runId);
       if (before.drained) {
         if (auditTimer !== null) clearInterval(auditTimer);
@@ -717,6 +742,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         connection.end(`${JSON.stringify({ ok: true, result: presented })}\n`);
         if (request.verb === "event" || request.verb === "start") wakeEvents();
         if (request.verb === "delegate" || request.verb === "start") armAudit();
+        armQuestionAlarm();
       } catch (cause) {
         connection.end(
           `${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}\n`,
@@ -738,8 +764,10 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     io.out(`ak runner: listening on ${socketPath}`);
     wakeEvents();
     armAudit();
+    armQuestionAlarm();
   });
   const close = () => {
+    if (questionAlarm !== null) clearTimeout(questionAlarm);
     if (auditTimer !== null) clearInterval(auditTimer);
     for (const pid of activeChildren) killGroup(pid);
     if (existsSync(socketPath)) unlinkSync(socketPath);

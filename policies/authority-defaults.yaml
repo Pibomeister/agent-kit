@@ -334,13 +334,15 @@ checkpoints:
       on_answer_found: record the answer with its evidence and continue the prioritized item
       true_blocker:
         deadline_seconds: 600
-        clock_starts: when none of the authorized answer sources can resolve the question
+        clock_starts: when the question is first registered, including investigation
         exact_text_from: schemas/common.schema.json#/$defs/escalation `need`
         display_text: "{need}"
-        status_surface: return that text to the runner for verbatim display to the outer supervisor
+        status_surface: the runner emits that text verbatim on stderr at the deadline
       outer_loop: >-
-        Return control promptly so the outer supervisor can keep other lanes running. This policy
-        starts no dispatcher or watcher and writes no supervisor state.
+        The outer supervisor immediately assigns each P0 or prioritized order a dedicated end-to-end
+        owner, watches that owner every cycle, and keeps other lanes running in parallel. Agent Kit
+        handles checkpoint questions only; it starts no dispatcher or watcher and writes no supervisor state.
+      executable: ak runner call question
       ruling: firstmate-outer-loop-agent-kit-inner
     forbidden:
       - adding a tie-breaking third supervisor
