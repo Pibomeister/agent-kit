@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { processScratch } from "./helpers/process-tmp.ts";
 
 const root = join(import.meta.dir, "..");
@@ -30,9 +30,16 @@ describe("configured test lanes", () => {
     test(`every file runs once, even when child commands exit ${childStatus}`, () => {
       const scratch = processScratch("ak-test-lanes-");
       try {
-        const bin = join(scratch, "bin");
+        // A separate package keeps the checkout's dependency binaries from shadowing the recorder.
+        const project = join(scratch, "project");
+        for (const file of ["package.json", "tools/test/run.sh", "tools/test/integration-files.txt", ...heavy]) {
+          const target = join(project, file);
+          mkdirSync(dirname(target), { recursive: true });
+          copyFileSync(join(root, file), target);
+        }
+        const bin = join(project, "node_modules", ".bin");
         const log = join(scratch, "calls");
-        mkdirSync(bin);
+        mkdirSync(bin, { recursive: true });
         // Capture the executable interface, without recursively running the suite.
         writeFileSync(
           join(bin, "bun"),
@@ -40,7 +47,7 @@ describe("configured test lanes", () => {
           { mode: 0o755 },
         );
         const run = spawnSync(process.execPath, ["run", "test"], {
-          cwd: root,
+          cwd: project,
           env: {
             ...process.env,
             PATH: `${bin}:${process.env.PATH ?? ""}`,
