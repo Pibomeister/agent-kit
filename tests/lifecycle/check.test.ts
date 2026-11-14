@@ -1747,6 +1747,28 @@ describe("ak lifecycle check, standalone", () => {
 });
 
 describe("the gate a bundle carries", () => {
+  test("a packaged gate child uses the baseline environment unless the opt-in is passed explicitly", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    const file = planBundle({ root: REPO, catalog }, "codex", {}).files.get(GATE_FILE);
+    if (file === undefined) throw new Error("planned gate missing");
+    const script = join(makeTree({ "ak-gate.mjs": file.contents }), "ak-gate.mjs");
+    const cwd = repo();
+    const argv = ["node", script, "unattended", "check", "--phase", "super-align"];
+
+    // Bun otherwise gives the child the launcher's startup environment, before tests/preload.ts cleans process.env.
+    const legacy = Bun.spawnSync(argv, { cwd, env: process.env });
+    expect(legacy.exitCode).toBe(1);
+    expect(legacy.stderr.toString()).toContain("typed command");
+
+    const unattended = Bun.spawnSync(argv, {
+      cwd,
+      env: { ...process.env, AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "fixture-token" },
+    });
+    expect(unattended.exitCode, unattended.stderr.toString()).toBe(0);
+    expect(JSON.parse(unattended.stdout.toString())).toMatchObject({ policy: "unattended", phase: "super-align" });
+  });
+
   // One test per host and runtime: each pass spawns the gate a dozen times, so together they outran the timeout.
   for (const host of ["claude-code", "codex"] as const)
     for (const [label, runtime] of [
@@ -1761,7 +1783,7 @@ describe("the gate a bundle carries", () => {
         const script = join(makeTree({ "ak-gate.mjs": file.contents }), "ak-gate.mjs");
         const dir = repo();
         expectRunAliasesRefused(dir, (...argv) => {
-          const result = Bun.spawnSync([runtime, script, ...argv], { cwd: dir });
+          const result = Bun.spawnSync([runtime, script, ...argv], { cwd: dir, env: process.env });
           return {
             code: result.exitCode,
             out: result.stdout.toString().trim().split("\n"),
@@ -1807,7 +1829,7 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
       expect(file?.contents).toContain("ak lifecycle");
       const script = join(mkdtempSync(join(tmpdir(), "ak-bin-")), "ak-gate.mjs");
       writeFileSync(script, file!.contents);
-      const node = (...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd: dir });
+      const node = (...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd: dir, env: process.env });
       const ticketPath = ticket(dir, `${host}-ticket`);
       const opened = node("open", "--ticket", ticketPath);
       expect(opened.exitCode).toBe(0);
@@ -1883,7 +1905,8 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
     const host = "claude-code";
     const script = join(mkdtempSync(join(tmpdir(), `ak-bin-${host}-`)), "ak-gate.mjs");
     writeFileSync(script, contents[0]!);
-    const node = (cwd: string, ...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd });
+    const node = (cwd: string, ...argv: string[]) =>
+      Bun.spawnSync(["node", script, ...argv], { cwd, env: process.env });
     const start = (id: string) => {
       const dir = repo();
       const ticketPath = ticket(dir, id);
