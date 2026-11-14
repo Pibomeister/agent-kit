@@ -320,7 +320,8 @@ the files in `tools/test/integration-files.txt`. Each integration file runs in a
 Bun process with concurrency limited to one. This separates the learning role calls,
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
 suite and from each other. There are no retries. Both lanes finish even if an earlier file fails;
-the command then returns failure. CI and the configured gate use `bun run test`.
+the command then returns failure. CI uses `bun run test`; the no-mistakes gate does not run the
+suite (`.no-mistakes.yaml` says why).
 
 The runner gives both lanes a private `TMPDIR` and removes it at exit. Shared fixture
 helpers use a separate process directory; [`tests/helpers/process-tmp.ts`](tests/helpers/process-tmp.ts)
