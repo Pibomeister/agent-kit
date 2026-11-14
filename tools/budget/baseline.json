@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18794,
+      "tokens": 4691
     },
     "bundle/claude-code:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -938,8 +938,8 @@
     },
     "bundle/codex:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18794,
+      "tokens": 4691
     },
     "bundle/codex:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -1813,8 +1813,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18794,
+      "tokens": 4691
     },
     "bundle/cursor:.cursor/references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -2688,8 +2688,8 @@
     },
     "bundle/droid:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18794,
+      "tokens": 4691
     },
     "bundle/droid:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -3563,8 +3563,8 @@
     },
     "bundle/grok:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18794,
+      "tokens": 4691
     },
     "bundle/grok:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -4438,8 +4438,8 @@
     },
     "bundle/kimi:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18794,
+      "tokens": 4691
     },
     "bundle/kimi:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
