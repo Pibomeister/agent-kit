@@ -460,22 +460,21 @@ function looseObject(fx: Fixture, rev: string): string {
 }
 
 describe("git failing is failed, not a coverage limit", () => {
-  test("git merge-base failing on a lost ancestor fails check", () => {
+  test.each([false, true])("a lost ancestor fails check with cached commit graph: %s", (cachedGraph) => {
     const fx = fixture();
     const ancestor = looseObject(fx, "main");
     write(fx.project, "README.md", "work\n");
     git(fx.top, "add", "-A");
     git(fx.top, "commit", "-q", "-m", "work moves");
     commitOnMain(fx, { "OTHER.md": "main\n" }, "main moves");
-    git(fx.top, "commit-graph", "write", "--reachable");
+    if (cachedGraph) git(fx.top, "commit-graph", "write", "--reachable");
     rmSync(ancestor);
-    // Both tips and their cached graph remain; checking just the endpoints misses the lost parent.
+    // Both tips remain; a cached graph may let merge-base succeed despite the lost parent.
     git(fx.top, "cat-file", "-e", "HEAD^{commit}");
     git(fx.top, "cat-file", "-e", "refs/remotes/origin/main^{commit}");
     const run = kb(fx, "check");
     expect(run.code).toBe(1);
     expect(run.out).toContain("kb.unreadable");
-    expect(run.out).toContain("git merge-base failed");
   });
 
   test("a HEAD whose commit object is lost fails check rather than reading as unborn", () => {
