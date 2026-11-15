@@ -467,7 +467,11 @@ describe("git failing is failed, not a coverage limit", () => {
     git(fx.top, "add", "-A");
     git(fx.top, "commit", "-q", "-m", "work moves");
     commitOnMain(fx, { "OTHER.md": "main\n" }, "main moves");
+    git(fx.top, "commit-graph", "write", "--reachable");
     rmSync(ancestor);
+    // Both tips and their cached graph remain; checking just the endpoints misses the lost parent.
+    git(fx.top, "cat-file", "-e", "HEAD^{commit}");
+    git(fx.top, "cat-file", "-e", "refs/remotes/origin/main^{commit}");
     const run = kb(fx, "check");
     expect(run.code).toBe(1);
     expect(run.out).toContain("kb.unreadable");
@@ -667,6 +671,26 @@ describe("review pass 1: what the panel found the suite did not pin", () => {
     git(fx.top, "commit", "-q", "-m", "unrelated root");
     git(fx.top, "update-ref", "refs/remotes/origin/main", "unrelated");
     git(fx.top, "checkout", "-q", "work");
+    const run = kb(fx, "check");
+    expectMissing(run);
+    expect(run.out).toContain("shares no history");
+  });
+
+  test("a Git warning leaves healthy bound and unrelated histories available and missing respectively", () => {
+    const fx = fixture();
+    // Private fixture config makes real Git warn without making its history unreadable.
+    git(fx.top, "config", "core.fsyncObjectFiles", "true");
+    expect(kb(fx, "check").code).toBe(0);
+    git(fx.top, "checkout", "-q", "--orphan", "unrelated");
+    git(fx.top, "commit", "-q", "-m", "unrelated root");
+    git(fx.top, "update-ref", "refs/remotes/origin/main", "unrelated");
+    git(fx.top, "checkout", "-q", "work");
+    const merged = spawnSync("git", ["-C", fx.top, "merge-base", "HEAD", "refs/remotes/origin/main"], {
+      encoding: "utf8",
+      env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+    });
+    expect(merged.status).toBe(1);
+    expect(merged.stderr).toContain("warning:");
     const run = kb(fx, "check");
     expectMissing(run);
     expect(run.out).toContain("shares no history");

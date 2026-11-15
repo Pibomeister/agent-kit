@@ -164,8 +164,11 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git(top, ["merge-base", "HEAD", baseSha]);
-  // Unrelated histories exit 1 silently; unreadable ancestors can also exit 1, with diagnostics.
-  if (merged.status === 1 && merged.stderr.trim() === "") {
+  // Exit 1 also covers unreadable ancestors; stderr may contain harmless warnings.
+  // Walk both histories without cached graph data to prove every ancestor remains readable.
+  const ancestry =
+    merged.status === 1 ? git(top, ["-c", "core.commitGraph=false", "rev-list", "--quiet", "HEAD", baseSha]) : merged;
+  if (merged.status === 1 && ancestry.status === 0) {
     return {
       location: null,
       top,
@@ -176,7 +179,9 @@ export function resolveInRepo(projectRoot: string, binding: KbBinding, file: str
     return {
       location: null,
       top,
-      issues: [error("kb.unreadable", file, `git merge-base failed: ${merged.stderr.trim()}`)],
+      issues: [
+        error("kb.unreadable", file, `git merge-base failed: ${ancestry.stderr.trim() || merged.stderr.trim()}`),
+      ],
     };
   }
   const revision = merged.stdout.trim();

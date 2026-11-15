@@ -22906,7 +22906,8 @@ function resolveInRepo(projectRoot, binding, file) {
     return { location: null, top, issues: missing(file, "HEAD names no commit yet, so there is no revision to read.") };
   }
   const merged = git2(top, ["merge-base", "HEAD", baseSha]);
-  if (merged.status === 1 && merged.stderr.trim() === "") {
+  const ancestry = merged.status === 1 ? git2(top, ["-c", "core.commitGraph=false", "rev-list", "--quiet", "HEAD", baseSha]) : merged;
+  if (merged.status === 1 && ancestry.status === 0) {
     return {
       location: null,
       top,
@@ -22917,7 +22918,9 @@ function resolveInRepo(projectRoot, binding, file) {
     return {
       location: null,
       top,
-      issues: [error("kb.unreadable", file, `git merge-base failed: ${merged.stderr.trim()}`)]
+      issues: [
+        error("kb.unreadable", file, `git merge-base failed: ${ancestry.stderr.trim() || merged.stderr.trim()}`)
+      ]
     };
   }
   const revision = merged.stdout.trim();
