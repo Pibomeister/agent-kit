@@ -226,7 +226,10 @@ own agent instructions, which must not be copied into a public pull request. Sta
 and a generated-by footer naming only its tool are not matched against those instructions; `allow: <text>` exempts other
 boilerplate they share with every pull request. The scan stops on a hit
 unless the target is private or internal and its owner is listed. Without the file it scans nothing
-and says so.
+and says so. The matching is heuristic: a marker is caught only as written, in any letter case,
+instruction text only as 8 or more consecutive copied words, and nothing outside the title, body
+and commit messages is read, so a pass is not proof that the text is clean. A commit message is
+read only up to a NUL byte, which only a commit built by hand with plumbing can hold.
 
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
 On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
