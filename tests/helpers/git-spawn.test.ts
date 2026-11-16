@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { describe, expect, test } from "bun:test";
 
@@ -67,6 +67,17 @@ describe("git spawn retry", () => {
     const version = spawnSync("git", ["--version"], { encoding: "utf8" });
     expect(version.status).toBe(0);
     expect(version.stdout).toContain("git version");
+  });
+
+  test("the preload replaces spawnSync only; Bun.spawnSync and execFileSync are the runtime's own", () => {
+    expect(Bun.spawnSync.toString()).toContain("[native code]");
+    // A process started outside `bun test` loads no preload, so its execFileSync is the runtime's.
+    const pristine = Bun.spawnSync(
+      [process.execPath, "-e", 'process.stdout.write(require("node:child_process").execFileSync.toString())'],
+      { cwd: tmpdir() },
+    );
+    expect(pristine.exitCode).toBe(0);
+    expect(execFileSync.toString()).toBe(pristine.stdout.toString());
   });
 
   test("an empty ls-tree is tried again, and a path that stays empty is still empty", () => {
