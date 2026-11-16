@@ -90,11 +90,16 @@ export function assessHumanStep(input: HumanStepInput): HumanStepAssessment {
 
 /**
  * A violation when a human-only step sits at or over the threshold without an escalation on the
- * channel the window allows. Overnight only `morning-handoff` counts, and a page is a violation.
- * During the day `page` or `human-needed` counts.
+ * channel the window allows. Overnight only `morning-handoff` counts, and a page is a violation
+ * at any elapsed time, below the threshold too. During the day `page` or `human-needed` counts.
  */
 export function checkEscalation(input: HumanStepInput & { escalated: boolean; channel?: EscalationChannel }): string[] {
   const result = assessHumanStep(input);
+  if (input.overnight && input.escalated && input.channel === "page") {
+    return [
+      `human-only step '${input.kind}' was paged overnight after ${result.elapsedMs}ms: overnight it goes into the 'morning-handoff', never a page`,
+    ];
+  }
   if (!result.stall) return [];
   if (input.escalated && recordedChannelSatisfies(input.overnight, input.channel)) return [];
   const recorded = input.escalated ? (input.channel ?? "none") : "none";

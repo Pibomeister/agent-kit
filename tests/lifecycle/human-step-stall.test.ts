@@ -162,6 +162,32 @@ describe("escalation invariant", () => {
     ).toEqual([]);
   });
 
+  test("an overnight page below the threshold is a violation, for every kind", () => {
+    for (const kind of HUMAN_STEP_KINDS) {
+      for (const elapsed of [0, MINUTE, HUMAN_STEP_STALL_THRESHOLD_MS - 1]) {
+        const page = checkEscalation({
+          kind,
+          startedAt: START,
+          now: START + elapsed,
+          overnight: true,
+          escalated: true,
+          channel: "page",
+        });
+        expect(page.length, `${kind} ${elapsed}`).toBeGreaterThan(0);
+        expect(page.join("\n"), `${kind} ${elapsed}`).toContain("page");
+        expect(page.join("\n"), `${kind} ${elapsed}`).toContain("morning-handoff");
+      }
+    }
+  });
+
+  test("below the threshold, an un-escalated step, a daytime page and an overnight handoff stay valid", () => {
+    const pending = { kind: "otp", startedAt: START, now: START + MINUTE } as const;
+    expect(checkEscalation({ ...pending, overnight: true, escalated: false })).toEqual([]);
+    expect(checkEscalation({ ...pending, overnight: false, escalated: false })).toEqual([]);
+    expect(checkEscalation({ ...pending, overnight: false, escalated: true, channel: "page" })).toEqual([]);
+    expect(checkEscalation({ ...pending, overnight: true, escalated: true, channel: "morning-handoff" })).toEqual([]);
+  });
+
   test("a morning handoff during the day, or a human-needed channel overnight, is not escalation", () => {
     expect(
       checkEscalation({
@@ -328,6 +354,21 @@ describe("lifecycle supervisor human-step", () => {
     expect(handoff.out).toContain("action=morning-handoff");
     expect(handoff.out).toContain("channel=morning-handoff");
     expect(handoff.err).toBe("");
+  });
+
+  test("an overnight page below the threshold exits 1, and an un-escalated pending step exits 0", () => {
+    const pending = ["human-step", "--kind", "otp", "--started-at", String(START), "--now", String(START + 60_000)];
+    const page = supervisor([...pending, "--overnight", "--escalated", "--channel", "page"]);
+    expect(page.code).toBe(1);
+    expect(page.out).toContain("human-step-pending");
+    expect(page.err).toContain("page");
+    expect(page.err).toContain("morning-handoff");
+
+    const quiet = supervisor([...pending, "--overnight"]);
+    expect(quiet.code).toBe(0);
+    expect(quiet.out).toContain("human-step-pending");
+    expect(quiet.out).toContain("action=none");
+    expect(quiet.err).toBe("");
   });
 
   test("an escalated flag with no channel does not count, day or overnight", () => {
