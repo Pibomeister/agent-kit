@@ -29,13 +29,7 @@
  * unstated visibility is treated as public. With no markers file the scan has nothing to check and
  * says so; a markers file that cannot be read refuses, because unknown is not clean.
  *
- * Both matches are heuristics, and a clean scan is not proof that nothing internal remains. A marker
- * is a plain substring, so a split, re-spelled or encoded form passes. Instruction text is caught only
- * as INSTRUCTION_WORDS or more consecutive words, so a paraphrase or a shorter copy passes, and the
- * exempt trailers, footer and `allow` text are not matched against it at all. Only the title, the
- * body and the commit messages are scanned; branch names, changed files and later comments are not.
- * A commit message is read only up to a NUL byte, which only a commit built by hand with plumbing
- * can hold, so text after one is not scanned.
+ * Heuristic matching limits are documented in README.md's publication guidance.
  *
  * This file ships inside `bin/ak-gate.mjs`, so it imports only `node:` built-ins.
  */

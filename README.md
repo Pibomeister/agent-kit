@@ -230,6 +230,8 @@ and says so. The matching is heuristic: a marker is caught only as written, in a
 instruction text only as 8 or more consecutive copied words, and nothing outside the title, body
 and commit messages is read, so a pass is not proof that the text is clean. A commit message is
 read only up to a NUL byte, which only a commit built by hand with plumbing can hold.
+When scanning commits, `--commits <range>` requires a nonempty revision expression that does not
+start with `-`; a valid range containing no commits, such as `HEAD..HEAD`, contributes zero commit texts.
 
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
 On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
