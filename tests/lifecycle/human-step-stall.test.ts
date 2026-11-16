@@ -257,7 +257,7 @@ describe("interactive auth prompt invariant", () => {
 /** The Nov 12 rule: 10 minutes, then escalate. The supervisor must apply that, not only the helper. */
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-function supervisor(args: readonly string[]): { code: number; out: string; err: string } {
+function supervisor(args: readonly string[]) {
   const out: string[] = [];
   const err: string[] = [];
   const code = main(args, {

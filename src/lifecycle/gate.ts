@@ -2168,9 +2168,9 @@ const ESCALATION_CHANNELS = ["page", "human-needed", "morning-handoff"] as const
 const SHIP_TARGETS = ["pull-request", "deploy"] as const;
 
 const isEscalationChannel = (value: string): value is EscalationChannel =>
-  (ESCALATION_CHANNELS as readonly string[]).includes(value);
+  ESCALATION_CHANNELS.some((channel) => channel === value);
 
-const isShipTarget = (value: string): value is ShipTarget => (SHIP_TARGETS as readonly string[]).includes(value);
+const isShipTarget = (value: string): value is ShipTarget => SHIP_TARGETS.some((target) => target === value);
 
 /** Epoch milliseconds from a flag. Anything else is usage, not a stall. */
 function epochFlag(raw: string, name: string): number {
@@ -2186,10 +2186,14 @@ function epochFlag(raw: string, name: string): number {
  * interactive auth prompt is held open.
  */
 function runHumanStep(io: Io, flags: Map<string, string | true>): number {
-  const kind = flags.get("kind");
-  const startedRaw = flags.get("started-at");
-  const nowRaw = flags.get("now");
-  if (typeof kind !== "string" || typeof startedRaw !== "string" || typeof nowRaw !== "string") {
+  const text = (name: string): string | undefined => {
+    const value = flags.get(name);
+    return value === true ? undefined : value;
+  };
+  const kind = text("kind");
+  const startedRaw = text("started-at");
+  const nowRaw = text("now");
+  if (kind === undefined || startedRaw === undefined || nowRaw === undefined) {
     io.err("ak lifecycle human-step: --kind, --started-at and --now are required");
     return 2;
   }
@@ -2199,18 +2203,18 @@ function runHumanStep(io: Io, flags: Map<string, string | true>): number {
     );
     return 2;
   }
-  const channelRaw = flags.get("channel");
-  if (typeof channelRaw === "string" && !isEscalationChannel(channelRaw)) {
+  const channelRaw = text("channel");
+  if (channelRaw !== undefined && !isEscalationChannel(channelRaw)) {
     io.err("ak lifecycle human-step: --channel must be page, human-needed or morning-handoff");
     return 2;
   }
-  const targetRaw = flags.get("target");
-  if (typeof targetRaw === "string" && !isShipTarget(targetRaw)) {
+  const targetRaw = text("target");
+  if (targetRaw !== undefined && !isShipTarget(targetRaw)) {
     io.err("ak lifecycle human-step: --target must be pull-request or deploy");
     return 2;
   }
-  const blockedOn = flags.get("blocked-on");
-  if (typeof blockedOn === "string" && typeof targetRaw !== "string") {
+  const blockedOn = text("blocked-on");
+  if (blockedOn !== undefined && targetRaw === undefined) {
     io.err("ak lifecycle human-step: --blocked-on needs --target pull-request or deploy");
     return 2;
   }
@@ -2240,12 +2244,12 @@ function runHumanStep(io: Io, flags: Map<string, string | true>): number {
       now,
       overnight,
       escalated,
-      channel: typeof channelRaw === "string" ? channelRaw : undefined,
+      channel: channelRaw,
     }),
-    ...(typeof targetRaw === "string"
+    ...(targetRaw !== undefined
       ? checkBlockedOnHumanStep({
           target: targetRaw,
-          blockedOn: typeof blockedOn === "string" ? blockedOn : null,
+          blockedOn: blockedOn ?? null,
         })
       : []),
     ...checkInteractiveAuthPrompt({ kind, promptHeldOpen, overnight }),
