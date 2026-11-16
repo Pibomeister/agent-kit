@@ -109,8 +109,9 @@ uncommitted changes, which include untracked files that git does not ignore (com
 git-ignore the rest, then record the gates again), and on success closes
 the run and prints the disclosure and each gate's commands. Every refusal in the declaration steps ends
 with one recovery: open a new run with `open --ticket` under the declaration in force and record the
-gates again. Put the disclosure in the pull request text. Under no-mistakes delivery, edit the opened
-pull request's text once the pipeline returns: that is the only pull-request write. The sentence is:
+gates again. Open the pull request text with the disclosure as its first paragraph, then a blank line.
+Under no-mistakes delivery, edit the opened pull request's text once the pipeline returns to put it
+first: that is the only pull-request write. The sentence is:
 
 > Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
 

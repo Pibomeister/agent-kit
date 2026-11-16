@@ -18,8 +18,8 @@
     },
     "bundle/claude-code:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 13026,
-      "tokens": 3251
+      "bytes": 13064,
+      "tokens": 3261
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -48,8 +48,8 @@
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14639,
-      "tokens": 3660
+      "bytes": 12838,
+      "tokens": 3209
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -203,8 +203,8 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10528,
-      "tokens": 2632
+      "bytes": 10589,
+      "tokens": 2648
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -803,8 +803,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23877,
-      "tokens": 5965
+      "bytes": 23926,
+      "tokens": 5977
     },
     "bundle/claude-code:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -913,8 +913,8 @@
     },
     "bundle/codex:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 13026,
-      "tokens": 3251
+      "bytes": 13064,
+      "tokens": 3261
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -943,8 +943,8 @@
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14639,
-      "tokens": 3660
+      "bytes": 12838,
+      "tokens": 3209
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1098,8 +1098,8 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10528,
-      "tokens": 2632
+      "bytes": 10589,
+      "tokens": 2648
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1698,8 +1698,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 24038,
-      "tokens": 6005
+      "bytes": 24087,
+      "tokens": 6017
     },
     "bundle/codex:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -1808,8 +1808,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 13086,
-      "tokens": 3266
+      "bytes": 13124,
+      "tokens": 3276
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1838,8 +1838,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14639,
-      "tokens": 3660
+      "bytes": 12838,
+      "tokens": 3209
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1993,8 +1993,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10600,
-      "tokens": 2650
+      "bytes": 10661,
+      "tokens": 2666
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2588,8 +2588,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23910,
-      "tokens": 5973
+      "bytes": 23959,
+      "tokens": 5985
     },
     "bundle/cursor:.cursor/skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -2703,8 +2703,8 @@
     },
     "bundle/droid:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 13026,
-      "tokens": 3251
+      "bytes": 13064,
+      "tokens": 3261
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -2733,8 +2733,8 @@
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14639,
-      "tokens": 3660
+      "bytes": 12838,
+      "tokens": 3209
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2888,8 +2888,8 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10528,
-      "tokens": 2632
+      "bytes": 10589,
+      "tokens": 2648
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3488,8 +3488,8 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 24021,
-      "tokens": 6000
+      "bytes": 24070,
+      "tokens": 6013
     },
     "bundle/droid:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -3598,8 +3598,8 @@
     },
     "bundle/grok:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 13026,
-      "tokens": 3251
+      "bytes": 13064,
+      "tokens": 3261
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -3628,8 +3628,8 @@
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14639,
-      "tokens": 3660
+      "bytes": 12838,
+      "tokens": 3209
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3783,8 +3783,8 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10528,
-      "tokens": 2632
+      "bytes": 10589,
+      "tokens": 2648
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -4383,8 +4383,8 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 23862,
-      "tokens": 5961
+      "bytes": 23911,
+      "tokens": 5973
     },
     "bundle/grok:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -4493,8 +4493,8 @@
     },
     "bundle/kimi:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 13026,
-      "tokens": 3251
+      "bytes": 13064,
+      "tokens": 3261
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -4523,8 +4523,8 @@
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14639,
-      "tokens": 3660
+      "bytes": 12838,
+      "tokens": 3209
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4678,8 +4678,8 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 10528,
-      "tokens": 2632
+      "bytes": 10589,
+      "tokens": 2648
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -5278,8 +5278,8 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 24053,
-      "tokens": 6008
+      "bytes": 24102,
+      "tokens": 6021
     },
     "bundle/kimi:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -5383,8 +5383,8 @@
     },
     "firstmate:adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 12904,
-      "tokens": 3221
+      "bytes": 12942,
+      "tokens": 3230
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",

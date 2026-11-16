@@ -80,7 +80,7 @@ first remote call, as in `dry-run`, and every remote effect waits for the superv
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
 check --phase super-ship` exiting 0 is the start (an exception to ruling `entrypoint-phase-operation-split`).
 `record --gate ship-preflight` checks the supervisor declaration and closes the run only when it holds.
-Put the disclosure in the pull request text and record final ship with `--attestation <absolute path> --body-file <file>`.
+Open the pull request text with the disclosure as its first paragraph, then a blank line, and record final ship with `--attestation <absolute path> --body-file <file>`.
 Detail: [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) and
 [the supervisor contract](../../adapters/supervisor/CONTRACT.md).
 
@@ -264,7 +264,7 @@ In `dry-run` the effects performed are `artifact-write` alone.
 ## Stop conditions
 
 `complete`: under no-mistakes delivery, the committed handoff head and ship-preflight are recorded
-with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request carries the disclosure and `ship-preflight --attestation <file> --body-file <file>` succeeded. In direct `dry-run`, the payload and pre-flight record are
+with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request opens with the disclosure and `ship-preflight --attestation <file> --body-file <file>` succeeded. In direct `dry-run`, the payload and pre-flight record are
 emitted. In direct `publish`, the branch and PR exist with read-backs, the lesson candidate is
 drafted (or named as not published under a knowledgebase coverage limit), and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful attested final ship).
 

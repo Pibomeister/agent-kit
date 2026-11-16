@@ -34,7 +34,7 @@ non-empty line.
 | `independent-review` | A reviewer that wrote none of the change approved the head |
 | `seat-separation` | The implementer, verifier and reviewer seats are filled by separate parties |
 | `head-bound-evidence` | Each attested fact names the head it covers |
-| `disclosure` | The pull request carries the disclosure sentence below |
+| `disclosure` | Each pull request body opens with the disclosure sentence below as its first paragraph |
 
 Example declaration. The `contract` value names this version.
 
@@ -48,7 +48,7 @@ Example declaration. The `contract` value names this version.
     "independent-review": "A reviewer session that wrote none of the change reviews the head and records its verdict.",
     "seat-separation": "The factory dispatches implementer, verifier and reviewer as separate sessions.",
     "head-bound-evidence": "Every stored result names the 40-character head it ran against.",
-    "disclosure": "The factory adds the disclosure sentence to each pull request body it opens."
+    "disclosure": "The factory opens each pull request body with the disclosure sentence as its first paragraph."
   }
 }
 ```
@@ -93,30 +93,19 @@ enclosing repository names its toplevel.
 
 ## The disclosure sentence
 
-The pull request body carries this sentence, with the supervisor's name in place of `<name>`:
+The pull request body opens with this sentence as its first paragraph, with the supervisor's name in place of
+`<name>`:
 
 > Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
 
-The check is an exact substring test on the body. Text in an HTML comment, a code block or an HTML block that opens
-with anything other than a comment does not count. The check follows the CommonMark block structure that decides
-where those start and end. Block quotes and list items are containers. A fence opens and closes only 0 to 3 columns
-past its container's markers, and it ends where its container ends. A line four columns past them is indented code.
-A line 0 to 3 columns past them opens an HTML block by any of the seven CommonMark start conditions, save that a
-lone tag does not interrupt a paragraph. A block that opens with `<pre`, `<script`, `<style`, `<!--`, `<?`, `<!`
-and a letter, or `<![CDATA[` ends at the line that holds its end marker. Any other HTML block ends before a blank
-line, and every one ends where its container ends. Its lines are read raw: no code span forms there and every
-comment opener hides. A comment opener inside a fence or an inline code span starts no comment, and a backtick
-fence line has no backtick in its info string. In a paragraph, any other comment opener hides text to its closer or
-to the end of the paragraph. A backslash escape, raw HTML, an autolink and an inline link's destination and title
-take their backticks before a code span opens. Raw HTML and a link's destination and title count as not shown. From
-a construct the check does not model, such as an extended autolink or a link definition, it reads the rest of the
-paragraph in a fallback reading: no code span forms and every comment opener hides. A comment that an HTML block
-leaves open hides the rest of the page until a later HTML block line closes it. The sentence must show under both
-CommonMark readings in use, 0.29 in cmark-gfm and 0.31 in pandoc. They differ on whether `<!-->`, `<!--->` or `<?>`
-ends the HTML block it opens, so the check reads the body both ways. Where they part on an HTML block start or end,
-such as `<!` and a lower-case letter, the tag names `source`, `search` and `textarea`, or a lone end tag or
-self-closing tag named `pre`, `script` or `style`, nothing from that line on counts. The same holds from a lone
-carriage return. A leading byte order mark is dropped, and a CRLF is one line ending.
+Final ship checks the sentence's position and parses no Markdown. After at most one leading byte order mark, the
+body starts with the sentence exactly, with no whitespace or case normalisation. The end of the body follows it, or
+one line ending (LF or CRLF) and then a blank line or the end. A blank line holds only spaces or tabs. Any other
+character after the sentence fails, a space and a lone carriage return included. The position is enough for the
+sentence to show. Nothing comes before it, so no construct opens before it. The blank line stops a setext
+underline, a table delimiter row or a lazy line from joining it. The sentence holds no `<`, backtick, `[`, `*`, `\`
+or `&`. A name may hold `_`, so a pair of them can render as emphasis: that changes how the name looks, not whether
+the sentence shows.
 
 ## The sequence and its refusals
 
@@ -137,7 +126,8 @@ carriage return. A leading byte order mark is dropped, and a CRLF is one line en
 4. `record --gate ship-preflight --attestation <file> --body-file <file>` is final ship. It needs the
    closed run. It checks the declaration against the stamp, the attestation's shape, that the reviewer is
    not an author, that the head is present locally and descends from the shipped revision, and that the
-   body carries the disclosure. It appends one entry and lists the commits after the shipped revision.
+   body opens with the disclosure sentence and a blank line. It appends one entry and lists the commits after
+   the shipped revision.
    A later attestation for a descendant head appends a further entry.
 
 Final ship invocation: `node <bundle>/bin/ak-gate.mjs record --gate ship-preflight --attestation <file>
@@ -163,7 +153,7 @@ The rules split by who holds them.
 |---|---|
 | The gate tests | The final-ship checks in "The sequence and its refusals" above. A verify recorded by the build's implementer seat, or by no seat, is still refused. Gate evidence binds to the revision and diff it ran at. |
 | The supervisor attests per run | Its validation gate and independent review ran on the attested head and passed. The reviewer model differs from every author model. |
-| The supervisor declares once | In `head-bound-evidence`: only the attested head is merged, and a moved head gets a new attestation. In `disclosure`: the posted pull request text carries the disclosure visibly. |
+| The supervisor declares once | In `head-bound-evidence`: only the attested head is merged, and a moved head gets a new attestation. In `disclosure`: the posted pull request text opens with the disclosure. |
 
 Gate evidence covers the shipped revision only. Commits after it carry only the supervisor's attested
 evidence. The reviewer-author string comparison is a consistency guard on attested identities, not proof of
@@ -173,12 +163,7 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 ### Residual limits
 
 - The gate does not see the forge, the posted pull request text or the merged head.
-- The body match does not detect text that renders hidden by other means. These are a tag or an attribute in the
-  fallback reading that follows a construct the check does not model, raw HTML that leaves open an element a
-  browser hides (such as `script`, `style` or `title`) or an attribute value that runs on into later text,
-  collapsed details blocks and image descriptions. They also include footnote and link definitions that no
-  reference uses, which the renderer drops with the lines that continue them. The match reads a table as paragraph
-  text. Its reading of tabs and of lazy continuation lines is approximate.
+- The body rule fixes the sentence's position, and the gate does not see the forge's rendered page.
 - The opt-in policy read from the local default-branch ref is not cross-checked against any forge.
 - The same-user limit: a party that runs as the same OS user can write both files. Both files are claims.
 - A final-ship refusal names its cause. Two kinds of cause need different action:
@@ -200,6 +185,7 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 2. Write the declaration to a path outside every worktree of the project and of every repository that
    encloses it, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path.
 3. Run each worker with those variables and the policy set.
-4. At final ship write the attestation and the body, and pass both to `record`.
+4. At final ship write the attestation and a body that opens with the disclosure sentence and a blank line, and
+   pass both to `record`.
 
 Firstmate's own declaration is in `adapters/firstmate/SUPERVISOR.md`.

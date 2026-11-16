@@ -220,7 +220,7 @@ stop_conditions:
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
     lesson candidate is drafted (or, under a knowledgebase coverage limit, named as not published),
     and the watch lane holds the pull request; under the unattended policy, also once the pull
-    request carries the disclosure and `ship-preflight --attestation <file> --body-file <file>` succeeded.
+    request opens with the disclosure and `ship-preflight --attestation <file> --body-file <file>` succeeded.
   - needs-input when the run was started by none of the typed command, a validated grant, a passing
     bypass check and the unattended policy's passing `unattended check`, receipts or the verdict are
     missing or bound to another revision, the mode was not named, or a sensitive action is required

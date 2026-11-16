@@ -432,7 +432,9 @@ describe("selection and start (command seam)", () => {
       });
       const disclosure = unattendedDisclosure(name);
       expect(bodyCarriesDisclosure(disclosure, name)).toBe(true);
-      expect(bodyCarriesDisclosure(`Change.\n\n${disclosure}\n`, name)).toBe(true);
+      expect(bodyCarriesDisclosure(`${disclosure}\n\nChange.\n`, name)).toBe(true);
+      // The Markdown model accepted a summary paragraph before the sentence; the sentence must now come first.
+      expect(bodyCarriesDisclosure(`Change.\n\n${disclosure}\n`, name)).toBe(false);
     }
 
     const refused = [
@@ -459,6 +461,7 @@ describe("selection and start (command seam)", () => {
       });
       // The disclosure match holds the supervisor to the same pattern, so a body naming a refused name never carries it.
       expect(bodyCarriesDisclosure(unattendedDisclosure(bad), bad)).toBe(false);
+      expect(bodyCarriesDisclosure(`${unattendedDisclosure(bad)}\n\nChange.\n`, bad)).toBe(false);
       expect(bodyCarriesDisclosure(`Change.\n\n${unattendedDisclosure(bad)}\n`, bad)).toBe(false);
       setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad });
       const checked = ak(cwd, "unattended", "check", "--phase", "super-align");
@@ -1665,7 +1668,8 @@ const attestationOf = (head: string, over: JsonObject = {}): JsonObject => ({
 });
 const reviewOf = (head: string, over: JsonObject): JsonObject =>
   attestationOf(head, { review: { ...REVIEW, ...over } });
-const bodyOf = (name = "firstmate") => `Change.\n\n${unattendedDisclosure(name)}\n`;
+/** A body whose first paragraph is the disclosure, as final ship requires. */
+const bodyOf = (name = "firstmate") => `${unattendedDisclosure(name)}\n\nChange.\n`;
 /** Writes an attestation and a body outside the repository and returns the two flags. */
 function files(value: Json, body: string = bodyOf(), text?: string) {
   const dir = outsideDir();
@@ -2073,6 +2077,14 @@ describe("final ship (AC-5)", () => {
       "a comment holds it after a backtick in a link title",
       `Summary [x](https://example.invalid "\`")<!--\n${SENTENCE}\n\` -->\n`,
     ],
+    // The Markdown model accepted these four; the sentence is not the whole first paragraph in any of them.
+    ["a summary paragraph comes before it", `Change.\n\n${SENTENCE}\n`],
+    [
+      "it follows a closed fence and a comment, inside a longer paragraph",
+      `<!-- note -->\n\`\`\`\ncode\n\`\`\`\nChange. ${SENTENCE} More text.\n`,
+    ],
+    ["it follows a paragraph whose code span crosses a line", `Summary \`a\nb\` done.\n\n${SENTENCE}\n`],
+    ["a line follows it with no blank line between", `${SENTENCE}\nChange.\n`],
   ];
 
   test.each(BODY_REFUSALS)("refuses the body when %s", (_name, body) => {
@@ -2083,16 +2095,29 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
-  test("accepts the sentence after a closed fence, a comment and inside a longer paragraph", () => {
+  test("a body that does not open with the sentence is refused saying so and printing the sentence", () => {
     const s = shipped();
-    const body = `<!-- note -->\n\`\`\`\ncode\n\`\`\`\nChange. ${SENTENCE} More text.\n`;
-    expect(finalShip(s.cwd, files(attestationOf(s.head), body).flags).code).toBe(0);
+    const r = finalShip(s.cwd, files(attestationOf(s.head), `Change.\n\n${SENTENCE}\n`).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("the body does not open with the disclosure sentence");
+    expect(r.err).toContain(SENTENCE);
+    expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
-  test("accepts the sentence after a paragraph whose code span crosses a line", () => {
+  test("a body whose sentence a blank line or the end does not follow is refused saying that", () => {
     const s = shipped();
-    const body = `Summary \`a\nb\` done.\n\n${SENTENCE}\n`;
+    const r = finalShip(s.cwd, files(attestationOf(s.head), `${SENTENCE}\nChange.\n`).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("a blank line or the end of the body does not follow it");
+    expect(r.err).not.toContain("does not open with");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("accepts a body that opens with the sentence and a blank line after a byte order mark, in CRLF", () => {
+    const s = shipped();
+    const body = `\ufeff${SENTENCE}\r\n\r\nChange.\r\n`;
     expect(finalShip(s.cwd, files(attestationOf(s.head), body).flags).code).toBe(0);
+    expect(entriesOf(s)).toEqual(["supervisor", "final-ship"]);
   });
 
   test("a body file that cannot be read refuses naming it", () => {
@@ -2424,7 +2449,7 @@ describe("the forge-free path (AC-1)", () => {
         review: { result: "approve", reviewer: "vendor-b/model-x", authors: ["vendor-a/model-y"], ref: "review 12" },
       }),
     );
-    writeFileSync(join(dir, "body.md"), `Change.\n\n${unattendedDisclosure("firstmate")}\n`);
+    writeFileSync(join(dir, "body.md"), `${unattendedDisclosure("firstmate")}\n\nChange.\n`);
     const final = ak(
       cwd,
       "record",
@@ -2512,7 +2537,7 @@ describe("the rules the gate keeps (AC-6)", () => {
           review: { result: "approve", reviewer: "vendor-b/model-x", authors, ref: "r" },
         }),
       );
-      writeFileSync(join(dir, "b.md"), `${unattendedDisclosure("firstmate")}\n`);
+      writeFileSync(join(dir, "b.md"), `${unattendedDisclosure("firstmate")}\n\nChange.\n`);
       return ["--attestation", join(dir, "a.json"), "--body-file", join(dir, "b.md")];
     };
     const same = ak(cwd, "record", "--gate", "ship-preflight", ...make(["vendor-b/model-x"]));

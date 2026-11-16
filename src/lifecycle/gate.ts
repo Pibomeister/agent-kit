@@ -2483,8 +2483,16 @@ function shipUnattended(
   } catch {
     return deny(`the body file ${flags.body ?? ""} cannot be read`, false);
   }
-  if (!bodyCarriesDisclosure(bodyBytes.toString("utf8"), supervisor))
-    return deny(`the body does not carry the disclosure sentence: ${unattendedDisclosure(supervisor)}`, false);
+  const body = bodyBytes.toString("utf8");
+  if (!bodyCarriesDisclosure(body, supervisor)) {
+    const sentence = unattendedDisclosure(supervisor);
+    return deny(
+      body.startsWith(sentence, body.startsWith("﻿") ? 1 : 0)
+        ? "the body opens with the disclosure sentence, but a blank line or the end of the body does not follow it: the sentence must be the body's whole first paragraph"
+        : `the body does not open with the disclosure sentence, which must be its first paragraph, followed by a blank line: ${sentence}`,
+      false,
+    );
+  }
   const commits = git(project, [
     ...FINAL_SHIP_GIT,
     "log",
