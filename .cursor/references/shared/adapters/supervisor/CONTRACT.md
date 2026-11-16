@@ -19,7 +19,7 @@ named party for a whole run. This contract binds the run supervisor only and cha
 | Variable | Holds |
 |---|---|
 | `AK_LIFECYCLE_POLICY` | `unattended`, or the policy comes from `ak.lifecycle.json` on the default branch |
-| `AK_LIFECYCLE_SUPERVISOR` | The supervisor's name. It must equal the declaration's `"supervisor"` key |
+| `AK_LIFECYCLE_SUPERVISOR` | The supervisor's name. It must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` as set, with no trimming, or it is refused. It must equal the declaration's `"supervisor"` key |
 | `AK_LIFECYCLE_SUPERVISOR_DECLARATION` | The absolute path of the declaration file |
 
 ## The six obligations
@@ -195,7 +195,8 @@ independence never being a model identity (ADR-0014, amendment of 2026-11-11).
 
 ## How an external factory declares itself
 
-1. Pick a stable name. Set `AK_LIFECYCLE_SUPERVISOR` to it in the run's environment.
+1. Pick a stable name that matches the pattern in "Naming it". Set `AK_LIFECYCLE_SUPERVISOR` to it in the run's
+   environment.
 2. Write the declaration to a path outside every worktree of the project and of every repository that
    encloses it, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path.
 3. Run each worker with those variables and the policy set.

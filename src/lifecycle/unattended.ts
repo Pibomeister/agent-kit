@@ -155,8 +155,8 @@ export function declarationFailures(value: Json | undefined, supervisor: string)
   if (value.contract !== CONTRACT)
     failures.push(`contract must be ${JSON.stringify(CONTRACT)}, not ${shown(value.contract)}`);
   const named = value.supervisor;
-  if (!isText(named) || named === "" || named !== named.trim() || hasControlChar(named))
-    failures.push("supervisor must be a non-empty string with no control character and no surrounding whitespace");
+  if (!isText(named) || !SUPERVISOR_PATTERN.test(named))
+    failures.push(`supervisor must match ${SUPERVISOR_PATTERN.source}`);
   else if (named !== supervisor)
     failures.push(
       `supervisor ${JSON.stringify(named)} differs from the supervisor named by ${SUPERVISOR_ENV} (${JSON.stringify(supervisor)})`,
@@ -712,6 +712,8 @@ function inlineText(text: string, state: CommentState): string {
  * footnote or link definition that no reference uses, and it reads a table as paragraph text.
  */
 export function bodyCarriesDisclosure(body: string, supervisor: string): boolean {
+  // The supervisor's name in the sentence is held to the one name rule, so a refused name is never recognized.
+  if (!SUPERVISOR_PATTERN.test(supervisor)) return false;
   const sentence = unattendedDisclosure(supervisor);
   // Renderers differ on whether the end marker inside `<!-->`, `<!--->` or `<?>` ends the block it opens: read both ways.
   return shownText(body, false).includes(sentence) && shownText(body, true).includes(sentence);

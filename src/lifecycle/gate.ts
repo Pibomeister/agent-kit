@@ -497,6 +497,7 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
     !(
       stamp !== undefined &&
       nonempty(stamp.name) &&
+      SUPERVISOR_PATTERN.test(stamp.name) &&
       nonempty(stamp.contract) &&
       nonempty(stamp.declaration_path) &&
       hashHex(String(stamp.declaration_digest)) !== undefined
@@ -1935,12 +1936,17 @@ type LoadedDeclaration =
   | { state: "valid"; supervisor: string; path: string; digest: string }
   | { state: "invalid" | "absent"; reason: string };
 
-/** The supervisor declaration named by the environment: set, absolute, outside the repository, readable, JSON, valid. */
-function loadDeclaration(project: string, env: NodeJS.ProcessEnv = process.env): LoadedDeclaration {
-  const name = env[SUPERVISOR_ENV]?.trim() ?? "";
+/**
+ * The supervisor declaration named by the environment: a name that matches `SUPERVISOR_PATTERN` untrimmed, and a
+ * file that is set, absolute, outside the repository, readable, JSON and valid.
+ */
+export function loadDeclaration(project: string, env: NodeJS.ProcessEnv = process.env): LoadedDeclaration {
+  const name = env[SUPERVISOR_ENV];
   const raw = env[DECLARATION_ENV] ?? "";
-  if (name === "" && raw !== "") return { state: "invalid", reason: `${SUPERVISOR_ENV} is not set` };
+  if (name !== undefined && !SUPERVISOR_PATTERN.test(name))
+    return { state: "invalid", reason: `${SUPERVISOR_ENV} must match ${SUPERVISOR_PATTERN.source}` };
   if (raw === "") return { state: "absent", reason: `${DECLARATION_ENV} is not set` };
+  if (name === undefined) return { state: "invalid", reason: `${SUPERVISOR_ENV} is not set` };
   if (!isAbsolute(raw)) return { state: "invalid", reason: `${DECLARATION_ENV} must be an absolute path` };
   const read = readOutsideRepo(project, raw, DECLARATION_ENV);
   if (!read.ok) return { state: "invalid", reason: read.reason };

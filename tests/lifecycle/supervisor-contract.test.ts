@@ -117,6 +117,15 @@ const DECLARATIONS: Fixture[] = [
   {
     name: "a supervisor with inner spaces and a comma",
     value: declaration({ supervisor: "firstmate, crew 3" }),
+    valid: false,
+  },
+  { name: "a supervisor that starts with a dot", value: declaration({ supervisor: ".firstmate" }), valid: false },
+  { name: "a supervisor with a non-ASCII letter", value: declaration({ supervisor: "firstmat\u00e9" }), valid: false },
+  { name: "a supervisor of 65 characters", value: declaration({ supervisor: "a".repeat(65) }), valid: false },
+  { name: "a supervisor of 64 characters", value: declaration({ supervisor: "a".repeat(64) }), valid: true },
+  {
+    name: "a supervisor with dots, dashes and underscores",
+    value: declaration({ supervisor: "crew-3.fm_a" }),
     valid: true,
   },
   { name: "missing obligations", value: without(declaration(), "obligations"), valid: false },
@@ -248,6 +257,27 @@ describe.each([
     const schema = lib.parseJson(text);
     expect(isObj(schema) ? schema.$id : undefined).toBe(`https://agent-kit.local/schemas/${name}.schema.json`);
     expect(isObj(schema) ? schema.additionalProperties : undefined).toBe(false);
+  });
+});
+
+describe("the supervisor-name rule has one source", () => {
+  test("the declaration schema's supervisor pattern is SUPERVISOR_PATTERN's source", () => {
+    const schema = lib.parseJson(readFileSync(join(ROOT, "schemas", "supervisor-declaration.schema.json"), "utf8"));
+    const properties = isObj(schema) ? schema.properties : undefined;
+    const supervisor = isObj(properties) ? properties.supervisor : undefined;
+    expect(isObj(supervisor) ? supervisor.pattern : undefined).toBe(lib.SUPERVISOR_PATTERN.source);
+  });
+
+  test("the documents a supervisor reads state SUPERVISOR_PATTERN's source", () => {
+    for (const doc of ["adapters/supervisor/CONTRACT.md", "references/unattended-lifecycle/REFERENCE.md"])
+      expect(readFileSync(join(ROOT, doc), "utf8")).toContain(`\`${lib.SUPERVISOR_PATTERN.source}\``);
+  });
+
+  test("a declared supervisor outside the pattern is refused by a message that names the pattern", () => {
+    for (const named of [" firstmate", "firstmate ", "firstmate, crew 3", "a".repeat(65), ".firstmate"]) {
+      const found = lib.declarationFailures(declaration({ supervisor: named }), named);
+      expect(found).toEqual([`supervisor must match ${lib.SUPERVISOR_PATTERN.source}`]);
+    }
   });
 });
 

@@ -11,9 +11,9 @@
       "const": "agent-kit/supervisor-contract@1"
     },
     "supervisor": {
-      "description": "The supervisor's name: non-empty, no control character, no surrounding whitespace.",
+      "description": "The supervisor's name: an ASCII letter or digit, then up to 63 ASCII letters, digits, dots, underscores or hyphens, untrimmed. The gate holds AK_LIFECYCLE_SUPERVISOR, the run's stamps and its records to the same pattern.",
       "type": "string",
-      "pattern": "^[^\\s\\u0000-\\u001f\\u007f](?:[^\\u0000-\\u001f\\u007f]*[^\\s\\u0000-\\u001f\\u007f])?$"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "obligations": {
       "description": "One non-empty single-line statement per obligation: the mechanism by which the supervisor meets it.",

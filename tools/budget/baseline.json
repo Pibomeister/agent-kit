@@ -48,8 +48,8 @@
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14502,
-      "tokens": 3625
+      "bytes": 14639,
+      "tokens": 3660
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -493,8 +493,8 @@
     },
     "bundle/claude-code:references/shared/schemas/supervisor-declaration.schema.json": {
       "file": "schemas/supervisor-declaration.schema.json",
-      "bytes": 2395,
-      "tokens": 599
+      "bytes": 2477,
+      "tokens": 620
     },
     "bundle/claude-code:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -943,8 +943,8 @@
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14502,
-      "tokens": 3625
+      "bytes": 14639,
+      "tokens": 3660
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1388,8 +1388,8 @@
     },
     "bundle/codex:references/shared/schemas/supervisor-declaration.schema.json": {
       "file": "schemas/supervisor-declaration.schema.json",
-      "bytes": 2395,
-      "tokens": 599
+      "bytes": 2477,
+      "tokens": 620
     },
     "bundle/codex:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -1838,8 +1838,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14502,
-      "tokens": 3625
+      "bytes": 14639,
+      "tokens": 3660
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2283,8 +2283,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/supervisor-declaration.schema.json": {
       "file": "schemas/supervisor-declaration.schema.json",
-      "bytes": 2395,
-      "tokens": 599
+      "bytes": 2477,
+      "tokens": 620
     },
     "bundle/cursor:.cursor/references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -2733,8 +2733,8 @@
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14502,
-      "tokens": 3625
+      "bytes": 14639,
+      "tokens": 3660
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3178,8 +3178,8 @@
     },
     "bundle/droid:references/shared/schemas/supervisor-declaration.schema.json": {
       "file": "schemas/supervisor-declaration.schema.json",
-      "bytes": 2395,
-      "tokens": 599
+      "bytes": 2477,
+      "tokens": 620
     },
     "bundle/droid:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -3628,8 +3628,8 @@
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14502,
-      "tokens": 3625
+      "bytes": 14639,
+      "tokens": 3660
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4073,8 +4073,8 @@
     },
     "bundle/grok:references/shared/schemas/supervisor-declaration.schema.json": {
       "file": "schemas/supervisor-declaration.schema.json",
-      "bytes": 2395,
-      "tokens": 599
+      "bytes": 2477,
+      "tokens": 620
     },
     "bundle/grok:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
@@ -4523,8 +4523,8 @@
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
-      "bytes": 14502,
-      "tokens": 3625
+      "bytes": 14639,
+      "tokens": 3660
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4968,8 +4968,8 @@
     },
     "bundle/kimi:references/shared/schemas/supervisor-declaration.schema.json": {
       "file": "schemas/supervisor-declaration.schema.json",
-      "bytes": 2395,
-      "tokens": 599
+      "bytes": 2477,
+      "tokens": 620
     },
     "bundle/kimi:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",

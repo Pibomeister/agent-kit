@@ -26,7 +26,14 @@ import { dirname, join, relative } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
 import { runCli } from "../../src/cli.ts";
-import { defaultEvidenceDir, readRecords, takeSnapshot, type Gate, type Snapshot } from "../../src/lifecycle/gate.ts";
+import {
+  defaultEvidenceDir,
+  loadDeclaration,
+  readRecords,
+  takeSnapshot,
+  type Gate,
+  type Snapshot,
+} from "../../src/lifecycle/gate.ts";
 import * as unattended from "../../src/lifecycle/unattended.ts";
 import {
   bodyCarriesDisclosure,
@@ -450,6 +457,9 @@ describe("selection and start (command seam)", () => {
         ok: false,
         reason: "AK_LIFECYCLE_SUPERVISOR must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
       });
+      // The disclosure match holds the supervisor to the same pattern, so a body naming a refused name never carries it.
+      expect(bodyCarriesDisclosure(unattendedDisclosure(bad), bad)).toBe(false);
+      expect(bodyCarriesDisclosure(`Change.\n\n${unattendedDisclosure(bad)}\n`, bad)).toBe(false);
       setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad });
       const checked = ak(cwd, "unattended", "check", "--phase", "super-align");
       expect(checked.code).toBe(2);
@@ -1253,6 +1263,20 @@ describe("the declaration (AC-2)", () => {
     for (const dir of [cwd, linked]) expect(ak(dir, "unattended", "check", "--phase", "super-ship").code).toBe(0);
   });
 
+  test("the declaration loader holds AK_LIFECYCLE_SUPERVISOR to the supervisor pattern without trimming it", () => {
+    const cwd = repo();
+    const file = declareSupervisor();
+    const load = (name: string | undefined) =>
+      loadDeclaration(cwd, { AK_LIFECYCLE_SUPERVISOR: name, AK_LIFECYCLE_SUPERVISOR_DECLARATION: file });
+    expect(load("firstmate")).toMatchObject({ state: "valid", supervisor: "firstmate" });
+    expect(load(undefined)).toEqual({ state: "invalid", reason: "AK_LIFECYCLE_SUPERVISOR is not set" });
+    for (const name of [" firstmate", "firstmate ", "firstmate\n", "\tfirstmate", "\n firstmate \r\n", ""])
+      expect(load(name)).toEqual({
+        state: "invalid",
+        reason: `AK_LIFECYCLE_SUPERVISOR must match ${SUPERVISOR_PATTERN.source}`,
+      });
+  });
+
   test("a declaration is accepted only by its own name: the digest is of the file's raw bytes", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
@@ -1441,6 +1465,24 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(r.err).toContain(RECOVERY);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight reads a stamp whose supervisor name fails the pattern as no stamp", () => {
+    const { cwd, run } = ready();
+    const runPath = join(store(cwd), "runs", run, "run.json");
+    const original = readObject(runPath);
+    const stamp = isObj(original.supervisor) ? original.supervisor : {};
+    expect(stamp.name).toBe("firstmate");
+    for (const name of [" firstmate", "firstmate ", "firstmate, crew 3", "first`mate", "a".repeat(65), ".firstmate"]) {
+      writeFileSync(runPath, JSON.stringify({ ...original, supervisor: { ...stamp, name } }));
+      const before = runState(cwd, run);
+      const r = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("carries no supervisor stamp");
+      expect(r.err).toContain(RECOVERY);
+      expect(runState(cwd, run)).toEqual(before);
+      expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+    }
   });
 
   test("ship-preflight refuses a counted gate record that names a different supervisor", () => {
