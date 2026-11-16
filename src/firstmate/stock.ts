@@ -112,6 +112,10 @@ runner asks Firstmate for them on decide; otherwise Firstmate submits both judgm
 call decide, using the stock seat-launch and seat-judge commands. Use the normal status and inbox
 handoff, not a polling loop.
 
+For a P0 or prioritized order, register each question before investigation with ak runner call
+question; its request and continuation rules are in skills/autopilot/references/checkpoints.md.
+Firstmate owns dedicated dispatch and every-cycle monitoring; other lanes keep running.
+
 Use ak runner call prepare and decide for checkpoints, sync after code changes, run-verify for
 runner-owned verification, and ledger for the handback. A refused card returns one escalation;
 report it through the normal Firstmate needs-decision status and inbox protocol. Use the task's

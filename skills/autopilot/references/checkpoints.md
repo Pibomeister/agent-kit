@@ -53,6 +53,21 @@ checkpoints:
 - The work source is missing.
 - The acceptance criterion is what a person experiences.
 
+## Prioritized questions
+
+Before investigating a question on a P0 or prioritized order, register its id and exact blocker
+text with `ak runner call question` (request fields: `run`, `id`, `source`). Reuse that id while
+investigating; registration starts the ten-minute clock. Check the order, code and authorized
+evidence already in hand. When answered, repeat with `rationale` (the answer), `kind` (`order`,
+`code` or `evidence`) and `evidence` (its source reference), without waiting for the supervisor.
+`continue` returns the answer and reference instead of parking the question;
+`investigate` permits further read-only investigation. Neither result grants checkpoint authority
+or lifts an existing stop. An unresolved question returns `blocked` at ten minutes, and the live
+runner emits the exact blocker text on stderr even if the worker never calls again. Firstmate
+keeps that output visible and owns dispatch and every-cycle monitoring, with other lanes running
+in parallel (ruling `firstmate-outer-loop-agent-kit-inner`). Existing approval cards still follow
+the escalation rules below.
+
 ## The escalation
 
 One message, not a diary. The fields are `schemas/common.schema.json#/$defs/escalation`:

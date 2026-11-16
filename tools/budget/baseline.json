@@ -13,8 +13,8 @@
     },
     "bundle/claude-code:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -33,8 +33,8 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/claude-code:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -153,8 +153,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 26009,
+      "tokens": 6497
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -188,8 +188,8 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11058,
-      "tokens": 2765
+      "bytes": 11431,
+      "tokens": 2858
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -448,8 +448,8 @@
     },
     "bundle/claude-code:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23707,
-      "tokens": 5927
+      "bytes": 24569,
+      "tokens": 6142
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -473,8 +473,8 @@
     },
     "bundle/claude-code:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14514,
-      "tokens": 3629
+      "bytes": 14707,
+      "tokens": 3677
     },
     "bundle/claude-code:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -533,8 +533,8 @@
     },
     "bundle/claude-code:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/claude-code:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -793,8 +793,8 @@
     },
     "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -888,8 +888,8 @@
     },
     "bundle/codex:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -908,8 +908,8 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -938,8 +938,8 @@
     },
     "bundle/codex:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/codex:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -1028,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 26009,
+      "tokens": 6497
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1063,8 +1063,8 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11058,
-      "tokens": 2765
+      "bytes": 11431,
+      "tokens": 2858
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1323,8 +1323,8 @@
     },
     "bundle/codex:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23707,
-      "tokens": 5927
+      "bytes": 24569,
+      "tokens": 6142
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -1348,8 +1348,8 @@
     },
     "bundle/codex:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14514,
-      "tokens": 3629
+      "bytes": 14707,
+      "tokens": 3677
     },
     "bundle/codex:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -1408,8 +1408,8 @@
     },
     "bundle/codex:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/codex:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -1668,8 +1668,8 @@
     },
     "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -1763,8 +1763,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21272,
-      "tokens": 5314
+      "bytes": 21446,
+      "tokens": 5358
     },
     "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1783,8 +1783,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34996,
-      "tokens": 8720
+      "bytes": 35215,
+      "tokens": 8775
     },
     "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1813,8 +1813,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18970,
+      "tokens": 4735
     },
     "bundle/cursor:.cursor/references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -1903,8 +1903,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23548,
-      "tokens": 5881
+      "bytes": 26081,
+      "tokens": 6515
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1938,8 +1938,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11130,
-      "tokens": 2783
+      "bytes": 11503,
+      "tokens": 2876
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2198,8 +2198,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23707,
-      "tokens": 5927
+      "bytes": 24569,
+      "tokens": 6142
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -2223,8 +2223,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14514,
-      "tokens": 3629
+      "bytes": 14707,
+      "tokens": 3677
     },
     "bundle/cursor:.cursor/references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -2278,8 +2278,8 @@
     },
     "bundle/cursor:.cursor/skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/cursor:.cursor/skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -2538,8 +2538,8 @@
     },
     "bundle/cursor:.cursor/skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -2638,8 +2638,8 @@
     },
     "bundle/droid:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -2658,8 +2658,8 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2688,8 +2688,8 @@
     },
     "bundle/droid:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/droid:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -2778,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 26009,
+      "tokens": 6497
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2813,8 +2813,8 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11058,
-      "tokens": 2765
+      "bytes": 11431,
+      "tokens": 2858
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3073,8 +3073,8 @@
     },
     "bundle/droid:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23707,
-      "tokens": 5927
+      "bytes": 24569,
+      "tokens": 6142
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -3098,8 +3098,8 @@
     },
     "bundle/droid:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14514,
-      "tokens": 3629
+      "bytes": 14707,
+      "tokens": 3677
     },
     "bundle/droid:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -3158,8 +3158,8 @@
     },
     "bundle/droid:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/droid:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -3418,8 +3418,8 @@
     },
     "bundle/droid:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -3513,8 +3513,8 @@
     },
     "bundle/grok:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -3533,8 +3533,8 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3563,8 +3563,8 @@
     },
     "bundle/grok:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/grok:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -3653,8 +3653,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 26009,
+      "tokens": 6497
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3688,8 +3688,8 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11058,
-      "tokens": 2765
+      "bytes": 11431,
+      "tokens": 2858
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3948,8 +3948,8 @@
     },
     "bundle/grok:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23707,
-      "tokens": 5927
+      "bytes": 24569,
+      "tokens": 6142
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -3973,8 +3973,8 @@
     },
     "bundle/grok:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14514,
-      "tokens": 3629
+      "bytes": 14707,
+      "tokens": 3677
     },
     "bundle/grok:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -4033,8 +4033,8 @@
     },
     "bundle/grok:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/grok:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -4293,8 +4293,8 @@
     },
     "bundle/grok:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -4388,8 +4388,8 @@
     },
     "bundle/kimi:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21212,
-      "tokens": 5299
+      "bytes": 21386,
+      "tokens": 5343
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -4408,8 +4408,8 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34960,
-      "tokens": 8711
+      "bytes": 35179,
+      "tokens": 8766
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -4438,8 +4438,8 @@
     },
     "bundle/kimi:references/shared/policies/authority-defaults.yaml": {
       "file": "policies/authority-defaults.yaml",
-      "bytes": 17801,
-      "tokens": 4443
+      "bytes": 18958,
+      "tokens": 4732
     },
     "bundle/kimi:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
@@ -4528,8 +4528,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 23488,
-      "tokens": 5866
+      "bytes": 26009,
+      "tokens": 6497
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4563,8 +4563,8 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 11058,
-      "tokens": 2765
+      "bytes": 11431,
+      "tokens": 2858
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -4823,8 +4823,8 @@
     },
     "bundle/kimi:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 23707,
-      "tokens": 5927
+      "bytes": 24569,
+      "tokens": 6142
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -4848,8 +4848,8 @@
     },
     "bundle/kimi:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 14514,
-      "tokens": 3629
+      "bytes": 14707,
+      "tokens": 3677
     },
     "bundle/kimi:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -4908,8 +4908,8 @@
     },
     "bundle/kimi:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4239,
-      "tokens": 1060
+      "bytes": 5335,
+      "tokens": 1334
     },
     "bundle/kimi:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -5168,8 +5168,8 @@
     },
     "bundle/kimi:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 6115,
-      "tokens": 1528
+      "bytes": 7469,
+      "tokens": 1866
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -5263,8 +5263,8 @@
     },
     "firstmate:adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 10537,
-      "tokens": 2629
+      "bytes": 10891,
+      "tokens": 2718
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",
@@ -5273,8 +5273,8 @@
     },
     "firstmate:stock-brief": {
       "file": "src/firstmate/stock.ts",
-      "bytes": 2442,
-      "tokens": 611
+      "bytes": 2722,
+      "tokens": 681
     },
     "hook:semantic-lint-questions": {
       "file": "src/semantic-lint/client.ts",

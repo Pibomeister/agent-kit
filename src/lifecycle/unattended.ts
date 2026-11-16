@@ -19,11 +19,21 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
 export const POLICY_ENV = "AK_LIFECYCLE_POLICY";
+export const SUPERVISOR_ENV = "AK_LIFECYCLE_SUPERVISOR";
+export const SUPERVISOR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const READ_TOKEN_ENV = "AK_UNATTENDED_READ_TOKEN";
 export const CONFIG_FILE = "ak.lifecycle.json";
 export const UNATTENDED = "unattended";
-export const DISCLOSURE =
-  "Unattended lifecycle policy: no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.";
+const DISCLOSURE_TAIL =
+  " approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.";
+export const DISCLOSURE = `Unattended lifecycle policy: no human${DISCLOSURE_TAIL}`;
+
+/** The unattended disclosure for a pull request, naming the supervisor when one was recorded in place of a human. */
+export function unattendedDisclosure(supervisor?: string): string {
+  return isText(supervisor) && SUPERVISOR_PATTERN.test(supervisor)
+    ? `Unattended lifecycle policy (supervisor: ${supervisor}, in place of a human): no human${DISCLOSURE_TAIL}`
+    : DISCLOSURE;
+}
 /** What the forge reads cannot show, stated by ship-preflight and review-status whatever their outcome. */
 export const RESIDUAL_ASSUMPTIONS =
   "Residual assumptions these reads cannot verify: designated reviewer accounts are operated by people and are not reachable by the runner through credentials outside the forge client, so a runner that shares the operator's OS account and credentials does not meet them; team membership is not verified; a fine-grained read credential is scoped read-only by the operator; and the runner's push credential is the active one.";
@@ -36,6 +46,8 @@ export interface Policy {
   name: typeof UNATTENDED;
   /** `environment`, or `default-branch:<revision>` the configuration was read at. */
   source: string;
+  /** `AK_LIFECYCLE_SUPERVISOR`, when set: the supervisor recorded in place of a human. */
+  supervisor?: string;
 }
 
 /** A parsed JSON value: what the forge and the configuration file return. */
@@ -83,18 +95,23 @@ export function resolvePolicy(
   project: string,
   env: NodeJS.ProcessEnv = process.env,
 ): { ok: true; policy?: Policy } | { ok: false; reason: string } {
+  const supervisor = env[SUPERVISOR_ENV];
+  if (supervisor !== undefined && !SUPERVISOR_PATTERN.test(supervisor))
+    return { ok: false, reason: `${SUPERVISOR_ENV} must match ${SUPERVISOR_PATTERN.source}` };
+  const stamp = (source: string): Policy =>
+    supervisor === undefined ? { name: UNATTENDED, source } : { name: UNATTENDED, source, supervisor };
   const value = env[POLICY_ENV];
   if (value !== undefined && value !== "") {
     if (value !== UNATTENDED)
       return { ok: false, reason: `${POLICY_ENV} accepts only '${UNATTENDED}', not '${value}'` };
-    return { ok: true, policy: { name: UNATTENDED, source: "environment" } };
+    return { ok: true, policy: stamp("environment") };
   }
   const rev = exec("git", ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD^{commit}"], project);
   const revision = rev.out.trim();
   if (rev.code !== 0 || revision === "") return { ok: true };
   const file = exec("git", ["show", `${revision}:${CONFIG_FILE}`], project);
   if (file.code !== 0 || field(parse(file.out), "policy") !== UNATTENDED) return { ok: true };
-  return { ok: true, policy: { name: UNATTENDED, source: `default-branch:${revision}` } };
+  return { ok: true, policy: stamp(`default-branch:${revision}`) };
 }
 
 // ── the forge ────────────────────────────────────────────────────────────────
@@ -583,6 +600,15 @@ function identityFailures(reviewer: Json | undefined, config: LifecycleConfig): 
   return out;
 }
 
+export function carriesDisclosure(body: string): boolean {
+  const text = visibleText(body);
+  if (text.includes(DISCLOSURE)) return true;
+  const escaped = DISCLOSURE_TAIL.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `Unattended lifecycle policy \\(supervisor: ${SUPERVISOR_PATTERN.source.slice(1, -1)}, in place of a human\\): no human${escaped}`,
+  ).test(text);
+}
+
 /** Validates the independent review posted on the pull request's current head. */
 export function checkReviewStatus(io: GateIo, repo: string, pr: number, gate: MergeGate): ReviewStatus {
   const failures = [...gate.failures];
@@ -601,7 +627,7 @@ export function checkReviewStatus(io: GateIo, repo: string, pr: number, gate: Me
     failures.push(
       `pull request ${pr} targets ${nonEmpty(field(base, "ref")) ?? "an unknown base"}, not ${gate.defaultBranch ?? "the default branch"}`,
     );
-  if (!visibleText(nonEmpty(field(pull, "body")) ?? "").includes(DISCLOSURE))
+  if (!carriesDisclosure(nonEmpty(field(pull, "body")) ?? ""))
     failures.push(`pull request ${pr}'s text does not carry the unattended disclosure outside HTML comments`);
   const { config, reviewAppId: app } = gate;
   if (config === undefined || app === undefined) return { state: "refused", failures, notes, head };

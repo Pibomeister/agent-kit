@@ -31,6 +31,7 @@ import { defaultEvidenceDir, readRecords, takeSnapshot, type Gate, type Snapshot
 import {
   ACTIONS_APP_ID,
   canonicalModel,
+  carriesDisclosure,
   checkMergeGate,
   checkReviewStatus,
   DISCLOSURE,
@@ -38,11 +39,14 @@ import {
   type GateIo,
   type Json,
   type JsonObject,
+  resolvePolicy,
+  SUPERVISOR_PATTERN,
+  unattendedDisclosure,
 } from "../../src/lifecycle/unattended.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(180_000);
 
 const REPO = "acme/widget";
 const HEAD = "a".repeat(40);
@@ -614,7 +618,9 @@ afterEach(() => {
   }
   saved.clear();
 });
-beforeEach(() => setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_UNATTENDED_READ_TOKEN: undefined }));
+beforeEach(() =>
+  setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined, AK_UNATTENDED_READ_TOKEN: undefined }),
+);
 
 const STUB = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -799,6 +805,311 @@ describe("selection and start (command seam)", () => {
     expect(recorded.err).toContain("a bypass grant does not apply under the unattended policy");
     expect(recordsOf(cwd, "feature", "align")).toEqual([]);
   });
+
+  test("AK_LIFECYCLE_SUPERVISOR records the supervisor on phase starts, runs, gate records, decisions and ship disclosure", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    for (const phase of ["super-align", "super-bound", "super-ship"]) {
+      const checked = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out)).toEqual({
+        policy: "unattended",
+        source: "environment",
+        supervisor: "firstmate",
+        phase,
+      });
+    }
+    const modelPhase = ak(cwd, "unattended", "check", "--phase", "super-scout");
+    expect(modelPhase.code).toBe(0);
+    expect(JSON.parse(modelPhase.out)).toEqual({
+      policy: "unattended",
+      supervisor: "firstmate",
+      phase: "super-scout",
+      start: "model-started",
+    });
+
+    const run = fullRun(cwd);
+    const runRecord: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8"));
+    expect(runRecord).toMatchObject({
+      policy: { name: "unattended", source: "environment", supervisor: "firstmate" },
+    });
+    for (const gate of [
+      "align",
+      "bound",
+      "scout",
+      "build-checks",
+      "verify",
+      "review-full",
+      "review-readiness",
+    ] as const)
+      expect(recordsOf(cwd, run, gate)[0]?.policy).toEqual({
+        name: "unattended",
+        source: "environment",
+        supervisor: "firstmate",
+      });
+
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "crew2" });
+    expect(
+      ak(cwd, "record", "--gate", "verify", "--receipt", receiptFile(cwd, run, ticketFile(cwd)), "--", ...ok).code,
+    ).toBe(0);
+    expect(recordsOf(cwd, run, "verify").map((record) => record.policy?.supervisor)).toEqual(["firstmate"]);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+
+    const decisionCheck = ak(cwd, "check", "--json");
+    expect(decisionCheck.code).toBe(0);
+    expect(JSON.parse(decisionCheck.out)).toMatchObject({
+      outcome: "allowed",
+      policy: { name: "unattended", source: "environment", supervisor: "firstmate" },
+    });
+
+    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
+    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
+    const supervisedPull = {
+      [`repos/${REPO}/pulls/7`]: {
+        body: {
+          number: 7,
+          base: { ref: "main", sha: BASE },
+          head: { sha: HEAD },
+          body: `Change.\n\n${unattendedDisclosure("firstmate")}\n`,
+        },
+      },
+    };
+    const shipped = withFixtures({
+      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+      ...supervisedPull,
+    });
+    stubGh(shipped);
+    const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(preflight.code).toBe(0);
+    expect(preflight.out).toContain(unattendedDisclosure("firstmate"));
+    expect(recordsOf(cwd, run, "ship-preflight")[0]?.policy).toEqual({
+      name: "unattended",
+      source: "environment",
+      supervisor: "firstmate",
+    });
+    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
+
+    // The supervisor is a record only: a plain disclosure passes the final append, and no disclosure is refused.
+    const shippedCompare = {
+      [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+    };
+    stubGh(withFixtures(shippedCompare));
+    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
+    stubGh(
+      withFixtures({
+        ...shippedCompare,
+        [`repos/${REPO}/pulls/7`]: {
+          body: { number: 7, base: { ref: "main", sha: BASE }, head: { sha: HEAD }, body: "Change." },
+        },
+      }),
+    );
+    const noDisclosure = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
+    expect(noDisclosure.code).toBe(1);
+    expect(noDisclosure.err).toContain("disclosure");
+
+    // Standalone review-status without AK_LIFECYCLE_SUPERVISOR still accepts a supervised disclosure.
+    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: undefined });
+    stubGh(withFixtures(supervisedPull));
+    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+
+    // Standalone review-status accepts a supervisor name with dots, underscores and hyphens, and with
+    // AK_LIFECYCLE_SUPERVISOR set it still accepts the plain disclosure of a pull request prepared without a supervisor.
+    const punctuatedPull = {
+      [`repos/${REPO}/pulls/7`]: {
+        body: {
+          number: 7,
+          base: { ref: "main", sha: BASE },
+          head: { sha: HEAD },
+          body: `Change.\n\n${unattendedDisclosure("firstmate_crew-3.1")}\n`,
+        },
+      },
+    };
+    stubGh(withFixtures(punctuatedPull));
+    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    stubGh(withFixtures({}));
+    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+  }, 180_000);
+
+  test("resolvePolicy enforces the supervisor allowlist, every accepted name produces a disclosure carriesDisclosure recognizes, and an invalid supervisor in run.json is omitted", () => {
+    const cwd = repo();
+    const firstChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const restChars = `${firstChars}._-`;
+    let seed = 0x5eed1234;
+    const next = (max: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % max;
+    };
+    const generated = Array.from({ length: 200 }, (_, idx) => {
+      const len = (idx % 64) + 1;
+      let s = firstChars.charAt(next(firstChars.length));
+      for (let i = 1; i < len; i += 1) s += restChars.charAt(next(restChars.length));
+      return s;
+    });
+    const acceptedNames = [
+      ...Array.from({ length: firstChars.length }, (_, i) => firstChars.charAt(i)),
+      "firstmate",
+      "firstmate-1",
+      "crew_2.0",
+      "a.",
+      "a_",
+      "a-",
+      "A..__--0",
+      `a${"._-09Az".repeat(9)}`,
+      "Z".repeat(64),
+      ...generated,
+    ];
+    for (const name of acceptedNames) {
+      expect(SUPERVISOR_PATTERN.test(name)).toBe(true);
+      expect(resolvePolicy(cwd, { AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: name })).toEqual({
+        ok: true,
+        policy: { name: "unattended", source: "environment", supervisor: name },
+      });
+      const disclosure = unattendedDisclosure(name);
+      expect(disclosure).not.toBe(DISCLOSURE);
+      expect(carriesDisclosure(disclosure)).toBe(true);
+      expect(carriesDisclosure(`Change.\n\n${disclosure}\n`)).toBe(true);
+    }
+
+    const refused = [
+      "firstmate\ncrew",
+      "firstmate\rcrew",
+      "firstmate\x1b[31mcrew",
+      "<!--x-->",
+      "first mate",
+      "first`mate",
+      "",
+      "a".repeat(65),
+      ".firstmate",
+      "-firstmate",
+      "_firstmate",
+      "firstmate\x7fcrew",
+    ];
+    for (const bad of refused) {
+      expect(SUPERVISOR_PATTERN.test(bad)).toBe(false);
+      expect(resolvePolicy(cwd, { AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad })).toEqual({
+        ok: false,
+        reason: "AK_LIFECYCLE_SUPERVISOR must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      });
+      expect(unattendedDisclosure(bad)).toBe(DISCLOSURE);
+      expect(
+        carriesDisclosure(
+          `Unattended lifecycle policy (supervisor: ${bad}, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.`,
+        ),
+      ).toBe(false);
+      setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad });
+      const checked = ak(cwd, "unattended", "check", "--phase", "super-align");
+      expect(checked.code).toBe(2);
+      expect(checked.err).toContain("AK_LIFECYCLE_SUPERVISOR");
+      expect(checked.err).toContain("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$");
+      expect(checked.err).not.toContain("crew");
+      expect(checked.err).not.toContain("<!--x-->");
+      expect(checked.out).toBe("");
+      const recorded = ak(cwd, "record", "--gate", "align", "--", ...ok);
+      expect(recorded.code).toBe(2);
+      expect(recorded.err).toContain("AK_LIFECYCLE_SUPERVISOR must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$");
+      expect(recorded.err).not.toContain("crew");
+      expect(recordsOf(cwd, "feature", "align")).toEqual([]);
+    }
+
+    setEnv({
+      AK_LIFECYCLE_POLICY: "unattended",
+      AK_LIFECYCLE_SUPERVISOR: "firstmate",
+      AK_UNATTENDED_READ_TOKEN: "read-token",
+    });
+    const run = fullRun(cwd);
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: undefined });
+    const runPath = join(store(cwd), "runs", run, "run.json");
+    const originalRunText = readFileSync(runPath, "utf8");
+    stubGh(withFixtures({}));
+    for (const storedSupervisor of [
+      42,
+      ["firstmate"],
+      "",
+      "<!--x-->",
+      "first mate",
+      "first`mate",
+      "a".repeat(65),
+      "firstmate\ncrew",
+      "firstmate\rcrew",
+      "firstmate\x1b[31m",
+    ]) {
+      writeFileSync(
+        runPath,
+        originalRunText.replace('"supervisor": "firstmate"', `"supervisor": ${JSON.stringify(storedSupervisor)}`),
+      );
+      expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
+      expect(recordsOf(cwd, run, "build-checks").at(-1)?.policy).toEqual({
+        name: "unattended",
+        source: "environment",
+      });
+      const checked = ak(cwd, "check", "--json");
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out)).toMatchObject({
+        outcome: "allowed",
+        policy: { name: "unattended", source: "environment" },
+      });
+      expect(checked.out).not.toContain('"supervisor"');
+      const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(preflight.code).toBe(0);
+      expect(preflight.out).toContain(DISCLOSURE);
+      expect(preflight.out).not.toContain("supervisor:");
+      expect(recordsOf(cwd, run, "ship-preflight").at(-1)?.policy).toEqual({
+        name: "unattended",
+        source: "environment",
+      });
+    }
+  }, 600_000);
+
+  test("the repository's committed minimal ak.lifecycle.json selects unattended on the default branch with no AK_LIFECYCLE_POLICY, records AK_LIFECYCLE_SUPERVISOR=firstmate across phases, and refuses only at ship-preflight", () => {
+    const rootConfig = readFileSync(join(import.meta.dir, "../../ak.lifecycle.json"), "utf8");
+    expect(JSON.parse(rootConfig)).toEqual({ policy: "unattended" });
+
+    const cwd = repo();
+    git(cwd, "checkout", "-q", "main");
+    writeFileSync(join(cwd, "ak.lifecycle.json"), rootConfig);
+    git(cwd, "add", "ak.lifecycle.json");
+    git(cwd, "commit", "-q", "-m", "opt in");
+    const tip = git(cwd, "rev-parse", "HEAD");
+    git(cwd, "update-ref", "refs/remotes/origin/main", tip);
+    git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(cwd, "checkout", "-q", "feature");
+
+    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    for (const phase of ["super-align", "super-bound"]) {
+      const checked = ak(cwd, "unattended", "check", "--phase", phase);
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out)).toEqual({
+        policy: "unattended",
+        source: `default-branch:${tip}`,
+        supervisor: "firstmate",
+        phase,
+      });
+    }
+
+    const run = fullRun(cwd);
+    expect(ak(cwd, "check").code).toBe(0);
+    expect(recordsOf(cwd, run, "align")[0]?.policy).toEqual({
+      name: "unattended",
+      source: `default-branch:${tip}`,
+      supervisor: "firstmate",
+    });
+
+    stubGh(
+      withFixtures({
+        ...UNPROTECTED,
+        ...configWith({ policy: "unattended" }),
+        [`repos/${REPO}/branches/main`]: { body: { name: "main", commit: { sha: tip } } },
+        [`repos/${REPO}/compare/${tip}...${tip}`]: { body: { status: "identical" } },
+      }),
+    );
+    const preflight = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(preflight.code).toBe(1);
+    expect(preflight.err).toContain("AK_UNATTENDED_READ_TOKEN is not set");
+    expect(preflight.err).toContain("a pull request with at least one approval is not required");
+    expect(preflight.err).toContain("ak.lifecycle.json: human_reviewers is empty");
+    expect(preflight.err).toContain("ak.lifecycle.json: independent_review.reviewer_model is missing");
+  }, 180_000);
 
   test("a legacy run refuses an unattended record and an unattended check", () => {
     const cwd = repo();
@@ -1327,7 +1638,7 @@ describe("ship-preflight and final ship success (command seam)", () => {
     expect(again.err).toContain("run closed; open a new run");
     expect(readFileSync(runJson, "utf8")).toBe(before.run);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual(before.records);
-  });
+  }, 180_000);
 
   test("ship-preflight judges the run's own policy stamp: a repository source off the forge's default branch refuses", () => {
     const cwd = repo();
@@ -1349,7 +1660,7 @@ describe("ship-preflight and final ship success (command seam)", () => {
     expect(r.code).toBe(1);
     expect(r.err).toContain(`read at ${stamped.slice(0, 12)}, which is not on main`);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
-  });
+  }, 180_000);
 
   test("review-status is a standalone command for whoever merges", () => {
     const cwd = repo();

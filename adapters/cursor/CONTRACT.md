@@ -245,7 +245,8 @@ Context separation on Cursor is **partial**:
   `missing-supervisor-never-implementer`).
 
 There is no second review pipeline. Public wrappers and the supervisor pair run
-the same protocol.
+the same protocol. The Cursor contract describes reviewer discovery and dispatch,
+not seat selection, so it needs no change.
 
 ---
 

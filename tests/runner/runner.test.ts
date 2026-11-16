@@ -950,6 +950,181 @@ describe("runner guards", () => {
     }
   });
 
+  test.each(["order", "code", "evidence"])("priority question continues with a supported %s answer", (kind) => {
+    const f = ready();
+    const answer = `answer from ${kind}\n`;
+    const before = f.runner.status("toy-run");
+    expect(
+      f.runner.question("toy-run", "q1", "Which command?", { text: answer, source: kind, ref: "source:42" }),
+    ).toEqual({
+      action: "continue",
+      answer,
+      evidence: "source:42",
+    });
+    const output: string[] = [];
+    f.runner.emitQuestionBlocker("toy-run", (text) => output.push(text), Date.now() + 600_000);
+    expect(output).toEqual([]);
+    expect(f.runner.status("toy-run").next_permitted_action).toBe(before.next_permitted_action);
+    expect(f.runner.status("toy-run").run_state).toBe(before.run_state);
+  });
+
+  test("priority question continues an order answer and emits the blocker at a fixed ten-minute deadline", () => {
+    const f = ready();
+    const start = Date.parse("2026-11-14T10:00:00.000Z");
+    const before = f.runner.status("toy-run");
+    const output: string[] = [];
+    expect(
+      f.runner.question(
+        "toy-run",
+        "answered",
+        "Which command?",
+        {
+          text: "bun test",
+          source: "order",
+          ref: "order:verification",
+        },
+        start,
+      ),
+    ).toEqual({ action: "continue", answer: "bun test", evidence: "order:verification" });
+    f.runner.emitQuestionBlocker("toy-run", (text) => output.push(text), start);
+    expect(output).toEqual([]);
+    expect(f.runner.status("toy-run").run_state).toBe(before.run_state);
+    expect(f.runner.status("toy-run").next_permitted_action).toBe(before.next_permitted_action);
+    const need = "Missing environment access\nScope: staging";
+    expect(f.runner.question("toy-run", "q1", need, undefined, start).action).toBe("investigate");
+    expect(f.runner.question("toy-run", "q1", need, undefined, start + 599_999).action).toBe("investigate");
+    expect(() => f.runner.question("toy-run", "q2", need, undefined, start + 599_999)).toThrow(
+      "open priority question",
+    );
+    expect(() => f.runner.question("toy-run", "q1", "replacement", undefined, start + 599_999)).toThrow("changed");
+    const restarted = new Runner(f.privateDir, f.worker, root);
+    restarted.emitQuestionBlocker("toy-run", (text) => output.push(text), start + 599_999);
+    expect(output).toEqual([]);
+    expect(restarted.question("toy-run", "q1", need, undefined, start + 600_000).action).toBe("blocked");
+    restarted.emitQuestionBlocker("toy-run", (text) => output.push(text), start + 600_000);
+    expect(output).toEqual([need]);
+  });
+
+  test("priority question resolution preserves approval stops and permits the next question", () => {
+    const f = ready();
+    const start = Date.now();
+    f.runner.question("toy-run", "q1", "Need command", undefined, start);
+    expect(split(f, "card-1", ["yes", "no"]).status).toBe("needs-input");
+    expect(
+      f.runner.question(
+        "toy-run",
+        "q1",
+        "Need command",
+        {
+          text: "bun test",
+          source: "code",
+          ref: "package.json:12",
+        },
+        start + 100,
+      ).action,
+    ).toBe("continue");
+    expect(f.runner.status("toy-run").run_state).toBe("needs-input");
+    expect(f.runner.status("toy-run").next_permitted_action).toBeNull();
+    expect(f.runner.questionDeadline("toy-run")).toBeNull();
+    f.runner.question("toy-run", "q2", "Need access", undefined, start + 200);
+    const output: string[] = [];
+    f.runner.emitQuestionBlocker("toy-run", (text) => output.push(text), start + 600_000);
+    expect(output).toEqual([]);
+    f.runner.emitQuestionBlocker("toy-run", (text) => output.push(text), start + 600_200);
+    expect(output).toEqual(["Need access"]);
+  });
+
+  test("priority question rejects unsupported answers without losing its deadline", () => {
+    const f = ready();
+    const start = Date.now();
+    f.runner.question("toy-run", "q1", "Need an answer", undefined, start);
+    for (const answer of [
+      { text: "", source: "code", ref: "file.ts:1" },
+      { text: "answer", source: "code", ref: "" },
+      { text: "answer", source: "guess", ref: "unsupported" },
+    ]) {
+      expect(() => f.runner.question("toy-run", "q1", "Need an answer", answer)).toThrow("priority answer needs");
+    }
+    expect(f.runner.questionDeadline("toy-run")).toBe(start + 600_000);
+  });
+
+  test("priority question service emits once despite status requests, question retries and audit ticks", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3600);
+    const loopConfig = join(f.privateDir, "loop.json");
+    writeFileSync(
+      loopConfig,
+      JSON.stringify({
+        timeout_ms: 2000,
+        command: [
+          "bun",
+          "-e",
+          `const input=JSON.parse(await Bun.stdin.text());
+        console.log(JSON.stringify({probed:input.delegates,
+          progress:[{delegate:input.delegates[0],kind:"store-report",ref:"probe-"+Date.now()}]}));`,
+        ],
+      }),
+    );
+    const need = "Exact priority blocker";
+    f.runner.question("toy-run", "q1", need, undefined, Date.now() - 598_000);
+    const socket = join(f.privateDir, "runner.sock");
+    const tokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(tokenFile, "a".repeat(48), { mode: 0o600 });
+    const service = spawnLive(
+      [
+        "bun",
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        tokenFile,
+        "--loop-config",
+        loopConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: "b".repeat(48) } },
+    );
+    const reader = service.stderr.getReader();
+    try {
+      await waitForPath(socket, service);
+      const request = join(f.requestDir, "question.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run", id: "q1", source: need }));
+      expect(callRunnerCli("question", request, socket, "b".repeat(48)).exitCode).toBe(0);
+      const output = await reader.read();
+      expect(new TextDecoder().decode(output.value).trim()).toBe(need);
+      const probesBefore = f.runner.status("toy-run").delegates?.["owner-1"]?.progress.length ?? 0;
+      const statusRequest = join(f.requestDir, "status.json");
+      writeFileSync(statusRequest, JSON.stringify({ run: "toy-run" }));
+      expect(callRunnerCli("status", statusRequest, socket, "b".repeat(48)).exitCode).toBe(0);
+      expect(callRunnerCli("status", statusRequest, socket, "b".repeat(48)).exitCode).toBe(0);
+      expect(callRunnerCli("question", request, socket, "b".repeat(48)).exitCode).toBe(0);
+      await waitUntil(
+        "another audit probe",
+        () => (f.runner.status("toy-run").delegates?.["owner-1"]?.progress.length ?? 0) > probesBefore,
+      );
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+    const remaining: string[] = [];
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      remaining.push(new TextDecoder().decode(chunk.value));
+    }
+    reader.releaseLock();
+    expect(remaining.join("")).toBe("");
+  }, 30_000);
+
   test("audit replaces silent owners and stalled replacements, then drains only after children finish", () => {
     const f = fixture();
     withAuditCadence(f);
