@@ -157,9 +157,10 @@ Nothing here is done by an agent or by agent-kit.
 
 ## Human-only steps: the stall class
 
-This PR delivers the stall-class definition and its contract tests only
-(`src/lifecycle/human-step-stall.ts`). It is a dependency for the supervisor wiring. The stall
-rule is not yet enforced by any supervisor.
+`.cursor/bin/ak lifecycle human-step` is the supervisor check (`src/lifecycle/human-step-stall.ts`). It
+classifies a held human-only step, and it exits 1 when the step sits at or over 10 minutes
+without a satisfying escalation, when a pull request or deploy is blocked on it, or when an
+interactive auth prompt is held open.
 
 The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
 an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive
