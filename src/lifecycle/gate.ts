@@ -2439,9 +2439,13 @@ export function main(
       command = argv.slice(i + 1);
       break;
     }
-    const [name, inline] = token.startsWith("--")
-      ? (token.slice(2).split("=", 2) as [string, string | undefined])
-      : ["", undefined];
+    // Split `--name=value` at the first `=` only, so a value that itself holds `=` arrives whole.
+    const eq = token.indexOf("=");
+    const [name, inline] = !token.startsWith("--")
+      ? ["", undefined]
+      : eq === -1
+        ? [token.slice(2), undefined]
+        : [token.slice(2, eq), token.slice(eq + 1)];
     if (!allowed.has(name)) {
       io.err(`ak lifecycle ${sub}: unexpected ${token}`);
       return 2;

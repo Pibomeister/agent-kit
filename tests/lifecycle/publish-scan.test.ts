@@ -226,6 +226,41 @@ describe("publish-scan", () => {
     expect(range.code).toBe(1);
   });
 
+  test("a --title=value holding a second = is scanned whole", () => {
+    const f = fixture([]);
+    const marked = run(
+      ["--repo", "someone/tool", "--title=fix a=build.example.internal", "--markers", f.markers],
+      f.repo,
+    );
+    expect(marked.code).toBe(1);
+    expect(marked.err).toContain('title contains the internal marker "build.example.internal"');
+    const clean = run(["--repo=someone/tool", "--title=fix a=b", `--markers=${f.markers}`], f.repo);
+    expect(clean.code, clean.err).toBe(0);
+    expect(clean.out).toContain("ok: 1 text(s)");
+  });
+
+  test("a record-separator byte in a commit message does not hide the text after it", () => {
+    const f = fixture(["fix: visible\x1e then build.example.internal"]);
+    const r = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", f.markers], f.repo);
+    expect(r.code).toBe(1);
+    expect(r.err).toMatch(/commit [0-9a-f]{12} contains the internal marker "build.example.internal"/);
+    const g = fixture(["fix: visible\x1e then clean"]);
+    const clean = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", g.markers], g.repo);
+    expect(clean.code, clean.err).toBe(0);
+    expect(clean.out).toContain("ok: 1 text(s)");
+  });
+
+  test("an option-like --commits value refuses instead of reaching git as an option", () => {
+    const f = fixture(["fix: thing"]);
+    for (const argv of [["--commits", "-n0"], ["--commits=-n0"]]) {
+      const r = run(["--repo", "someone/tool", ...argv, "--markers", f.markers], f.repo);
+      expect(r.code, argv.join(" ")).toBe(1);
+      expect(r.err).toContain("git log -n0 failed");
+    }
+    const empty = run(["--repo", "someone/tool", "--commits", "main..main", "--markers", f.markers], f.repo);
+    expect(empty.code, empty.err).toBe(0);
+  });
+
   test("--repo is required and must be owner/name", () => {
     const f = fixture([]);
     expect(run(["--title", "x"], f.repo).code).toBe(2);

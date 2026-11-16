@@ -289,9 +289,9 @@
     "anti-slop(no-shape-in-symbol-names)": 5,
     "anti-slop(no-unknown-parameters)": 5,
     "anti-slop(no-unsafe-dictionary-type)": 16,
-    "anti-slop(require-safety-comment-for-type-assertion)": 23,
+    "anti-slop(require-safety-comment-for-type-assertion)": 22,
     "typescript(no-non-null-assertion)": 7,
-    "typescript(no-unsafe-type-assertion)": 19,
+    "typescript(no-unsafe-type-assertion)": 18,
     "unicorn(no-array-sort)": 3
   },
   "src/packaging/build.ts": {

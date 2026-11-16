@@ -29,6 +29,12 @@
  * unstated visibility is treated as public. With no markers file the scan has nothing to check and
  * says so; a markers file that cannot be read refuses, because unknown is not clean.
  *
+ * Both matches are heuristics, and a clean scan is not proof that nothing internal remains. A marker
+ * is a plain substring, so a split, re-spelled or encoded form passes. Instruction text is caught only
+ * as INSTRUCTION_WORDS or more consecutive words, so a paraphrase or a shorter copy passes, and the
+ * exempt trailers, footer and `allow` text are not matched against it at all. Only the title, the
+ * body and the commit messages are scanned; branch names, changed files and later comments are not.
+ *
  * This file ships inside `bin/ak-gate.mjs`, so it imports only `node:` built-ins.
  */
 import { spawnSync } from "node:child_process";
@@ -165,19 +171,27 @@ export function scanText(markers: PublishMarkers, texts: readonly PublishText[])
   return hits;
 }
 
-/** The commit messages in a range, newest first, or the reason git could not list them. */
+/**
+ * The commit messages in a range, newest first, or the reason git could not list them.
+ *
+ * `--end-of-options` keeps a range such as `-n0` from being read as a git option. Records are
+ * NUL-terminated (`-z`), a byte git does not let a commit message carry, and each must open with
+ * its commit id; a record that does not refuses rather than being dropped.
+ */
 export function commitMessages(project: string, range: string): { texts: PublishText[] } | { error: string } {
-  const proc = spawnSync("git", ["log", "--format=%H%x00%B%x1e", range, "--"], { cwd: project, encoding: "utf8" });
+  const proc = spawnSync("git", ["log", "-z", "--format=%H%n%B", "--end-of-options", range, "--"], {
+    cwd: project,
+    encoding: "utf8",
+  });
   if (proc.error !== undefined) return { error: `cannot run git in ${project}: ${proc.error.message}` };
   if (proc.status !== 0) return { error: `git log ${range} failed: ${proc.stderr.trim()}` };
-  const texts = proc.stdout
-    .split("\x1e")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== "")
-    .map((entry) => {
-      const [sha = "", message = ""] = entry.split("\x00");
-      return { source: `commit ${sha.slice(0, 12)}`, text: message };
-    });
+  const texts: PublishText[] = [];
+  for (const record of proc.stdout.split("\x00")) {
+    if (record === "") continue;
+    const head = /^[0-9a-f]{40,64}\n/.exec(record);
+    if (head === null) return { error: `git log ${range} printed a record that does not open with a commit id` };
+    texts.push({ source: `commit ${record.slice(0, 12)}`, text: record.slice(head[0].length).trimEnd() });
+  }
   return { texts };
 }
 
