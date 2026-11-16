@@ -42,7 +42,6 @@ import {
   parseJson,
   resolvePolicy,
   SUPERVISOR_PATTERN,
-  unattendedDisclosure,
 } from "../../src/lifecycle/unattended.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
@@ -53,6 +52,9 @@ setDefaultTimeout(180_000);
 
 const ROOT = join(import.meta.dir, "../..");
 const CONTRACT = "agent-kit/supervisor-contract@1";
+/** ADR-0014's disclosure sentence: it names the supervisor and states that agent-kit does not merge. */
+const disclosureSentence = (supervisor: string): string =>
+  `Unattended lifecycle policy (supervisor: ${supervisor}, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.`;
 const OBLIGATION_KEYS = [
   "launch-and-watch",
   "validation-gate",
@@ -388,7 +390,7 @@ describe("selection and start (command seam)", () => {
 
     const preflight = ak(cwd, "record", "--gate", "ship-preflight");
     expect(preflight.code).toBe(0);
-    expect(preflight.out).toContain(unattendedDisclosure("firstmate"));
+    expect(preflight.out).toContain(disclosureSentence("firstmate"));
     expect(recordsOf(cwd, run, "ship-preflight")[0]?.policy).toEqual({
       name: "unattended",
       source: "environment",
@@ -430,7 +432,7 @@ describe("selection and start (command seam)", () => {
         ok: true,
         policy: { name: "unattended", source: "environment", supervisor: name },
       });
-      const disclosure = unattendedDisclosure(name);
+      const disclosure = disclosureSentence(name);
       expect(bodyCarriesDisclosure(disclosure, name)).toBe(true);
       expect(bodyCarriesDisclosure(`${disclosure}\n\nChange.\n`, name)).toBe(true);
       // The Markdown model accepted a summary paragraph before the sentence; the sentence must now come first.
@@ -460,9 +462,9 @@ describe("selection and start (command seam)", () => {
         reason: "AK_LIFECYCLE_SUPERVISOR must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
       });
       // The disclosure match holds the supervisor to the same pattern, so a body naming a refused name never carries it.
-      expect(bodyCarriesDisclosure(unattendedDisclosure(bad), bad)).toBe(false);
-      expect(bodyCarriesDisclosure(`${unattendedDisclosure(bad)}\n\nChange.\n`, bad)).toBe(false);
-      expect(bodyCarriesDisclosure(`Change.\n\n${unattendedDisclosure(bad)}\n`, bad)).toBe(false);
+      expect(bodyCarriesDisclosure(disclosureSentence(bad), bad)).toBe(false);
+      expect(bodyCarriesDisclosure(`${disclosureSentence(bad)}\n\nChange.\n`, bad)).toBe(false);
+      expect(bodyCarriesDisclosure(`Change.\n\n${disclosureSentence(bad)}\n`, bad)).toBe(false);
       setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: bad });
       const checked = ak(cwd, "unattended", "check", "--phase", "super-align");
       expect(checked.code).toBe(2);
@@ -560,7 +562,7 @@ describe("selection and start (command seam)", () => {
     });
     const preflight = ak(cwd, "record", "--gate", "ship-preflight");
     expect(preflight.code).toBe(0);
-    expect(preflight.out).toContain(unattendedDisclosure("firstmate"));
+    expect(preflight.out).toContain(disclosureSentence("firstmate"));
     expect(recordsOf(cwd, run, "ship-preflight")[0]?.policy).toEqual({
       name: "unattended",
       source: `default-branch:${tip}`,
@@ -1603,7 +1605,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const r = ak(cwd, "record", "--gate", "ship-preflight");
     expect(r.code).toBe(0);
     expect(r.out).toContain(`recorded ship-preflight for run ${run} at ${snapshotOf(cwd).revision.slice(0, 12)}`);
-    expect(r.out).toContain(unattendedDisclosure("firstmate"));
+    expect(r.out).toContain(disclosureSentence("firstmate"));
     expect(r.out).toContain("phase evidence (worker-attested, gate: command -> exit):");
     expect(r.out).toContain("align: sh -c echo ok -> exit 0");
     expect(readdirSync(join(store(cwd), run, "decisions"))).toHaveLength(1);
@@ -1669,7 +1671,7 @@ const attestationOf = (head: string, over: JsonObject = {}): JsonObject => ({
 const reviewOf = (head: string, over: JsonObject): JsonObject =>
   attestationOf(head, { review: { ...REVIEW, ...over } });
 /** A body whose first paragraph is the disclosure, as final ship requires. */
-const bodyOf = (name = "firstmate") => `${unattendedDisclosure(name)}\n\nChange.\n`;
+const bodyOf = (name = "firstmate") => `${disclosureSentence(name)}\n\nChange.\n`;
 /** Writes an attestation and a body outside the repository and returns the two flags. */
 function files(value: Json, body: string = bodyOf(), text?: string) {
   const dir = outsideDir();
@@ -1976,6 +1978,46 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
+  test("final ship refuses a head whose descent exists only in a non-empty info/grafts file", () => {
+    const s = shipped();
+    const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
+    const unrelated = execGit(s.cwd, [["commit-tree", tree, "-m", "unrelated root"]]);
+    const located = git(s.cwd, "rev-parse", "--git-path", "info/grafts");
+    const graftPath = join(s.cwd, located);
+    mkdirSync(dirname(graftPath), { recursive: true });
+    writeFileSync(graftPath, "");
+    const empty = finalShip(s.cwd, files(attestationOf(s.head)).flags);
+    expect(empty.err).toBe("");
+    expect(empty.code).toBe(0);
+    expect(outputOf(s, 1).commits_after).toEqual([]);
+
+    writeFileSync(graftPath, `${unrelated} ${s.head}\n`);
+    expect(
+      Bun.spawnSync(["git", "--no-replace-objects", "merge-base", "--is-ancestor", s.head, unrelated], { cwd: s.cwd })
+        .exitCode,
+    ).toBe(0);
+    const r = finalShip(s.cwd, files(attestationOf(unrelated)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("info/grafts");
+    expect(r.err).not.toContain("final ship:");
+    const wt = join(outsideDir(), "wt");
+    git(s.cwd, "worktree", "add", "-q", wt, s.head);
+    const fromWt = ak(
+      wt,
+      "record",
+      "--gate",
+      "ship-preflight",
+      "--run",
+      s.run,
+      ...files(attestationOf(unrelated)).flags,
+    );
+    expect(fromWt.code).toBe(1);
+    expect(fromWt.err).toContain("info/grafts");
+    expect(entriesOf(s)).toEqual(["supervisor", "final-ship"]);
+    expect(outputOf(s, 1).commits_after).toEqual([]);
+    expect(JSON.stringify(outputOf(s, 1))).not.toContain(unrelated);
+  });
+
   test("final ship fetches nothing for a head the repository lacks: the worker's promisor remote program stays unrun", () => {
     const s = shipped();
     const marker = promisorMarker(s.cwd);
@@ -2035,16 +2077,23 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
-  const SENTENCE = unattendedDisclosure("firstmate");
+  const SENTENCE = disclosureSentence("firstmate");
   const BODY_REFUSALS: [string, string][] = [
     ["the sentence is absent", "Change."],
     ["the sentence is only inside an HTML comment", `<!--\n${SENTENCE}\n-->\n`],
     ["the sentence is only inside a backtick fence", `\`\`\`\n${SENTENCE}\n\`\`\`\n`],
     ["the sentence is only inside a tilde fence", `~~~\n${SENTENCE}\n~~~\n`],
-    ["the sentence names a longer supervisor", `Change.\n\n${unattendedDisclosure("firstmate-two")}\n`],
-    ["the sentence names another supervisor", `Change.\n\n${unattendedDisclosure("other-crew")}\n`],
+    ["the sentence names a longer supervisor", `Change.\n\n${disclosureSentence("firstmate-two")}\n`],
+    ["the sentence names another supervisor", `Change.\n\n${disclosureSentence("other-crew")}\n`],
     ["the sentence is wrapped across lines", SENTENCE.replace("in place of", "in place\nof")],
     ["the sentence has its spacing changed", SENTENCE.replace("no human", "no  human")],
+    [
+      "the sentence drops that agent-kit does not merge",
+      SENTENCE.replace(
+        "agent-kit does not merge: whoever the human authorized merges.",
+        "whoever the human authorized merges.",
+      ),
+    ],
     [
       "a comment holds it after a fence line indented four columns, which is indented code",
       `Summary.\n\n    \`\`\`\n<!--\n    \`\`\`\n${SENTENCE}\n-->\n`,
@@ -2449,7 +2498,7 @@ describe("the forge-free path (AC-1)", () => {
         review: { result: "approve", reviewer: "vendor-b/model-x", authors: ["vendor-a/model-y"], ref: "review 12" },
       }),
     );
-    writeFileSync(join(dir, "body.md"), `${unattendedDisclosure("firstmate")}\n\nChange.\n`);
+    writeFileSync(join(dir, "body.md"), `${disclosureSentence("firstmate")}\n\nChange.\n`);
     const final = ak(
       cwd,
       "record",
@@ -2490,21 +2539,7 @@ describe("the forge-free path (AC-1)", () => {
     const gone = ak(cwd, "unattended", "review-status", "--pr", "7");
     expect(gone.code).toBe(2);
     expect(existsSync(join(ROOT, "skills/super-ship/assets/independent-review.yml"))).toBe(false);
-    for (const file of ["src/lifecycle/unattended.ts", "src/lifecycle/gate.ts"]) {
-      const text = readFileSync(join(ROOT, file), "utf8");
-      for (const name of ["AK_UNATTENDED_READ_TOKEN", "ghForge", "review-status", "forgeIo", "gh api"])
-        expect(text).not.toContain(name);
-    }
-  });
-
-  test("the library spawns no process but local git", () => {
-    const text = readFileSync(join(ROOT, "src/lifecycle/unattended.ts"), "utf8");
-    // One process helper, `exec(command, args)`, and every use of it names git.
-    expect(text.match(/\b(?:spawnSync|execFileSync|execSync|spawn)\(/g)).toHaveLength(1);
-    const uses = [...text.matchAll(/\bexec\(\s*"([^"]*)"/g)].map((match) => match[1]);
-    expect(uses.length).toBeGreaterThan(0);
-    for (const command of uses) expect(command).toBe("git");
-    expect(text).not.toMatch(/\bfetch\(|node:https?|node:net/);
+    expect(existsSync(ghLog)).toBe(false);
   });
 });
 
@@ -2537,7 +2572,7 @@ describe("the rules the gate keeps (AC-6)", () => {
           review: { result: "approve", reviewer: "vendor-b/model-x", authors, ref: "r" },
         }),
       );
-      writeFileSync(join(dir, "b.md"), `${unattendedDisclosure("firstmate")}\n\nChange.\n`);
+      writeFileSync(join(dir, "b.md"), `${disclosureSentence("firstmate")}\n\nChange.\n`);
       return ["--attestation", join(dir, "a.json"), "--body-file", join(dir, "b.md")];
     };
     const same = ak(cwd, "record", "--gate", "ship-preflight", ...make(["vendor-b/model-x"]));

@@ -2354,12 +2354,25 @@ const RECOVERY =
 
 /**
  * How final ship reads objects in the worker's repository, which the worker can write, here and in the policy read:
- * no lazy fetch, so a missing object runs no promisor remote's program; no replace refs, so the descent check and the
- * listing see the history the forge has; and no signature display, so no `gpg.program` runs in the supervisor's
- * process. A git older than 2.44 rejects `--no-lazy-fetch`, and the call's failure refuses. Any other
- * program-valued key git reads in the worker's repository is outside this guarantee: only OS user separation closes it.
+ * no lazy fetch, so a missing object runs no promisor remote's program; no replace refs; and no signature display, so
+ * no `gpg.program` runs in the supervisor's process. A git older than 2.44 rejects `--no-lazy-fetch`, and the call's
+ * failure refuses. Any other program-valued key git reads in the worker's repository is outside this guarantee: only
+ * OS user separation closes it.
  */
 const FINAL_SHIP_GIT = ["--no-lazy-fetch", "--no-replace-objects", "-c", "log.showSignature=false"] as const;
+
+function graftsRefusal(project: string): string | undefined {
+  const located = git(project, [...FINAL_SHIP_GIT, "rev-parse", "--git-path", "info/grafts"]);
+  if (located.code !== 0 || located.text === "")
+    return "cannot locate info/grafts, so descent from the shipped revision cannot be read";
+  try {
+    const info = statSync(resolve(project, located.text), { throwIfNoEntry: false });
+    if (info === undefined || (info.isFile() && info.size === 0)) return undefined;
+  } catch {
+    return "cannot read info/grafts, so descent from the shipped revision cannot be read";
+  }
+  return "info/grafts is present and non-empty, so descent from the shipped revision cannot be read";
+}
 
 /** What final ship stores beside the closing record, by digest. */
 interface FinalShipOutput {
@@ -2474,6 +2487,8 @@ function shipUnattended(
     return deny(`reviewer ${reviewer} is among the authors; the review is not independent`, false);
   if (git(project, [...FINAL_SHIP_GIT, "cat-file", "-e", `${head}^{commit}`]).code !== 0)
     return deny(`commit ${head} is not in this repository; fetch it, then record again`, false);
+  const grafts = graftsRefusal(project);
+  if (grafts !== undefined) return deny(grafts, false);
   const shippedRevision = shipped.snapshot.revision;
   if (git(project, [...FINAL_SHIP_GIT, "merge-base", "--is-ancestor", shippedRevision, head]).code !== 0)
     return deny(`head ${head} does not descend from the shipped revision ${shippedRevision}`, true);

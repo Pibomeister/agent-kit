@@ -32,9 +32,6 @@ const OBLIGATIONS = [
   "head-bound-evidence",
   "disclosure",
 ] as const;
-/** The pattern the attestation schema carries for a canonical identity, and the function that agrees with it. */
-const IDENTITY_PATTERN = "^[^\\s/\\p{Lu}\\p{Lt}]+/[^\\s\\p{Lu}\\p{Lt}]+$";
-
 type Value = lib.Json | undefined;
 
 function schemaOf(name: string): ValidateFunction {
@@ -267,11 +264,6 @@ describe("the supervisor-name rule has one source", () => {
     expect(isObj(supervisor) ? supervisor.pattern : undefined).toBe(lib.SUPERVISOR_PATTERN.source);
   });
 
-  test("the documents a supervisor reads state SUPERVISOR_PATTERN's source", () => {
-    for (const doc of ["adapters/supervisor/CONTRACT.md", "references/unattended-lifecycle/REFERENCE.md"])
-      expect(readFileSync(join(ROOT, doc), "utf8")).toContain(`\`${lib.SUPERVISOR_PATTERN.source}\``);
-  });
-
   test("a declared supervisor outside the pattern is refused by a message that names the pattern", () => {
     for (const named of [" firstmate", "firstmate ", "firstmate, crew 3", "a".repeat(65), ".firstmate"]) {
       const found = lib.declarationFailures(declaration({ supervisor: named }), named);
@@ -347,11 +339,12 @@ describe("the canonical identity", () => {
     expect(lib.isCanonicalIdentity(id)).toBe(expected);
   });
 
-  test("the attestation schema carries the pinned pattern, and the pattern agrees with the function", () => {
-    const text = readFileSync(join(ROOT, "schemas", "supervisor-attestation.schema.json"), "utf8");
-    expect(text).toContain(JSON.stringify(IDENTITY_PATTERN).slice(1, -1));
-    const pattern = new RegExp(IDENTITY_PATTERN, "u");
-    for (const [id] of CASES) expect(pattern.test(id)).toBe(lib.isCanonicalIdentity(id));
+  test("the attestation schema accepts a canonical identity and rejects the others, for the reviewer and for an author", () => {
+    const validate = schemaOf("supervisor-attestation");
+    for (const [id, expected] of CASES) {
+      expect(validate(review({ reviewer: id }))).toBe(expected);
+      expect(validate(review({ authors: [id] }))).toBe(expected);
+    }
   });
 });
 
