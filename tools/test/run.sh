@@ -55,10 +55,10 @@ ordinary_parallel() {
   if [ -z "$load" ]; then
     load=$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2; exit}' || true)
   fi
-  awk -v load="$load" -v cpus="$cpus" 'BEGIN {
+  awk -v loadavg="$load" -v cpus="$cpus" 'BEGIN {
     c = cpus + 0
-    if (c < 1 || load == "") { print 4; exit }
-    per = (load + 0) / c
+    if (c < 1 || loadavg == "") { print 4; exit }
+    per = (loadavg + 0) / c
     if (per >= 4) print 1
     else if (per >= 2) print 2
     else print 4
