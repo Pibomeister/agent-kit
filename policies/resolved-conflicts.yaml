@@ -1120,8 +1120,9 @@ conflicts:
       The reference learning stack picks a named model for each background job, and this catalog
       strips model selection, effort and routing from every file it ships.
     ruling: >-
-      Every judgement the learning runtime needs goes through one configurable judge command,
-      bound by whoever runs the runtime through `AK_LEARN_JUDGE`, with hooks disabled in the
+      Every judgement the learning runtime needs goes through configured judge commands,
+      bound by whoever runs the runtime through `AK_LEARN_JUDGE` and optional ordered
+      `AK_LEARN_JUDGE_FALLBACKS`, with hooks disabled in the
       judge's own session. The repository names no model, tier or effort for any learn role. The
       judge receives a role prompt read verbatim from roles/learn/, followed by an output contract
       and the inputs, both appended by the runtime. The judge never sets counts, status, ids or

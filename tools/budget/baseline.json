@@ -78,8 +78,8 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95677,
-      "tokens": 23891
+      "bytes": 95726,
+      "tokens": 23903
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -953,8 +953,8 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95677,
-      "tokens": 23891
+      "bytes": 95726,
+      "tokens": 23903
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1828,8 +1828,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95701,
-      "tokens": 23897
+      "bytes": 95750,
+      "tokens": 23909
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -2703,8 +2703,8 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95677,
-      "tokens": 23891
+      "bytes": 95726,
+      "tokens": 23903
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -3578,8 +3578,8 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95677,
-      "tokens": 23891
+      "bytes": 95726,
+      "tokens": 23903
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -4453,8 +4453,8 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95677,
-      "tokens": 23891
+      "bytes": 95726,
+      "tokens": 23903
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",

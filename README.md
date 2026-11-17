@@ -87,6 +87,24 @@ again before publishing, so host caches cannot hide an update.
 Use `ak learn skills list [--repo P]` to inspect skill candidates, their status, use counts and
 evidence. If the skills ledger is absent, the command reports zero counts without creating it.
 
+Learning and memory use `AK_LEARN_JUDGE` as the primary judge command. Optional
+`AK_LEARN_JUDGE_FALLBACKS` is a JSON array of command strings, tried in order after a quota or
+service availability failure, missing executable or timeout. For example:
+`["/opt/judges/secondary --json", "/opt/judges/reserve --json"]`. Commands use the primary's
+quote splitting rules, with no shell expansion. Every command receives the same prompt on stdin
+and must return the same JSON object on stdout. Ordinary failures and malformed replies retain
+one retry; a role's `unavailable` reply ends the call. Exhaustion returns no judgement and writes
+no learned content. `judge-calls.jsonl` records each attempt's outcome, `judge_index` (primary 0)
+and `judge_command_sha256` (SHA256 of the configured argv as JSON), identifying the answering binding
+without storing its arguments. No alternatives run unless configured.
+
+Bind only adapters verified against this contract, with comparable reasoning capability. Each
+adapter wrapper must check current quota and remaining capacity at call time and decline when
+unavailable. The runtime does not verify comparability or provider capacity. Keep these bindings
+in the operator's environment; this repository carries no provider selection. The subscription-only
+`ak learn doctor` still refuses commands outside its verified host adapter. Live verification of
+an operator's bindings is a separate owner action.
+
 Use `ak learn doctor run --out DIR [--repo P | --all]` to score recent Claude Code, Codex and Grok
 sessions against four rubrics and write one self-contained HTML report. The report lists the
 proposed skill edits that passed every gate, each with its diff. `--out` holds condensed
