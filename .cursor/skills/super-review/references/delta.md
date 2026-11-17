@@ -91,8 +91,8 @@ Where architecture, requirements, the comparison base or the affected surface ch
 affected approvals are invalidated and a new baseline is deliberately established. That is a new
 review scope with its own pass 1, not an unbounded third delta loop, and it is not the third cycle
 the cap forbids wearing a different name (ruling `delta-baseline-reset-not-third-loop`). The fix
-commits, a reached cap, a replan, and a rebase that leaves the patch and the requirements unchanged
-are not material changes: each continues as a delta.
+commits, a reached cap, and a replan or rebase that leaves the accepted requirements, the relevant
+architecture and the patch all unchanged are not material changes: each continues as a delta.
 
 The run records its comparison base, its reviewed head and the last head verified in the delta loop,
 so the three are never conflated (ruling `delta-baseline-reset-not-third-loop`). A verification

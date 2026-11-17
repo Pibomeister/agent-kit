@@ -137,10 +137,10 @@ its input hashes, and the fix diff ([`schemas/review.schema.json`](../../referen
 9. For `delta`: first test whether architecture, requirements, the comparison base or the affected
    surface changed materially. Where any did, invalidate the affected approvals and establish a new
    baseline — a new scope with its own pass 1 — instead of continuing this loop (ruling
-   `delta-baseline-reset-not-third-loop`). Fix commits, a reached cap, a replan and a rebase that
-   leaves the patch unchanged are not material. Otherwise build the packet, run the spec and standards
-   lanes over the fix, and bound the scope by affected behavior rather than by changed lines (ruling
-   `delta-scope-affected-behavior`). A
+   `delta-baseline-reset-not-third-loop`). Fix commits, a reached cap, and a replan or rebase that
+   leaves the accepted requirements, the relevant architecture and the patch all unchanged are not
+   material. Otherwise build the packet, run the spec and standards lanes over the fix, and bound the
+   scope by affected behavior rather than by changed lines (ruling `delta-scope-affected-behavior`). A
    continuing seat keeps its earlier finding context, or a replacement receives the durable
    prior-finding packet; independence from the author is mandatory and amnesia is not (ruling
    `reviewer-continuity-not-amnesia`). The mechanics are in `./references/delta.md`.
@@ -286,9 +286,9 @@ what they are.
 ## Limits
 
 Fix cycles: 2 (gate). [`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `fix_cycles`. The third stops with the cap decision
-rather than another pass.
+rather than another pass; only a cycle a human then authorizes as an extension runs, as a delta.
 
-Review rounds: 3 (gate). [`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `review_rounds`, counted across the run.
+Review rounds: 3 (gate) across the run, plus one delta head per extension ([`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `review_rounds`).
 
 Panel size: no cap (guidance); the count follows declared risk. Small pass-1 diffs seat the lean
 panel; a delta seats its two core lanes plus only the specialist seats a prior finding or its diff triggers.

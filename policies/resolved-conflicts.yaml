@@ -604,8 +604,8 @@ conflicts:
       established. That is a new review scope with its own pass 1, not an unbounded third delta
       loop. A review run records its comparison base, its reviewed head and the last head
       verified in the delta loop, so the three are never conflated. The fix commits, a reached
-      cap, a replan, or a rebase that leaves the patch and the requirements unchanged are not a
-      material change.
+      cap, or a replan or rebase that leaves the accepted requirements, the relevant architecture
+      and the patch all unchanged are not a material change.
     discharged_in: [workflow, outputs]
     binds:
       skills: [super-review, super-verify]

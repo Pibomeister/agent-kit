@@ -115,8 +115,9 @@ record does not prove it.
 Gate: when architecture, requirements, the comparison base or the affected surface changes
 materially, affected approvals are invalidated and a new baseline is deliberately established.
 That is a new review scope with its own pass 1, not an unbounded third delta loop (ruling
-`delta-baseline-reset-not-third-loop`). The fix commits, a reached cap, a replan, and a rebase that
-leaves the patch and the requirements unchanged are not material changes.
+`delta-baseline-reset-not-third-loop`). The fix commits, a reached cap, and a replan or rebase that
+leaves the accepted requirements, the relevant architecture and the patch all unchanged are not
+material changes.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -169,7 +170,8 @@ Anything published as project knowledge goes through the knowledgebase adapter (
 
 - Fix cycles: 2 (gate, `policies/limits.yaml` `fix_cycles`).
 - Heads reviewed per run: 3 (gate, `policies/limits.yaml` `review_rounds`) — the first snapshot
-  plus the head from each permitted fix cycle.
+  plus the head from each permitted fix cycle — and one more delta head for each cycle a human
+  authorizes in `fix_cycles.extensions`; no head beyond them is reviewed without that entry.
 - Lanes: 2, both required (gate). A third lane is a new scope, not a tiebreak. The pass-1 panel is
   never re-seated here. A specialist seat joins only when an unresolved prior finding of that
   seat's type exists or the delta diff itself triggers that seat's risk evidence.
