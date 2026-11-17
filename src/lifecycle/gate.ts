@@ -2078,6 +2078,7 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
   "  ak lifecycle publish-scan --repo <owner/name> [--visibility <v>] [--title <text>] [--body-file <file>] [--commits <range>] [--markers <file>] [--project <dir>]",
   "  ak lifecycle unattended check --phase <phase> [--project <dir>]",
+  "    With AK_LIFECYCLE_SUPERVISOR, accepts the human-step options below for a reported human-only step.",
   "  ak lifecycle unattended review-status --pr <n> [--project <dir>]",
   "  ak lifecycle lanes run [--lane <name>] [--label <text>] [--pool <n>] [--timeout-minutes <n>] [--dir <dir>] [--project <dir>] -- <command...>",
   "  ak lifecycle lanes status [--dir <dir>] [--project <dir>] [--json]",
@@ -2122,6 +2123,18 @@ export const LIFECYCLE_USAGE = [
   "Exit 0 when the record was written, every gate is current or the text is clean, 1 when refused, 2 on bad usage.",
 ];
 
+const HUMAN_STEP_FLAGS = [
+  "kind",
+  "started-at",
+  "now",
+  "overnight",
+  "escalated",
+  "channel",
+  "target",
+  "blocked-on",
+  "prompt-held-open",
+] as const;
+
 const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "binding", "dir", "project"],
   record: [
@@ -2143,23 +2156,13 @@ const FLAGS: Record<string, readonly string[]> = {
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
   "publish-scan": ["repo", "visibility", "title", "body-file", "commits", "markers", "project"],
-  "unattended check": ["phase", "project"],
+  "unattended check": ["phase", "project", ...HUMAN_STEP_FLAGS],
   "unattended review-status": ["pr", "project"],
   "lanes run": ["lane", "label", "pool", "timeout-minutes", "dir", "project", "json"],
   "lanes status": ["dir", "project", "json"],
   "lanes release": ["lane", "dir", "project"],
   "lanes unpublished": ["max-age-minutes", "project", "json"],
-  "human-step": [
-    "kind",
-    "started-at",
-    "now",
-    "overnight",
-    "escalated",
-    "channel",
-    "target",
-    "blocked-on",
-    "prompt-held-open",
-  ],
+  "human-step": HUMAN_STEP_FLAGS,
 };
 
 /** Flags that take no value. Presence is true. */
@@ -2186,7 +2189,11 @@ function epochFlag(raw: string, name: string): number {
  * and exits 1 when escalation is missing, a pull request or deploy is blocked on the step, or an
  * interactive auth prompt is held open.
  */
-function runHumanStep(io: Io, flags: Map<string, string | true>): number {
+function runHumanStep(
+  io: Io,
+  flags: Map<string, string | true>,
+  report?: (assessment: HumanStepAssessment) => void,
+): number {
   const text = (name: string): string | undefined => {
     const value = flags.get(name);
     return value === true ? undefined : value;
@@ -2255,9 +2262,11 @@ function runHumanStep(io: Io, flags: Map<string, string | true>): number {
       : []),
     ...checkInteractiveAuthPrompt({ kind, promptHeldOpen, overnight }),
   ];
-  io.out(
-    `${assessment.classification} kind=${assessment.kind} elapsed_ms=${assessment.elapsedMs} action=${assessment.action} channel=${assessment.channel}`,
-  );
+  if (report === undefined)
+    io.out(
+      `${assessment.classification} kind=${assessment.kind} elapsed_ms=${assessment.elapsedMs} action=${assessment.action} channel=${assessment.channel}`,
+    );
+  else report(assessment);
   for (const violation of violations) io.err(`ak lifecycle human-step: ${violation}`);
   return violations.length === 0 ? 0 : 1;
 }
@@ -2603,25 +2612,29 @@ export function main(
       io.err(`ak lifecycle unattended check: ${unknownSelector("phase", phase ?? "", UNATTENDED_PHASES)}`);
       return 2;
     }
-    if (MODEL_STARTED_PHASES.some((started) => started === phase)) {
-      const started =
-        policy?.supervisor === undefined
-          ? { policy: policy?.name ?? "legacy", phase, start: "model-started" }
-          : { policy: policy.name, supervisor: policy.supervisor, phase, start: "model-started" };
-      io.out(JSON.stringify(started, null, 2));
-      return 0;
-    }
-    if (policy === undefined) {
+    const modelStarted = MODEL_STARTED_PHASES.some((started) => started === phase);
+    if (!modelStarted && policy === undefined) {
       io.err(
         `ak lifecycle unattended check: ${phase} is human-started and needs its typed command or a grant to start`,
       );
       return 1;
     }
-    const started =
-      policy.supervisor === undefined
-        ? { policy: policy.name, source: policy.source, phase }
-        : { policy: policy.name, source: policy.source, supervisor: policy.supervisor, phase };
-    io.out(JSON.stringify(started, null, 2));
+    const started = modelStarted
+      ? { policy: policy?.name ?? "legacy", phase, start: "model-started" }
+      : { policy: policy?.name, source: policy?.source, phase };
+    const phaseCheck = policy?.supervisor === undefined ? started : { ...started, supervisor: policy.supervisor };
+    if (HUMAN_STEP_FLAGS.some((flag) => flags.has(flag))) {
+      if (policy?.supervisor === undefined) {
+        io.err(
+          "ak lifecycle unattended check: human-step options require an unattended policy with AK_LIFECYCLE_SUPERVISOR",
+        );
+        return 2;
+      }
+      return runHumanStep(io, flags, (assessment) =>
+        io.out(JSON.stringify({ ...phaseCheck, human_step: assessment }, null, 2)),
+      );
+    }
+    io.out(JSON.stringify(phaseCheck, null, 2));
     return 0;
   }
   if (sub === "unattended review-status") {

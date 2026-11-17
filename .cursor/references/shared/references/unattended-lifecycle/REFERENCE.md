@@ -162,6 +162,15 @@ classifies a held human-only step, and it exits 1 when the step sits at or over 
 without a satisfying escalation, when a pull request or deploy is blocked on it, or when an
 interactive auth prompt is held open.
 
+A supervisor named by `AK_LIFECYCLE_SUPERVISOR` reports a held human-only step through the existing
+`unattended check --phase <phase>` entry point, with the same options as `human-step`:
+`--kind <kind> --started-at <epoch-ms> --now <epoch-ms>`, plus the applicable `--overnight`,
+`--escalated --channel <channel>`, `--target <target> --blocked-on <reason>` and `--prompt-held-open`.
+The check runs the classifier and all three violation checks before returning. Its JSON result
+includes `human_step`; exit 1 reports a violation, and exit 2 reports malformed inputs or a missing
+supervisor. With no human-step options, phase checks keep their existing result. The supervisor
+supplies the observed step and escalation state; this check does not discover steps or monitor them.
+
 The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
 an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive
 approval challenge the worker hits, for example a device or consent approval prompt. It is never

@@ -810,6 +810,71 @@ describe("selection and start (command seam)", () => {
     expect(recordsOf(cwd, "feature", "align")).toEqual([]);
   });
 
+  test("a supervised unattended check evaluates human-step stalls through the phase entry point", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    const held = ["--kind", "otp", "--started-at", "1700000000000", "--now", "1700000600000"];
+    for (const phase of [
+      "super-align",
+      "super-bound",
+      "super-scout",
+      "super-build",
+      "super-verify",
+      "super-review",
+      "super-ship",
+    ]) {
+      const check = (...args: string[]) => ak(cwd, "unattended", "check", "--phase", phase, ...args);
+      const stalled = check(...held);
+      expect(stalled.code, phase).toBe(1);
+      expect(JSON.parse(stalled.out)).toMatchObject({
+        supervisor: "firstmate",
+        phase,
+        human_step: { classification: "human-step-stall", channel: "human-needed-or-page" },
+      });
+      expect(stalled.err).toContain("without a satisfying escalation");
+      const pending = check(...held.slice(0, -1), "1700000599999");
+      expect(pending.code).toBe(0);
+      expect(JSON.parse(pending.out)).toMatchObject({ human_step: { classification: "human-step-pending" } });
+      for (const channel of ["page", "human-needed"]) {
+        expect(check(...held, "--escalated", "--channel", channel).code).toBe(0);
+      }
+      const overnight = check(...held, "--overnight", "--escalated", "--channel", "page");
+      expect(overnight.code).toBe(1);
+      expect(JSON.parse(overnight.out)).toMatchObject({ human_step: { channel: "morning-handoff" } });
+      expect(check(...held, "--overnight", "--escalated", "--channel", "morning-handoff").code).toBe(0);
+      const blocked = check(
+        ...held,
+        "--escalated",
+        "--channel",
+        "human-needed",
+        "--target",
+        "pull-request",
+        "--blocked-on",
+        "otp",
+      );
+      expect(blocked.code).toBe(1);
+      expect(blocked.err).toContain("must not be blocked");
+      expect(
+        check(...held, "--escalated", "--channel", "human-needed", "--target", "pull-request", "--blocked-on", "review")
+          .code,
+      ).toBe(0);
+      const prompt = check("--kind", "auth-prompt", ...held.slice(2, -1), "1700000000001", "--prompt-held-open");
+      expect(prompt.code).toBe(1);
+      expect(prompt.err).toContain("must not be held open");
+      expect(check("--kind", "otp").code).toBe(2);
+      expect(check(...held.slice(0, -1), "invalid").code).toBe(2);
+      expect(check("--overnight").code).toBe(2);
+    }
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: undefined });
+    const unsupervised = ak(cwd, "unattended", "check", "--phase", "super-align", ...held);
+    expect(unsupervised.code).toBe(2);
+    expect(unsupervised.err).toContain("AK_LIFECYCLE_SUPERVISOR");
+    setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: "firstmate" });
+    const legacy = ak(cwd, "unattended", "check", "--phase", "super-build", ...held);
+    expect(legacy.code).toBe(2);
+    expect(legacy.err).toContain("an unattended policy");
+  });
+
   test("AK_LIFECYCLE_SUPERVISOR records the supervisor on phase starts, runs, gate records, decisions and ship disclosure", () => {
     const cwd = repo();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_LIFECYCLE_SUPERVISOR: "firstmate" });
