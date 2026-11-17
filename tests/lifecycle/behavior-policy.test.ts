@@ -3,7 +3,16 @@
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
@@ -2101,3 +2110,94 @@ function plantBoundChild(started: ReturnType<typeof startMandatory>, ticket: Jso
   childDoc.binding_evidence_location = started.evidence;
   writeFileSync(childPath, `${JSON.stringify(childDoc, null, 2)}\n`);
 }
+
+describe("worker-writable trust boundary at open", () => {
+  for (const placement of ["project", "linked worktree"] as const) {
+    for (const site of ["binding", "runner record", "charter", "evidence store", "output directory"] as const) {
+      test(`refuses ${site} authority in the ${placement}`, () => {
+        const dir = repo();
+        plainTicket(dir, "worker-location");
+        const bound = attachKb(dir, "off");
+        const started = startMandatory(dir, ticketPath(dir, "worker-location"), bound);
+        const args = {
+          dir: started.evidence,
+          project: dir,
+          ticket: ticketPath(dir, "worker-location"),
+          registry: bound.registry,
+          binding: started.bindingPath,
+          ledger: started.ledger,
+        };
+        const control = openRun(args);
+        expect(control.ok, control.ok ? "" : control.reason).toBe(true);
+        if (!control.ok) throw new Error(control.reason);
+        const trusted = ak(dir, "check", "--dir", args.dir, "--run", control.run.run_id);
+        expect(trusted.err).not.toContain("no protected runner creation record");
+
+        let writableRoot = dir;
+        if (placement === "linked worktree") {
+          // This repository and linked tree are private fixtures, separate from the task checkout.
+          writableRoot = join(processScratch("ak-bv-linked-"), "peer");
+          git(dir, "worktree", "add", "--detach", writableRoot, "HEAD");
+        }
+        const hostile = join(writableRoot, "worker-authority");
+        const binding = parseObject(readFileSync(started.bindingPath, "utf8"));
+        if (site === "binding") args.binding = hostile;
+        else if (site === "evidence store") {
+          mkdirSync(hostile);
+          if (!asJsonObject(binding.evidence)) throw new Error("binding evidence missing");
+          binding.evidence.location = hostile;
+          args.dir = hostile;
+        } else if (site === "output directory") {
+          mkdirSync(hostile);
+          args.dir = hostile;
+        } else {
+          const runnerPath = join(started.privateDir, `${started.runId}.json`);
+          const runner = parseObject(readFileSync(runnerPath, "utf8"));
+          if (site === "runner record") {
+            writeJson(hostile, runner);
+            unlinkSync(runnerPath);
+            symlinkSync(hostile, runnerPath);
+          } else {
+            const charter = parseObject(readFileSync(join(started.privateDir, "charter.json"), "utf8"));
+            if (!asJsonObject(charter.immutability)) throw new Error("charter immutability missing");
+            charter.immutability.location = hostile;
+            const hash = artifactHash({ ...charter, immutability: { ...charter.immutability, hash: "" } });
+            charter.immutability.hash = hash;
+            const approval = Array.isArray(charter.approvals) ? charter.approvals[0] : undefined;
+            if (!asJsonObject(approval)) throw new Error("charter approval missing");
+            charter.approvals = [{ ...approval, artifact_hash: hash }];
+            writeJson(hostile, charter);
+            runner.charter_path = hostile;
+            runner.charter_hash = hash;
+            runner.charter = charter;
+            if (!asJsonObject(runner.start_authority) || !asJsonObject(runner.start_authority.grant))
+              throw new Error("standing grant missing");
+            runner.start_authority.grant.charter_hash = hash;
+            writeJson(runnerPath, runner);
+          }
+        }
+        writeJson(args.binding, binding);
+        const ledgerPath = join(started.ledger, `${started.runId}.json`);
+        const registered = parseObject(readFileSync(ledgerPath, "utf8"));
+        registered.binding_path = realpathSync(args.binding);
+        registered.binding_sha256 = `sha256:${createHash("sha256").update(readFileSync(args.binding)).digest("hex")}`;
+        writeJson(ledgerPath, registered);
+
+        const child = openRun(args);
+        if (site === "runner record" || site === "charter") {
+          // An off child can open, but its worker-owned parent cannot authorize subsequent checks.
+          expect(child.ok, child.ok ? "" : child.reason).toBe(true);
+          if (!child.ok) throw new Error(child.reason);
+          const checked = ak(dir, "check", "--dir", args.dir, "--run", child.run.run_id);
+          expect(checked.code).toBe(1);
+          expect(checked.err).toContain("no protected runner creation record");
+        } else {
+          expect(child.ok).toBe(false);
+          if (child.ok) throw new Error("worker-writable authority was accepted");
+          expect(child.reason).toContain("in a worker-writable location");
+          expect(child.reason).toContain(site === "binding" ? `binding ${args.binding}` : "evidence store");
+        }
+      });
+    }
+  }
+});
