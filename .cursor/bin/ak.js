@@ -16759,7 +16759,21 @@ var init_project_schema = __esm(() => {
                   red: { type: "number", minimum: 0 }
                 }
               },
-              enforcement: { const: "advisory" }
+              enforcement: { const: "advisory" },
+              shared_surfaces: {
+                description: "Paths many features depend on. Each path is a glob matched against the whole repository-relative path, so a directory is declared as `src/core/**`. Each declared path sets a floor the scorer adds when a record lists it; a floor at green is no floor, so green is not allowed.",
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["path", "class", "reason"],
+                  properties: {
+                    path: { $ref: "common.schema.json#/$defs/nonempty_string" },
+                    class: { enum: ["yellow-agent", "yellow-owner", "red"] },
+                    reason: { $ref: "common.schema.json#/$defs/nonempty_string" }
+                  }
+                }
+              }
             }
           },
           exceptions: {
@@ -17182,6 +17196,11 @@ var init_ticket_schema = __esm(() => {
                 type: "array",
                 uniqueItems: true,
                 items: { $ref: "common.schema.json#/$defs/sensitive_action" }
+              },
+              shared_surfaces: {
+                type: "array",
+                uniqueItems: true,
+                items: { $ref: "common.schema.json#/$defs/nonempty_string" }
               }
             }
           },
