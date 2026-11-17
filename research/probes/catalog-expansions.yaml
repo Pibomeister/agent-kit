@@ -216,7 +216,7 @@ schemas:
         Behavior verification needs a declared run-artifact shape so accepted intent stays
         distinct from proposed, unresolved and observed notes, and so Runner.start can
         freeze complete required-check definitions.
-      commits: [2eb22f77f3800041e5845a4a964cf55b43ee3c9c]
+      commits: [735f5ab53044ce4cfd907b41276e2f7bde88f528]
 
 profiles:
   baseline: 4
