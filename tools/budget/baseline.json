@@ -78,13 +78,13 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95588,
-      "tokens": 23869
+      "bytes": 95677,
+      "tokens": 23891
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31223,
-      "tokens": 7792
+      "bytes": 31299,
+      "tokens": 7811
     },
     "bundle/claude-code:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -118,8 +118,8 @@
     },
     "bundle/claude-code:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13718,
-      "tokens": 3427
+      "bytes": 13813,
+      "tokens": 3451
     },
     "bundle/claude-code:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -763,8 +763,8 @@
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5606,
-      "tokens": 1400
+      "bytes": 5710,
+      "tokens": 1426
     },
     "bundle/claude-code:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
@@ -953,13 +953,13 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95588,
-      "tokens": 23869
+      "bytes": 95677,
+      "tokens": 23891
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31223,
-      "tokens": 7792
+      "bytes": 31299,
+      "tokens": 7811
     },
     "bundle/codex:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -993,8 +993,8 @@
     },
     "bundle/codex:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13718,
-      "tokens": 3427
+      "bytes": 13813,
+      "tokens": 3451
     },
     "bundle/codex:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -1638,8 +1638,8 @@
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5606,
-      "tokens": 1400
+      "bytes": 5710,
+      "tokens": 1426
     },
     "bundle/codex:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
@@ -1828,13 +1828,13 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95612,
-      "tokens": 23875
+      "bytes": 95701,
+      "tokens": 23897
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31223,
-      "tokens": 7792
+      "bytes": 31299,
+      "tokens": 7811
     },
     "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1868,8 +1868,8 @@
     },
     "bundle/cursor:.cursor/references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13718,
-      "tokens": 3427
+      "bytes": 13813,
+      "tokens": 3451
     },
     "bundle/cursor:.cursor/references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -2508,8 +2508,8 @@
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5606,
-      "tokens": 1400
+      "bytes": 5710,
+      "tokens": 1426
     },
     "bundle/cursor:.cursor/skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
@@ -2703,13 +2703,13 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95588,
-      "tokens": 23869
+      "bytes": 95677,
+      "tokens": 23891
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31223,
-      "tokens": 7792
+      "bytes": 31299,
+      "tokens": 7811
     },
     "bundle/droid:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -2743,8 +2743,8 @@
     },
     "bundle/droid:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13718,
-      "tokens": 3427
+      "bytes": 13813,
+      "tokens": 3451
     },
     "bundle/droid:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -3388,8 +3388,8 @@
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5606,
-      "tokens": 1400
+      "bytes": 5710,
+      "tokens": 1426
     },
     "bundle/droid:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
@@ -3578,13 +3578,13 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95588,
-      "tokens": 23869
+      "bytes": 95677,
+      "tokens": 23891
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31223,
-      "tokens": 7792
+      "bytes": 31299,
+      "tokens": 7811
     },
     "bundle/grok:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -3618,8 +3618,8 @@
     },
     "bundle/grok:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13718,
-      "tokens": 3427
+      "bytes": 13813,
+      "tokens": 3451
     },
     "bundle/grok:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -4263,8 +4263,8 @@
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5606,
-      "tokens": 1400
+      "bytes": 5710,
+      "tokens": 1426
     },
     "bundle/grok:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
@@ -4453,13 +4453,13 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95588,
-      "tokens": 23869
+      "bytes": 95677,
+      "tokens": 23891
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 31223,
-      "tokens": 7792
+      "bytes": 31299,
+      "tokens": 7811
     },
     "bundle/kimi:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -4493,8 +4493,8 @@
     },
     "bundle/kimi:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13718,
-      "tokens": 3427
+      "bytes": 13813,
+      "tokens": 3451
     },
     "bundle/kimi:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -5138,8 +5138,8 @@
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5606,
-      "tokens": 1400
+      "bytes": 5710,
+      "tokens": 1426
     },
     "bundle/kimi:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",

@@ -117,7 +117,8 @@ materially, affected approvals are invalidated and a new baseline is deliberatel
 That is a new review scope with its own pass 1, not an unbounded third delta loop (ruling
 `delta-baseline-reset-not-third-loop`). The fix commits, a reached cap, and a replan or rebase that
 leaves the accepted requirements, the relevant architecture and the patch all unchanged are not
-material changes.
+material changes, nor is a same-finding replan that changes only the patch while none of those
+triggers applies.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|

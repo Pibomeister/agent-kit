@@ -139,11 +139,10 @@ its input hashes, and the fix diff ([`schemas/review.schema.json`](../../referen
    baseline — a new scope with its own pass 1 — instead of continuing this loop (ruling
    `delta-baseline-reset-not-third-loop`). Fix commits, a reached cap, and a replan or rebase that
    leaves the accepted requirements, the relevant architecture and the patch all unchanged are not
-   material. Otherwise build the packet, run the spec and standards lanes over the fix, and bound the
-   scope by affected behavior rather than by changed lines (ruling `delta-scope-affected-behavior`). A
-   continuing seat keeps its earlier finding context, or a replacement receives the durable
-   prior-finding packet; independence from the author is mandatory and amnesia is not (ruling
-   `reviewer-continuity-not-amnesia`). The mechanics are in `./references/delta.md`.
+   material, nor is a same-finding replan that changes only the patch while no trigger applies.
+   Otherwise build the packet, run the spec and standards lanes over the fix, and bound the scope by
+   affected behavior rather than by changed lines (ruling `delta-scope-affected-behavior`). Seat
+   continuity (ruling `reviewer-continuity-not-amnesia`) and the mechanics: `./references/delta.md`.
 10. For `readiness`: run the two independent lanes as a gate over the panel's synthesized verdict,
     not as a substitute for it. A missing lane is `unavailable`, and a blocking lane result vetoes
     approval no matter what the panel concluded. Load
@@ -288,7 +287,8 @@ what they are.
 Fix cycles: 2 (gate). [`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `fix_cycles`. The third stops with the cap decision
 rather than another pass; only a cycle a human then authorizes as an extension runs, as a delta.
 
-Review rounds: 3 (gate) across the run, plus one delta head per extension ([`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `review_rounds`).
+Review rounds: 3 (gate) across the run ([`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `review_rounds`), plus one delta head
+per extension recorded in `fix_cycles.extensions`; no head beyond them is reviewed without one.
 
 Panel size: no cap (guidance); the count follows declared risk. Small pass-1 diffs seat the lean
 panel; a delta seats its two core lanes plus only the specialist seats a prior finding or its diff triggers.

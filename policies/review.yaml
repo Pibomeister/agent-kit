@@ -470,9 +470,9 @@ delta:
     trigger: >-
       Architecture, requirements, comparison base or the affected surface changes materially.
     not_a_trigger: >-
-      The fix commits themselves, a reached cap, or a replan or rebase that leaves the accepted
-      requirements, the relevant architecture and the patch all unchanged. Those continue as a
-      delta.
+      The fix commits themselves, a reached cap, a replan or rebase that leaves the accepted
+      requirements, the relevant architecture and the patch all unchanged, or a same-finding replan
+      that changes only the patch while no trigger applies. Those continue as a delta.
     effect:
       - affected approvals are invalidated
       - a new baseline is deliberately established

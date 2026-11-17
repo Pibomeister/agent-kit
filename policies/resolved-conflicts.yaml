@@ -605,7 +605,8 @@ conflicts:
       loop. A review run records its comparison base, its reviewed head and the last head
       verified in the delta loop, so the three are never conflated. The fix commits, a reached
       cap, or a replan or rebase that leaves the accepted requirements, the relevant architecture
-      and the patch all unchanged are not a material change.
+      and the patch all unchanged are not a material change, nor is a same-finding replan that
+      changes only the patch while no trigger applies.
     discharged_in: [workflow, outputs]
     binds:
       skills: [super-review, super-verify]
