@@ -104,7 +104,7 @@ describe("configured test lanes", () => {
         const { AK_TEST_PARALLEL: _unset, ...inherited } = process.env;
         const env = { ...inherited, TEST_LANE_LOG: log, PATH: `${bin}:${process.env.PATH ?? ""}` };
         const run = spawnSync("sh", [join(project, "tools/test/run.sh")], { cwd: project, env, encoding: "utf8" });
-        expect(run.stderr).not.toContain("awk: fatal");
+        expect(run.stderr).toBe("");
         expect(run.status).toBe(0);
         const parallel = readFileSync(log, "utf8")
           .split("\n")
