@@ -109,7 +109,7 @@ describe("configured test lanes", () => {
         const parallel = readFileSync(log, "utf8")
           .split("\n")
           .find((line) => line.startsWith("--parallel="));
-        expect(["--parallel=1", "--parallel=2", "--parallel=4"]).toContain(parallel);
+        expect(["--parallel=1", "--parallel=2", "--parallel=4"]).toContain(parallel ?? "");
       } finally {
         rmSync(scratch, { recursive: true, force: true });
       }
