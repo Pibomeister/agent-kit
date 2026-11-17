@@ -62,7 +62,11 @@ const PAGE = "# Queue the exports\n\nExports run on a queue, because a request c
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  const run = spawnSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env, maxBuffer: Infinity });
+  const run = spawnSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], {
+    encoding: "utf8",
+    env,
+    maxBuffer: Infinity,
+  });
   if (run.error !== undefined || run.status !== 0) {
     throw new Error(`Command failed: git -C ${dir} ${args.join(" ")}\n${run.stderr ?? run.error?.message ?? ""}`);
   }
