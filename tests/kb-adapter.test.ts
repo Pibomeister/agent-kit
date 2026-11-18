@@ -73,6 +73,14 @@ function git(dir: string, ...args: string[]): string {
   return run.stdout ?? "";
 }
 
+function lsTreeFailsForSrc(root: string, args: readonly string[], input?: string) {
+  if (args[0] === "ls-tree") {
+    const path = args[args.length - 1] ?? "";
+    if (path.includes("src/")) return { status: 1, stdout: "", stderr: "fixture nested ls-tree failure" };
+  }
+  return kbGit(root, args, input);
+}
+
 /** A repository whose commits need nothing from the operator's own git configuration. */
 function repoTemplate(): string {
   const dir = processScratch("ak-kb-template-");
@@ -382,6 +390,58 @@ describe("ak kb check reads the working binding", () => {
 });
 
 describe("an explicit revision never falls back to the working binding", () => {
+  test("a missing committed binding remains unbound", () => {
+    const fx = fixture(null);
+    writeFileSync(join(fx.project, BINDING_FILE), BINDING);
+    const loaded = loadKbBinding(fx.project, "HEAD", kbGit, false);
+    expect(loaded.binding).toBeNull();
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.unbound"]);
+  });
+
+  test("an unreadable nested binding is found and never falls back to the working file", () => {
+    const fx = fixture();
+    const nested = join(fx.project, "app");
+    mkdirSync(nested);
+    writeFileSync(join(nested, BINDING_FILE), BINDING.replace("example-project", "nested-project"));
+    git(fx.project, "add", "app/ak.kb.yaml");
+    git(fx.project, "commit", "-qm", "nested binding");
+    expect(loadKbBinding(nested, "HEAD", kbGit).binding?.project).toBe("nested-project");
+    const oid = git(fx.project, "rev-parse", "HEAD:app/ak.kb.yaml").trim();
+    rmSync(join(fx.project, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+    const deeper = join(nested, "src");
+    mkdirSync(deeper);
+    expect(findKbProjectRoot(deeper, "HEAD", kbGit)).toBe(nested);
+    for (const workingFile of [false, true]) {
+      const loaded = loadKbBinding(nested, "HEAD", kbGit, workingFile);
+      expect(loaded.binding).toBeNull();
+      expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+    }
+  });
+
+  for (const command of ["ls-tree", "rev-parse"])
+    test(`a failed binding ${command} read is an error`, () => {
+      const fx = fixture();
+      const loaded = loadKbBinding(fx.project, "HEAD", (root, args, input) => {
+        if (args[0] === command && !args.includes("--verify"))
+          return { status: 1, stdout: "", stderr: "fixture read failure" };
+        return kbGit(root, args, input);
+      });
+      expect(loaded.binding).toBeNull();
+      expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+    });
+
+  test("a failed nested ls-tree is unreadable, not a binding hit", () => {
+    const fx = fixture();
+    const nested = join(fx.project, "src", "deep");
+    mkdirSync(nested, { recursive: true });
+    expect(() => findKbProjectRoot(nested, "HEAD", lsTreeFailsForSrc)).toThrow(
+      "cannot locate committed knowledgebase binding",
+    );
+    const loaded = loadKbBinding(nested, "HEAD", lsTreeFailsForSrc);
+    expect(loaded.binding).toBeNull();
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+  });
+
   test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
     const fx = fixture();
     writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
