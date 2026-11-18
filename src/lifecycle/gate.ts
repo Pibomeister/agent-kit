@@ -2382,10 +2382,10 @@ function outsideRepo(
   } catch {
     return { ok: false, reason: `${what} ${path} cannot be read` };
   }
-  const inside = writable.places.filter((place) => containedIn(real, place.path));
-  if (inside.length === 0) return { ok: true, real };
+  const held = writable.places.filter((place) => containedIn(real, place.path));
+  if (held.length === 0) return { ok: true, real };
   // The project's own repository names the refusal whenever it holds the file; an enclosing one only otherwise.
-  const enclosing = inside.every((place) => place.enclosing !== undefined) ? inside[0]?.enclosing : undefined;
+  const enclosing = held.every((place) => place.enclosing !== undefined) ? held[0]?.enclosing : undefined;
   return {
     ok: false,
     reason:
