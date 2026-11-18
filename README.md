@@ -87,6 +87,24 @@ again before publishing, so host caches cannot hide an update.
 Use `ak learn skills list [--repo P]` to inspect skill candidates, their status, use counts and
 evidence. If the skills ledger is absent, the command reports zero counts without creating it.
 
+Learning and memory use `AK_LEARN_JUDGE` as the primary judge command. Optional
+`AK_LEARN_JUDGE_FALLBACKS` is a JSON array of command strings, tried in order after a quota or
+service availability failure, missing executable or timeout. For example:
+`["/opt/judges/secondary --json", "/opt/judges/reserve --json"]`. Commands use the primary's
+quote splitting rules, with no shell expansion. Every command receives the same prompt on stdin
+and must return the same JSON object on stdout. Ordinary failures and malformed replies retain
+one retry; a role's `unavailable` reply ends the call. Exhaustion returns no judgement and writes
+no learned content. `judge-calls.jsonl` records each attempt's outcome, `judge_index` (primary 0)
+and `judge_command_sha256` (SHA256 of the configured argv as JSON), identifying the answering binding
+without storing its arguments. No alternatives run unless configured.
+
+Bind only adapters verified against this contract, with comparable reasoning capability. Each
+adapter wrapper must check current quota and remaining capacity at call time and decline when
+unavailable. The runtime does not verify comparability or provider capacity. Keep these bindings
+in the operator's environment; this repository carries no provider selection. The subscription-only
+`ak learn doctor` still refuses commands outside its verified host adapter. Live verification of
+an operator's bindings is a separate owner action.
+
 Use `ak learn doctor run --out DIR [--repo P | --all]` to score recent Claude Code, Codex and Grok
 sessions against four rubrics and write one self-contained HTML report. The report lists the
 proposed skill edits that passed every gate, each with its diff. `--out` holds condensed
@@ -190,12 +208,15 @@ The lifecycle is seven skills, not twenty. Each has one job, one required output
 | `super-scout` | Bounded read-only exploration into a revision-bound evidence dossier | Reports coverage limits and unknowns — **never an architectural verdict** |
 | `super-build` | Execute an approved ticket under TDD in an owned worktree | No self-approval, no silent scope expansion |
 | `super-verify` | Acceptance-to-evidence matrix with command, exit status, revision | An agent's description of green tests is not a receipt |
-| `super-review` | Specialist panel (full) or two-axis delta on a fix | Reviewers cannot edit |
+| `super-review` | Specialist panel (full) or two-axis delta on a fix — first pass seats by review depth when routing is on | Reviewers cannot edit |
 | `super-ship` | Release checks and PR preparation | Merge and deploy are separate capabilities |
 
 The agent starts `super-review` full and readiness as part of the work. No slash command or grant
 is required. See [review authority](skills/super-review/SKILL.md#authority) for start rules and
-the boundary between starting a review and approving it.
+the boundary between starting a review and approving it. The project setting `review.routing`
+takes `off`, `shadow` or `on` and defaults to `off`. The delegation class selects how many
+baseline seats sit; activated risk seats always sit, and the delivery pipeline's Review is
+unchanged ([ADR-0017](docs/decisions/0017-review-depth-follows-delegation-class.md)).
 
 Plus `autopilot`: a human-started supervisor pair, or a Firstmate-started one under a
 runner-validated standing grant in a captain-approved charter. It exercises delegated checkpoint
@@ -223,7 +244,12 @@ own agent instructions, which must not be copied into a public pull request. Sta
 and a generated-by footer naming only its tool are not matched against those instructions; `allow: <text>` exempts other
 boilerplate they share with every pull request. The scan stops on a hit
 unless the target is private or internal and its owner is listed. Without the file it scans nothing
-and says so.
+and says so. The matching is heuristic: a marker is caught only as written, in any letter case,
+instruction text only as 8 or more consecutive copied words, and nothing outside the title, body
+and commit messages is read, so a pass is not proof that the text is clean. A commit message is
+read only up to a NUL byte, which only a commit built by hand with plumbing can hold.
+When scanning commits, `--commits <range>` requires a nonempty revision expression that does not
+start with `-`; a valid range containing no commits, such as `HEAD..HEAD`, contributes zero commit texts.
 
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
 On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
@@ -311,13 +337,18 @@ bun run ak kb check <project-dir>       # a project's knowledgebase binding, and
 ```
 
 `bun run test` runs every test file once. The ordinary lane uses four parallel workers
-by default; set `AK_TEST_PARALLEL` to change the worker count (for example,
+when the one-minute load average per CPU is below 2, two workers from 2 up to 4, and one
+worker at 4 or above. Set `AK_TEST_PARALLEL` to override that count (for example,
 `AK_TEST_PARALLEL=1 bun run test`). It finishes before starting
 the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
 Bun process with concurrency limited to one. This separates the learning role calls,
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
-suite and from each other. There are no retries. Both lanes finish even if an earlier file fails;
-the command then returns failure. CI and the configured gate use `bun run test`.
+suite and from each other. The runner does not retry a file or an assertion. A git spawn
+is tried again, at most three times, only when it does not finish or when a read that
+must print a path or a hash exits 0 with empty output. A silent success, such as
+deleting or setting a symbolic ref, is left as it is. Both lanes finish even if an earlier file fails;
+the command then returns failure. CI uses `bun run test`; the no-mistakes gate does not run the
+suite (`.no-mistakes.yaml` says why).
 
 The runner gives both lanes a private `TMPDIR` and removes it at exit. Shared fixture
 helpers use a separate process directory; [`tests/helpers/process-tmp.ts`](tests/helpers/process-tmp.ts)

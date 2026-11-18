@@ -7,12 +7,12 @@
  * Firstmate home; the real-upstream check is recorded separately, against a
  * scratch clone, and says so.
  */
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Upstream } from "../../src/firstmate/constants.ts";
 import { makeTree } from "../helpers/tree.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 export const REPO = join(import.meta.dir, "..", "..");
 
@@ -55,7 +55,7 @@ function buildHome(patched: boolean | "0001"): Home {
 
   // The patches are produced by git itself, so the reverse check is testing
   // real patches rather than hand-written ones that happen to parse.
-  const patchDir = mkdtempSync(join(tmpdir(), "ak-fm-patch-"));
+  const patchDir = processScratch("ak-fm-patch-");
   const file = join(home, "bin/fm-dod-lib.sh");
   const stack: Upstream["stack"] = [];
   let before = ORIGINAL;
@@ -92,7 +92,7 @@ export function makeHome(opts: { patched: boolean | "0001" }): Home {
       : opts.patched === "0001"
         ? HOME_TEMPLATES.firstPatch
         : HOME_TEMPLATES.unpatched;
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "ak-fm-home-")));
+  const home = realpathSync(processScratch("ak-fm-home-"));
   cpSync(template.home, home, { recursive: true });
   return { home, upstream: template.upstream };
 }
@@ -119,7 +119,7 @@ export function makeProject(noMistakes?: string): string {
     template = cached ?? buildProject(noMistakes);
     PROJECT_TEMPLATES.set(noMistakes, template);
   }
-  const project = realpathSync(mkdtempSync(join(tmpdir(), "ak-fm-project-")));
+  const project = realpathSync(processScratch("ak-fm-project-"));
   cpSync(template, project, { recursive: true });
   return project;
 }
@@ -146,7 +146,7 @@ export function makeBundle(extra: Record<string, string> = {}): string {
 }
 
 export function makeDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ak-fm-dir-"));
+  const dir = processScratch("ak-fm-dir-");
   mkdirSync(dir, { recursive: true });
   return dir;
 }

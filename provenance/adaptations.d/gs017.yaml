@@ -1,0 +1,18 @@
+# GS-017 behavior-verification T01. The PRD is a local source; conversation-map
+# locators cannot name it (G:L / plan § / arch § / amalgam only).
+adaptations:
+  - path: schemas/behavior-contract.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L234-248
+    rationale: The contract artifact carries classified intent, properties, assumptions and correspondence.
+  - path: src/validation/behavior-contract-intent.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L132-138
+    rationale: Accepted intent needs a resolved accepted source; proposed intent cannot discharge it.
+  - path: src/lifecycle/behavior-policy.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Off/shadow/on. Runner.start freezes; missing project cannot reset a required run to off.
+  - path: src/runner/core.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Runner.start freezes mandatory behavior checks from the committed binding at the charter base merge-base; lifecycle open refuses.
+  - path: src/lifecycle/protected-start.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: protected-start.ts is the one complete charter predicate Runner.start and the gate both call.

@@ -67,6 +67,17 @@ describe("catalog completeness", () => {
     expect(issue?.message).toContain("SKILL.md");
   });
 
+  test("deleting ROLE.md from an authored role is an error", () => {
+    const { issues } = run({
+      "catalog.yaml": catalogYaml("roles:\n  - id: implementer\n    status: authored\n"),
+      "roles/implementer/.keep": "",
+    });
+    const issue = issues.find((i) => i.rule === "catalog.entry-missing-body");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.file).toBe("roles/implementer");
+    expect(issue?.message).toContain("ROLE.md");
+  });
+
   test("a nested role id resolves to a nested directory and its group dir is not undeclared", () => {
     const { issues } = run({
       "catalog.yaml": catalogYaml("roles:\n  - id: code-review/security\n    status: authored\n"),

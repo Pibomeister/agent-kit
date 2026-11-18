@@ -185,6 +185,15 @@ export const SCHEMA_RULE_IMPLEMENTATIONS: Readonly<Record<string, RuleImplementa
 
   // ticket.schema.json
   "ticket.cold-read-ref-required-when-on": ["ticket.cold-read-ref-required-when-on"],
+  "ticket.behavior-property-id-has-type": ["ticket.behavior-property-id-has-type"],
+
+  // behavior-contract.schema.json
+  "behavior-contract.accepted-intent-requires-accepted-source": [
+    "behavior-contract.accepted-intent-requires-accepted-source",
+  ],
+  "behavior-contract.proposed-intent-cannot-discharge-accepted": [
+    "behavior-contract.proposed-intent-cannot-discharge-accepted",
+  ],
 
   // cold-read.schema.json
   "cold-read.proposed-absent-is-not-a-finding": ["cold-read.proposed-absent-is-not-a-finding"],

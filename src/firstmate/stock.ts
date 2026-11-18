@@ -34,7 +34,7 @@ export function preflightStock(
       };
   const checkout = git(project, ["rev-parse", "--show-toplevel"]);
   const repository: Check =
-    checkout.code === 0
+    checkout.code === 0 && checkout.text.trim() !== ""
       ? { id: "project", ok: true, detail: `${checkout.text.trim()} is a git checkout` }
       : { id: "project", ok: false, detail: `${project} is not a git checkout` };
   // Preflight reads no run state, and a socket check only tests the file type. The no-socket text restates
@@ -111,6 +111,10 @@ seats as separate ordinary crewmates, never your children. With configured seat 
 runner asks Firstmate for them on decide; otherwise Firstmate submits both judgments before you
 call decide, using the stock seat-launch and seat-judge commands. Use the normal status and inbox
 handoff, not a polling loop.
+
+For a P0 or prioritized order, register each question before investigation with ak runner call
+question; its request and continuation rules are in skills/autopilot/references/checkpoints.md.
+Firstmate owns dedicated dispatch and every-cycle monitoring; other lanes keep running.
 
 Use ak runner call prepare and decide for checkpoints, sync after code changes, run-verify for
 runner-owned verification, and ledger for the handback. A refused card returns one escalation;

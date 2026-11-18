@@ -54,6 +54,7 @@ function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C",
   };
 }
@@ -68,6 +69,10 @@ function isolationArgs(project: string): string[] {
     "core.hooksPath=/dev/null",
     "-c",
     "core.excludesFile=/dev/null",
+    "-c",
+    "core.commitGraph=false",
+    "-c",
+    "advice.graftFileDeprecated=false",
     // Defense-in-depth: throwaway GIT_DIR already ignores worker merge config.
     "-c",
     "merge.default=",
@@ -76,13 +81,18 @@ function isolationArgs(project: string): string[] {
   ];
 }
 
+/** Isolated git argv: worker-owned config is ignored, including the commit graph. */
+export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
+  return [...isolationArgs(project), ...args];
+}
+
 const emptyTrees = new Map<string, string>();
 
 function emptyTreeId(context: RunnerGitContext, project: string, timeoutMs: number): GitResult {
   const key = realpathSync(project);
   const cached = emptyTrees.get(key);
   if (cached !== undefined) return { code: 0, stdout: new Uint8Array(), text: cached, stderr: "" };
-  const proc = spawnSync(context.binary, [...isolationArgs(project), "hash-object", "-t", "tree", "--stdin"], {
+  const proc = spawnSync(context.binary, isolatedGitArgv(project, ["hash-object", "-t", "tree", "--stdin"]), {
     cwd: project,
     env: gitEnv(context),
     input: new Uint8Array(),
@@ -120,7 +130,7 @@ export function gitProcess(
   }
   const proc = spawnSync(
     context.binary,
-    ["--work-tree", realpathSync(project), ...isolationArgs(project), "-c", `attr.tree=${tree}`, ...args],
+    ["--work-tree", realpathSync(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])],
     {
       cwd: project,
       env: { ...gitEnv(context), ...extraEnv },
@@ -178,10 +188,15 @@ function checkGitControls(context: RunnerGitContext, project: string): GitResult
   return null;
 }
 
-export function runnerGit(context: RunnerGitContext, project: string, args: readonly string[]): GitResult {
+export function runnerGit(
+  context: RunnerGitContext,
+  project: string,
+  args: readonly string[],
+  input?: Uint8Array,
+): GitResult {
   const controls = checkGitControls(context, project);
   if (controls !== null) return controls;
-  return gitProcess(context, project, args);
+  return gitProcess(context, project, args, 10_000, input);
 }
 
 /** Stable identity for the complete committed change relative to its current merge base. */

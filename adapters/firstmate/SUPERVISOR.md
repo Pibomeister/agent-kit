@@ -33,7 +33,11 @@ worker worktree and Git common directory.
 
 Use `ak firstmate brief` to render an Agent Kit section into a normal Firstmate brief. Spawn the
 task with its existing `--mode no-mistakes`, `direct-PR` or `local-only`. Firstmate's own status,
-inbox, recovery and merge policy remain authoritative. Dispatch both supervisor seats as separate
+inbox, recovery and merge policy remain authoritative. Immediately assign each P0 or prioritized
+order a dedicated end-to-end worker and watch it every cycle; other lanes continue in parallel.
+Relay the runner's exact priority blocker text from stderr to the visible status surface, including
+while a worker is investigating. These are outer-supervisor duties (ruling
+`firstmate-outer-loop-agent-kit-inner`). Dispatch both supervisor seats as separate
 ordinary crewmates, never as children of the implementing worker, and submit their judgments to
 the runner. A seat launcher may automate that dispatch through stock Firstmate commands.
 

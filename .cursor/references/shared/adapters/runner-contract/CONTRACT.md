@@ -285,10 +285,20 @@ start; drift refuses the tick. The adapter probes every active owner and child a
 observed side effects: commit, push, PR change, check change, or stored report. Narration is not
 progress. A delegate with no side effect within its expected runtime is sent to the adapter
 with a stable replacement key; only a matching stand-down and replacement read-back records the
-new delegate. The next tick audits the replacement too. A failed probe or replacement leaves the
-work active and the service in guided mode until a successful tick. The timer drains only when
-no active delegate remains. The adapter owns the actual process stop and replacement; the runner
-owns the policy and durable record. Neither an event nor a probe result is authority for a phase.
+new delegate. The next tick audits the replacement too. A failed probe records no progress, and a
+failed replacement records no replacement for its delegate, which stays active. Effects of earlier
+steps in the same tick stand. No failure approves a checkpoint. While a failed attempt waits for its
+retry tick, `decide` is refused with `audit retry in progress` until the next successful tick, and the
+supervisor retries `decide` after one cadence. This is a transient wait, not a guided handoff. When the charter
+sets `limits.delegate_replacements`, the next cadence tick retries and status stays autonomous
+while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
+spent, and `autonomy.missing` names `delegate-replacements`. A cap of N allows N failed
+attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later
+success. A charter that omits the cap supplies no retry budget, so the first failure goes guided
+and names `audit-failed` until a later tick succeeds. The timer drains only when no active
+delegate remains, and it stops when that cap is spent. The adapter owns the actual process stop
+and replacement; the runner owns the policy and durable record. Neither an event nor a probe
+result is authority for a phase.
 
 ### `tracker-access`
 
@@ -400,6 +410,10 @@ card and ask `decide` to apply the next validated grant. `sync` observes the wor
 revision and diff; `run-verify` executes only the supervisor-configured command and stores its
 output privately.
 
+Workers may also register and answer prioritized questions under the
+[CLI question rules](CLI.md#prioritized-questions). These source attestations do not become
+trusted gate evidence or lift an existing approval stop.
+
 The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable bits and index
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
@@ -407,14 +421,25 @@ Its Git calls disable fsmonitor, hooks and the global excludes file, run with a 
 have a ten-second timeout with a kill signal, set `--work-tree` to the inspected directory so a
 worker `core.worktree` cannot hide untracked files, set `attr.tree` to the empty tree so worker
 `.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
-programs. Verdict `merge-tree` is the exception: it sets `attr.tree` to the merge-base tree so
-committed `binary` and `-merge` attributes still conflict, then runs against a throwaway `GIT_DIR`
+programs. Verdict `merge-tree` is the exception: it runs twice against a throwaway `GIT_DIR`
 initialized with the worker's object format, outside the worker root, so neither
-`.git/info/attributes` nor a worker `merge.<driver>.driver` can run. `-c merge.default=` and
+`.git/info/attributes` nor a worker `merge.<driver>.driver` can run. One pass sets `attr.tree` to
+the merge-base tree so committed `binary` and `-merge` attributes still conflict. The other sets
+it to the empty tree so built-in `union` and any other merge-base driver cannot make a verdict
+clean. The merge is clean only when both passes exit 0. The first pass's
+`attr.tree` is the tree of `git merge-base` without `--all`: one merge-base, even
+when a criss-cross history has several. Unused merge-bases do not contribute
+attributes. The empty-tree pass still refuses a driver-hidden content conflict,
+because it ignores merge drivers including `union` on an unused base. Residue,
+documented with no extra refusal: an unused merge-base that only assigns `binary`
+or `-merge` is not applied. `-c merge.default=` and
 `-c merge.renormalize=false` are defense-in-depth: the throwaway `GIT_DIR` already ignores worker
 merge config, so those `-c` flags are not load-bearing while that scratch dir is in use. Verdict
 patch identity and CI-config diffs pass `--ignore-submodules=none --submodule=short` so a gitlink
-OID change cannot reuse a bound verdict.
+OID change cannot reuse a bound verdict. A path counts as CI when it equals a CI root
+(`.github/workflows`, `.github/actions`, `.circleci`, `.buildkite`) or starts with that root plus
+`/`, or when it is a CI file (`.gitlab-ci.yml`, `azure-pipelines.yml`, `Jenkinsfile`,
+`bitbucket-pipelines.yml`).
 Verdict binding treats a worktree as clean only when its bytes equal the committed blob bytes,
 including nested gitlinks
 after their `HEAD` matches. An autocrlf or `eol=crlf` checkout whose bytes differ from the blob is

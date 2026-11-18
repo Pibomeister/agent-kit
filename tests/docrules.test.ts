@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { checkSchemas } from "../src/validation/schemas.ts";
@@ -13,6 +13,7 @@ import {
 import { resolveFindingSectionIdentity } from "../src/validation/headings.ts";
 import { artifactHash } from "../src/util/hash.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
+import type { CheckContext } from "../src/validation/context.ts";
 import { parseJson, updated, type JsonValue, type Path } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
 
@@ -61,12 +62,20 @@ function rulesOf(issues: Array<{ rule: string }>): string[] {
   return issues.map((i) => i.rule);
 }
 
-function run(doc: Record<string, unknown>, others: Record<string, unknown>[] = []) {
+function run(doc: Record<string, unknown>, others: Record<string, unknown>[] = [], ctx?: CheckContext) {
   const all = [
     { file: "templates/doc.json", doc },
     ...others.map((d, i) => ({ file: `templates/other-${i}.json`, doc: d })),
   ];
-  return checkDocument("templates/doc.json", doc, indexDocuments(all));
+  return checkDocument("templates/doc.json", doc, indexDocuments(all), ctx);
+}
+
+const REPO = join(import.meta.dir, "..");
+
+function repoCtx(root: string): CheckContext {
+  const { catalog } = loadCatalog(REPO);
+  if (catalog === null) throw new Error("no catalog");
+  return { root, catalog };
 }
 
 // ---------------------------------------------------------------- charter ---
@@ -1732,6 +1741,7 @@ function citedRead(forTicket: Doc, extra: Doc = {}) {
   delete subject.cold_read_ref;
   const read = coldRead({
     ticket: { id: subject["id"], schema: "ticket", hash: artifactHash(subject) },
+    run_id: "run-1",
     ...extra,
   });
   return {
@@ -1748,6 +1758,18 @@ function lightRouteApproval(): Doc {
     at: "2026-09-19T00:00:00Z",
     note: "The light route was taken. Per-path claim: README.md changes no required behaviour.",
   };
+}
+
+function planSource(): Doc {
+  return { kind: "plan", ref: { id: "plan-1", schema: "plan-record", hash: HASH } };
+}
+
+function textOnlyTicket(extra: Doc = {}): Doc {
+  return ticket({
+    work_source: planSource(),
+    allowed_changes: { files: ["README.md"] },
+    ...extra,
+  });
 }
 
 function coveredComprehension(extra: Doc = {}): Doc {
@@ -1821,6 +1843,45 @@ function coldRead(extra: Doc = {}): Doc {
   });
 }
 
+describe("ticket.behavior-property-id-has-type", () => {
+  test("a property_id without a property_types entry is an error", () => {
+    const doc = ticket({
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+          },
+        },
+      ],
+    });
+    expect(rulesOf(run(doc))).toContain("ticket.behavior-property-id-has-type");
+  });
+
+  test("a matching property_types entry is not that error", () => {
+    const doc = ticket({
+      verification: [
+        {
+          id: "project-check",
+          check: "Run the project check.",
+          kind: "command",
+          supports: ["AC-1"],
+          behavior: {
+            evidence_layer: "implementation",
+            property_ids: ["every-configured-directory-is-read"],
+            property_types: { "every-configured-directory-is-read": "safety" },
+          },
+        },
+      ],
+    });
+    expect(rulesOf(run(doc))).not.toContain("ticket.behavior-property-id-has-type");
+  });
+});
+
 describe("ticket.cold-read-ref-required-when-on", () => {
   test("a missing review object equals off and does not require cold_read_ref", () => {
     expect(rulesOf(run(ticket(), [project()]))).not.toContain(RULE_COLD_REF);
@@ -1838,6 +1899,33 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     const { read, ref } = citedRead(ticket());
     expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).not.toContain(RULE_COLD_REF);
   });
+
+  test("a hand-written cold-read with no producing run is refused when on", () => {
+    const { read, ref } = citedRead(ticket(), { run_id: null });
+    const issues = run(ticket({ cold_read_ref: ref }), [onProject(), read]);
+    expect(rulesOf(issues)).toContain(RULE_COLD_REF);
+    expect(issues.some((issue) => issue.rule === RULE_COLD_REF && issue.message.includes("producing run"))).toBe(true);
+  });
+
+  test("an unavailable hand-written cold-read with no producing run is refused when on", () => {
+    const { read, ref } = citedRead(ticket(), {
+      run_id: null,
+      status: "unavailable",
+      state: "unavailable",
+      reason: "The host could not start a separate reader context.",
+    });
+    expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).toContain(RULE_COLD_REF);
+  });
+
+  test.each(["off", "shadow"] as const)(
+    "review.cold_read %s still accepts a hand-written cold-read with no producing run",
+    (mode) => {
+      const { read, ref } = citedRead(ticket(), { run_id: null });
+      expect(
+        rulesOf(run(ticket({ cold_read_ref: ref }), [project({ review: { cold_read: mode } }), read])),
+      ).not.toContain(RULE_COLD_REF);
+    },
+  );
 
   test("a placeholder cold_read_ref with no indexed document is refused when on", () => {
     expect(
@@ -1884,7 +1972,7 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     expect(rulesOf(run(ticket(), [project({ review: { cold_read: "blocking" } })]))).not.toContain(RULE_COLD_REF);
   });
 
-  test("a ticket that matches only the project's envelope project field is treated as off", () => {
+  test("a ticket that does not match the project's identity.id still requires cold_read_ref when that indexed record is on", () => {
     const other = project({
       identity: {
         id: "other-project",
@@ -1896,7 +1984,7 @@ describe("ticket.cold-read-ref-required-when-on", () => {
       },
       review: { cold_read: "on" },
     });
-    expect(rulesOf(run(ticket(), [other]))).not.toContain(RULE_COLD_REF);
+    expect(rulesOf(run(ticket(), [other]))).toContain(RULE_COLD_REF);
   });
 
   test("two project records with the same identity.id fail when review.cold_read is on", () => {
@@ -1940,21 +2028,46 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     const older = ticket({ title: "older body" });
     const read = coldRead({
       ticket: { id: "ticket-1", schema: "ticket", hash: artifactHash(older) },
+      run_id: "run-1",
     });
     const ref = { id: String(read["id"]), schema: "cold-read", hash: artifactHash(read) };
-    expect(rulesOf(run(ticket({ title: "newer body", cold_read_ref: ref }), [onProject(), read]))).toContain(
+    const issues = run(ticket({ title: "newer body", cold_read_ref: ref }), [onProject(), read]);
+    expect(rulesOf(issues)).toContain(RULE_COLD_REF);
+    expect(issues.some((issue) => issue.rule === RULE_COLD_REF && issue.message.includes("records ticket hash"))).toBe(
+      true,
+    );
+  });
+
+  test("a ticket that names no project still requires cold_read_ref when the checkout project is on", () => {
+    const doc = ticket();
+    delete doc.project;
+    expect(rulesOf(run(doc, [onProject()]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a ticket whose project field names no indexed record still requires cold_read_ref when the checkout project is on", () => {
+    expect(rulesOf(run(ticket({ project: "forged" }), [onProject()]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a matching indexed cold-read satisfies on even when the ticket names a forged project", () => {
+    const subject = ticket({ project: "forged" });
+    const { read, ref } = citedRead(subject);
+    expect(rulesOf(run({ ...subject, cold_read_ref: ref }, [onProject(), read]))).not.toContain(RULE_COLD_REF);
+  });
+
+  test("a ticket that names no project stays off when the checkout project is off", () => {
+    const doc = ticket();
+    delete doc.project;
+    expect(rulesOf(run(doc, [project({ review: { cold_read: "off" } })]))).not.toContain(RULE_COLD_REF);
+  });
+
+  test("a ticket whose project field is forged stays off when the checkout project is off", () => {
+    expect(rulesOf(run(ticket({ project: "forged" }), [project({ review: { cold_read: "off" } })]))).not.toContain(
       RULE_COLD_REF,
     );
   });
 
-  test("a ticket that names no project is treated as off", () => {
-    const doc = ticket();
-    delete doc.project;
-    expect(rulesOf(run(doc, [onProject()]))).not.toContain(RULE_COLD_REF);
-  });
-
-  test("a ticket whose project field names no indexed record is treated as off", () => {
-    expect(rulesOf(run(ticket({ project: "forged" }), [onProject()]))).not.toContain(RULE_COLD_REF);
+  test("a ticket whose project field is forged stays off when the checkout project has no review object", () => {
+    expect(rulesOf(run(ticket({ project: "forged" }), [project()]))).not.toContain(RULE_COLD_REF);
   });
 
   test("a decision ticket does not require cold_read_ref when review.cold_read is on", () => {
@@ -1967,6 +2080,154 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     expect(
       rulesOf(run(ticket({ approvals: [lightRouteApproval()] }), [project({ review: { cold_read: "on" } })])),
     ).toContain(RULE_COLD_REF);
+  });
+
+  test("a forged light-route claim on a code ticket still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(
+          textOnlyTicket({
+            allowed_changes: { files: ["src/loader.ts"] },
+            approvals: [lightRouteApproval()],
+          }),
+          [onProject()],
+        ),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a code change on a light ticket still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["README.md", "src/loader.ts"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a multi-slice ticket still requires cold_read_ref when on", () => {
+    const peer = textOnlyTicket({ id: "ticket-2" });
+    expect(rulesOf(run(textOnlyTicket(), [onProject(), peer]))).toContain(RULE_COLD_REF);
+  });
+
+  test("README.md plus generated_artifacts src/** still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(
+          textOnlyTicket({
+            write_ownership: {
+              paths: ["README.md"],
+              generated_artifacts: ["src/**"],
+              migration_sequence: null,
+              interfaces: [],
+            },
+          }),
+          [onProject()],
+        ),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("README.md plus write_ownership.paths src/** still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(
+          textOnlyTicket({
+            write_ownership: {
+              paths: ["src/**"],
+              generated_artifacts: [],
+              migration_sequence: null,
+              interfaces: [],
+            },
+          }),
+          [onProject()],
+        ),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("README.md plus a non-empty symbols list still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(
+        run(textOnlyTicket({ allowed_changes: { files: ["README.md"], symbols: ["someSymbol"] } }), [onProject()]),
+      ),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a README.md ticket with no work_source still requires cold_read_ref when on", () => {
+    expect(rulesOf(run(ticket({ allowed_changes: { files: ["README.md"] } }), [onProject()]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a docs/*.txt glob still requires cold_read_ref when on", () => {
+    expect(rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/notes.txt"] } }), [onProject()]))).toContain(
+      RULE_COLD_REF,
+    );
+  });
+
+  test("a skills/**/*.md glob still requires cold_read_ref when on", () => {
+    expect(rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["skills/**/*.md"] } }), [onProject()]))).toContain(
+      RULE_COLD_REF,
+    );
+  });
+
+  test("a references/**/*.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["references/**/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a decision ticket on the same work_source still requires cold_read_ref when on", () => {
+    const peer = ticket({ id: "ticket-2", type: "decision", work_source: planSource() });
+    expect(rulesOf(run(textOnlyTicket(), [onProject(), peer]))).toContain(RULE_COLD_REF);
+  });
+
+  test("docs/** still requires cold_read_ref when on", () => {
+    expect(rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/**"] } }), [onProject()]))).toContain(
+      RULE_COLD_REF,
+    );
+  });
+
+  test("a schema-valid docs/{../skills}/**/*.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{../skills}/**/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-invalid docs/../skills/SKILL.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/../skills/SKILL.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-valid docs/{foo.ts,bar.md} glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{foo.ts,bar.md}"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-valid docs/{foo.ts,bar.md}/*.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{foo.ts,bar.md}/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a schema-valid docs/{guide,intro}/*.md glob still requires cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/{guide,intro}/*.md"] } }), [onProject()])),
+    ).toContain(RULE_COLD_REF);
+  });
+
+  test("a declared glob that resolves through a symlink still requires cold_read_ref when on", () => {
+    const root = makeTree({ "src/loader.ts": "export {}\n" }, { provenance: false });
+    symlinkSync(join(root, "src/loader.ts"), join(root, "README.md"));
+    expect(rulesOf(run(textOnlyTicket(), [onProject()], repoCtx(root)))).toContain(RULE_COLD_REF);
+  });
+
+  test("a text-only single-slice ticket does not require cold_read_ref when on", () => {
+    expect(rulesOf(run(textOnlyTicket(), [onProject()]))).not.toContain(RULE_COLD_REF);
+  });
+
+  test("a docs/ markdown ticket does not require cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(textOnlyTicket({ allowed_changes: { files: ["docs/guide.md"] } }), [onProject()])),
+    ).not.toContain(RULE_COLD_REF);
   });
 
   test("a ticket with no project document in the index is treated as off", () => {
