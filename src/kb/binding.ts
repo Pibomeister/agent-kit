@@ -250,7 +250,11 @@ export function loadKbBinding(
  */
 export function findKbProjectRoot(start: string, revision?: string, gitFn?: GitFn): string {
   const from = realpathSync(start);
-  const ceiling = workTreeTop(from) ?? from;
+  let ceiling = from;
+  if (gitFn !== undefined) {
+    const top = gitFn(from, ["rev-parse", "--show-toplevel"]);
+    if (top.status === 0 && top.stdout.trim() !== "") ceiling = realpathSync(top.stdout.trim());
+  } else ceiling = workTreeTop(from) ?? from;
   const explicit = revision !== undefined && revision !== "";
   const run = gitForRevision(revision, gitFn);
   for (let dir = from; ; dir = dirname(dir)) {

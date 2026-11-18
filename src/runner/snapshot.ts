@@ -22,16 +22,93 @@ export interface RunnerGitContext {
   path: string;
   workerRoot: string;
   home: string;
+  gitDir?: string;
+  workTree?: string;
+}
+
+interface RepoLayout {
+  gitDir: string;
+  workTree: string;
+}
+
+function parseGitFile(dir: string, entryPath: string): string | undefined {
+  const pointer = /^gitdir: (.+)$/.exec(readFileSync(entryPath, "utf8").trim())?.[1];
+  if (pointer === undefined) return undefined;
+  return isAbsolute(pointer) ? pointer : resolve(dir, pointer);
+}
+
+function workTreeOf(gitDir: string): string {
+  try {
+    const pointed = readFileSync(join(gitDir, "gitdir"), "utf8").trim();
+    if (pointed !== "") {
+      const gitfile = isAbsolute(pointed) ? pointed : resolve(gitDir, pointed);
+      return realpathSync(dirname(gitfile));
+    }
+  } catch {
+    // Main git directory: the work tree is its parent.
+  }
+  return realpathSync(dirname(gitDir));
+}
+
+function layoutAt(dir: string): RepoLayout | undefined {
+  const entryPath = join(dir, ".git");
+  let entry;
+  try {
+    entry = lstatSync(entryPath);
+  } catch {
+    return undefined;
+  }
+  if (entry.isFIFO() || entry.isSocket()) return undefined;
+  let gitDir: string;
+  if (entry.isDirectory()) gitDir = realpathSync(entryPath);
+  else if (entry.isFile() && entry.size <= 4096) {
+    const pointer = parseGitFile(dir, entryPath);
+    if (pointer === undefined) return undefined;
+    gitDir = realpathSync(pointer);
+  } else return undefined;
+  return { gitDir, workTree: workTreeOf(gitDir) };
+}
+
+function resolveLayout(start: string): RepoLayout | undefined {
+  let dir = realpathSync(start);
+  for (;;) {
+    const layout = layoutAt(dir);
+    if (layout !== undefined) return layout;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+function repoPin(context: RunnerGitContext, project: string, extraEnv?: NodeJS.ProcessEnv): string[] {
+  if (extraEnv?.GIT_DIR !== undefined && extraEnv.GIT_DIR !== "") return [];
+  let dir: string;
+  try {
+    dir = realpathSync(project);
+  } catch {
+    return [];
+  }
+  const own = layoutAt(dir);
+  const insideWorker =
+    context.workTree !== undefined && (dir === context.workTree || relativeInsideRoot(relative(context.workTree, dir)));
+  if (own !== undefined && context.gitDir !== undefined && own.gitDir !== realpathSync(context.gitDir))
+    return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
+  if (own !== undefined && !insideWorker) return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
+  if (context.gitDir !== undefined && context.workTree !== undefined && insideWorker)
+    return ["--git-dir", context.gitDir, "--work-tree", context.workTree];
+  return [];
 }
 
 export function resolveRunnerGit(workerRoot: string): RunnerGitContext {
   const path = workerFreePath(process.env["PATH"], workerRoot);
+  const layout = resolveLayout(workerRoot);
   for (const directory of path.split(delimiter)) {
     const candidate = join(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync(candidate);
-      if (!workerControlledPath(binary, workerRoot)) return { binary, path, workerRoot, home: "/dev/null" };
+      if (!workerControlledPath(binary, workerRoot))
+        return { binary, path, workerRoot, home: "/dev/null", gitDir: layout?.gitDir, workTree: layout?.workTree };
     } catch {
       // Try the next supervisor-owned PATH entry.
     }
@@ -70,6 +147,8 @@ function isolationArgs(project: string): string[] {
     "-c",
     "core.excludesFile=/dev/null",
     "-c",
+    "diff.relative=false",
+    "-c",
     "core.commitGraph=false",
     "-c",
     "advice.graftFileDeprecated=false",
@@ -87,39 +166,23 @@ export function isolatedGitArgv(project: string, args: readonly string[]): strin
 }
 
 const emptyTrees = new Map<string, string>();
-const workTrees = new Map<string, string>();
-
-function containingWorkTree(project: string): string {
-  const start = realpathSync(project);
-  const cached = workTrees.get(start);
-  if (cached !== undefined) return cached;
-  let dir = start;
-  for (;;) {
-    if (existsSync(join(dir, ".git"))) {
-      workTrees.set(start, dir);
-      return dir;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) {
-      workTrees.set(start, start);
-      return start;
-    }
-    dir = parent;
-  }
-}
 
 function emptyTreeId(context: RunnerGitContext, project: string, timeoutMs: number): GitResult {
   const key = realpathSync(project);
   const cached = emptyTrees.get(key);
   if (cached !== undefined) return { code: 0, stdout: new Uint8Array(), text: cached, stderr: "" };
-  const proc = spawnSync(context.binary, isolatedGitArgv(project, ["hash-object", "-t", "tree", "--stdin"]), {
-    cwd: project,
-    env: gitEnv(context),
-    input: new Uint8Array(),
-    maxBuffer: 1 << 30,
-    timeout: timeoutMs,
-    killSignal: "SIGKILL",
-  });
+  const proc = spawnSync(
+    context.binary,
+    [...repoPin(context, project), ...isolatedGitArgv(project, ["hash-object", "-t", "tree", "--stdin"])],
+    {
+      cwd: project,
+      env: gitEnv(context),
+      input: new Uint8Array(),
+      maxBuffer: 1 << 30,
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
+    },
+  );
   if (proc.error !== undefined) {
     if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
       return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
@@ -150,7 +213,7 @@ export function gitProcess(
   }
   const proc = spawnSync(
     context.binary,
-    ["--work-tree", containingWorkTree(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])],
+    [...repoPin(context, project, extraEnv), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])],
     {
       cwd: project,
       env: { ...gitEnv(context), ...extraEnv },
@@ -181,11 +244,14 @@ function checkGitControls(context: RunnerGitContext, project: string): GitResult
     const entry = lstatSync(entryPath);
     if (entry.isDirectory()) paths = [join(entryPath, "index"), join(entryPath, "HEAD")];
     else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = /^gitdir: (.+)$/.exec(readFileSync(entryPath, "utf8").trim())?.[1];
+      const pointer = parseGitFile(project, entryPath);
       if (pointer === undefined) return failedGit("runner git directory pointer is invalid");
-      const gitDir = isAbsolute(pointer) ? pointer : resolve(project, pointer);
-      paths = [join(gitDir, "index"), join(gitDir, "HEAD")];
-    } else return failedGit("runner git directory entry is not regular");
+      paths = [join(pointer, "index"), join(pointer, "HEAD")];
+    } else {
+      const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2_000);
+      if (controls.code !== 0) return controls;
+      paths = controls.text.split("\n");
+    }
   } catch (cause) {
     if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
       return failedGit("runner cannot inspect git directory entry");
@@ -228,6 +294,7 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
     "diff",
     "--no-ext-diff",
     "--no-textconv",
+    "--no-relative",
     "--binary",
     "--ignore-submodules=none",
     "--submodule=short",
@@ -247,7 +314,7 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
 /** Only trunk-side CI configuration changes invalidate an otherwise identical patch. */
 export function ciConfigDrift(context: RunnerGitContext, project: string, oldBase: string, newBase: string): boolean {
   if (oldBase === newBase) return false;
-  const converterGuard = ["--no-ext-diff", "--no-textconv"] as const;
+  const converterGuard = ["--no-ext-diff", "--no-textconv", "--no-relative"] as const;
   const changed = runnerGit(context, project, [
     "diff",
     ...converterGuard,
@@ -277,7 +344,12 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
   return new TextDecoder()
     .decode(changed.stdout)
     .split("\0")
-    .some((path) => ciFiles.includes(path) || ciRoots.some((root) => path === root || path.startsWith(`${root}/`)));
+    .some(
+      (path) =>
+        path !== "" &&
+        (ciFiles.includes(path) ||
+          ciRoots.some((root) => path === root || path.startsWith(`${root}/`) || root.startsWith(`${path}/`))),
+    );
 }
 
 export function mergeTreeClean(context: RunnerGitContext, project: string, baseRef: string, head: string): boolean {

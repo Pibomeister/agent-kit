@@ -418,8 +418,9 @@ The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
-have a ten-second timeout with a kill signal, set `--work-tree` to the containing worktree so a
-worker `core.worktree` cannot hide untracked files, set `attr.tree` to the empty tree so worker
+have a ten-second timeout with a kill signal, pin `--git-dir` and `--work-tree` from the worker
+root so a nested cwd cannot retarget the repository, ignore worker `diff.relative` with
+`-c diff.relative=false` and `--no-relative` on diffs, set `attr.tree` to the empty tree so worker
 `.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
 programs. Verdict `merge-tree` is the exception: it runs twice against a throwaway `GIT_DIR`
 initialized with the worker's object format, outside the worker root, so neither
@@ -438,8 +439,8 @@ merge config, so those `-c` flags are not load-bearing while that scratch dir is
 patch identity and CI-config diffs pass `--ignore-submodules=none --submodule=short` so a gitlink
 OID change cannot reuse a bound verdict. A path counts as CI when it equals a CI root
 (`.github/workflows`, `.github/actions`, `.circleci`, `.buildkite`) or starts with that root plus
-`/`, or when it is a CI file (`.gitlab-ci.yml`, `azure-pipelines.yml`, `Jenkinsfile`,
-`bitbucket-pipelines.yml`).
+`/`, or when a CI root sits under it, or when it is a CI file (`.gitlab-ci.yml`,
+`azure-pipelines.yml`, `Jenkinsfile`, `bitbucket-pipelines.yml`).
 Verdict binding treats a worktree as clean only when its bytes equal the committed blob bytes,
 including nested gitlinks
 after their `HEAD` matches. An autocrlf or `eol=crlf` checkout whose bytes differ from the blob is

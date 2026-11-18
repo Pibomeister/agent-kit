@@ -24152,7 +24152,13 @@ function loadKbBinding(projectRoot, revision, gitFn, workingFile = true) {
 }
 function findKbProjectRoot(start, revision, gitFn) {
   const from = realpathSync4(start);
-  const ceiling = workTreeTop(from) ?? from;
+  let ceiling = from;
+  if (gitFn !== undefined) {
+    const top = gitFn(from, ["rev-parse", "--show-toplevel"]);
+    if (top.status === 0 && top.stdout.trim() !== "")
+      ceiling = realpathSync4(top.stdout.trim());
+  } else
+    ceiling = workTreeTop(from) ?? from;
   const explicit = revision !== undefined && revision !== "";
   const run = gitForRevision(revision, gitFn);
   for (let dir = from;; dir = dirname3(dir)) {
@@ -38781,7 +38787,7 @@ var import__202014 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync7 } from "child_process";
 import { existsSync as existsSync42, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename23, isAbsolute as isAbsolute18, join as join54, relative as relative16 } from "path";
+import { basename as basename23, isAbsolute as isAbsolute17, join as join54, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -41803,7 +41809,7 @@ init_hash();
 import { timingSafeEqual } from "crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync36, realpathSync as realpathSync17, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname25, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
+import { dirname as dirname25, isAbsolute as isAbsolute15, relative as relative14, resolve as resolve17 } from "path";
 
 // src/runner/core.ts
 init_dist();
@@ -42226,15 +42232,85 @@ import {
   rmSync as rmSync14
 } from "fs";
 import { delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
+function parseGitFile(dir, entryPath) {
+  const pointer = /^gitdir: (.+)$/.exec(readFileSync32(entryPath, "utf8").trim())?.[1];
+  if (pointer === undefined)
+    return;
+  return isAbsolute13(pointer) ? pointer : resolve15(dir, pointer);
+}
+function workTreeOf(gitDir) {
+  try {
+    const pointed = readFileSync32(join45(gitDir, "gitdir"), "utf8").trim();
+    if (pointed !== "") {
+      const gitfile = isAbsolute13(pointed) ? pointed : resolve15(gitDir, pointed);
+      return realpathSync12(dirname22(gitfile));
+    }
+  } catch {}
+  return realpathSync12(dirname22(gitDir));
+}
+function layoutAt(dir) {
+  const entryPath = join45(dir, ".git");
+  let entry;
+  try {
+    entry = lstatSync5(entryPath);
+  } catch {
+    return;
+  }
+  if (entry.isFIFO() || entry.isSocket())
+    return;
+  let gitDir;
+  if (entry.isDirectory())
+    gitDir = realpathSync12(entryPath);
+  else if (entry.isFile() && entry.size <= 4096) {
+    const pointer = parseGitFile(dir, entryPath);
+    if (pointer === undefined)
+      return;
+    gitDir = realpathSync12(pointer);
+  } else
+    return;
+  return { gitDir, workTree: workTreeOf(gitDir) };
+}
+function resolveLayout(start) {
+  let dir = realpathSync12(start);
+  for (;; ) {
+    const layout = layoutAt(dir);
+    if (layout !== undefined)
+      return layout;
+    const parent = dirname22(dir);
+    if (parent === dir)
+      return;
+    dir = parent;
+  }
+}
+function repoPin(context, project, extraEnv) {
+  if (extraEnv?.GIT_DIR !== undefined && extraEnv.GIT_DIR !== "")
+    return [];
+  let dir;
+  try {
+    dir = realpathSync12(project);
+  } catch {
+    return [];
+  }
+  const own = layoutAt(dir);
+  const insideWorker = context.workTree !== undefined && (dir === context.workTree || relativeInsideRoot(relative11(context.workTree, dir)));
+  if (own !== undefined && context.gitDir !== undefined && own.gitDir !== realpathSync12(context.gitDir))
+    return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
+  if (own !== undefined && !insideWorker)
+    return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
+  if (context.gitDir !== undefined && context.workTree !== undefined && insideWorker)
+    return ["--git-dir", context.gitDir, "--work-tree", context.workTree];
+  return [];
+}
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
+  const layout = resolveLayout(workerRoot);
   for (const directory of path.split(delimiter5)) {
     const candidate = join45(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync12(candidate);
       if (!workerControlledPath(binary, workerRoot))
-        return { binary, path, workerRoot, home: "/dev/null" };
+        return { binary, path, workerRoot, home: "/dev/null", gitDir: layout?.gitDir, workTree: layout?.workTree };
     } catch {}
   }
   throw new Error("runner cannot find a trusted git executable outside the worker root");
@@ -42266,6 +42342,8 @@ function isolationArgs(project) {
     "-c",
     "core.excludesFile=/dev/null",
     "-c",
+    "diff.relative=false",
+    "-c",
     "core.commitGraph=false",
     "-c",
     "advice.graftFileDeprecated=false",
@@ -42279,32 +42357,12 @@ function isolatedGitArgv(project, args) {
   return [...isolationArgs(project), ...args];
 }
 var emptyTrees = new Map;
-var workTrees = new Map;
-function containingWorkTree(project) {
-  const start = realpathSync12(project);
-  const cached = workTrees.get(start);
-  if (cached !== undefined)
-    return cached;
-  let dir = start;
-  for (;; ) {
-    if (existsSync39(join45(dir, ".git"))) {
-      workTrees.set(start, dir);
-      return dir;
-    }
-    const parent = dirname22(dir);
-    if (parent === dir) {
-      workTrees.set(start, start);
-      return start;
-    }
-    dir = parent;
-  }
-}
 function emptyTreeId(context, project, timeoutMs) {
   const key = realpathSync12(project);
   const cached = emptyTrees.get(key);
   if (cached !== undefined)
     return { code: 0, stdout: new Uint8Array, text: cached, stderr: "" };
-  const proc = spawnSync5(context.binary, isolatedGitArgv(project, ["hash-object", "-t", "tree", "--stdin"]), {
+  const proc = spawnSync5(context.binary, [...repoPin(context, project), ...isolatedGitArgv(project, ["hash-object", "-t", "tree", "--stdin"])], {
     cwd: project,
     env: gitEnv2(context),
     input: new Uint8Array,
@@ -42332,7 +42390,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv, at
       return empty;
     tree = empty.text;
   }
-  const proc = spawnSync5(context.binary, ["--work-tree", containingWorkTree(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])], {
+  const proc = spawnSync5(context.binary, [...repoPin(context, project, extraEnv), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])], {
     cwd: project,
     env: { ...gitEnv2(context), ...extraEnv },
     input,
@@ -42361,13 +42419,17 @@ function checkGitControls(context, project) {
     if (entry.isDirectory())
       paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
     else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = /^gitdir: (.+)$/.exec(readFileSync32(entryPath, "utf8").trim())?.[1];
+      const pointer = parseGitFile(project, entryPath);
       if (pointer === undefined)
         return failedGit("runner git directory pointer is invalid");
-      const gitDir = isAbsolute13(pointer) ? pointer : resolve15(project, pointer);
-      paths2 = [join45(gitDir, "index"), join45(gitDir, "HEAD")];
-    } else
-      return failedGit("runner git directory entry is not regular");
+      paths2 = [join45(pointer, "index"), join45(pointer, "HEAD")];
+    } else {
+      const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2000);
+      if (controls.code !== 0)
+        return controls;
+      paths2 = controls.text.split(`
+`);
+    }
   } catch (cause) {
     if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
       return failedGit("runner cannot inspect git directory entry");
@@ -42408,6 +42470,7 @@ function patchIdentity(context, project, baseRef, head) {
     "diff",
     "--no-ext-diff",
     "--no-textconv",
+    "--no-relative",
     "--binary",
     "--ignore-submodules=none",
     "--submodule=short",
@@ -42428,7 +42491,7 @@ function patchIdentity(context, project, baseRef, head) {
 function ciConfigDrift(context, project, oldBase, newBase) {
   if (oldBase === newBase)
     return false;
-  const converterGuard = ["--no-ext-diff", "--no-textconv"];
+  const converterGuard = ["--no-ext-diff", "--no-textconv", "--no-relative"];
   const changed = runnerGit(context, project, [
     "diff",
     ...converterGuard,
@@ -42457,7 +42520,7 @@ function ciConfigDrift(context, project, oldBase, newBase) {
     throw new Error(`cannot compare CI configuration: ${converters.stderr}`);
   const ciRoots = [".github/workflows", ".github/actions", ".circleci", ".buildkite"];
   const ciFiles = [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"];
-  return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => ciFiles.includes(path) || ciRoots.some((root) => path === root || path.startsWith(`${root}/`)));
+  return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path !== "" && (ciFiles.includes(path) || ciRoots.some((root) => path === root || path.startsWith(`${root}/`) || root.startsWith(`${path}/`))));
 }
 function mergeTreeClean(context, project, baseRef, head) {
   const left = resolvedRevision(context, project, baseRef);
@@ -44500,18 +44563,16 @@ function chainFailures(seat2, attempts) {
 
 // src/runner/token.ts
 import { readFileSync as readFileSync35, realpathSync as realpathSync16, statSync as statSync19 } from "fs";
-import { dirname as dirname24, isAbsolute as isAbsolute15, relative as relative13 } from "path";
+import { dirname as dirname24, relative as relative13 } from "path";
 function readAdminToken(path, forbiddenRoot) {
   const at = realpathSync16(path);
   const root = realpathSync16(forbiddenRoot);
-  const rel = relative13(root, at);
-  const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
   const probe = gitProcess(resolveRunnerGit(root), dirname24(at), [
     "rev-parse",
     "--is-inside-work-tree",
     "--is-inside-git-dir"
   ]);
-  if (underRoot || probe.code === 0 && probe.text.includes("true"))
+  if (relativeInsideRoot(relative13(root, at)) || probe.code === 0 && probe.text.includes("true"))
     throw new Error("runner admin token file must live outside the Firstmate home, the worker root and any git checkout");
   if ((statSync19(at).mode & 63) !== 0)
     throw new Error("runner admin token file must be mode 0600");
@@ -44828,7 +44889,7 @@ async function serve(argv, io) {
   const workerRoot = realpathSync17(worker);
   const socketPath = resolve17(socket);
   const relativeSocket = relative14(workerRoot, socketPath);
-  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
+  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute15(relativeSocket))
     throw new Error("runner socket is inside worker root");
   if (existsSync41(socketPath)) {
     const live = await new Promise((done, fail2) => {
@@ -44851,7 +44912,7 @@ async function serve(argv, io) {
   }
   const socketParent = realpathSync17(dirname25(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
-  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
+  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute15(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
   const entry = process.argv[1];
   const kitRoot = kitRootFlag ?? (entry === undefined ? resolve17(import.meta.dir, "..", "..") : resolve17(realpathSync17(entry), "..", ".."));
@@ -45743,7 +45804,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 // src/semantic-lint/input.ts
 init_proc();
 import { lstatSync as lstatSync7, readFileSync as readFileSync40, realpathSync as realpathSync18 } from "fs";
-import { isAbsolute as isAbsolute17, join as join50, relative as relative15, resolve as resolve18 } from "path";
+import { isAbsolute as isAbsolute16, join as join50, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -45782,7 +45843,7 @@ function collectInput(cwd) {
       try {
         const stat = lstatSync7(absolute);
         const rel = relative15(root, realpathSync18(absolute));
-        if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
+        if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute16(rel) || !stat.isFile())
           reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
@@ -46398,7 +46459,7 @@ function checkLinearis(root, backend) {
 async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute18(root)) {
+    if (isAbsolute17(root)) {
       const value = parseJson3(readFileSync42(join54(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
@@ -46412,7 +46473,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
       return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return { value: null, failure: { reason: isAbsolute18(root) ? "missing" : "network" } };
+    return { value: null, failure: { reason: isAbsolute17(root) ? "missing" : "network" } };
   }
 }
 function checkSemanticLint(keyFile, flag3) {
@@ -46498,7 +46559,7 @@ async function maintenanceCommandNotice() {
     return null;
   try {
     const current2 = readFileSync42(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync42(join54(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const published = isAbsolute17(ROOT) ? readFileSync42(join54(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });

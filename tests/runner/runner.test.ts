@@ -23,7 +23,14 @@ import { runCli } from "../../src/cli.ts";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
 import { workerControlledPath } from "../../src/runner/path.ts";
-import { isolatedGitArgv, patchIdentity, resolveRunnerGit } from "../../src/runner/snapshot.ts";
+import {
+  ciConfigDrift,
+  isolatedGitArgv,
+  mergeTreeClean,
+  patchIdentity,
+  resolveRunnerGit,
+} from "../../src/runner/snapshot.ts";
+import { readAdminToken } from "../../src/runner/token.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
@@ -1719,6 +1726,85 @@ describe("runner guards", () => {
     git(f.worker, "commit", "-qm", "nested bind");
     const revision = workerHead(nested);
     const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a nested start with a planted gitfile still uses the nested binding", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    writeFileSync(join(nested, ".git"), `gitdir: ${realpathSync(join(f.worker, ".git"))}\n`);
+    const revision = workerHead(nested);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a nested start ignores an ancestor FIFO .git", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    const deeper = join(nested, "sub");
+    mkdirSync(deeper, { recursive: true });
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(deeper, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    const fifo = join(nested, ".git");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const revision = workerHead(f.worker);
+    const runner = new Runner(f.privateDir, deeper, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  }, 30_000);
+
+  test("a nested project binding in a linked worktree is read from its own folder", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    const linked = join(f.dir, "linked");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "worktree", "add", "-q", "--detach", linked]).exitCode).toBe(0);
+    const linkedNested = join(linked, "app");
+    const revision = workerHead(linkedNested);
+    const runner = new Runner(f.privateDir, linkedNested, root);
     const started = withRegistry(planted.registry, () =>
       runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
     );
@@ -3458,6 +3544,64 @@ describe("runner guards", () => {
     expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
   });
 
+  test("a trunk gitlink bump at .github voids a verdict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      const sub = join(worker, ".github");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      mkdirSync(join(sub, "workflows"));
+      writeFileSync(join(sub, "workflows", "ci.yml"), "name: a\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "ci a");
+      writeFileSync(
+        join(worker, ".gitmodules"),
+        `[submodule ".github"]\n\tpath = .github\n\turl = ./.github\n\tignore = all\n`,
+      );
+      git(worker, "add", ".github", ".gitmodules");
+      git(worker, "commit", "-qm", "add github gitlink");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+    });
+    f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: b\n");
+    git(join(f.worker, ".github"), "commit", "-qam", "ci b");
+    git(f.worker, "add", ".github");
+    git(f.worker, "commit", "-qm", "bump github gitlink");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  test("nested cwd and worker diff.relative cannot hide CI or patch drift", () => {
+    const f = patchVerdictFixture();
+    const verdict = f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.relative", "true"]).exitCode).toBe(0);
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI");
+    writeFileSync(join(f.worker, "README.md"), "also patch\n");
+    git(f.worker, "add", "README.md");
+    git(f.worker, "commit", "-qm", "change patch");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    writeFileSync(join(f.worker, "feature.txt"), "feature changed\n");
+    git(f.worker, "add", "feature.txt");
+    git(f.worker, "commit", "-qm", "change feature");
+    const head = workerHead(f.worker);
+    const context = resolveRunnerGit(nested);
+    expect(ciConfigDrift(context, nested, verdict.verified_base_revision, "main")).toBe(true);
+    expect(patchIdentity(context, nested, "main", head)).not.toBe(verdict.patch_id);
+  });
+
   test("trunk CI configuration drift voids a verdict even when the patch is identical", () => {
     const f = patchVerdictFixture();
     f.runner.bindVerdict("toy-run");
@@ -3847,7 +3991,28 @@ describe("runner guards", () => {
     git(f.worker, "commit", "-qm", "unrelated root");
     git(f.worker, "branch", "-M", "main");
     git(f.worker, "checkout", "feature");
+    const context = resolveRunnerGit(f.worker);
+    expect(() => mergeTreeClean(context, f.worker, "main", workerHead(f.worker))).toThrow("cannot inspect merge tree");
     expect(() => f.runner.bindVerdict("toy-run")).toThrow("cannot inspect merge tree");
+  });
+
+  test("a nested git init does not make a parent merge conflict look clean", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    git(nested, "init", "-q");
+    writeFileSync(join(nested, "decoy.txt"), "decoy\n");
+    git(nested, "add", ".");
+    git(nested, "commit", "-qm", "decoy");
+    const context = { ...resolveRunnerGit(f.worker), home: f.privateDir };
+    expect(mergeTreeClean(context, f.worker, "main", f.revision)).toBe(false);
+    let nestedClean = false;
+    try {
+      nestedClean = mergeTreeClean(context, nested, "main", f.revision);
+    } catch {
+      nestedClean = false;
+    }
+    expect(nestedClean).toBe(false);
   });
 
   test("verdict merge-tree uses one merge-base tree when the history is criss-cross", () => {
@@ -6266,6 +6431,18 @@ describe("runner guards", () => {
   test("a state dir named ..foo under the worker is rejected", () => {
     const f = fixture();
     expect(() => new Runner(join(f.worker, "..foo"), f.worker, root)).toThrow("runner state is worker-writable");
+  });
+
+  test("readAdminToken refuses a ..foo path under the worker root", () => {
+    const f = fixture();
+    const sneak = join(f.worker, "..foo");
+    mkdirSync(sneak);
+    const tokenFile = join(sneak, "admin.token");
+    writeFileSync(tokenFile, "a".repeat(48), { mode: 0o600 });
+    chmodSync(tokenFile, 0o600);
+    expect(() => readAdminToken(tokenFile, f.worker)).toThrow(
+      "runner admin token file must live outside the Firstmate home, the worker root and any git checkout",
+    );
   });
 
   test("PATH with a worker dir named ..foo still selects git outside the worker", () => {
