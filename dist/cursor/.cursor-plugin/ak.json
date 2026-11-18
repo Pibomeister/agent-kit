@@ -326,6 +326,7 @@
     ".cursor/roles/trail-auditor/ROLE.md",
     ".cursor/roles/verifier/ROLE.md",
     ".cursor/rules/ak-super-review.mdc",
+    ".cursor/schemas/behavior-contract.schema.json",
     ".cursor/schemas/case.schema.json",
     ".cursor/schemas/catalog.schema.json",
     ".cursor/schemas/charter.schema.json",

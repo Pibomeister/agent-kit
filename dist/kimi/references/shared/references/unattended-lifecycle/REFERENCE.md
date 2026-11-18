@@ -16,6 +16,10 @@ when `ak.lifecycle.json` on the repository's default branch (read at `refs/remot
 never the working tree) has `"policy": "unattended"`. Any other value of the variable is refused.
 `open --ticket` stamps the run with the policy and its source, and a record or check under another
 policy is refused. A bypass grant is refused under the policy.
+`AK_LIFECYCLE_SUPERVISOR=<name>`, such as `firstmate` (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`; any
+other value is refused), records who supervises in place of a human. It is a record only and grants
+no authority. The run, its gate records and decisions carry it, and the ship disclosure then reads
+`Unattended lifecycle policy (supervisor: <name>, in place of a human): ...`.
 
 ## Starting a phase
 
@@ -150,6 +154,31 @@ Nothing here is done by an agent or by agent-kit.
    reviewer, and a fine-grained `AK_UNATTENDED_READ_TOKEN` with Administration, Secrets and
    Environments read. A runner that shares the operator's account or credentials does not meet
    the assumptions below; an app-token CI job needs a machine-user account.
+
+## Human-only steps: the stall class
+
+`node <bundle>/bin/ak-gate.mjs human-step` is the supervisor check (`src/lifecycle/human-step-stall.ts`). It
+classifies a held human-only step, and it exits 1 when the step sits at or over 10 minutes
+without a satisfying escalation, when a pull request or deploy is blocked on it, or when an
+interactive auth prompt is held open.
+
+A supervisor named by `AK_LIFECYCLE_SUPERVISOR` reports a held human-only step through the existing
+`unattended check --phase <phase>` entry point, with the same options as `human-step`:
+`--kind <kind> --started-at <epoch-ms> --now <epoch-ms>`, plus the applicable `--overnight`,
+`--escalated --channel <channel>`, `--target <target> --blocked-on <reason>` and `--prompt-held-open`.
+The check runs the classifier and all three violation checks before returning. Its JSON result
+includes `human_step`; exit 1 reports a violation, and exit 2 reports malformed inputs or a missing
+supervisor. With no human-step options, phase checks keep their existing result. The supervisor
+supplies the observed step and escalation state; this check does not discover steps or monitor them.
+
+The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
+an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive
+approval challenge the worker hits, for example a device or consent approval prompt. It is never
+pull-request review or merge approval, which stays the owner gate. At or over 10 minutes
+(`HUMAN_STEP_STALL_THRESHOLD_MS`) the definition requires escalation through the human-needed or
+page channel during the day, and into the morning handoff overnight. Overnight, only the morning
+handoff satisfies escalation, and a page is a violation. A PR or deploy is never blocked on such
+a step, and an interactive auth prompt is never held open.
 
 ## Limits
 

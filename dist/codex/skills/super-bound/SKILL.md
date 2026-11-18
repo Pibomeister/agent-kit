@@ -141,18 +141,18 @@ a ticket whose class makes a human the author keeps that class, and a delegation
 12. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
     ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
     with no edge between them are still unsafe in parallel when they write the same file.
-13. Read `review.cold_read` from the indexed project record. A missing review object, a missing key,
-    an unknown value, a missing project, or an unindexed project is off. Off keeps the author
-    type-check. An implementer opening the ticket with an empty context window who still cannot do
-    it is not holding an implementation ticket: reshape it, or reclassify it `type: decision` and
-    send it back. Off and shadow keep that action; on uses the independent read. When that read is
-    unavailable, the author check decides. A ticket on the text-only single-slice light route skips
-    the dispatch. In on mode the GS-004g validator still requires `cold_read_ref`, so a light-route
-    implementation ticket cannot be published until GS-004j. Shadow and on dispatch one cold reader
-    per remaining implementation ticket, in parallel, each in its own context. Follow
-    [the delegation reference](../../references/shared/references/delegation/REFERENCE.md) under "Independent cold
-    read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow print,
-    citation and unavailable handling.
+13. Read `review.cold_read` from the checkout's own indexed project record, not the ticket's project field. A
+    missing review object, a missing key, an unknown value, or a checkout with no indexed project record is off.
+    On requires exactly one indexed project record. Several records fail closed. Off keeps the author
+    type-check. An implementer opening the ticket with an empty context window who still cannot do it is not
+    holding an implementation ticket: reshape it, or reclassify it `type: decision` and send it back. Off and
+    shadow keep that action; on uses the independent read. When that read is unavailable, the author check
+    decides. Dispatch is skipped only when every Skip condition in [the delegation
+    reference](../../references/shared/references/delegation/REFERENCE.md) under "Independent cold read of a ticket" holds;
+    otherwise dispatch. Shadow and on dispatch one cold reader per remaining implementation ticket, in parallel,
+    each in its own context. Follow [the delegation reference](../../references/shared/references/delegation/REFERENCE.md) under
+    "Independent cold read of a ticket" for Skip, the packet, claims, readiness observations, rewrite cap,
+    shadow print, citation, unavailable handling and the green-to-yellow-agent raise.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
     ticket, no ticket carries an unfinished-content marker or a "same as the earlier ticket"
     instruction, and each ticket's produced names and types match the next one's consumed names
@@ -164,9 +164,9 @@ a ticket whose class makes a human the author keeps that class, and a delegation
 Gate: a decision ticket is never emitted as executable work. A ticket that fails the zero-context
 check is reclassified, never shipped as an implementation ticket because the deadline is close.
 When `review.cold_read` is on, that check is the independent cold read, not the author's reread.
-When that read is unavailable, the author check decides; cite the read with its reason. No class
-change and no scorer change. Off and shadow keep the author type-check as the outcome gate. Off
-and shadow do not change the class or the scorer inputs.
+When that read is unavailable, the author check decides; cite the read with its reason. When on
+and the read is unavailable, a green class rises to `yellow-agent` by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off
+and shadow keep the author type-check as the outcome gate. Off and shadow do not change the class or the scorer inputs.
 
 Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
 `vague_terms`, and `assumptions` items using `text` and `resolved_as`, except an unscored ticket under a delegation coverage limit, which carries every block but `delegation`. Vagueness, an open assumption
@@ -244,7 +244,7 @@ skill enters, not a skill it starts:
 - `ticket` ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), `type: implementation`, id `bound-<spec>-<slice>` — one
   per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
   `assumptions` and the exact ticket-time `delegation` output, or, unscored under a delegation coverage limit, no `delegation` block and the unscored assumption. When `review.cold_read` is on, it
-  cites `cold_read_ref`.
+  cites `cold_read_ref`, except a ticket the detector exempts.
 - `cold-read` ([`schemas/cold-read.schema.json`](../../references/shared/schemas/cold-read.schema.json)) — a run artifact per implementation ticket when
   `review.cold_read` is shadow or on, published under a `run-artifact` placement. Off stores none.
 - `ticket`, `type: decision` — emitted for an open fork, with the three evidence blocks persisted in
@@ -267,7 +267,7 @@ performed is `failed`, never complete.
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
   ticket, every implementation ticket carries the three evidence blocks (an unscored ticket under a delegation coverage limit carries readiness and assumptions, with no `delegation` block), every on-mode
-  implementation ticket cites a finished cold read, or an unavailable read with its reason, and
+  implementation ticket that is not a light-route ticket under the detector cites a finished cold read, or an unavailable read with its reason and, where the ticket is scored and its computed class was green, carries `yellow-agent` or the live named-human lowering that supersedes the raise, and
   every published artifact's read-back matched what was sent.
 - `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different

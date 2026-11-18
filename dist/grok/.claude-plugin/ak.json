@@ -285,6 +285,7 @@
     "roles/supervisor/ROLE.md",
     "roles/trail-auditor/ROLE.md",
     "roles/verifier/ROLE.md",
+    "schemas/behavior-contract.schema.json",
     "schemas/case.schema.json",
     "schemas/catalog.schema.json",
     "schemas/charter.schema.json",

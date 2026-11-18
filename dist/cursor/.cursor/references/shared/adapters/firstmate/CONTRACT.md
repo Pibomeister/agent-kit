@@ -8,7 +8,9 @@ and retains the deprecated patched binding interface for existing users (ruling
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
 dispatcher, no watcher and no merge path, and it never writes Firstmate's state files. The runner
 and run ledger live in `src/runner/`; this binding adapter does not start that service or dispatch
-its supervisor seats. Firstmate may operate it separately through `ak runner` as described in
+its supervisor seats. Firstmate immediately assigns P0 and prioritized orders dedicated end-to-end
+owners, watches each every cycle, keeps other lanes running, and displays runner blocker output.
+Firstmate may operate it separately through `ak runner` as described in
 [`adapters/runner-contract/CONTRACT.md`](../runner-contract/CONTRACT.md) §9.
 
 ## Stock Firstmate path
@@ -137,7 +139,7 @@ the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 `agent-kit/worker-settings.json`, whose `PreToolUse` hook command carries `'__AK_FIRSTMATE_BINDING__'`, in
 single quotes, for the patch to replace with the task's bare binding path, and whose `Stop` hook runs
 `bun '<ak root>/tools/hooks/semantic-lint.ts' hook` with a 30-second timeout, the advisory semantic
-lint of `docs/semantic-lint.md`, holding no key and setting no switch; and, when an evidence store is given,
+lint of `docs/semantic-lint.md`, off unless `AK_JEV_ENABLED=1` in the hook process, holding no key and setting no switch; and, when an evidence store is given,
 `agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `ak firstmate remove` deletes
 exactly those.
 
