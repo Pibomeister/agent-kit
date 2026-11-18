@@ -136,6 +136,35 @@ only, until it expires (12 hours by default and at most). It starts phases only:
 approvals, and every push, pull request or publish — and you answer each one. It never covers merge
 or deploy. Delete the file to revoke it. ADR-0008 has the design and its trust limit.
 
+## Declaring Firstmate as the run supervisor
+
+Under the unattended policy Firstmate is the run supervisor (`adapters/supervisor/CONTRACT.md`). Name it with
+`AK_LIFECYCLE_SUPERVISOR=firstmate`. Write the declaration below to a path outside every checkout of every
+project the worker can reach, for example a per-task folder under the user's home directory such as
+`~/.firstmate-supervisor/<task-id>/`, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path. The
+path must also be outside every repository that encloses the project: on a machine whose home directory is a
+work tree holding the project, pick a folder outside the home directory. The Firstmate repository's own home,
+including its `data/` folder, sits inside a worktree: it must hold neither the declaration nor the
+attestation. Each worker is started with both variables.
+
+```json
+{
+  "contract": "agent-kit/supervisor-contract@1",
+  "supervisor": "firstmate",
+  "obligations": {
+    "launch-and-watch": "Firstmate spawns each crewmate from its own home and watches its status and inbox until the task ends.",
+    "validation-gate": "The no-mistakes pipeline re-runs test and lint on the pushed head, and Firstmate reads its result before attesting.",
+    "independent-review": "Firstmate dispatches a reviewer crewmate that wrote none of the change and relays its verdict at the head.",
+    "seat-separation": "Firstmate dispatches the implementer, verifier and reviewer seats as separate crewmates with their own worktrees.",
+    "head-bound-evidence": "Every receipt and verdict Firstmate relays names the head commit it covers.",
+    "disclosure": "Firstmate opens each pull request body with the disclosure sentence as its first paragraph and checks it before the final ship record."
+  }
+}
+```
+
+At final ship Firstmate writes the attestation to the same kind of per-task folder, outside every checkout, and
+passes its absolute path with the body file to `record --gate ship-preflight` (CONTRACT.md has the full command). Firstmate does not merge on agent-kit's behalf.
+
 ## What the worker sends back
 
 One status line at a time (CONTRACT.md §4):
