@@ -18109,7 +18109,7 @@ function requirementsSourceProblem(requirementId, source, lookup, originId, seen
   if (ref === originId || seen.has(ref)) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
   }
-  const artifact = lookup(ref);
+  const artifact = lookup(ref, { schema: "behavior-contract", hash: expectedHash });
   if (artifact === undefined || artifact.schema !== "behavior-contract") {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
@@ -18143,15 +18143,15 @@ function acceptedSourceProblem(requirementId, source, lookup, originId, seen = n
   }
   if (kind === "requirements")
     return requirementsSourceProblem(requirementId, source, lookup, originId, seen);
-  const artifact = lookup(ref);
+  const expectedHash = textField(source.hash);
+  const expectedSchema = sourceKindSchema(kind);
+  const artifact = lookup(ref, { schema: expectedSchema, hash: expectedHash });
   if (artifact === undefined) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
-  const expectedSchema = sourceKindSchema(kind);
   if (expectedSchema !== undefined && artifact.schema !== expectedSchema) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
-  const expectedHash = textField(source.hash);
   if (expectedHash === undefined) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} needs an immutable hash`;
   }
@@ -23584,10 +23584,11 @@ function publishDocument(kb, request) {
   return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
 function committedIntentLookup(kb) {
-  return (id) => {
-    const doc = readCommittedArtifact(kb, id);
-    if (doc === undefined)
+  return (id, match) => {
+    const looked = lookupCommittedArtifact(kb, id, match);
+    if (looked.status !== "found")
       return;
+    const doc = looked.artifact;
     const schema = isText3(doc.schema) ? doc.schema : undefined;
     const artifactId = isText3(doc.id) ? doc.id : undefined;
     if (schema === undefined || artifactId === undefined)
@@ -23730,10 +23731,6 @@ function lookupCommittedArtifact(kb, id, match) {
   if (found === undefined)
     return { status: "absent" };
   return { status: "found", artifact: found };
-}
-function readCommittedArtifact(kb, id) {
-  const looked = lookupCommittedArtifact(kb, id);
-  return looked.status === "found" ? looked.artifact : undefined;
 }
 var import__20205, KB_KINDS, PROJECT_SCOPE = "project", ARTIFACTS_FILE = "artifacts.jsonl", KEBAB2, ARTIFACT_ID, RESERVED_SEGMENTS, MAX_SCOPE_DEPTH = 8, LOCK_ATTEMPTS = 50, LOCK_WAIT_MS = 100, LOCK_STALE_MS = 120000, ajv, validMeta, validStored;
 var init_local_git = __esm(() => {
@@ -24088,9 +24085,15 @@ function committedBindingText(projectRoot, revision, gitFn) {
     return { text: null, unresolved: `revision ${revision} cannot be resolved` };
   const prefix = run(projectRoot, ["rev-parse", "--show-prefix"]);
   if (prefix.status !== 0)
+    return { text: null, unreadable: "cannot locate committed knowledgebase binding" };
+  const path = `${prefix.stdout.trim()}${BINDING_FILE2}`;
+  const listed = run(projectRoot, ["ls-tree", "--full-tree", "-z", verified.stdout.trim(), "--", path]);
+  if (listed.status !== 0)
+    return { text: null, unreadable: "cannot locate committed knowledgebase binding" };
+  if (listed.stdout === "")
     return { text: null };
-  const shown = run(projectRoot, ["show", `${revision}:${prefix.stdout.trim()}${BINDING_FILE2}`]);
-  return { text: shown.status === 0 ? shown.stdout : null };
+  const shown = run(projectRoot, ["show", `${verified.stdout.trim()}:${path}`]);
+  return shown.status === 0 ? { text: shown.stdout } : { text: null, unreadable: "cannot read committed knowledgebase binding" };
 }
 function loadKbBinding(projectRoot, revision, gitFn, workingFile = true) {
   const committed2 = committedBindingText(projectRoot, revision, gitFn);
@@ -24099,6 +24102,9 @@ function loadKbBinding(projectRoot, revision, gitFn, workingFile = true) {
       binding: null,
       issues: [error("kb.revision-unresolved", BINDING_FILE2, committed2.unresolved)]
     };
+  }
+  if (committed2.unreadable !== undefined) {
+    return { binding: null, issues: [error("kb.binding-unreadable", BINDING_FILE2, committed2.unreadable)] };
   }
   const text = committed2.text ?? (workingFile ? readTextIfPresent(join7(projectRoot, BINDING_FILE2)) : null);
   if (text === null) {
@@ -24159,7 +24165,8 @@ function findKbProjectRoot(start, revision, gitFn) {
     if (explicit) {
       const rel = relative4(ceiling, dir).split(sep3).join("/");
       const path = rel === "" ? BINDING_FILE2 : `${rel}/${BINDING_FILE2}`;
-      if (run(ceiling, ["cat-file", "-e", `${revision}:${path}`]).status === 0)
+      const listed = run(ceiling, ["ls-tree", "-z", revision, "--", path]);
+      if (listed.status !== 0 || listed.stdout !== "")
         return dir;
     } else if (existsSync5(join7(dir, BINDING_FILE2)))
       return dir;
@@ -42364,12 +42371,6 @@ function cleanCommittedTree(context, project) {
     throw new Error(`cannot inspect committed worktree: ${status2.stderr}`);
   return status2.stdout.length === 0;
 }
-function resolvedRevision(context, project, ref) {
-  const result2 = runnerGit(context, project, ["rev-parse", "--verify", ref]);
-  if (result2.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(result2.text))
-    throw new Error(`cannot resolve revision ${ref}: ${result2.stderr || result2.text}`);
-  return result2.text;
-}
 function rawFile(context, project, path) {
   try {
     const at = join45(project, path);
@@ -42532,12 +42533,6 @@ function canonicalFuturePath(path) {
 }
 function digest(bytes) {
   return `sha256:${createHash12("sha256").update(bytes).digest("hex")}`;
-}
-function verdictBase(run2) {
-  const baseRef = run2.charter.repos[0]?.base_branch;
-  if (baseRef === undefined)
-    throw new Error("charter names no verdict base branch");
-  return baseRef;
 }
 function unjudged(card) {
   const frozen = { ...card, judgments: [] };
@@ -43050,9 +43045,19 @@ class Runner {
       return local.text;
     return;
   }
+  verdictBase(run2) {
+    const base2 = this.charterBaseCommit(run2.charter);
+    if (base2 === undefined)
+      throw new Error("cannot resolve charter verdict base branch");
+    return base2;
+  }
   hasCommittedBinding(revision, gitFn) {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
-    return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, false);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined)
+      throw new Error(bindingError.message);
+    return loaded.binding !== null;
   }
   committedKbView(projectId, ticketId, revision, gitFn) {
     const none = [];
@@ -43374,7 +43379,7 @@ class Runner {
     const run2 = this.load(id);
     if (run2.run_state !== "ready-to-ship" || !this.current(run2) || !run2.decisions.some((decision) => decision.card.operation === "review.full" && approved(decision)) || !run2.decisions.some((decision) => decision.card.operation === "review.readiness" && approved(decision)))
       throw new Error("a completed review round and current head are required before verdict binding");
-    const baseRef = verdictBase(run2);
+    const baseRef = this.verdictBase(run2);
     const verifiedBase = run2.verified_base_revision;
     if (verifiedBase === undefined)
       throw new Error("verification recorded no trunk base");
@@ -43390,12 +43395,11 @@ class Runner {
     return run2.verdict;
   }
   verdictInvalidation(run2, verdict, head) {
-    const baseRef = verdictBase(run2);
+    const baseRef = this.verdictBase(run2);
     const clean2 = cleanCommittedTree(this.gitContext, this.workerRoot);
     if ((clean2 ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== verdict.patch_id)
       return "patch-changed";
-    const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
-    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, trunk))
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, baseRef))
       return "ci-config-drift";
     return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
   }
@@ -43423,7 +43427,7 @@ class Runner {
         throw new Error(`verdict invalidated by ${reason}; verification is required`);
     }
     if (verdict.invalidated_by === "merge-conflict")
-      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${verdictBase(run2)} is required`);
+      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${run2.charter.repos[0]?.base_branch} is required`);
     throw new Error("current patch verdict required before unattended ship");
   }
   syncRevision(id) {

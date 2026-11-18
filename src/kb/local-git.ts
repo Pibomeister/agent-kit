@@ -745,11 +745,12 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
   return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
 
-/** Latest committed artifact this run-artifact publish may link, by id. */
+/** Committed artifact this run-artifact publish cites, pinned to its source hash. */
 function committedIntentLookup(kb: ResolvedKb): IntentLookup {
-  return (id) => {
-    const doc = readCommittedArtifact(kb, id);
-    if (doc === undefined) return undefined;
+  return (id, match) => {
+    const looked = lookupCommittedArtifact(kb, id, match);
+    if (looked.status !== "found") return undefined;
+    const doc = looked.artifact;
     const schema = isText(doc.schema) ? doc.schema : undefined;
     const artifactId = isText(doc.id) ? doc.id : undefined;
     if (schema === undefined || artifactId === undefined) return undefined;

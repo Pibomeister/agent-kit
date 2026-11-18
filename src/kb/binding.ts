@@ -140,9 +140,15 @@ function committedBindingText(projectRoot: string, revision?: string, gitFn?: Gi
   const verified = run(projectRoot, ["rev-parse", "--verify", `${revision}^{commit}`]);
   if (verified.status !== 0) return { text: null, unresolved: `revision ${revision} cannot be resolved` };
   const prefix = run(projectRoot, ["rev-parse", "--show-prefix"]);
-  if (prefix.status !== 0) return { text: null };
-  const shown = run(projectRoot, ["show", `${revision}:${prefix.stdout.trim()}${BINDING_FILE}`]);
-  return { text: shown.status === 0 ? shown.stdout : null };
+  if (prefix.status !== 0) return { text: null, unreadable: "cannot locate committed knowledgebase binding" };
+  const path = `${prefix.stdout.trim()}${BINDING_FILE}`;
+  const listed = run(projectRoot, ["ls-tree", "--full-tree", "-z", verified.stdout.trim(), "--", path]);
+  if (listed.status !== 0) return { text: null, unreadable: "cannot locate committed knowledgebase binding" };
+  if (listed.stdout === "") return { text: null };
+  const shown = run(projectRoot, ["show", `${verified.stdout.trim()}:${path}`]);
+  return shown.status === 0
+    ? { text: shown.stdout }
+    : { text: null, unreadable: "cannot read committed knowledgebase binding" };
 }
 
 /**
@@ -174,6 +180,9 @@ export function loadKbBinding(
       binding: null,
       issues: [error("kb.revision-unresolved", BINDING_FILE, committed.unresolved)],
     };
+  }
+  if (committed.unreadable !== undefined) {
+    return { binding: null, issues: [error("kb.binding-unreadable", BINDING_FILE, committed.unreadable)] };
   }
   const text = committed.text ?? (workingFile ? readTextIfPresent(join(projectRoot, BINDING_FILE)) : null);
   if (text === null) {
@@ -257,7 +266,8 @@ export function findKbProjectRoot(start: string, revision?: string, gitFn?: GitF
     if (explicit) {
       const rel = relative(ceiling, dir).split(sep).join("/");
       const path = rel === "" ? BINDING_FILE : `${rel}/${BINDING_FILE}`;
-      if (run(ceiling, ["cat-file", "-e", `${revision}:${path}`]).status === 0) return dir;
+      const listed = run(ceiling, ["ls-tree", "-z", revision, "--", path]);
+      if (listed.status !== 0 || listed.stdout !== "") return dir;
     } else if (existsSync(join(dir, BINDING_FILE))) return dir;
     if (dir === ceiling || dirname(dir) === dir || relative(ceiling, dir).startsWith("..")) return from;
   }

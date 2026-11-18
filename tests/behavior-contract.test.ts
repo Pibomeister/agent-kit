@@ -205,7 +205,7 @@ describe("behavior-contract schema", () => {
     ).toContain("behavior-contract.proposed-intent-cannot-discharge-accepted");
   });
 
-  test("KB admission refuses an unresolved accepted source and accepts a genuine one", () => {
+  test("KB admission accepts a pinned earlier source after a newer revision is published", () => {
     const root = processScratch("ak-bv-intent-kb-");
     expect(git(root, ["init", "-q", "-b", "main"]).status).toBe(0);
     expect(git(root, ["config", "user.name", "fixture"]).status).toBe(0);
@@ -224,6 +224,25 @@ describe("behavior-contract schema", () => {
     expect(publishRunArtifact(kb, JSON.stringify(ticket), "example-run-1", [])).toMatchObject({
       status: "complete",
       effect: "published",
+    });
+    const newerBody = { ...ticket, run_id: "example-run-2", title: "A newer approved revision" };
+    const newer = {
+      ...newerBody,
+      approvals: [
+        { artifact_hash: artifactHash(newerBody), by: "human", authority: "explicit", at: "2026-09-20T09:00:00Z" },
+      ],
+    };
+    expect(publishRunArtifact(kb, JSON.stringify(newer), "example-run-2", [])).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
+    const uncommitted = { ...ticket, title: "An unpublished approved revision" };
+    const uncommittedContract = withRequirement(0, {
+      sources: [{ kind: "ticket", ref: "example-ticket-1", hash: artifactHash(uncommitted) }],
+    });
+    expect(publishRunArtifact(kb, JSON.stringify(uncommittedContract), "example-run-1", [])).toMatchObject({
+      status: "refused",
+      code: "kb.artifact-invalid",
     });
     expect(publishRunArtifact(kb, JSON.stringify(contract), "example-run-1", [])).toMatchObject({
       status: "complete",
