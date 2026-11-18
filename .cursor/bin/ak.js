@@ -44906,6 +44906,11 @@ async function serve(argv, io) {
     const realDue = wallNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
     return fileDue || realDue;
   };
+  const outageRemainingMs = (streak) => {
+    const fileLeft = streak.retryAt - now();
+    const realLeft = streak.retryAt - streak.startedAt - (wallNow() - streak.realStartedAt);
+    return fileLeft < realLeft ? fileLeft : realLeft;
+  };
   const startOutage = () => ({
     startedAt: now(),
     realStartedAt: wallNow(),
@@ -44929,11 +44934,25 @@ async function serve(argv, io) {
       return true;
     return outageElapsedMs(deliveryOutage) >= windowMs;
   };
-  const wakeEvents = () => {
+  const wakeEvents = (fromBackoff = false) => {
     if (eventCommand === null)
       return;
-    if (deliveryOutage !== null && !outageDue(deliveryOutage))
-      return;
+    if (deliveryOutage !== null && !outageDue(deliveryOutage)) {
+      if (!fromBackoff)
+        return;
+      const left = outageRemainingMs(deliveryOutage);
+      if (left > 0) {
+        const attempts = deliveryOutage.attempts;
+        const startedAt = deliveryOutage.startedAt;
+        wait(left).then(() => {
+          if (!open || deliveryOutage === null || deliveryOutage.startedAt !== startedAt || deliveryOutage.attempts !== attempts)
+            return;
+          wakeEvents(true);
+          return;
+        });
+        return;
+      }
+    }
     if (delivering) {
       rescanEvents = true;
       return;
@@ -45018,7 +45037,7 @@ async function serve(argv, io) {
     wait(delay).then(() => {
       if (!open || deliveryOutage === null || deliveryOutage.startedAt !== startedAt || deliveryOutage.attempts !== attempts)
         return;
-      wakeEvents();
+      wakeEvents(true);
       return;
     });
   };
@@ -45046,11 +45065,15 @@ async function serve(argv, io) {
   let auditHalted = false;
   let auditBlock = "ok";
   const auditFailedVisible = () => {
+    if (auditBlock === "cap")
+      return false;
+    const windowMs = outageWindow();
+    if (windowMs !== undefined && auditOutage !== null && outageElapsedMs(auditOutage) >= windowMs)
+      return true;
     if (auditBlock !== "failed")
       return false;
     if (auditHalted || clockBroken)
       return true;
-    const windowMs = outageWindow();
     if (windowMs === undefined || auditOutage === null)
       return true;
     return outageElapsedMs(auditOutage) >= windowMs;
@@ -45095,15 +45118,29 @@ async function serve(argv, io) {
     wait(delay).then(() => {
       if (!open || auditOutage === null || auditOutage.startedAt !== startedAt || auditOutage.attempts !== attempts)
         return;
-      runAudit();
+      runAudit(true);
       return;
     });
   };
-  const runAudit = async () => {
+  const runAudit = async (fromBackoff = false) => {
     if (loopCommand === null || auditRunning || auditHalted || !open)
       return;
-    if (auditOutage !== null && !outageDue(auditOutage))
-      return;
+    if (auditOutage !== null && !outageDue(auditOutage)) {
+      if (!fromBackoff)
+        return;
+      const left = outageRemainingMs(auditOutage);
+      if (left > 0) {
+        const attempts = auditOutage.attempts;
+        const startedAt = auditOutage.startedAt;
+        wait(left).then(() => {
+          if (!open || auditOutage === null || auditOutage.startedAt !== startedAt || auditOutage.attempts !== attempts)
+            return;
+          runAudit(true);
+          return;
+        });
+        return;
+      }
+    }
     auditRunning = true;
     try {
       applyPersistedCap();

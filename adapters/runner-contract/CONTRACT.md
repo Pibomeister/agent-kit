@@ -296,15 +296,17 @@ sets `limits.delegate_replacements`, the next cadence tick retries and status st
 while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
 spent, and `autonomy.missing` names `delegate-replacements`. A cap of N allows N failed
 attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later
-success. A charter that omits the cap supplies no retry budget, so the first failure goes guided
-and names `audit-failed` until a later tick succeeds. When the charter sets
-`limits.outage_backoff_seconds` (minimum 300), a transient loop-probe or event-delivery failure
-retries with exponential delay starting at 5 seconds and doubling, capped by the time left in that
-window. `status.autonomy.missing` names `audit-failed` or `event-delivery-failed` only after the
-failure has lasted at least that many seconds from the first failure in the streak. A later success
-clears the streak. The streak is in memory. A serve restart starts a new window. Auth failures,
-bundle drift, and a refused `auditTick` still go guided on the first failure. A charter that omits
-the field keeps the first-failure behavior above. The timer drains only when no active
+success. Without `limits.outage_backoff_seconds`, a charter that omits the cap supplies no retry
+budget, so the first failure goes guided and names `audit-failed` until a later tick succeeds. When
+the charter sets `limits.outage_backoff_seconds` (minimum 300, maximum 86400), a transient
+loop-probe or event-delivery failure retries with exponential delay starting at 5 seconds and
+doubling, capped by the time left in that window. The window is a wall-clock bound.
+`status.autonomy.missing` names `audit-failed` or `event-delivery-failed` once the failure has lasted
+at least that many seconds from the first failure in the streak, even while
+`limits.delegate_replacements` is unspent and the audit is still retrying. Cap exhaustion can still
+halt earlier. A later success clears the streak. The streak is in memory. A serve restart starts a
+new window. Auth failures, bundle drift, and a refused `auditTick` still go guided on the first
+failure. A charter that omits the field keeps the first-failure behavior above. The timer drains only when no active
 delegate remains, and it stops when `limits.delegate_replacements` is spent. The adapter owns the actual process stop
 and replacement; the runner owns the policy and durable record. Neither an event nor a probe
 result is authority for a phase.

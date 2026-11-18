@@ -2939,6 +2939,51 @@ describe("runner guards", () => {
     }
   });
 
+  test("a clock jump then freeze still retries a pending event inside the window", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const clock = join(f.privateDir, "clock");
+    const stamp = join(f.privateDir, "consumer-stamp");
+    writeFileSync(clock, "0\n");
+    const { socket, service, adminToken, workerToken, request } = serveEvents(f, clock, [
+      process.execPath,
+      "-e",
+      "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); throw new Error('transient');",
+      stamp,
+    ]);
+    try {
+      await waitForPath(socket, service);
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitUntil(
+        "the first failing consumer to run",
+        () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1,
+      );
+      await Bun.sleep(250);
+      writeFileSync(clock, "5000\n");
+      await waitUntil("the first backoff retry to run", () => readFileSync(stamp, "utf8").length >= 2);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      await waitUntil(
+        "the frozen clock to retry the pending event on real elapsed",
+        () => readFileSync(stamp, "utf8").length >= 3,
+        20_000,
+      );
+      expect(readFileSync(clock, "utf8").trim()).toBe("5000");
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  }, 25_000);
+
   test("a pending event with a broken payload hash goes guided on the first failure", async () => {
     const f = fixture();
     withAuditCadence(f, undefined, 300);
@@ -3696,6 +3741,47 @@ describe("runner guards", () => {
     }
   });
 
+  test("a loop-probe outage with a replacement cap still names audit-failed after the window", async () => {
+    const f = fixture();
+    withAuditCadence(f, 30, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const clock = join(f.privateDir, "clock");
+    writeFileSync(clock, "0\n");
+    const stamp = join(f.privateDir, "probe-fail-cap");
+    const script = [
+      "const fs=await import('node:fs');",
+      "fs.appendFileSync(process.argv[1],'x');",
+      "console.log(JSON.stringify({probed:[],progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp, clock);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil("the failed probe to run", () => existsSync(stamp));
+      await Bun.sleep(300);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "299999\n");
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "300000\n");
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["audit-failed"],
+      });
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBeGreaterThan(0);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
   test("a refused auditTick after a successful probe goes guided at clock 0", async () => {
     const f = procedureKit();
     withAuditCadence(f, undefined, 300);
@@ -3720,14 +3806,23 @@ describe("runner guards", () => {
     const { socket, service, workerToken, request } = serveLoop(f, script, stamp, clock, f.kit, [skill]);
     try {
       await waitForPath(socket, service);
+      await waitUntil(
+        "the drifting probe to return",
+        () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1 && !existsSync(mutate),
+      );
       writeFileSync(request, JSON.stringify({ run: "toy-run" }));
-      await waitUntil("status to name audit-failed at clock 0", () =>
-        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      await waitUntil(
+        "status to name audit-failed before the next cadence tick",
+        () => autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+        400,
       );
       expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
         mode: "guided",
         missing: ["audit-failed"],
       });
+      const probes = readFileSync(stamp, "utf8").length;
+      await Bun.sleep(1_500);
+      expect(readFileSync(stamp, "utf8").length).toBe(probes);
     } finally {
       service.kill("SIGTERM");
       await service.exited;
@@ -3980,6 +4075,7 @@ describe("runner guards", () => {
         mode: "autonomous",
         missing: [],
       });
+      writeFileSync(clock, "300000\n");
       service.kill("SIGTERM");
       await service.exited;
       const firstFails = readFileSync(stamp, "utf8").length;
@@ -3992,7 +4088,7 @@ describe("runner guards", () => {
         mode: "autonomous",
         missing: [],
       });
-      writeFileSync(clock, "300000\n");
+      writeFileSync(clock, "600000\n");
       await waitUntil("the fresh window to name audit-failed", () =>
         autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
       );

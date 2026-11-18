@@ -206,7 +206,8 @@ hard_gates:
     cadence tick retries; until that tick succeeds, decide is refused with audit retry in progress
     and the supervisor retries decide after one cadence, a transient wait, not a guided handoff; once that cap is spent, status names delegate-replacements and the run
     is guided. Transient loop-probe and event-delivery naming follows limits.outage_backoff_seconds
-    as adapters/runner-contract/CONTRACT.md §6 states.
+    as adapters/runner-contract/CONTRACT.md §6 states. The window is a wall-clock bound even while
+    that cap is unspent, and cap exhaustion can halt earlier.
 
 stop_conditions:
   - complete when a pull request is open and the run report the runner holds links the ledger. This
