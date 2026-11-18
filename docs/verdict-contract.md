@@ -36,13 +36,16 @@ Permission is never inferred from surrounding prose.
 
 `parseFinalVerdict`, `parseAdversarialVerdict` and
 `failClosedAdversarialVerdict` in [src/verdict.ts](../src/verdict.ts)
-are the shared parser for review and adversarial transcripts. Council
-seats do not read transcripts: a seat answers only with a JSON council
-answer whose `choice` field must be one of the card's exact options.
-Non-JSON launcher stdout, including a transcript that ends in a
-`VERDICT:` line, is not an answer, so the substitute chain moves on and
-an exhausted chain leaves the seat unavailable, which escalates rather
-than approves.
+are the shared parser for review and adversarial transcripts.
+`ak council run` reads a seat through `launchSeat`. A JSON council
+answer whose `choice` is one of the card's exact options still stands.
+Non-JSON stdout is read through `failClosedAdversarialVerdict`: a
+well-formed final `VERDICT:` field whose value is a card option is the
+seat's choice. Garbage, an empty transcript, a missing field, or a
+value outside the card options is not an answer, so the substitute
+chain moves on and an exhausted chain leaves the seat unavailable,
+which escalates rather than approves. A well-formed `VERDICT: REJECT`
+is a recorded rejection, not an unavailable seat.
 
 ## Downstream adoption (Casco handoff)
 

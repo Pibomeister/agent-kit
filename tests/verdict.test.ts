@@ -56,15 +56,55 @@ const spawnWith =
 
 describe("council seat verdict consumption", () => {
   const seat = { seat: "adversarial", chain: [{ actor: "a", lineage: ["a"], command: ["unused"] }] };
+  const options = [...ADVERSARIAL_VERDICTS];
 
-  test("a non-JSON transcript ending in a valid VERDICT field is not a council answer", async () => {
-    const result = await launchSeat(
+  test("garbage, empty, and exit-0-without-verdict output all refuse", async () => {
+    for (const [name, stdout] of [
+      ["garbage", "{{{ not json and not a verdict"],
+      ["empty", ""],
+      ["exit 0 without a verdict field", "Looks fine. Ship it."],
+    ] as const) {
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(false);
+      expect(result.attempts, name).toHaveLength(1);
+    }
+  });
+
+  test("a valid JSON approve and a valid JSON reject pass through", async () => {
+    const approve = await launchSeat(
       seat,
       "payload",
-      [...ADVERSARIAL_VERDICTS],
+      options,
+      spawnWith(JSON.stringify({ choice: "WORTHY", rationale: "evidence holds" })),
+    );
+    expect(approve).toMatchObject({ ok: true, answer: { choice: "WORTHY", rationale: "evidence holds" } });
+    const reject = await launchSeat(
+      seat,
+      "payload",
+      options,
+      spawnWith(JSON.stringify({ choice: "REJECT", rationale: "the constructed failure stands" })),
+    );
+    expect(reject).toMatchObject({
+      ok: true,
+      answer: { choice: "REJECT", rationale: "the constructed failure stands" },
+    });
+  });
+
+  test("a valid final VERDICT field passes through failClosedAdversarialVerdict", async () => {
+    const worthy = await launchSeat(seat, "payload", options, spawnWith("Careful review.\nVERDICT: WORTHY\n"));
+    expect(worthy).toMatchObject({ ok: true, answer: { choice: "WORTHY" } });
+    const reject = await launchSeat(
+      seat,
+      "payload",
+      options,
       spawnWith("This looks WORTHY at first glance.\nThe constructed failure still stands.\nVERDICT: REJECT\n"),
     );
+    expect(reject).toMatchObject({ ok: true, answer: { choice: "REJECT" } });
+    expect(failClosedAdversarialVerdict("This looks WORTHY at first glance.\nVERDICT: REJECT")).toBe("REJECT");
+  });
+
+  test("a malformed JSON object is still not a transcript fallback", async () => {
+    const result = await launchSeat(seat, "payload", options, spawnWith(JSON.stringify({ choice: "WORTHY" })));
     expect(result.ok).toBe(false);
-    expect(result.attempts).toHaveLength(1);
   });
 });

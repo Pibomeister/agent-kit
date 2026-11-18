@@ -6,15 +6,38 @@ import { runCouncil } from "../../src/council/cli.ts";
 import { parseJson, updated, type JsonValue } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
-const transcriptLauncher = (actor: string) => ({
+const transcriptLauncher = (actor: string, body: string) => ({
   actor,
   lineage: [actor],
-  command: [
-    "bun",
-    "-e",
-    "console.log('This looks WORTHY at first glance.\\nThe constructed failure still stands.\\nVERDICT: REJECT')",
-  ],
+  command: ["bun", "-e", `console.log(${JSON.stringify(body)})`],
 });
+
+const rejectTranscript = "This looks WORTHY at first glance.\nThe constructed failure still stands.\nVERDICT: REJECT";
+const worthyTranscript = "Careful review, no blocking findings.\nVERDICT: WORTHY";
+
+async function runTranscriptCouncil(body: string) {
+  const dir = processScratch("ak-council-verdict-");
+  const config = join(dir, "council.json");
+  writeFileSync(
+    config,
+    JSON.stringify({
+      pair: [
+        { seat: "primary-a", chain: [transcriptLauncher("a", body)] },
+        { seat: "primary-b", chain: [transcriptLauncher("b", body)] },
+      ],
+      veto: { seat: "veto", chain: [transcriptLauncher("v", body)] },
+    }),
+    { mode: 0o600 },
+  );
+  const card = join(dir, "card.json");
+  writeFileSync(
+    card,
+    JSON.stringify({ id: "q2", question: "Merge it?", options: ["WORTHY", "REJECT"], approve: "WORTHY" }),
+  );
+  const out = join(dir, "record.json");
+  const result = await run(["run", "--card", card, "--council-config", config, "--out", out]);
+  return { result, out };
+}
 
 const answer = (choice: string, log: string) =>
   `const p=JSON.parse(await Bun.stdin.text());require('node:fs').appendFileSync(${JSON.stringify(log)},process.argv[1]+' '+Object.keys(p).sort().join(',')+'\\n');console.log(JSON.stringify({choice:${JSON.stringify(choice)},rationale:'blind',model_served:'served-'+process.argv[1]}));`;
@@ -159,34 +182,37 @@ describe("ak council run", () => {
     ]);
   });
 
-  test("a non-JSON transcript ending VERDICT: <option> is not a council answer, so the seats escalate", async () => {
-    const dir = processScratch("ak-council-verdict-");
-    const config = join(dir, "council.json");
-    writeFileSync(
-      config,
-      JSON.stringify({
-        pair: [
-          { seat: "primary-a", chain: [transcriptLauncher("a")] },
-          { seat: "primary-b", chain: [transcriptLauncher("b")] },
+  test("garbage, empty, and exit-0-without-verdict transcripts refuse and the seats escalate", async () => {
+    for (const body of ["{{{ not json and not a verdict", "", "Looks fine. Ship it."]) {
+      const { result, out } = await runTranscriptCouncil(body);
+      expect(result.code).toBe(1);
+      expect(record(out)).toMatchObject({
+        outcome: "escalate",
+        choice: null,
+        causes: ["a primary seat was unavailable"],
+        seats: [
+          { seat: "primary-a", choice: null },
+          { seat: "primary-b", choice: null },
         ],
-        veto: { seat: "veto", chain: [transcriptLauncher("v")] },
-      }),
-      { mode: 0o600 },
-    );
-    const card = join(dir, "card.json");
-    writeFileSync(
-      card,
-      JSON.stringify({ id: "q2", question: "Merge it?", options: ["WORTHY", "REJECT"], approve: "WORTHY" }),
-    );
-    const out = join(dir, "record.json");
-    const result = await run(["run", "--card", card, "--council-config", config, "--out", out]);
-    expect(result.code).toBe(1);
-    expect(record(out)).toMatchObject({ outcome: "escalate", choice: null });
+      });
+    }
+  });
+
+  test("a valid final VERDICT: WORTHY from every seat approves", async () => {
+    const { result, out } = await runTranscriptCouncil(worthyTranscript);
+    expect(result.code).toBe(0);
+    expect(record(out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+  });
+
+  test("early WORTHY prose with a final VERDICT: REJECT declines as REJECT", async () => {
+    const { result, out } = await runTranscriptCouncil(rejectTranscript);
+    expect(result.code).toBe(0);
     expect(record(out)).toMatchObject({
-      causes: ["a primary seat was unavailable"],
+      outcome: "decline",
+      choice: "REJECT",
       seats: [
-        { seat: "primary-a", choice: null },
-        { seat: "primary-b", choice: null },
+        { seat: "primary-a", choice: "REJECT" },
+        { seat: "primary-b", choice: "REJECT" },
       ],
     });
   });

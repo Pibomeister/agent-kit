@@ -6,6 +6,7 @@
  * the card; the first valid answer ends it.
  */
 
+import { adversarialChoiceFromTranscript } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
 export interface ChildOutput {
@@ -101,10 +102,25 @@ export async function launchSeat(
       const child = await spawn(launcher, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
-      const value: unknown = JSON.parse(child.stdout.toString());
-      if (!isCouncilAnswer(value)) throw new Error("launcher returned an invalid answer");
-      if (!options.includes(value.choice)) throw new Error(`launcher chose ${value.choice}, which is not an option`);
-      return { ok: true, launcher, answer: value, attempts };
+      const text = child.stdout.toString();
+      try {
+        const value: unknown = JSON.parse(text);
+        if (!isCouncilAnswer(value)) throw new Error("launcher returned an invalid answer");
+        if (!options.includes(value.choice)) throw new Error(`launcher chose ${value.choice}, which is not an option`);
+        return { ok: true, launcher, answer: value, attempts };
+      } catch (cause) {
+        if (cause instanceof SyntaxError) {
+          const choice = adversarialChoiceFromTranscript(text, options);
+          if (choice !== null)
+            return {
+              ok: true,
+              launcher,
+              answer: { choice, rationale: "structured final verdict field" },
+              attempts,
+            };
+        }
+        throw cause instanceof Error ? cause : new Error("launcher returned an invalid answer");
+      }
     } catch (cause) {
       attempt.error = reason(cause);
     }

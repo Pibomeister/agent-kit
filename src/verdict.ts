@@ -75,3 +75,16 @@ export function failClosedAdversarialVerdict(text: string): AdversarialVerdict {
   const parsed = parseAdversarialVerdict(text);
   return parsed.ok ? parsed.verdict : "REJECT";
 }
+
+/**
+ * A non-JSON transcript's adversarial choice, or null when stdout has
+ * no well-formed final VERDICT field whose value is in `options`. The
+ * choice is always `failClosedAdversarialVerdict`: WORTHY only from a
+ * valid field. Callers that already parsed JSON must not use this as a
+ * fallback for a malformed object.
+ */
+export function adversarialChoiceFromTranscript(text: string, options: readonly string[]): AdversarialVerdict | null {
+  const verdict = failClosedAdversarialVerdict(text);
+  if (!parseAdversarialVerdict(text).ok || !options.includes(verdict)) return null;
+  return verdict;
+}
