@@ -101,7 +101,7 @@ function summaryOf(root: string) {
     io: { out: (line) => lines.push(line), err: (line) => lines.push(line) },
   });
   const line = lines.filter((entry) => entry.startsWith("ak validate:")).at(-1) ?? "";
-  return { status, line };
+  return { status, line, lines };
 }
 
 describe("CI clones donors before it validates", () => {
@@ -130,7 +130,7 @@ describe("pre-push extract_for_gate", () => {
       expect(existsSync(join(dest, ".donors"))).toBe(true);
       symlinkSync(join(ROOT, "node_modules"), join(dest, "node_modules"));
       const summary = summaryOf(dest);
-      expect(summary.status).toBe(0);
+      expect(summary.status, summary.lines.join("\n")).toBe(0);
       expect(summary.line).not.toContain("donor paths at pin");
       expect(summary.line).toMatch(/0 checks skipped/);
     },

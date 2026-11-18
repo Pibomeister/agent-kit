@@ -9,13 +9,15 @@
  * cross-document or recomputed half is what actually bites.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
+import { asJsonObject } from "../lifecycle/behavior-policy.ts";
 import { loadArtifacts } from "./artifacts.ts";
+import { behaviorContractIntentProblems, RULE_PROPOSED_INTENT, type IntentLookup } from "./behavior-contract-intent.ts";
 
 const REMOTE_SIDE_EFFECTS = new Set([
   "remote-push",
@@ -1452,37 +1454,143 @@ function verificationRules(rc: RuleContext): void {
 
 // --------------------------------------------------------------------- ticket
 
+const LIGHT_ROUTE_FILES = new Set(["README.md", "CHANGELOG.md", "NOTICE", "LICENSE"]);
+const LIGHT_ROUTE_PREFIXES = ["docs/"] as const;
+
+function lastPathSegment(pattern: string): string {
+  const parts = pattern.split("/");
+  return parts[parts.length - 1] ?? "";
+}
+
+function isMarkdownSegment(name: string): boolean {
+  return name === "*.md" || name.endsWith(".md");
+}
+
+/** A glob the light-route detector can treat as documentation-only. Exclusions always win. */
+function isLightRouteGlob(pattern: string): boolean {
+  if (pattern.includes("\\") || pattern.startsWith("/") || pattern.includes("..") || pattern.includes("{"))
+    return false;
+  if (LIGHT_ROUTE_FILES.has(pattern)) return true;
+  if (!LIGHT_ROUTE_PREFIXES.some((prefix) => pattern.startsWith(prefix))) return false;
+  const rest = pattern.slice(pattern.indexOf("/") + 1);
+  if (rest === "" || rest === "**" || rest === "*") return false;
+  return isMarkdownSegment(lastPathSegment(pattern));
+}
+
+/** Literal globs only. A wildcard cannot be observed, so it is not refused here. */
+function globResolvesThroughSymlink(root: string, pattern: string): boolean {
+  if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) return false;
+  let cur = root;
+  for (const part of pattern.split("/")) {
+    if (part === "" || part === ".") continue;
+    cur = join(cur, part);
+    const st = lstatSync(cur, { throwIfNoEntry: false });
+    if (st?.isSymbolicLink()) return true;
+    if (st === undefined) return false;
+  }
+  return false;
+}
+
+function workSourceId(doc: IndexedDoc["doc"]): string | null {
+  const ref = obj(obj(doc["work_source"])?.["ref"]);
+  return ref === null ? null : str(ref["id"]);
+}
+
+/** Declared write globs, or null when the ticket does not name a usable write set. */
+function writeGlobs(doc: IndexedDoc["doc"]): string[] | null {
+  const allowed = obj(doc["allowed_changes"]);
+  const files = allowed === null ? [] : arr(allowed["files"]);
+  const out: string[] = [];
+  for (const item of files) {
+    const glob = str(item);
+    if (glob === null) return null;
+    out.push(glob);
+  }
+  if (out.length === 0) return null;
+  const ownership = obj(doc["write_ownership"]);
+  if (ownership !== null) {
+    for (const key of ["paths", "generated_artifacts"] as const) {
+      for (const item of arr(ownership[key])) {
+        const glob = str(item);
+        if (glob === null) return null;
+        out.push(glob);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Text-only single-slice from declared write globs and indexed peers, not from a note or approval.
+ * A missing work_source, a code glob, a symlink glob, or any other ticket on the same work_source
+ * is not the light route.
+ */
+function isLightRouteTicket(doc: IndexedDoc["doc"], index: DocIndex, root?: string): boolean {
+  const globs = writeGlobs(doc);
+  if (globs === null) return false;
+  for (const glob of globs) {
+    if (!isLightRouteGlob(glob)) return false;
+    if (root !== undefined && globResolvesThroughSymlink(root, glob)) return false;
+  }
+  const symbols = obj(doc["allowed_changes"])?.["symbols"];
+  if (Array.isArray(symbols) && symbols.length > 0) return false;
+  const source = workSourceId(doc);
+  if (source === null) return false;
+  const thisId = str(doc["id"]);
+  for (const entry of index.all) {
+    if (entry.schema !== "ticket") continue;
+    if (str(entry.doc["id"]) === thisId) continue;
+    if (workSourceId(entry.doc) === source) return false;
+  }
+  return true;
+}
+
+function ticketBehaviorPropertyTypes(rc: RuleContext): void {
+  const RULE = "ticket.behavior-property-id-has-type";
+  for (const [i, row] of arr(rc.doc["verification"]).entries()) {
+    const check = obj(row);
+    if (check === null) continue;
+    const behavior = obj(check["behavior"]);
+    if (behavior === null) continue;
+    const types = obj(behavior["property_types"]) ?? {};
+    const checkId = str(check["id"]) ?? `verification[${i}]`;
+    for (const value of arr(behavior["property_ids"])) {
+      const id = str(value);
+      if (id === null) continue;
+      const kind = str(types[id]);
+      if (kind !== "safety" && kind !== "liveness")
+        fail(rc, RULE, `${checkId} property ${id} has no property_types entry`);
+    }
+  }
+}
+
 function ticketRules(rc: RuleContext): void {
+  ticketBehaviorPropertyTypes(rc);
   const RULE = "ticket.cold-read-ref-required-when-on";
   const { doc } = rc;
   if (str(doc["type"]) !== "implementation") return;
 
-  // Envelope `project` is a `{ id }` object on real artifacts and a string in some fixtures.
-  const projectField = doc["project"];
-  const projectRecord = obj(projectField);
-  const wanted = projectRecord === null ? str(projectField) : str(projectRecord["id"]);
-  const matches: IndexedDoc[] = [];
-  if (wanted !== null) {
-    for (const entry of rc.index.all) {
-      if (entry.schema !== "project") continue;
-      if (str(obj(entry.doc["identity"])?.["id"]) === wanted) matches.push(entry);
-    }
+  const projects: IndexedDoc[] = [];
+  for (const entry of rc.index.all) {
+    if (entry.schema === "project") projects.push(entry);
   }
   // Missing review object, missing key, and unknown values are off: the default, and no behaviour change.
-  if (matches.length === 0) return;
+  if (projects.length === 0) return;
   let anyOn = false;
-  for (const entry of matches) {
+  for (const entry of projects) {
     if (str(obj(entry.doc["review"])?.["cold_read"]) === "on") anyOn = true;
   }
   if (!anyOn) return;
-  if (matches.length > 1) {
+  if (projects.length > 1) {
     fail(
       rc,
       RULE,
-      `ticket project ${wanted} matches ${matches.length} project records; identity.id must be unique when review.cold_read is on`,
+      `the checkout has ${projects.length} indexed project records; review.cold_read on requires exactly one`,
     );
     return;
   }
+
+  if (isLightRouteTicket(doc, rc.index, rc.ctx?.root)) return;
 
   const ref = obj(doc["cold_read_ref"]);
   const refId = ref === null ? null : str(ref["id"]);
@@ -1579,8 +1687,26 @@ function coldReadRules(rc: RuleContext): void {
   }
 }
 
+function indexIntentLookup(index: DocIndex): IntentLookup {
+  return (id) => {
+    const found = index.byId.get(id);
+    if (found === undefined || !asJsonObject(found.doc)) return undefined;
+    return { schema: found.schema, id, doc: found.doc };
+  };
+}
+
+function behaviorContractRules(rc: RuleContext): void {
+  if (!asJsonObject(rc.doc)) return;
+  for (const problem of behaviorContractIntentProblems(rc.doc, indexIntentLookup(rc.index))) {
+    const sep = problem.indexOf(": ");
+    if (sep === -1) fail(rc, RULE_PROPOSED_INTENT, problem);
+    else fail(rc, problem.slice(0, sep), problem.slice(sep + 2));
+  }
+}
+
 const RULES: Record<string, (rc: RuleContext) => void> = {
   charter: charterRules,
+  "behavior-contract": behaviorContractRules,
   "cold-read": coldReadRules,
   decision: decisionRules,
   dossier: dossierRules,

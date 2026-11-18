@@ -34,7 +34,7 @@ export function preflightStock(
       };
   const checkout = git(project, ["rev-parse", "--show-toplevel"]);
   const repository: Check =
-    checkout.code === 0
+    checkout.code === 0 && checkout.text.trim() !== ""
       ? { id: "project", ok: true, detail: `${checkout.text.trim()} is a git checkout` }
       : { id: "project", ok: false, detail: `${project} is not a git checkout` };
   // Preflight reads no run state, and a socket check only tests the file type. The no-socket text restates

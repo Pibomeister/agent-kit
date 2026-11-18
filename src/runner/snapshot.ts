@@ -33,6 +33,25 @@ function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
 }
 
+/** Isolated git argv: worker-owned config is ignored, including the commit graph. */
+export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
+  return [
+    "-c",
+    `safe.directory=${realpathSync(project)}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.excludesFile=/dev/null",
+    "-c",
+    "core.commitGraph=false",
+    "-c",
+    "advice.graftFileDeprecated=false",
+    ...args,
+  ];
+}
+
 export function gitProcess(
   context: RunnerGitContext,
   project: string,
@@ -48,23 +67,17 @@ export function gitProcess(
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C",
   };
-  const proc = spawnSync(
-    context.binary,
-    [
-      "-c",
-      `safe.directory=${realpathSync(project)}`,
-      "-c",
-      "core.fsmonitor=false",
-      "-c",
-      "core.hooksPath=/dev/null",
-      "-c",
-      "core.excludesFile=/dev/null",
-      ...args,
-    ],
-    { cwd: project, env, input, maxBuffer: 1 << 30, timeout: timeoutMs, killSignal: "SIGKILL" },
-  );
+  const proc = spawnSync(context.binary, isolatedGitArgv(project, args), {
+    cwd: project,
+    env,
+    input,
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+  });
   if (proc.error !== undefined) {
     if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
       return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
@@ -113,10 +126,15 @@ function checkGitControls(context: RunnerGitContext, project: string): GitResult
   return null;
 }
 
-export function runnerGit(context: RunnerGitContext, project: string, args: readonly string[]): GitResult {
+export function runnerGit(
+  context: RunnerGitContext,
+  project: string,
+  args: readonly string[],
+  input?: Uint8Array,
+): GitResult {
   const controls = checkGitControls(context, project);
   if (controls !== null) return controls;
-  return gitProcess(context, project, args);
+  return gitProcess(context, project, args, 10_000, input);
 }
 
 /** Stable identity for the complete committed change relative to its current merge base. */

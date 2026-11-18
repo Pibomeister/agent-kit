@@ -5,10 +5,26 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
 
-import { artifactHash, sha256Hex } from "../util/hash.ts";
+import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { unknownSelector } from "../util/suggest.ts";
 import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
+import { persistFrozenRun } from "../lifecycle/persist-run.ts";
+import { findKbProjectRoot, loadKbBinding, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import type { GitFn } from "../kb/git.ts";
+import { lookupCommittedArtifact, lookupPublishedProject } from "../kb/local-git.ts";
+import {
+  asJson,
+  asJsonObject,
+  bindBehaviorPolicy,
+  parseBehaviorBinding,
+  projectHashOf,
+  reviewMode,
+  RUN_SCHEMA_VERSION,
+  type FrozenBehaviorCheck,
+  type JsonObject,
+} from "../lifecycle/behavior-policy.ts";
+import { charterAllowsProtectedStart } from "../lifecycle/protected-start.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
 import { sharesLineage } from "./lineage.ts";
@@ -19,7 +35,6 @@ import {
   cleanCommittedTree,
   mergeTreeClean,
   patchIdentity,
-  resolvedRevision,
   resolveRunnerGit,
   runnerGit,
   takeRunnerSnapshot,
@@ -72,11 +87,15 @@ const LIMIT_NAME = new Map([
 const RUNNER_SCHEMA_IDS = ["common", "charter", "decision", "run-ledger"] as const;
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
-const ID = /^[a-z0-9][a-z0-9-]*$/;
+const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const PRIORITY_QUESTION_MS = 600_000;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
+
+function isJsonText(value: unknown): value is string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
 
 function isDesignReportBytes(bytes: Buffer): boolean {
   try {
@@ -137,12 +156,6 @@ function canonicalFuturePath(path: string): string {
 
 function digest(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-function verdictBase(run: Run): string {
-  const baseRef = run.charter.repos[0]?.base_branch;
-  if (baseRef === undefined) throw new Error("charter names no verdict base branch");
-  return baseRef;
 }
 
 /** A card as `prepare` freezes it: judgments and the veto arrive only through their own operations. */
@@ -292,6 +305,7 @@ export class Runner {
           required: ["by", "rationale", "at"],
           properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } },
         },
+        behavior: { type: "object" },
       },
     });
     const policySchema = schemas.ajv.compile<InvocationPolicy>({
@@ -368,6 +382,12 @@ export class Runner {
     const runValue: unknown = JSON.parse(readFileSync(this.path(id), "utf8"));
     if (!this.runSchema(runValue)) throw new Error(`runner state is invalid: ${JSON.stringify(this.runSchema.errors)}`);
     const run = runValue;
+    if (run.behavior !== undefined) {
+      const raw: unknown = run.behavior;
+      const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+      if (binding === undefined) throw new Error("behavior policy snapshot is incomplete");
+      if (binding.run_id !== run.id) throw new Error("behavior policy snapshot is for a different run");
+    }
     if (run.run_state === "cancelled") return run;
     const charterValue: unknown = JSON.parse(readFileSync(run.charter_path, "utf8"));
     if (!this.validateCharter(charterValue)) throw new Error("charter no longer validates");
@@ -605,42 +625,41 @@ export class Runner {
     if (!this.validateCharter(charterValue))
       throw new Error(`invalid charter: ${JSON.stringify(this.validateCharter.errors)}`);
     const charter = charterValue;
-    const immutable = charter.immutability;
     const hash = charterDigest(charter);
-    if (charter.status !== "active" || immutable.hash !== hash || realpathSync(immutable.location) !== source)
-      throw new Error("charter is inactive, moved or has a mismatched hash");
-    if (!charter.approvals.some((a) => a.by === "human" && a.authority === "explicit" && a.artifact_hash === hash))
-      throw new Error("active charter lacks a human approval bound to its hash");
-    for (const sensitive of charter.sensitive_grants ?? []) {
-      const approval = sensitive.approval;
-      if (approval.artifact_hash !== hash || approval.by !== "human" || approval.authority !== "explicit")
-        throw new Error("sensitive grant lacks human approval bound to this charter");
-    }
-    if (charter.run_id !== id) throw new Error("run id does not match charter");
-    if (
-      !["runner-grants", "trusted-evidence", "independent-context"].every((capability) =>
-        charter.allowed_capabilities.includes(capability),
-      )
-    )
-      throw new Error(
-        "standing start requires charter-approved runner grants, trusted evidence and independent context",
-      );
-    if (
-      standingGrant.charter_hash !== hash ||
-      standingGrant.run_id !== id ||
-      standingGrant.covers !== "autopilot.start" ||
-      standingGrant.controller !== "firstmate" ||
-      !charter.standing_grants?.some(
-        (entry) => entry.covers === standingGrant.covers && entry.controller === standingGrant.controller,
-      )
-    )
-      throw new Error("standing grant is absent, forged or unbound to the approved charter");
+    if (!asJsonObject(charter)) throw new Error("charter is not an object");
+    const allowed = charterAllowsProtectedStart(charter, hash, {
+      charterPath: source,
+      runId: id,
+      standingGrant,
+    });
+    if (!allowed.ok) throw new Error(allowed.reason);
     try {
       this.load(id);
       throw new Error("run already exists");
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
     }
+    const createdAt = new Date().toISOString();
+    const gitFn = this.kbGit();
+    const bindingRevision = this.bindingBaseRevision(charter, revision);
+    const ticketSource = asJsonObject(charter) && asJsonObject(charter.work_source) ? charter.work_source : undefined;
+    const ticketCharter = ticketSource !== undefined && ticketSource.kind === "ticket";
+    if (ticketSource !== undefined && ticketSource.kind === "ticket" && bindingRevision !== null) {
+      const tip = this.charterBaseCommit(charter);
+      if (tip !== undefined) {
+        if (this.hasCommittedBinding(tip, gitFn) && !this.hasCommittedBinding(bindingRevision, gitFn))
+          throw new Error("the charter base tip has a knowledgebase binding the merge-base does not");
+        const ref = asJsonObject(ticketSource.ref) ? ticketSource.ref : undefined;
+        const ticketId = ref !== undefined && isJsonText(ref.id) ? ref.id : undefined;
+        if (ticketId !== undefined && this.tipRecordsDiverge(charter.project.id, ticketId, tip, bindingRevision, gitFn))
+          throw new Error("the charter base tip has a knowledgebase record the merge-base does not");
+      }
+    }
+    const work = bindingRevision === null ? undefined : this.tryWorkTicket(charter, bindingRevision, gitFn);
+    const looked =
+      bindingRevision === null
+        ? { lookup: "unbound" as const }
+        : this.projectLookup(charter.project.id, bindingRevision, gitFn, !ticketCharter);
     const run: Run = {
       id,
       charter_path: source,
@@ -651,7 +670,7 @@ export class Runner {
       excluded_actors: [...new Set([implementer, ...excludedActors])],
       revision,
       diff_hash: observed?.diff_hash ?? `sha256:${sha256Hex("")}`,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
       run_state: "created",
       next_permitted_action: "align.run",
       cards: {},
@@ -663,9 +682,304 @@ export class Runner {
       delegates: {},
       procedure: this.governingProcedure(),
       open_escalation: null,
+      behavior: this.bindBehavior(id, charter, hash, createdAt, work, looked),
     };
     this.save(run);
+    this.persistBehaviorEvidence(run, work);
     return run;
+  }
+
+  /** Isolated git for start-time reads at an explicit revision. Ignores refs/replace and grafts. */
+  private kbGit(): GitFn {
+    return (root, args, input) => {
+      const result = runnerGit(this.gitContext, root, args, input === undefined ? undefined : Buffer.from(input));
+      return {
+        status: result.code,
+        stdout: new TextDecoder().decode(result.stdout),
+        stderr: result.stderr,
+      };
+    };
+  }
+
+  /**
+   * Charter base commit for start, verify and verdict checks, resolved as
+   * `refs/remotes/origin/<branch>` then `refs/heads/<branch>`.
+   * The merge-base trusts the base ref, so it rests on host write isolation of
+   * `.git`. A worker that can move those refs can make the merge-base equal the
+   * start revision. Pinning a base SHA is a captain follow-up.
+   * An uncomputable merge-base, a missing base branch, or an unresolvable base
+   * ref is refused when the charter cites a ticket. Otherwise start is allowed
+   * as unbound and the working `ak.kb.yaml` is not read.
+   */
+  private charterBaseCommit(charter: Charter): string | undefined {
+    const branch = charter.repos[0]?.base_branch;
+    if (branch === undefined || branch === "") return undefined;
+    const origin = runnerGit(this.gitContext, this.workerRoot, [
+      "rev-parse",
+      "--verify",
+      `refs/remotes/origin/${branch}^{commit}`,
+    ]);
+    if (origin.code === 0 && origin.text !== "") return origin.text;
+    const local = runnerGit(this.gitContext, this.workerRoot, [
+      "rev-parse",
+      "--verify",
+      `refs/heads/${branch}^{commit}`,
+    ]);
+    if (local.code === 0 && local.text !== "") return local.text;
+    return undefined;
+  }
+
+  private verdictBase(run: Run): string {
+    const base = this.charterBaseCommit(run.charter);
+    if (base === undefined) throw new Error("cannot resolve charter verdict base branch");
+    return base;
+  }
+
+  private hasCommittedBinding(revision: string, gitFn: GitFn): boolean {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, false);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined) throw new Error(bindingError.message);
+    return loaded.binding !== null;
+  }
+
+  /** Committed project and ticket at `revision`. Missing KB, project or ticket is absent, not a throw. */
+  private committedKbView(projectId: string, ticketId: string, revision: string, gitFn: GitFn) {
+    const none: FrozenBehaviorCheck[] = [];
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
+    if (resolved.resolved === null) return { mode: "absent", project: false, ticket: false, required_checks: none };
+    const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
+    const project = published.status === "found";
+    const reviewed = project ? reviewMode(published.project) : "absent";
+    const mode = reviewed === "on" || reviewed === "shadow" || reviewed === "off" ? reviewed : "absent";
+    const looked = lookupCommittedArtifact(resolved.resolved, ticketId, {
+      schema: "ticket",
+      revision,
+      git: gitFn,
+    });
+    const ticket = looked.status === "found";
+    return {
+      mode,
+      project,
+      ticket,
+      required_checks: ticket
+        ? this.frozenRequiredChecks(looked.artifact, project ? published.project : undefined)
+        : none,
+    };
+  }
+
+  /**
+   * Checks bindBehaviorPolicy would freeze for this ticket at the committed
+   * project. A bind failure at mode `on` is unknown, not an empty freeze.
+   * Off and shadow still map a bind failure to an empty list.
+   */
+  private frozenRequiredChecks(ticket: JsonObject, project: JsonObject | undefined): FrozenBehaviorCheck[] | "unknown" {
+    const bound = bindBehaviorPolicy({
+      runId: "floor",
+      ticket,
+      ticketHash: `sha256:${"0".repeat(64)}`,
+      project,
+      lookup: project === undefined ? "absent" : "resolved",
+      capturedAt: "1970-01-01T00:00:00Z",
+    });
+    if (bound.ok) return bound.binding.required_checks;
+    return reviewMode(project) === "on" ? "unknown" : [];
+  }
+
+  /**
+   * True when the charter base tip's committed project mode is `on` and the
+   * merge-base's is not, or when the tip has the project or ticket and the
+   * merge-base does not, or when a required check frozen from the tip ticket
+   * is absent from the merge-base freeze, or when the tip freeze is unknown.
+   */
+  private tipRecordsDiverge(
+    projectId: string,
+    ticketId: string,
+    tip: string,
+    mergeBase: string,
+    gitFn: GitFn,
+  ): boolean {
+    const atTip = this.committedKbView(projectId, ticketId, tip, gitFn);
+    const atBase = this.committedKbView(projectId, ticketId, mergeBase, gitFn);
+    if (atTip.required_checks === "unknown") return true;
+    const baseList = atBase.required_checks === "unknown" ? [] : atBase.required_checks;
+    const baseChecks = new Set(baseList.map((check) => canonicalJson(check)));
+    return (
+      (atTip.mode === "on" && atBase.mode !== "on") ||
+      (atTip.project && !atBase.project) ||
+      (atTip.ticket && !atBase.ticket) ||
+      atTip.required_checks.some((check) => !baseChecks.has(canonicalJson(check)))
+    );
+  }
+
+  private bindingBaseRevision(charter: Charter, revision: string): string | null {
+    const raw: unknown = charter;
+    const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    const needed = source !== undefined && source.kind === "ticket";
+    const branch = charter.repos[0]?.base_branch;
+    if (branch === undefined || branch === "") {
+      if (needed) throw new Error("charter names no base branch for the knowledgebase binding");
+      return null;
+    }
+    const base = this.charterBaseCommit(charter);
+    if (base === undefined) {
+      if (needed) throw new Error(`cannot resolve charter base branch ${branch}`);
+      return null;
+    }
+    const mergeBase = runnerGit(this.gitContext, this.workerRoot, ["merge-base", revision, base]);
+    if (mergeBase.code !== 0 || mergeBase.text.trim() === "") {
+      if (needed) throw new Error("cannot compute merge-base of the start revision and the charter base branch");
+      return null;
+    }
+    return mergeBase.text.trim();
+  }
+
+  private persistBehaviorEvidence(run: Run, work: ReturnType<Runner["tryWorkTicket"]>): void {
+    if (run.behavior === undefined) return;
+    if (work === undefined) return;
+    const ticketId = isJsonText(work.ticket.id) ? work.ticket.id : undefined;
+    if (ticketId === undefined) throw new Error("approved ticket is unnamed");
+    const ticketBytes = new TextEncoder().encode(
+      canonicalJson(Object.fromEntries(Object.entries(work.ticket).filter(([key]) => key !== "approvals"))),
+    );
+    persistFrozenRun(
+      join(this.stateDir, "evidence"),
+      {
+        run_id: run.id,
+        ticket: { id: ticketId, hash: work.hash },
+        opened_at: run.created_at,
+        branch: run.id,
+        base: run.revision,
+        schema_version: RUN_SCHEMA_VERSION,
+        behavior: run.behavior,
+      },
+      ticketBytes,
+    );
+  }
+
+  private tryWorkTicket(charter: Charter, revision: string | undefined, gitFn: GitFn) {
+    if (!asJsonObject(charter)) throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket") return undefined;
+    return this.loadTicket(charter, revision, gitFn);
+  }
+
+  private loadTicket(charter: Charter, revision: string | undefined, gitFn: GitFn) {
+    if (!asJsonObject(charter)) throw new Error("charter is not an object");
+    const source = charter.work_source;
+    if (!asJsonObject(source) || source.kind !== "ticket") throw new Error("run work source is not an approved ticket");
+    const ref = source.ref;
+    if (!asJsonObject(ref)) throw new Error("approved ticket is unnamed");
+    const ticketId = isJsonText(ref.id) ? ref.id : undefined;
+    const expected = isJsonText(ref.hash) ? ref.hash : undefined;
+    if (ticketId === undefined) throw new Error("approved ticket is unnamed");
+    const path = join(this.stateDir, `${ticketId}.json`);
+    if (existsSync(path)) {
+      this.assertPrivatePath(path);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(path, "utf8"));
+      } catch {
+        throw new Error("approved ticket is malformed");
+      }
+      if (!asJsonObject(parsed) || parsed.schema !== "ticket" || parsed.id !== ticketId)
+        throw new Error("approved ticket is malformed");
+      const hash = artifactHash(parsed);
+      if (expected !== undefined && expected !== hash)
+        throw new Error("approved ticket does not match the charter work source");
+      return { ticket: parsed, hash };
+    }
+    return this.loadCommittedTicket(ticketId, expected, revision, gitFn);
+  }
+
+  private loadCommittedTicket(
+    ticketId: string,
+    expected: string | undefined,
+    revision: string | undefined,
+    gitFn: GitFn,
+  ) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, false);
+    if (loaded.binding === null) return undefined;
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
+    if (resolved.resolved === null || resolved.state !== "available")
+      throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
+    const looked =
+      expected === undefined
+        ? lookupCommittedArtifact(resolved.resolved, ticketId, { schema: "ticket", revision, git: gitFn })
+        : lookupCommittedArtifact(resolved.resolved, ticketId, {
+            schema: "ticket",
+            hash: expected,
+            revision,
+            git: gitFn,
+          });
+    if (looked.status === "unavailable") throw new Error(looked.reason);
+    if (looked.status === "absent") return undefined;
+    if (looked.artifact.schema !== "ticket" || looked.artifact.id !== ticketId)
+      throw new Error("approved ticket is malformed");
+    const hash = artifactHash(looked.artifact);
+    if (expected !== undefined && expected !== hash)
+      throw new Error("approved ticket does not match the charter work source");
+    return { ticket: looked.artifact, hash };
+  }
+
+  private projectLookup(projectId: string, revision: string | undefined, gitFn: GitFn, workingFile = true) {
+    const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, workingFile);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined) throw new Error(bindingError.message);
+    if (loaded.binding === null) {
+      const unbound = loaded.issues.length === 0 || loaded.issues.every((issue) => issue.rule === "kb.unbound");
+      if (unbound) return { lookup: "unbound" as const };
+      const first = loaded.issues[0];
+      throw new Error(first === undefined ? "the knowledgebase binding is unusable" : first.message);
+    }
+    const resolved = resolveKnowledgebase(projectRoot, registryPath(), revision, gitFn);
+    if (resolved.resolved === null || resolved.state !== "available") return { lookup: "unavailable" as const };
+    const published = lookupPublishedProject(resolved.resolved, projectId, { revision, git: gitFn });
+    if (published.status === "unavailable") return { lookup: "unavailable" as const };
+    if (published.status === "absent") return { lookup: "absent" as const };
+    return {
+      lookup: "resolved" as const,
+      project: published.project,
+      projectHash: projectHashOf(published.project),
+    };
+  }
+
+  private bindBehavior(
+    id: string,
+    charter: Charter,
+    charterHash: string,
+    createdAt: string,
+    work: ReturnType<Runner["tryWorkTicket"]>,
+    looked: ReturnType<Runner["projectLookup"]>,
+  ) {
+    const raw: unknown = charter;
+    const source = asJsonObject(raw) && asJsonObject(raw.work_source) ? raw.work_source : undefined;
+    if (looked.lookup === "unavailable" && source !== undefined && source.kind === "ticket")
+      throw new Error("the authoritative project record is unavailable; missing project cannot turn this run off");
+    let ticketResolution: "unresolved" | undefined;
+    if (work === undefined && source !== undefined && source.kind === "ticket") {
+      if (looked.lookup === "resolved" && reviewMode(looked.project) !== "off")
+        throw new Error("approved ticket is absent from the runner store");
+      const ref = asJsonObject(source.ref) ? source.ref : undefined;
+      const ticketId = ref !== undefined && isJsonText(ref.id) ? ref.id : "unnamed";
+      process.stderr.write(`Runner.start: ticket ${ticketId} is unresolved\n`);
+      ticketResolution = "unresolved";
+    }
+    const bound = bindBehaviorPolicy({
+      runId: id,
+      ticket: work?.ticket ?? {},
+      ticketHash: work?.hash ?? charterHash,
+      project: looked.project,
+      projectHash: looked.projectHash,
+      lookup: looked.lookup,
+      capturedAt: createdAt,
+      ticketResolution,
+    });
+    if (!bound.ok) throw new Error(bound.reason);
+    return bound.binding;
   }
 
   status(id: string): Run {
@@ -803,7 +1117,7 @@ export class Runner {
       !run.decisions.some((decision) => decision.card.operation === "review.readiness" && approved(decision))
     )
       throw new Error("a completed review round and current head are required before verdict binding");
-    const baseRef = verdictBase(run);
+    const baseRef = this.verdictBase(run);
     const verifiedBase = run.verified_base_revision;
     if (verifiedBase === undefined) throw new Error("verification recorded no trunk base");
     if (!cleanCommittedTree(this.gitContext, this.workerRoot))
@@ -819,12 +1133,11 @@ export class Runner {
 
   /** The one classification of a bound verdict against a head; revision() and ship both use it. */
   private verdictInvalidation(run: Run, verdict: PatchVerdict, head: string): VerdictInvalidation | null {
-    const baseRef = verdictBase(run);
+    const baseRef = this.verdictBase(run);
     const clean = cleanCommittedTree(this.gitContext, this.workerRoot);
     if ((clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== verdict.patch_id)
       return "patch-changed";
-    const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
-    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, trunk))
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, baseRef))
       return "ci-config-drift";
     return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
   }
@@ -850,7 +1163,9 @@ export class Runner {
       if (reason !== "merge-conflict") throw new Error(`verdict invalidated by ${reason}; verification is required`);
     }
     if (verdict.invalidated_by === "merge-conflict")
-      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${verdictBase(run)} is required`);
+      throw new Error(
+        `verdict invalidated by merge-conflict; rebase onto ${run.charter.repos[0]?.base_branch} is required`,
+      );
     throw new Error("current patch verdict required before unattended ship");
   }
 
@@ -1375,10 +1690,22 @@ export class Runner {
       digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash
     )
       throw new Error("current runner-collected verification receipt required");
-    const baseRef = run.charter.repos[0]?.base_branch;
-    const base =
-      baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
-    if (base?.code === 0) run.verified_base_revision = base.text;
+    const raw: unknown = run.behavior;
+    const binding = asJson(raw) ? parseBehaviorBinding(raw) : undefined;
+    if (run.behavior !== undefined && binding === undefined)
+      throw new Error("frozen behavior obligations are unavailable");
+    // Presence of a freeze is not consumption of named checks (GS-017 T03).
+    // Pre-feature and off runs do not look the ticket up; a frozen on-mode
+    // binding is the obligation, including when the worker-writable project
+    // file is gone.
+    if (binding !== undefined && binding.mode === "on") {
+      for (const check of binding.required_checks) {
+        if (check.property_ids.length === 0)
+          throw new Error(`required behavior check ${check.id} is missing its frozen definition`);
+      }
+    }
+    const base = this.charterBaseCommit(run.charter);
+    if (base !== undefined) run.verified_base_revision = base;
     else delete run.verified_base_revision;
     run.run_state = "verifying";
     run.next_permitted_action = "review.full";

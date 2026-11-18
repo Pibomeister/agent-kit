@@ -138,6 +138,31 @@ Nothing here is done by an agent or by agent-kit.
 4. Decide who merges. agent-kit does not merge: whoever the human authorized merges, and protects the
    default branch as the project requires.
 
+## Human-only steps: the stall class
+
+`node <bundle>/bin/ak-gate.mjs human-step` is the supervisor check (`src/lifecycle/human-step-stall.ts`). It
+classifies a held human-only step, and it exits 1 when the step sits at or over 10 minutes
+without a satisfying escalation, when a pull request or deploy is blocked on it, or when an
+interactive auth prompt is held open.
+
+A supervisor named by `AK_LIFECYCLE_SUPERVISOR` reports a held human-only step through the existing
+`unattended check --phase <phase>` entry point, with the same options as `human-step`:
+`--kind <kind> --started-at <epoch-ms> --now <epoch-ms>`, plus the applicable `--overnight`,
+`--escalated --channel <channel>`, `--target <target> --blocked-on <reason>` and `--prompt-held-open`.
+The check runs the classifier and all three violation checks before returning. Its JSON result
+includes `human_step`; exit 1 reports a violation, and exit 2 reports malformed inputs or a missing
+supervisor. With no human-step options, phase checks keep their existing result. The supervisor
+supplies the observed step and escalation state; this check does not discover steps or monitor them.
+
+The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
+an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive
+approval challenge the worker hits, for example a device or consent approval prompt. It is never
+pull-request review or merge approval, which stays the owner gate. At or over 10 minutes
+(`HUMAN_STEP_STALL_THRESHOLD_MS`) the definition requires escalation through the human-needed or
+page channel during the day, and into the morning handoff overnight. Overnight, only the morning
+handoff satisfies escalation, and a page is a violation. A PR or deploy is never blocked on such
+a step, and an interactive auth prompt is never held open.
+
 ## Limits
 
 agent-kit checks both supervisor files and cannot authenticate them. It does not show that the supervisor

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -33,7 +33,11 @@ locator:
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  const run = spawnSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  if (run.error !== undefined || run.status !== 0) {
+    throw new Error(`Command failed: git -C ${dir} ${args.join(" ")}\n${run.stderr ?? run.error?.message ?? ""}`);
+  }
+  return run.stdout ?? "";
 }
 
 function write(root: string, path: string, text: string): void {
@@ -460,18 +464,21 @@ function looseObject(fx: Fixture, rev: string): string {
 }
 
 describe("git failing is failed, not a coverage limit", () => {
-  test("git merge-base failing on a lost ancestor fails check", () => {
+  test.each([false, true])("a lost ancestor fails check with cached commit graph: %s", (cachedGraph) => {
     const fx = fixture();
     const ancestor = looseObject(fx, "main");
     write(fx.project, "README.md", "work\n");
     git(fx.top, "add", "-A");
     git(fx.top, "commit", "-q", "-m", "work moves");
     commitOnMain(fx, { "OTHER.md": "main\n" }, "main moves");
+    if (cachedGraph) git(fx.top, "commit-graph", "write", "--reachable");
     rmSync(ancestor);
+    // Both tips remain; a cached graph may let merge-base succeed despite the lost parent.
+    git(fx.top, "cat-file", "-e", "HEAD^{commit}");
+    git(fx.top, "cat-file", "-e", "refs/remotes/origin/main^{commit}");
     const run = kb(fx, "check");
     expect(run.code).toBe(1);
     expect(run.out).toContain("kb.unreadable");
-    expect(run.out).toContain("git merge-base failed");
   });
 
   test("a HEAD whose commit object is lost fails check rather than reading as unborn", () => {
@@ -667,6 +674,26 @@ describe("review pass 1: what the panel found the suite did not pin", () => {
     git(fx.top, "commit", "-q", "-m", "unrelated root");
     git(fx.top, "update-ref", "refs/remotes/origin/main", "unrelated");
     git(fx.top, "checkout", "-q", "work");
+    const run = kb(fx, "check");
+    expectMissing(run);
+    expect(run.out).toContain("shares no history");
+  });
+
+  test("a Git warning leaves healthy bound and unrelated histories available and missing respectively", () => {
+    const fx = fixture();
+    // Private fixture config makes real Git warn without making its history unreadable.
+    git(fx.top, "config", "core.fsyncObjectFiles", "true");
+    expect(kb(fx, "check").code).toBe(0);
+    git(fx.top, "checkout", "-q", "--orphan", "unrelated");
+    git(fx.top, "commit", "-q", "-m", "unrelated root");
+    git(fx.top, "update-ref", "refs/remotes/origin/main", "unrelated");
+    git(fx.top, "checkout", "-q", "work");
+    const merged = spawnSync("git", ["-C", fx.top, "merge-base", "HEAD", "refs/remotes/origin/main"], {
+      encoding: "utf8",
+      env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+    });
+    expect(merged.status).toBe(1);
+    expect(merged.stderr).toContain("warning:");
     const run = kb(fx, "check");
     expectMissing(run);
     expect(run.out).toContain("shares no history");
