@@ -4111,6 +4111,9 @@ describe("runner guards", () => {
     expect(context.gitDir).toBeUndefined();
     expect(context.workTree).toBeUndefined();
     expect(() => cleanCommittedTree(context, bare)).toThrow("git layout is not pinned");
+    expect(() => patchIdentity(context, bare, "HEAD", "HEAD")).toThrow("git layout is not pinned");
+    expect(() => mergeTreeClean(context, bare, "HEAD", "HEAD")).toThrow("git layout is not pinned");
+    expect(() => ciConfigDrift(context, bare, "a", "b")).toThrow("git layout is not pinned");
   });
 
   test("a planted gitfile after bind cannot hide dirt or reuse a verdict", () => {
