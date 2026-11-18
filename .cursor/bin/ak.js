@@ -18632,9 +18632,10 @@ var init_charter_schema = __esm(() => {
             minimum: 0
           },
           outage_backoff_seconds: {
-            description: "Seconds a transient loop-probe or event-delivery failure may last before status goes guided and names audit-failed or event-delivery-failed. When set, those failures retry with exponential delay starting at five seconds and doubling, capped by the time left in this window. The name appears only after the failure has lasted at least this many seconds from the first failure in the streak. A later success clears the streak. The clock is in memory, so a serve restart starts with no streak. Absence keeps the first-failure behavior. Auth failures, bundle drift, and a refused auditTick still go guided on the first failure.",
+            description: "Seconds a transient loop-probe or event-delivery failure may last before status goes guided and names audit-failed or event-delivery-failed. When set, those failures retry with exponential delay starting at five seconds and doubling, capped by the time left in this window. The name appears only after the failure has lasted at least this many seconds from the first failure in the streak. A later success clears the streak. The streak is in memory, so a serve restart starts a new window. Absence keeps the first-failure behavior. Auth failures, bundle drift, and a refused auditTick still go guided on the first failure.",
             type: "integer",
-            minimum: 300
+            minimum: 300,
+            maximum: 86400
           }
         }
       },
@@ -44358,6 +44359,7 @@ function childEnv() {
   delete env["AK_RUNNER_WORKER_TOKEN"];
   delete env["AK_RUNNER_TOKEN"];
   delete env["AK_RUNNER_SOCKET"];
+  delete env["AK_RUNNER_CLOCK"];
   return env;
 }
 function privateChildEnv(runner) {
@@ -44372,6 +44374,7 @@ function privateChildEnv(runner) {
       env[key] = runner.stateDir;
   }
   env["PATH"] = workerFreePath(env["PATH"], runner.workerRoot);
+  delete env["AK_RUNNER_CLOCK"];
   return env;
 }
 async function spawnPiped(argv, cwd, stdin, env, activeChildren, timeoutMs) {
@@ -44591,7 +44594,18 @@ function auditFailure(cause) {
 }
 var OUTAGE_BACKOFF_INITIAL_MS = 5000;
 function outageWindowMs(seconds) {
-  return seconds === undefined ? undefined : seconds * 1000;
+  if (seconds === undefined || !Number.isSafeInteger(seconds))
+    return;
+  return seconds * 1000;
+}
+function isRefusedAuditTick(cause) {
+  return cause instanceof Error && (cause.message === "audit loop is not configured for this charter" || cause.message === "recorded bundle procedure changed; audit cannot continue");
+}
+function isEventIntegrityFailure(cause) {
+  return cause instanceof Error && (cause.message === "event payload is missing or changed" || cause.message.endsWith("cannot be delivered: payload is missing or changed"));
+}
+function wallNow() {
+  return Date.now();
 }
 function outageRetryDelayMs(attempts, elapsedMs, windowMs) {
   const remaining = windowMs - elapsedMs;
@@ -44615,6 +44629,7 @@ async function serve(argv, io) {
   const loopConfigPath = flag2(argv, "loop-config");
   const adminTokenFile = flag2(argv, "admin-token-file");
   const kitRootFlag = flag2(argv, "kit-root");
+  const clockPath = flag2(argv, "clock");
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
   if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error("serve needs --socket, --state-dir, --worker-root, --run-id, --admin-token-file, a 32+ character AK_RUNNER_WORKER_TOKEN, and socket mode 600 or 660");
@@ -44651,6 +44666,8 @@ async function serve(argv, io) {
   const runner = new Runner(state, workerRoot, kitRoot, true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
+  if (clockPath !== undefined)
+    runner.assertPrivatePath(resolve17(clockPath));
   const adminToken = readAdminToken(adminTokenFile, workerRoot);
   if (adminToken === workerToken)
     throw new Error("admin and worker tokens must differ");
@@ -44727,23 +44744,60 @@ async function serve(argv, io) {
   let delivering = false;
   let rescanEvents = false;
   let deliveryHealthy = true;
-  const clockFile = process.env["AK_RUNNER_CLOCK"];
   let open = true;
+  let clockBroken = false;
+  const readClockFile = () => {
+    if (clockPath === undefined)
+      return null;
+    try {
+      const parts = readFileSync36(clockPath, "utf8").trim().split(/\s+/);
+      const n = Number(parts[0]);
+      if (!Number.isFinite(n))
+        return null;
+      if (parts[1] === undefined)
+        return { now: n, wall: wallNow() };
+      const w = Number(parts[1]);
+      if (!Number.isFinite(w))
+        return null;
+      return { now: n, wall: w };
+    } catch {
+      return null;
+    }
+  };
   const now = () => {
-    if (clockFile === undefined)
-      return Date.now();
-    const n = Number(readFileSync36(clockFile, "utf8").trim());
-    if (!Number.isFinite(n))
-      throw new Error("runner clock file is not a finite number");
-    return n;
+    if (clockPath === undefined)
+      return wallNow();
+    const read2 = readClockFile();
+    if (read2 === null) {
+      clockBroken = true;
+      return wallNow();
+    }
+    return read2.now;
+  };
+  const clockWall = () => {
+    const read2 = readClockFile();
+    if (read2 === null)
+      return wallNow();
+    return read2.wall;
   };
   const wait = (ms) => {
-    if (clockFile === undefined)
+    if (clockPath === undefined)
       return new Promise((done) => setTimeout(done, ms));
-    const start = now();
+    const fileStart = now();
+    const wallStart = clockWall();
     return new Promise((done) => {
       const poll = () => {
-        if (!open || now() - start >= ms) {
+        if (!open) {
+          done();
+          return;
+        }
+        const read2 = readClockFile();
+        if (read2 === null) {
+          clockBroken = true;
+          done();
+          return;
+        }
+        if (read2.now - fileStart >= ms || read2.wall - wallStart >= ms) {
           done();
           return;
         }
@@ -44754,6 +44808,17 @@ async function serve(argv, io) {
   };
   let auditOutage = null;
   let deliveryOutage = null;
+  const outageElapsedMs = (streak) => {
+    const fileElapsed = now() - streak.startedAt;
+    const wallElapsed = clockWall() - streak.wallStartedAt;
+    return fileElapsed > wallElapsed ? fileElapsed : wallElapsed;
+  };
+  const startOutage = () => ({
+    startedAt: now(),
+    wallStartedAt: clockWall(),
+    attempts: 0,
+    retryAt: 0
+  });
   const outageWindow = () => {
     try {
       return outageWindowMs(runner.status(runId).charter.limits.outage_backoff_seconds);
@@ -44764,10 +44829,12 @@ async function serve(argv, io) {
   const deliveryFailedVisible = () => {
     if (deliveryHealthy)
       return false;
+    if (clockBroken)
+      return true;
     const windowMs = outageWindow();
     if (windowMs === undefined || deliveryOutage === null)
       return true;
-    return now() - deliveryOutage.startedAt >= windowMs;
+    return outageElapsedMs(deliveryOutage) >= windowMs;
   };
   const wakeEvents = () => {
     if (eventCommand === null)
@@ -44782,7 +44849,16 @@ async function serve(argv, io) {
     (async () => {
       do {
         rescanEvents = false;
-        for (const event of runner.pendingEvents(runId)) {
+        let pending;
+        try {
+          pending = runner.pendingEvents(runId);
+        } catch (cause) {
+          deliveryHealthy = false;
+          deliveryOutage = null;
+          io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+          return;
+        }
+        for (const event of pending) {
           try {
             const delivered2 = await spawnPiped(eventCommand, runner.stateDir, JSON.stringify({ run: runId, ...event }), { ...privateChildEnv(runner), AK_RUNNER_SOCKET: socketPath, AK_RUNNER_TOKEN: workerToken }, activeChildren, eventTimeoutMs ?? undefined);
             if (delivered2.exitCode !== 0)
@@ -44793,25 +44869,41 @@ async function serve(argv, io) {
             runner.ackEvent(runId, event.key);
           } catch (cause) {
             deliveryHealthy = false;
-            if (deliveryOutage === null)
-              deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
+            if (isEventIntegrityFailure(cause))
+              deliveryOutage = null;
+            else if (deliveryOutage === null)
+              deliveryOutage = startOutage();
             io.err(`ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`);
           }
         }
       } while (rescanEvents);
-      if (runner.pendingEvents(runId).length === 0) {
+      let remaining;
+      try {
+        remaining = runner.pendingEvents(runId);
+      } catch (cause) {
+        deliveryHealthy = false;
+        deliveryOutage = null;
+        io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return;
+      }
+      if (remaining.length === 0) {
         deliveryHealthy = true;
         deliveryOutage = null;
-      } else if (!deliveryHealthy)
+      } else if (!deliveryHealthy && deliveryOutage !== null)
         scheduleDeliveryBackoff();
     })().catch((cause) => {
-      if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT")) {
-        deliveryHealthy = false;
-        if (deliveryOutage === null)
-          deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
+      if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
+        return;
+      deliveryHealthy = false;
+      if (isEventIntegrityFailure(cause)) {
+        deliveryOutage = null;
         io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
-        scheduleDeliveryBackoff();
+        return;
       }
+      if (deliveryOutage === null)
+        deliveryOutage = startOutage();
+      io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+      scheduleDeliveryBackoff();
     }).finally(() => {
       delivering = false;
     });
@@ -44822,8 +44914,8 @@ async function serve(argv, io) {
       return;
     const t = now();
     if (deliveryOutage === null)
-      deliveryOutage = { startedAt: t, attempts: 0, retryAt: 0 };
-    const delay = outageRetryDelayMs(deliveryOutage.attempts, t - deliveryOutage.startedAt, windowMs);
+      deliveryOutage = startOutage();
+    const delay = outageRetryDelayMs(deliveryOutage.attempts, outageElapsedMs(deliveryOutage), windowMs);
     deliveryOutage.attempts += 1;
     if (delay <= 0)
       return;
@@ -44863,12 +44955,12 @@ async function serve(argv, io) {
   const auditFailedVisible = () => {
     if (auditBlock !== "failed")
       return false;
-    if (auditHalted)
+    if (auditHalted || clockBroken)
       return true;
     const windowMs = outageWindow();
     if (windowMs === undefined || auditOutage === null)
       return true;
-    return now() - auditOutage.startedAt >= windowMs;
+    return outageElapsedMs(auditOutage) >= windowMs;
   };
   const recoveryBudget = () => {
     try {
@@ -44899,8 +44991,8 @@ async function serve(argv, io) {
       return;
     const t = now();
     if (auditOutage === null)
-      auditOutage = { startedAt: t, attempts: 0, retryAt: 0 };
-    const delay = outageRetryDelayMs(auditOutage.attempts, t - auditOutage.startedAt, windowMs);
+      auditOutage = startOutage();
+    const delay = outageRetryDelayMs(auditOutage.attempts, outageElapsedMs(auditOutage), windowMs);
     auditOutage.attempts += 1;
     if (delay <= 0)
       return;
@@ -44948,7 +45040,14 @@ async function serve(argv, io) {
         if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
           throw new Error("audit probe did not cover every active delegate");
         runner.recordProgressBatch(runId, observed.progress);
-        const tick2 = runner.auditTick(runId);
+        let tick2;
+        try {
+          tick2 = runner.auditTick(runId);
+        } catch (cause) {
+          haltAudit("failed");
+          io.err(auditFailure(cause));
+          return;
+        }
         for (const delegate of tick2.replace) {
           const key = sha256Hex(`${runId}\x00replace\x00${delegate}`);
           const replaced = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
@@ -44957,13 +45056,27 @@ async function serve(argv, io) {
           const value = JSON.parse(replaced.stdout.toString());
           if (!isAuditReplacementReply(value) || value.key !== key)
             throw new Error("replacement lacked matching read-back");
-          runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+          try {
+            runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+          } catch (cause) {
+            if (isRefusedAuditTick(cause)) {
+              haltAudit("failed");
+              io.err(auditFailure(cause));
+              return;
+            }
+            throw cause;
+          }
         }
         auditBlock = "ok";
         auditOutage = null;
       } catch (cause) {
+        if (isRefusedAuditTick(cause)) {
+          haltAudit("failed");
+          io.err(auditFailure(cause));
+          return;
+        }
         if (auditOutage === null)
-          auditOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
+          auditOutage = startOutage();
         try {
           const outcome = runner.recordAuditAdapterFailure(runId);
           if (outcome.cap !== undefined && !outcome.exhausted)
@@ -45138,7 +45251,7 @@ async function runRunner(argv, io) {
       return call(argv.slice(1), io);
     if (argv[0] !== undefined)
       io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
-    io.err("usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]");
+    io.err("usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--clock <path>] [--socket-mode 600|660]");
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;
   } catch (cause) {

@@ -89,8 +89,9 @@ the timeout; the runner guesses no cap. Its command receives
 `{"run":"r","key":"event-key","payload":"..."}` on stdin and returns a matching
 `{"run":"r","key":"event-key"}` only after handing the wake to the controller. It receives a
 run-scoped worker socket token, never the admin token. The private loop config has the same
-command and timeout shape. A timed-out event consumer leaves status guided until a successful
-retry. A timed-out or failed loop command stays autonomous and retries on the charter cadence
+command and timeout shape. Without `limits.outage_backoff_seconds`, a timed-out event consumer
+leaves the event pending and the run guided. When that field is set, a timeout is a transient
+event-delivery failure, named only after the window. A timed-out or failed loop command stays autonomous and retries on the charter cadence
 while `limits.delegate_replacements` is unspent and a delegate remains active. Status goes guided
 when that cap is spent and names `delegate-replacements`. A cap of N allows N failed attempts,
 and the Nth one halts the audit, so a cap of 1 allows no retry. A charter that omits the cap supplies no
@@ -99,7 +100,7 @@ succeeds. When the charter sets `limits.outage_backoff_seconds` (minimum 300), a
 or event-delivery failure retries with exponential delay starting at 5 seconds and doubling, capped
 by the time left in that window. Status names `audit-failed` or `event-delivery-failed` only after
 the failure has lasted at least that many seconds from the first failure in the streak. A later
-success clears the streak. The clock is in memory. A serve restart starts with no streak. Auth
+success clears the streak. The streak is in memory. A serve restart starts a new window. Auth
 failures, bundle drift, and a refused `auditTick` still go guided on the first failure. A charter
 that omits the field keeps the first-failure behavior above. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list

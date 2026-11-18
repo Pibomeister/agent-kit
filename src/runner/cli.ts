@@ -114,6 +114,7 @@ function childEnv() {
   delete env["AK_RUNNER_WORKER_TOKEN"];
   delete env["AK_RUNNER_TOKEN"];
   delete env["AK_RUNNER_SOCKET"];
+  delete env["AK_RUNNER_CLOCK"];
   return env;
 }
 
@@ -132,6 +133,7 @@ function privateChildEnv(runner: Runner) {
     if (value !== undefined && workerControlledPath(value, runner.workerRoot)) env[key] = runner.stateDir;
   }
   env["PATH"] = workerFreePath(env["PATH"], runner.workerRoot);
+  delete env["AK_RUNNER_CLOCK"];
   return env;
 }
 
@@ -446,7 +448,28 @@ function auditFailure(cause: unknown): string {
 const OUTAGE_BACKOFF_INITIAL_MS = 5_000;
 
 function outageWindowMs(seconds: number | undefined): number | undefined {
-  return seconds === undefined ? undefined : seconds * 1000;
+  if (seconds === undefined || !Number.isSafeInteger(seconds)) return undefined;
+  return seconds * 1000;
+}
+
+function isRefusedAuditTick(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    (cause.message === "audit loop is not configured for this charter" ||
+      cause.message === "recorded bundle procedure changed; audit cannot continue")
+  );
+}
+
+function isEventIntegrityFailure(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    (cause.message === "event payload is missing or changed" ||
+      cause.message.endsWith("cannot be delivered: payload is missing or changed"))
+  );
+}
+
+function wallNow(): number {
+  return Date.now();
 }
 
 function outageRetryDelayMs(attempts: number, elapsedMs: number, windowMs: number): number {
@@ -471,6 +494,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const loopConfigPath = flag(argv, "loop-config");
   const adminTokenFile = flag(argv, "admin-token-file");
   const kitRootFlag = flag(argv, "kit-root");
+  const clockPath = flag(argv, "clock");
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
   if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error(
@@ -507,6 +531,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const runner = new Runner(state, workerRoot, kitRoot, true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
+  if (clockPath !== undefined) runner.assertPrivatePath(resolve(clockPath));
   const adminToken = readAdminToken(adminTokenFile, workerRoot);
   if (adminToken === workerToken) throw new Error("admin and worker tokens must differ");
   let launchers: SeatLauncher[] = [];
@@ -585,20 +610,53 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   let delivering = false;
   let rescanEvents = false;
   let deliveryHealthy = true;
-  const clockFile = process.env["AK_RUNNER_CLOCK"];
   let open = true;
+  let clockBroken = false;
+  const readClockFile = (): { now: number; wall: number } | null => {
+    if (clockPath === undefined) return null;
+    try {
+      const parts = readFileSync(clockPath, "utf8").trim().split(/\s+/);
+      const n = Number(parts[0]);
+      if (!Number.isFinite(n)) return null;
+      if (parts[1] === undefined) return { now: n, wall: wallNow() };
+      const w = Number(parts[1]);
+      if (!Number.isFinite(w)) return null;
+      return { now: n, wall: w };
+    } catch {
+      return null;
+    }
+  };
   const now = (): number => {
-    if (clockFile === undefined) return Date.now();
-    const n = Number(readFileSync(clockFile, "utf8").trim());
-    if (!Number.isFinite(n)) throw new Error("runner clock file is not a finite number");
-    return n;
+    if (clockPath === undefined) return wallNow();
+    const read = readClockFile();
+    if (read === null) {
+      clockBroken = true;
+      return wallNow();
+    }
+    return read.now;
+  };
+  const clockWall = (): number => {
+    const read = readClockFile();
+    if (read === null) return wallNow();
+    return read.wall;
   };
   const wait = (ms: number): Promise<void> => {
-    if (clockFile === undefined) return new Promise((done) => setTimeout(done, ms));
-    const start = now();
+    if (clockPath === undefined) return new Promise((done) => setTimeout(done, ms));
+    const fileStart = now();
+    const wallStart = clockWall();
     return new Promise((done) => {
       const poll = () => {
-        if (!open || now() - start >= ms) {
+        if (!open) {
+          done();
+          return;
+        }
+        const read = readClockFile();
+        if (read === null) {
+          clockBroken = true;
+          done();
+          return;
+        }
+        if (read.now - fileStart >= ms || read.wall - wallStart >= ms) {
           done();
           return;
         }
@@ -607,9 +665,20 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       poll();
     });
   };
-  type OutageStreak = { startedAt: number; attempts: number; retryAt: number };
+  type OutageStreak = { startedAt: number; wallStartedAt: number; attempts: number; retryAt: number };
   let auditOutage: OutageStreak | null = null;
   let deliveryOutage: OutageStreak | null = null;
+  const outageElapsedMs = (streak: OutageStreak): number => {
+    const fileElapsed = now() - streak.startedAt;
+    const wallElapsed = clockWall() - streak.wallStartedAt;
+    return fileElapsed > wallElapsed ? fileElapsed : wallElapsed;
+  };
+  const startOutage = (): OutageStreak => ({
+    startedAt: now(),
+    wallStartedAt: clockWall(),
+    attempts: 0,
+    retryAt: 0,
+  });
   const outageWindow = (): number | undefined => {
     try {
       return outageWindowMs(runner.status(runId).charter.limits.outage_backoff_seconds);
@@ -619,9 +688,10 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   };
   const deliveryFailedVisible = (): boolean => {
     if (deliveryHealthy) return false;
+    if (clockBroken) return true;
     const windowMs = outageWindow();
     if (windowMs === undefined || deliveryOutage === null) return true;
-    return now() - deliveryOutage.startedAt >= windowMs;
+    return outageElapsedMs(deliveryOutage) >= windowMs;
   };
   const wakeEvents = () => {
     if (eventCommand === null) return;
@@ -634,7 +704,16 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     void (async () => {
       do {
         rescanEvents = false;
-        for (const event of runner.pendingEvents(runId)) {
+        let pending: { key: string; payload: string }[];
+        try {
+          pending = runner.pendingEvents(runId);
+        } catch (cause) {
+          deliveryHealthy = false;
+          deliveryOutage = null;
+          io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+          return;
+        }
+        for (const event of pending) {
           try {
             const delivered = await spawnPiped(
               eventCommand,
@@ -651,25 +730,39 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
             runner.ackEvent(runId, event.key);
           } catch (cause) {
             deliveryHealthy = false;
-            if (deliveryOutage === null) deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
+            if (isEventIntegrityFailure(cause)) deliveryOutage = null;
+            else if (deliveryOutage === null) deliveryOutage = startOutage();
             io.err(
               `ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`,
             );
           }
         }
       } while (rescanEvents);
-      if (runner.pendingEvents(runId).length === 0) {
+      let remaining: { key: string; payload: string }[];
+      try {
+        remaining = runner.pendingEvents(runId);
+      } catch (cause) {
+        deliveryHealthy = false;
+        deliveryOutage = null;
+        io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return;
+      }
+      if (remaining.length === 0) {
         deliveryHealthy = true;
         deliveryOutage = null;
-      } else if (!deliveryHealthy) scheduleDeliveryBackoff();
+      } else if (!deliveryHealthy && deliveryOutage !== null) scheduleDeliveryBackoff();
     })()
-      .catch((cause) => {
-        if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
-          deliveryHealthy = false;
-          if (deliveryOutage === null) deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
+      .catch((cause: unknown) => {
+        if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return;
+        deliveryHealthy = false;
+        if (isEventIntegrityFailure(cause)) {
+          deliveryOutage = null;
           io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
-          scheduleDeliveryBackoff();
+          return;
         }
+        if (deliveryOutage === null) deliveryOutage = startOutage();
+        io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+        scheduleDeliveryBackoff();
       })
       .finally(() => {
         delivering = false;
@@ -679,8 +772,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     const windowMs = outageWindow();
     if (windowMs === undefined) return;
     const t = now();
-    if (deliveryOutage === null) deliveryOutage = { startedAt: t, attempts: 0, retryAt: 0 };
-    const delay = outageRetryDelayMs(deliveryOutage.attempts, t - deliveryOutage.startedAt, windowMs);
+    if (deliveryOutage === null) deliveryOutage = startOutage();
+    const delay = outageRetryDelayMs(deliveryOutage.attempts, outageElapsedMs(deliveryOutage), windowMs);
     deliveryOutage.attempts += 1;
     if (delay <= 0) return;
     const attempts = deliveryOutage.attempts;
@@ -721,10 +814,10 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   let auditBlock: "ok" | "retry" | "cap" | "failed" = "ok";
   const auditFailedVisible = (): boolean => {
     if (auditBlock !== "failed") return false;
-    if (auditHalted) return true;
+    if (auditHalted || clockBroken) return true;
     const windowMs = outageWindow();
     if (windowMs === undefined || auditOutage === null) return true;
-    return now() - auditOutage.startedAt >= windowMs;
+    return outageElapsedMs(auditOutage) >= windowMs;
   };
   const recoveryBudget = () => {
     try {
@@ -751,8 +844,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     const windowMs = outageWindow();
     if (windowMs === undefined) return;
     const t = now();
-    if (auditOutage === null) auditOutage = { startedAt: t, attempts: 0, retryAt: 0 };
-    const delay = outageRetryDelayMs(auditOutage.attempts, t - auditOutage.startedAt, windowMs);
+    if (auditOutage === null) auditOutage = startOutage();
+    const delay = outageRetryDelayMs(auditOutage.attempts, outageElapsedMs(auditOutage), windowMs);
     auditOutage.attempts += 1;
     if (delay <= 0) return;
     const attempts = auditOutage.attempts;
@@ -801,7 +894,14 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
           throw new Error("audit probe did not cover every active delegate");
         runner.recordProgressBatch(runId, observed.progress);
-        const tick = runner.auditTick(runId);
+        let tick: ReturnType<Runner["auditTick"]>;
+        try {
+          tick = runner.auditTick(runId);
+        } catch (cause) {
+          haltAudit("failed");
+          io.err(auditFailure(cause));
+          return;
+        }
         for (const delegate of tick.replace) {
           const key = sha256Hex(`${runId}\0replace\0${delegate}`);
           const replaced = await spawnPiped(
@@ -816,12 +916,26 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           const value: unknown = JSON.parse(replaced.stdout.toString());
           if (!isAuditReplacementReply(value) || value.key !== key)
             throw new Error("replacement lacked matching read-back");
-          runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+          try {
+            runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+          } catch (cause) {
+            if (isRefusedAuditTick(cause)) {
+              haltAudit("failed");
+              io.err(auditFailure(cause));
+              return;
+            }
+            throw cause;
+          }
         }
         auditBlock = "ok";
         auditOutage = null;
       } catch (cause) {
-        if (auditOutage === null) auditOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
+        if (isRefusedAuditTick(cause)) {
+          haltAudit("failed");
+          io.err(auditFailure(cause));
+          return;
+        }
+        if (auditOutage === null) auditOutage = startOutage();
         try {
           const outcome = runner.recordAuditAdapterFailure(runId);
           if (outcome.cap !== undefined && !outcome.exhausted) auditBlock = "retry";
@@ -1007,7 +1121,7 @@ export async function runRunner(argv: readonly string[], io: Io): Promise<number
     if (argv[0] === "call") return call(argv.slice(1), io);
     if (argv[0] !== undefined) io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
     io.err(
-      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]",
+      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--clock <path>] [--socket-mode 600|660]",
     );
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;

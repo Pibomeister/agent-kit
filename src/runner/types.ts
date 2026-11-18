@@ -80,7 +80,7 @@ export interface Charter {
     resource_units?: number;
     /** Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided. */
     delegate_replacements?: number;
-    /** Seconds a transient loop-probe or event-delivery failure may last before status goes guided. In memory. A restart starts with no streak. */
+    /** Seconds a transient loop-probe or event-delivery failure may last before status goes guided. The streak is in memory. A restart starts a new window. */
     outage_backoff_seconds?: number;
   };
 }

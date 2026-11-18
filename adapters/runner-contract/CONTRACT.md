@@ -275,8 +275,10 @@ socket token. It returns `{run,key}` after it has delivered the wake into the ru
 runner marks the event acted only after that matching acknowledgement. An unacknowledged event
 remains in the private queue and is retried after service restart. Duplicate keys with changed
 payloads refuse; duplicate keys with the same payload never repeat an acknowledged delivery.
-The supervisor configures an explicit command timeout; a timeout leaves the event pending and
-the run guided. Payload content is an untrusted claim and cannot issue a grant.
+The supervisor configures an explicit command timeout. Without `limits.outage_backoff_seconds`, a
+timeout leaves the event pending and the run guided. When that field is set, a timeout is a
+transient event-delivery failure, named only after the window. Payload content is an untrusted
+claim and cannot issue a grant.
 
 The `loop-config` is a separate supervisor-owned command. The charter's
 `audit_cadence_seconds` arms a tick while any delegate remains active. Each tick re-reads the
@@ -300,10 +302,10 @@ and names `audit-failed` until a later tick succeeds. When the charter sets
 retries with exponential delay starting at 5 seconds and doubling, capped by the time left in that
 window. `status.autonomy.missing` names `audit-failed` or `event-delivery-failed` only after the
 failure has lasted at least that many seconds from the first failure in the streak. A later success
-clears the streak. The clock is in memory. A serve restart starts with no streak. Auth failures,
+clears the streak. The streak is in memory. A serve restart starts a new window. Auth failures,
 bundle drift, and a refused `auditTick` still go guided on the first failure. A charter that omits
 the field keeps the first-failure behavior above. The timer drains only when no active
-delegate remains, and it stops when that cap is spent. The adapter owns the actual process stop
+delegate remains, and it stops when `limits.delegate_replacements` is spent. The adapter owns the actual process stop
 and replacement; the runner owns the policy and durable record. Neither an event nor a probe
 result is authority for a phase.
 
