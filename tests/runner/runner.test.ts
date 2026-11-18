@@ -1912,6 +1912,92 @@ describe("runner guards", () => {
     expect(argv[argv.indexOf("core.commitGraph=false") - 1]).toBe("-c");
   });
 
+  test("verify and ship use origin main when local main lags across a CI change", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const localMain = gitText(f.worker, ["rev-parse", "refs/heads/main"]);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: current CI\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "advance remote CI");
+    const remoteMain = workerHead(f.worker);
+    git(f.worker, "update-ref", "refs/remotes/origin/main", remoteMain);
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "branch", "-f", "main", localMain);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    reachShipReady(f, false);
+    expect(f.runner.status("toy-run").verified_base_revision).toBe(remoteMain);
+    f.runner.bindVerdict("toy-run");
+    expect(
+      new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run").verdict?.invalidated_by,
+    ).toBeUndefined();
+    expect(shipCard(f).id).toBe("ship");
+    expect(gitText(f.worker, ["rev-parse", "refs/heads/main"])).toBe(localMain);
+  });
+
+  test("an unreadable committed binding refuses run start", () => {
+    const f = fixture();
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind project");
+    const revision = workerHead(f.worker);
+    const oid = gitText(f.worker, ["rev-parse", "HEAD:ak.kb.yaml"]);
+    expect(gitText(f.worker, ["ls-tree", "HEAD", "ak.kb.yaml"])).toContain(oid);
+    rmSync(join(f.worker, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", revision, standing(f))).toThrow(
+      "cannot read committed knowledgebase binding",
+    );
+  });
+
+  test("an unreadable charter tip binding refuses an unbound merge-base start", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    git(f.worker, "add", "ak.kb.yaml");
+    git(f.worker, "commit", "-qm", "bind after fork");
+    const oid = gitText(f.worker, ["rev-parse", "HEAD:ak.kb.yaml"]);
+    git(f.worker, "checkout", "feature");
+    rmSync(join(f.worker, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow(
+      "cannot read committed knowledgebase binding",
+    );
+  });
+
+  for (const checkpoint of ["binding", "ship"])
+    test(`an origin main conflict refuses verdict ${checkpoint} while local main lags`, () => {
+      const f = patchVerdictFixture(false, false);
+      if (checkpoint === "ship") f.runner.bindVerdict("toy-run");
+      const localMain = gitText(f.worker, ["rev-parse", "refs/heads/main"]);
+      trunkCommit(f, "feature.txt", "remote conflict\n");
+      git(f.worker, "update-ref", "refs/remotes/origin/main", gitText(f.worker, ["rev-parse", "refs/heads/main"]));
+      git(f.worker, "branch", "-f", "main", localMain);
+      if (checkpoint === "binding")
+        expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+      else expect(() => shipCard(f)).toThrow("rebase onto main is required");
+    });
+
+  test("verdict patch identity excludes changes already on origin main while local main lags", () => {
+    const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+    const remoteMain = f.revision;
+    git(f.worker, "update-ref", "refs/remotes/origin/main", remoteMain);
+    writeFileSync(join(f.worker, "feature.txt"), "feature with a follow-up\n");
+    git(f.worker, "commit", "-qam", "follow up feature");
+    f.revision = workerHead(f.worker);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    reachShipReady(f, false);
+    const patch = gitText(f.worker, ["diff", "--binary", remoteMain, f.revision, "--"]);
+    const expected = gitText(f.worker, ["patch-id", "--stable"], `${patch}\n`).split(" ")[0];
+    if (expected === undefined || expected === "") throw new Error("fixture patch has no stable identity");
+    expect(f.runner.bindVerdict("toy-run").patch_id).toBe(expected);
+    expect(shipCard(f).id).toBe("ship");
+  });
+
   test("verify records the charter base commit, not a short rev-parse", () => {
     const f = fixture(3, FEATURE_WORKER_TEMPLATE);
     const mainSha = gitText(f.worker, ["rev-parse", "refs/heads/main"]);
