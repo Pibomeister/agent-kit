@@ -315,12 +315,11 @@ The first follow-up above is closed this way:
   records stay valid. No migration is needed.
 - Issue #147 reported that a changes-requested full review left no `review-full` record, because
   super-review recorded the gate only on `approved`. The same claim is in
-  `research/reviews/verification-receipts/01-full-review.md:53`. What was measured at 0.1.37
-  (`e2cab1b6`) is separate. The skill said to record the gate "On `approved`, and only then"
-  (`skills/super-review/SKILL.md:161-163`). At that revision the check refuses a gate with no
-  record (`src/lifecycle/gate.ts:1150-1152`) and does not read `review-delta` for that refusal. A
-  `review-delta` at the head makes an earlier `review-full` record count
-  (`src/lifecycle/gate.ts:1174-1178`).
+  `research/reviews/verification-receipts/01-full-review.md:53`. What was measured at 0.1.37 is
+  separate. The skill at `e2cab1b6` (`skills/super-review/SKILL.md:161-163`) said to record the gate
+  "On `approved`, and only then". The check at `e2cab1b6` (`src/lifecycle/gate.ts:1150-1152`) refuses
+  a gate with no record and does not read `review-delta` for that refusal. A `review-delta` at the
+  head makes an earlier `review-full` record count at `e2cab1b6` (`src/lifecycle/gate.ts:1174-1178`).
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the
