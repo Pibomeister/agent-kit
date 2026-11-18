@@ -4,24 +4,36 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
   watch,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
 
 import { runCli } from "../../src/cli.ts";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
-import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
+import { workerControlledPath } from "../../src/runner/path.ts";
+import {
+  ciConfigDrift,
+  cleanCommittedTree,
+  isolatedGitArgv,
+  mergeTreeClean,
+  patchIdentity,
+  resolveRunnerGit,
+} from "../../src/runner/snapshot.ts";
+import { readAdminToken } from "../../src/runner/token.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
@@ -760,8 +772,12 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
   expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
 }
 
-function patchVerdictFixture(autonomous = false, ship = true) {
+function patchVerdictFixture(autonomous = false, ship = true, setup?: (worker: string) => void) {
   const f = fixture(3, FEATURE_WORKER_TEMPLATE);
+  if (setup !== undefined) {
+    setup(f.worker);
+    f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  }
   if (autonomous) withAuditCadence(f);
   f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
   const receipt = join(f.privateDir, "source.txt");
@@ -779,6 +795,54 @@ function trunkCommit(f: ReturnType<typeof patchVerdictFixture>, path: string, te
   git(f.worker, "commit", "-qm", `trunk changes ${path}`);
   git(f.worker, "checkout", "feature");
 }
+
+function conflictingReadme(worker: string) {
+  writeFileSync(join(worker, "README.md"), "feature\n");
+  git(worker, "add", "README.md");
+  git(worker, "commit", "-qm", "feature readme");
+  git(worker, "checkout", "main");
+  writeFileSync(join(worker, "README.md"), "main\n");
+  git(worker, "add", "README.md");
+  git(worker, "commit", "-qm", "main readme");
+  git(worker, "checkout", "feature");
+}
+
+function commitOnMergeBaseThenDiverge(
+  worker: string,
+  baseFiles: Record<string, string>,
+  featureFiles: Record<string, string>,
+  mainFiles: Record<string, string>,
+) {
+  git(worker, "checkout", "main");
+  for (const [path, text] of Object.entries(baseFiles)) {
+    writeFileSync(join(worker, path), text);
+    git(worker, "add", path);
+  }
+  git(worker, "commit", "-qm", "merge-base attrs");
+  git(worker, "checkout", "feature");
+  git(worker, "merge", "--no-edit", "-q", "main");
+  for (const [path, text] of Object.entries(featureFiles)) {
+    writeFileSync(join(worker, path), text);
+    git(worker, "add", path);
+  }
+  git(worker, "commit", "-qm", "feature side");
+  git(worker, "checkout", "main");
+  for (const [path, text] of Object.entries(mainFiles)) {
+    writeFileSync(join(worker, path), text);
+    git(worker, "add", path);
+  }
+  git(worker, "commit", "-qm", "main side");
+  git(worker, "checkout", "feature");
+}
+
+function gitSupportsObjectFormat(format: string): boolean {
+  const dir = mkdtempSync(join(scratchRoot, `ak-${format}-probe-`));
+  const result = Bun.spawnSync(["git", "init", "-q", `--object-format=${format}`, dir]);
+  rmSync(dir, { recursive: true, force: true });
+  return result.exitCode === 0;
+}
+
+const SHA256_SUPPORTED = gitSupportsObjectFormat("sha256");
 
 function shipCard(f: ReturnType<typeof patchVerdictFixture>) {
   return f.runner.prepare("toy-run", {
@@ -1665,6 +1729,85 @@ describe("runner guards", () => {
     git(f.worker, "commit", "-qm", "nested bind");
     const revision = workerHead(nested);
     const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a nested start with a planted gitfile still uses the nested binding", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    writeFileSync(join(nested, ".git"), `gitdir: ${realpathSync(join(f.worker, ".git"))}\n`);
+    const revision = workerHead(nested);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("a nested start ignores an ancestor FIFO .git", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    const deeper = join(nested, "sub");
+    mkdirSync(deeper, { recursive: true });
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(deeper, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    const fifo = join(nested, ".git");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const revision = workerHead(f.worker);
+    const runner = new Runner(f.privateDir, deeper, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  }, 30_000);
+
+  test("a nested project binding in a linked worktree is read from its own folder", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), OTHER_BINDING);
+    writeFileSync(join(nested, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "nested bind");
+    const linked = join(f.dir, "linked");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "worktree", "add", "-q", "--detach", linked]).exitCode).toBe(0);
+    const linkedNested = join(linked, "app");
+    const revision = workerHead(linkedNested);
+    const runner = new Runner(f.privateDir, linkedNested, root);
     const started = withRegistry(planted.registry, () =>
       runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
     );
@@ -3409,6 +3552,37 @@ describe("runner guards", () => {
     expect(after.verdict?.invalidated_by).toBe("patch-changed");
   });
 
+  test("a gitlink bump voids a verdict even when diff ignores submodules", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      const sub = join(worker, "vendor");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "lib.ts"), "export const v = 1;\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "nested");
+      writeFileSync(
+        join(worker, ".gitmodules"),
+        `[submodule "vendor"]\n\tpath = vendor\n\turl = ./vendor\n\tignore = all\n`,
+      );
+      git(worker, "add", "vendor", ".gitmodules");
+      git(worker, "commit", "-qm", "add gitlink");
+    });
+    const verdict = f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.submodule", "log"]).exitCode).toBe(0);
+    writeFileSync(join(f.worker, "vendor", "lib.ts"), "export const v = 2;\n");
+    git(join(f.worker, "vendor"), "commit", "-qam", "bump nested");
+    git(f.worker, "add", "vendor");
+    git(f.worker, "commit", "-qm", "bump gitlink");
+    const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const context = resolveRunnerGit(f.worker);
+    expect(patchIdentity(context, f.worker, "main", head)).not.toBe(
+      patchIdentity(context, f.worker, "main", verdict.head_revision),
+    );
+    const after = f.runner.revision("toy-run", head);
+    expect(after.verdict?.invalidated_by).toBe("patch-changed");
+  });
+
   test("an uncommitted edit cannot inherit a patch-id verdict", () => {
     const f = patchVerdictFixture();
     f.runner.bindVerdict("toy-run");
@@ -3427,14 +3601,155 @@ describe("runner guards", () => {
     expect(after.verdict?.invalidated_by).toBe("patch-changed");
   });
 
-  test("trunk CI configuration drift voids a verdict even when the patch is identical", () => {
-    const f = patchVerdictFixture();
+  test("a trunk gitlink bump at .github/workflows voids a verdict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      const sub = join(worker, ".github", "workflows");
+      mkdirSync(sub, { recursive: true });
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "ci.yml"), "name: a\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "ci a");
+      writeFileSync(
+        join(worker, ".gitmodules"),
+        `[submodule ".github/workflows"]\n\tpath = .github/workflows\n\turl = ./.github/workflows\n\tignore = all\n`,
+      );
+      git(worker, "add", ".github/workflows", ".gitmodules");
+      git(worker, "commit", "-qm", "add workflows gitlink");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+    });
     f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: b\n");
+    git(join(f.worker, ".github", "workflows"), "commit", "-qam", "ci b");
+    git(f.worker, "add", ".github/workflows");
+    git(f.worker, "commit", "-qm", "bump workflows gitlink");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  test("a trunk gitlink bump at .github voids a verdict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      const sub = join(worker, ".github");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      mkdirSync(join(sub, "workflows"));
+      writeFileSync(join(sub, "workflows", "ci.yml"), "name: a\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "ci a");
+      writeFileSync(
+        join(worker, ".gitmodules"),
+        `[submodule ".github"]\n\tpath = .github\n\turl = ./.github\n\tignore = all\n`,
+      );
+      git(worker, "add", ".github", ".gitmodules");
+      git(worker, "commit", "-qm", "add github gitlink");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+    });
+    f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: b\n");
+    git(join(f.worker, ".github"), "commit", "-qam", "ci b");
+    git(f.worker, "add", ".github");
+    git(f.worker, "commit", "-qm", "bump github gitlink");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  test("nested cwd and worker diff.relative cannot hide CI or patch drift", () => {
+    const f = patchVerdictFixture();
+    const verdict = f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.relative", "true"]).exitCode).toBe(0);
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
     git(f.worker, "checkout", "main");
     mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
     writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
     git(f.worker, "add", ".github/workflows/ci.yml");
     git(f.worker, "commit", "-qm", "change CI");
+    writeFileSync(join(f.worker, "README.md"), "also patch\n");
+    git(f.worker, "add", "README.md");
+    git(f.worker, "commit", "-qm", "change patch");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    writeFileSync(join(f.worker, "feature.txt"), "feature changed\n");
+    git(f.worker, "add", "feature.txt");
+    git(f.worker, "commit", "-qm", "change feature");
+    const head = workerHead(f.worker);
+    const context = resolveRunnerGit(nested);
+    expect(ciConfigDrift(context, nested, verdict.verified_base_revision, "main")).toBe(true);
+    expect(patchIdentity(context, nested, "main", head)).not.toBe(verdict.patch_id);
+  });
+
+  test("trunk CI configuration drift voids a verdict even when the patch is identical", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  test("trunk CI drift does not run worker diff.external or textconv", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    const extMarker = join(f.privateDir, "ci-ext.marker");
+    const tcMarker = join(f.privateDir, "ci-tc.marker");
+    const ext = join(f.privateDir, "ci-ext.sh");
+    const tc = join(f.privateDir, "ci-tc.sh");
+    writeFileSync(ext, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(extMarker)}\nexit 0\n`);
+    writeFileSync(tc, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(tcMarker)}\ncat\n`);
+    chmodSync(ext, 0o700);
+    chmodSync(tc, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "attributes"), ".github/workflows/ci.yml diff=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.external", ext]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", tc]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(existsSync(extMarker)).toBe(false);
+    expect(existsSync(tcMarker)).toBe(false);
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  test("renaming a CI workflow off the CI path voids a verdict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      mkdirSync(join(worker, ".github", "workflows"), { recursive: true });
+      writeFileSync(join(worker, ".github", "workflows", "ci.yml"), "name: ci\n");
+      git(worker, "add", ".github/workflows/ci.yml");
+      git(worker, "commit", "-qm", "add CI");
+      git(worker, "checkout", "feature");
+      git(worker, "rebase", "main");
+    });
+    f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, "docs"), { recursive: true });
+    git(f.worker, "mv", ".github/workflows/ci.yml", "docs/ci.yml");
+    git(f.worker, "commit", "-qm", "rename CI off path");
     git(f.worker, "checkout", "feature");
     git(f.worker, "rebase", "main");
     const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
@@ -3578,6 +3893,594 @@ describe("runner guards", () => {
     expect(reverted.run_state).toBe("repairing");
     expect(reverted.verdict?.invalidated_by).toBe("patch-changed");
     expect(reverted.verdict?.reused_from).toBeUndefined();
+  });
+
+  test("verdict patch identity does not run worker textconv", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "textconv.marker");
+    const script = join(f.privateDir, "textconv.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "attributes"), "feature.txt diff=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict patch identity does not run worker diff.external", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "diff-external.marker");
+    const script = join(f.privateDir, "diff-external.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.external", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness does not run worker clean filters", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "clean-filter.marker");
+    const script = join(f.privateDir, "clean-filter.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "exclude"), ".gitattributes\n");
+    writeFileSync(join(f.worker, ".gitattributes"), "feature.txt filter=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    const feature = join(f.worker, "feature.txt");
+    const past = new Date("2020-01-01T00:00:00Z");
+    utimesSync(feature, past, past);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "update-index", "--refresh"]).exitCode).toBe(0);
+    if (existsSync(marker)) unlinkSync(marker);
+    writeFileSync(feature, readFileSync(feature));
+    Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]);
+    expect(existsSync(marker)).toBe(true);
+    unlinkSync(marker);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness does not run committed merge-base filters or textconv", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "feature.txt filter=lie diff=lie\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "merge-base filters");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+    });
+    const marker = join(f.privateDir, "merge-base-filter.marker");
+    const script = join(f.privateDir, "merge-base-filter.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", script]).exitCode).toBe(0);
+    const feature = join(f.worker, "feature.txt");
+    const past = new Date("2020-01-01T00:00:00Z");
+    utimesSync(feature, past, past);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "update-index", "--refresh"]).exitCode).toBe(0);
+    if (existsSync(marker)) unlinkSync(marker);
+    writeFileSync(feature, readFileSync(feature));
+    Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]);
+    expect(existsSync(marker)).toBe(true);
+    unlinkSync(marker);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness recurses into a dirty gitlink", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      const sub = join(worker, "vendor");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "lib.ts"), "export const v = 1;\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "nested");
+      git(worker, "add", "vendor");
+      git(worker, "commit", "-qm", "add gitlink");
+    });
+    writeFileSync(join(f.worker, "vendor", "lib.ts"), "export const v = 2;\n");
+    writeFileSync(join(f.worker, "vendor", "extra.ts"), "export const extra = true;\n");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict cleanliness does not honor worker core.worktree", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      const sub = join(worker, "vendor");
+      mkdirSync(sub);
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "lib.ts"), "export const v = 1;\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "nested");
+      git(worker, "add", "vendor");
+      git(worker, "commit", "-qm", "add gitlink");
+    });
+    const decoy = join(f.privateDir, "decoy-worktree");
+    cpSync(f.worker, decoy, { recursive: true });
+    const decoyRoot = realpathSync(decoy);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "core.worktree", decoyRoot]).exitCode).toBe(0);
+    expect(
+      Bun.spawnSync(["git", "-C", join(f.worker, "vendor"), "config", "core.worktree", join(decoyRoot, "vendor")])
+        .exitCode,
+    ).toBe(0);
+    writeFileSync(join(f.worker, "loose.txt"), "untracked in real worktree\n");
+    writeFileSync(join(f.worker, "vendor", "loose.ts"), "untracked in gitlink\n");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict merge-tree scratch is outside the worker root", async () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const log = join(f.privateDir, "scratch-seen.log");
+    const child = Bun.spawn(
+      [
+        "bash",
+        "-c",
+        `home=$1; gitdir=$2; log=$3
+         : > "$log"
+         while [ ! -f "$log.stop" ]; do
+           for d in "$home"/ak-merge-*; do
+             [ -d "$d" ] && printf 'home %s\\n' "$d" >> "$log"
+           done
+           for d in "$gitdir"/ak-merge-*; do
+             [ -d "$d" ] && printf 'worker %s\\n' "$d" >> "$log"
+           done
+         done`,
+        "bash",
+        f.privateDir,
+        join(f.worker, ".git"),
+        log,
+      ],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+    try {
+      await Bun.sleep(20);
+      expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+    } finally {
+      writeFileSync(`${log}.stop`, "");
+      child.kill();
+      await child.exited;
+    }
+    const lines = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean) : [];
+    expect(lines.some((line) => line.startsWith("home "))).toBe(true);
+    expect(lines.some((line) => line.startsWith("worker "))).toBe(false);
+    const workerRoot = realpathSync(f.worker);
+    for (const line of lines) {
+      if (!line.startsWith("home ")) continue;
+      expect(relative(workerRoot, line.slice(5)).startsWith("..")).toBe(true);
+    }
+  });
+
+  test("verdict merge-tree throws when the branches have no merge-base", () => {
+    const f = patchVerdictFixture();
+    git(f.worker, "checkout", "--orphan", "unrelated");
+    git(f.worker, "commit", "-qm", "unrelated root");
+    git(f.worker, "branch", "-M", "main");
+    git(f.worker, "checkout", "feature");
+    const context = resolveRunnerGit(f.worker);
+    expect(() => mergeTreeClean(context, f.worker, "main", workerHead(f.worker))).toThrow("cannot inspect merge tree");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("cannot inspect merge tree");
+  });
+
+  test("a nested git init does not make a parent merge conflict look clean", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    git(nested, "init", "-q");
+    writeFileSync(join(nested, "decoy.txt"), "decoy\n");
+    git(nested, "add", ".");
+    git(nested, "commit", "-qm", "decoy");
+    const context = { ...resolveRunnerGit(f.worker), home: f.privateDir };
+    expect(mergeTreeClean(context, f.worker, "main", f.revision)).toBe(false);
+    let nestedClean = false;
+    try {
+      nestedClean = mergeTreeClean(context, nested, "main", f.revision);
+    } catch {
+      nestedClean = false;
+    }
+    expect(nestedClean).toBe(false);
+  });
+
+  test("a bare workerRoot refuses verdict-bearing git", () => {
+    const bare = mkdtempSync(join(scratchRoot, "ak-bare-"));
+    git(bare, "init", "--bare", "-q");
+    const context = resolveRunnerGit(bare);
+    expect(context.gitDir).toBeUndefined();
+    expect(context.workTree).toBeUndefined();
+    expect(() => cleanCommittedTree(context, bare)).toThrow("git layout is not pinned");
+    expect(() => patchIdentity(context, bare, "HEAD", "HEAD")).toThrow("git layout is not pinned");
+    expect(() => mergeTreeClean(context, bare, "HEAD", "HEAD")).toThrow("git layout is not pinned");
+    expect(() => ciConfigDrift(context, bare, "a", "b")).toThrow("git layout is not pinned");
+  });
+
+  test("a planted gitfile after bind cannot hide dirt or reuse a verdict", () => {
+    const f = patchVerdictFixture();
+    const head = workerHead(f.worker);
+    expect(f.runner.bindVerdict("toy-run").patch_id).toBeDefined();
+    const decoy = mkdtempSync(join(scratchRoot, "ak-decoy-"));
+    git(decoy, "init", "-q", "-b", "main");
+    writeFileSync(join(decoy, "decoy.txt"), "decoy\n");
+    git(decoy, "add", ".");
+    git(decoy, "commit", "-qm", "decoy");
+    rmSync(join(f.worker, ".git"), { recursive: true });
+    writeFileSync(join(f.worker, ".git"), `gitdir: ${realpathSync(join(decoy, ".git"))}\n`);
+    writeFileSync(join(f.worker, "loose.txt"), "untracked\n");
+    expect(() => f.runner.revision("toy-run", head)).toThrow("git layout changed since start");
+  });
+
+  test("a planted nested gitfile cannot make a merge conflict look clean", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const context = { ...resolveRunnerGit(f.worker), home: f.privateDir };
+    const decoy = mkdtempSync(join(scratchRoot, "ak-decoy-"));
+    git(decoy, "init", "-q", "-b", "main");
+    writeFileSync(join(decoy, "decoy.txt"), "decoy\n");
+    git(decoy, "add", ".");
+    git(decoy, "commit", "-qm", "decoy");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(nested, ".git"), `gitdir: ${realpathSync(join(decoy, ".git"))}\n`);
+    writeFileSync(join(f.worker, "loose.txt"), "untracked\n");
+    let clean = false;
+    try {
+      clean = mergeTreeClean(context, f.worker, "main", f.revision);
+    } catch {
+      clean = false;
+    }
+    expect(clean).toBe(false);
+    expect(cleanCommittedTree(context, f.worker)).toBe(false);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("a .git symlink is the project repo, not a wrapping parent", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const stored = join(f.dir, "real.git");
+    renameSync(join(f.worker, ".git"), stored);
+    symlinkSync(stored, join(f.worker, ".git"));
+    git(f.dir, "init", "-q", "-b", "main");
+    writeFileSync(join(f.dir, "outer.txt"), "outer\n");
+    git(f.dir, "add", "outer.txt");
+    git(f.dir, "commit", "-qm", "outer");
+    const context = { ...resolveRunnerGit(f.worker), home: f.privateDir };
+    expect(mergeTreeClean(context, f.worker, "main", f.revision)).toBe(false);
+    expect(() => new Runner(f.privateDir, f.worker, root).bindVerdict("toy-run")).toThrow(
+      "merge-tree reports a conflict",
+    );
+  });
+
+  test("bindVerdict on a linked worktree uses the common object directory", () => {
+    const f = patchVerdictFixture();
+    const linked = join(f.dir, "linked");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "worktree", "add", "-q", "--detach", linked]).exitCode).toBe(0);
+    const linkedRunner = new Runner(f.privateDir, linked, root);
+    expect(linkedRunner.bindVerdict("toy-run").patch_id).toBeDefined();
+  });
+
+  test("a conflicting linked worktree reports a merge-tree conflict", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    const linked = join(f.dir, "linked");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "worktree", "add", "-q", "--detach", linked]).exitCode).toBe(0);
+    expect(() => new Runner(f.privateDir, linked, root).bindVerdict("toy-run")).toThrow(
+      "merge-tree reports a conflict",
+    );
+  });
+
+  test("git submodule add gitfile work tree stays clean", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      const src = mkdtempSync(join(scratchRoot, "ak-subsrc-"));
+      git(src, "init", "-q", "-b", "main");
+      writeFileSync(join(src, "lib.ts"), "export const v = 1;\n");
+      git(src, "add", ".");
+      git(src, "commit", "-qm", "nested");
+      git(worker, "-c", "protocol.file.allow=always", "submodule", "add", src, "vendor");
+      git(worker, "commit", "-qm", "add submodule");
+    });
+    const context = resolveRunnerGit(f.worker);
+    const vendorGit = join(f.worker, "vendor", ".git");
+    expect(lstatSync(vendorGit).isFile()).toBe(true);
+    expect(readFileSync(vendorGit, "utf8")).toContain(".git/modules/");
+    expect(cleanCommittedTree(context, f.worker)).toBe(true);
+    expect(f.runner.bindVerdict("toy-run").patch_id).toBeDefined();
+  });
+
+  test("a nested start with a gitfile to a different repo still uses the parent binding", () => {
+    const f = fixture();
+    const parsed: unknown = JSON.parse(readFileSync(join(f.privateDir, "toy-ticket.json"), "utf8"));
+    if (!asJsonObject(parsed)) throw new Error("toy ticket is not an object");
+    const ticket = enabledToyTicket(parsed);
+    unlinkSync(join(f.privateDir, "toy-ticket.json"));
+    retargetCharterTicket(f, ticket);
+    const planted = publishToyKb(ticket, "on");
+    const nested = join(f.worker, "app");
+    mkdirSync(nested);
+    writeFileSync(join(f.worker, "ak.kb.yaml"), TOY_BINDING);
+    writeFileSync(join(nested, "nested.txt"), "nested\n");
+    git(f.worker, "add", "ak.kb.yaml", "app");
+    git(f.worker, "commit", "-qm", "parent bind");
+    const decoy = mkdtempSync(join(scratchRoot, "ak-decoy-"));
+    git(decoy, "init", "-q", "-b", "main");
+    writeFileSync(join(decoy, "decoy.txt"), "decoy\n");
+    git(decoy, "add", ".");
+    git(decoy, "commit", "-qm", "decoy");
+    writeFileSync(join(nested, ".git"), `gitdir: ${realpathSync(join(decoy, ".git"))}\n`);
+    const revision = workerHead(f.worker);
+    const runner = new Runner(f.privateDir, nested, root);
+    const started = withRegistry(planted.registry, () =>
+      runner.start("toy-run", f.path, "implementer-1", revision, standing(f)),
+    );
+    expect(started.behavior?.mode).toBe("on");
+    expect(started.behavior?.required_checks).toHaveLength(1);
+  });
+
+  test("verdict merge-tree uses one merge-base tree when the history is criss-cross", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      const ancestor = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      writeFileSync(join(worker, "left.txt"), "B\n");
+      git(worker, "add", "left.txt");
+      git(worker, "commit", "-qm", "B");
+      const b = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      git(worker, "checkout", "-qb", "right", ancestor);
+      writeFileSync(join(worker, "right.txt"), "C\n");
+      git(worker, "add", "right.txt");
+      git(worker, "commit", "-qm", "C");
+      git(worker, "checkout", "-B", "feature", b);
+      git(worker, "merge", "--no-edit", "-q", "right");
+      git(worker, "checkout", "-B", "main", "right");
+      git(worker, "merge", "--no-edit", "-q", b);
+      git(worker, "checkout", "feature");
+    });
+    const all = Bun.spawnSync(["git", "-C", f.worker, "merge-base", "--all", "main", "HEAD"]);
+    expect(all.exitCode).toBe(0);
+    expect(all.stdout.toString().trim().split("\n")).toHaveLength(2);
+    const one = Bun.spawnSync(["git", "-C", f.worker, "merge-base", "main", "HEAD"]);
+    expect(one.exitCode).toBe(0);
+    expect(all.stdout.toString()).toContain(one.stdout.toString().trim());
+    expect(f.runner.bindVerdict("toy-run").head_revision).toBe(f.revision);
+  });
+
+  test("verdict merge-tree does not honor worker merge.default union", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.default", "union"]).exitCode).toBe(0);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor .git/info/attributes merge=union", () => {
+    const f = patchVerdictFixture(false, true, conflictingReadme);
+    writeFileSync(join(f.worker, ".git", "info", "attributes"), "README.md merge=union\n");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not run a worker merge driver", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      conflictingReadme(worker);
+      writeFileSync(join(worker, ".gitattributes"), "README.md merge=lie\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "feature merge attr");
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "README.md merge=lie\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "main merge attr");
+      git(worker, "checkout", "feature");
+    });
+    const marker = join(f.privateDir, "merge-driver.marker");
+    const script = join(f.privateDir, "merge-driver.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(0);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("verdict merge-tree keeps a merge-base binary attribute as a conflict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      commitOnMergeBaseThenDiverge(
+        worker,
+        {
+          ".gitattributes": "*.dat binary\n",
+          "file.dat": "line1\nline2\nline3\nline4\nline5\n",
+        },
+        { "file.dat": "line1\nFEATURE\nline3\nline4\nline5\n" },
+        { "file.dat": "line1\nline2\nline3\nMAIN\nline5\n" },
+      );
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor ancestor-only merge=union", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      commitOnMergeBaseThenDiverge(
+        worker,
+        {
+          ".gitattributes": "file.dat merge=union\n",
+          "file.dat": "line1\nBASE\nline3\n",
+        },
+        {
+          ".gitattributes": "file.dat merge=text\n",
+          "file.dat": "line1\nFEATURE\nline3\n",
+        },
+        {
+          ".gitattributes": "file.dat merge=text\n",
+          "file.dat": "line1\nMAIN\nline3\n",
+        },
+      );
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor merge-base merge=union", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      commitOnMergeBaseThenDiverge(
+        worker,
+        {
+          ".gitattributes": "file.dat merge=union\n",
+          "file.dat": "line1\nBASE\nline3\n",
+        },
+        { "file.dat": "line1\nFEATURE\nline3\n" },
+        { "file.dat": "line1\nMAIN\nline3\n" },
+      );
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor union planted on local main", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "file.dat merge=union\n");
+      writeFileSync(join(worker, "file.dat"), "line1\nBASE\nline3\n");
+      git(worker, "add", ".gitattributes", "file.dat");
+      git(worker, "commit", "-qm", "plant union on main");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+      writeFileSync(join(worker, "file.dat"), "line1\nFEATURE\nline3\n");
+      git(worker, "add", "file.dat");
+      git(worker, "commit", "-qm", "feature side");
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, "file.dat"), "line1\nMAIN\nline3\n");
+      git(worker, "add", "file.dat");
+      git(worker, "commit", "-qm", "main side");
+      git(worker, "checkout", "feature");
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor merge-base * merge=union on add/add", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "* merge=union\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "star union");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+      writeFileSync(join(worker, "added.txt"), "FEATURE\n");
+      git(worker, "add", "added.txt");
+      git(worker, "commit", "-qm", "feature add");
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, "added.txt"), "MAIN\n");
+      git(worker, "add", "added.txt");
+      git(worker, "commit", "-qm", "main add");
+      git(worker, "checkout", "feature");
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not run a merge-base worker merge driver", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      commitOnMergeBaseThenDiverge(
+        worker,
+        {
+          ".gitattributes": "file.dat merge=lie\n",
+          "file.dat": "base\n",
+        },
+        { "file.dat": "feature\n" },
+        { "file.dat": "main\n" },
+      );
+    });
+    const marker = join(f.privateDir, "merge-base-driver.marker");
+    const script = join(f.privateDir, "merge-base-driver.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(0);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test.skipIf(!SHA256_SUPPORTED)("verdict merge-tree honors a sha256 worker object format", () => {
+    const worker = mkdtempSync(join(scratchRoot, "ak-sha256-feature-"));
+    writeFileSync(join(worker, ".gitignore"), ".runner-requests/\n");
+    writeFileSync(join(worker, "README.md"), "toy worktree\n");
+    expect(Bun.spawnSync(["git", "init", "-q", "--object-format=sha256", worker]).exitCode).toBe(0);
+    git(worker, "add", ".");
+    git(worker, "commit", "-qm", "Create toy charter worktree");
+    git(worker, "branch", "-M", "main");
+    git(worker, "checkout", "-qb", "feature");
+    writeFileSync(join(worker, "feature.txt"), "feature\n");
+    git(worker, "add", "feature.txt");
+    git(worker, "commit", "-qm", "add feature");
+    mkdirSync(join(worker, ".runner-requests"));
+    const revision = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const f = fixture(3, { worker, revision });
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    reachShipReady(f);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "--show-object-format"]).stdout.toString().trim()).toBe(
+      "sha256",
+    );
+    expect(f.runner.bindVerdict("toy-run").head_revision).toBe(f.revision);
+  });
+
+  test("verdict ls-files diff-index hash-object and rev-parse do not run worker programs", () => {
+    const f = patchVerdictFixture();
+    const marker = join(f.privateDir, "other-git.marker");
+    const script = join(f.privateDir, "other-git.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "exclude"), ".gitattributes\n");
+    writeFileSync(join(f.worker, ".gitattributes"), "feature.txt filter=lie merge=lie diff=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.smudge", script]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.lie.driver", `${script} %O %A %B`]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", script]).exitCode).toBe(0);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
+  test("verdict cleanliness treats a group-exec worktree bit as executable", () => {
+    const f = patchVerdictFixture();
+    chmodSync(join(f.worker, "feature.txt"), 0o650);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
+  });
+
+  test("verdict cleanliness allows a tracked ..foo path", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      writeFileSync(join(worker, "..foo"), "inside\n");
+      git(worker, "add", "--", "..foo");
+      git(worker, "commit", "-qm", "dotdotfoo");
+    });
+    expect(f.runner.bindVerdict("toy-run").head_revision).toBe(f.revision);
+  });
+
+  test("verdict cleanliness treats eol=crlf checkout bytes that differ from the blob as dirty", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      writeFileSync(join(worker, ".gitattributes"), "feature.txt text eol=crlf\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "crlf attr");
+      unlinkSync(join(worker, "feature.txt"));
+      git(worker, "checkout", "--", "feature.txt");
+    });
+    expect(Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]).stdout.toString().trim()).toBe("");
+    expect(readFileSync(join(f.worker, "feature.txt")).includes(0x0d)).toBe(true);
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("verdict needs a clean committed worktree");
   });
 
   test(
@@ -5742,6 +6645,42 @@ describe("runner guards", () => {
     transcript.push(
       "Refusal: runner evidence path under a linked worktree's shared git common directory → rejected before directory creation.",
     );
+  });
+
+  test("a state dir named ..foo under the worker is rejected", () => {
+    const f = fixture();
+    expect(() => new Runner(join(f.worker, "..foo"), f.worker, root)).toThrow("runner state is worker-writable");
+  });
+
+  test("readAdminToken refuses a ..foo path under the worker root", () => {
+    const f = fixture();
+    const sneak = join(f.worker, "..foo");
+    mkdirSync(sneak);
+    const tokenFile = join(sneak, "admin.token");
+    writeFileSync(tokenFile, "a".repeat(48), { mode: 0o600 });
+    chmodSync(tokenFile, 0o600);
+    expect(() => readAdminToken(tokenFile, f.worker)).toThrow(
+      "runner admin token file must live outside the Firstmate home, the worker root and any git checkout",
+    );
+  });
+
+  test("PATH with a worker dir named ..foo still selects git outside the worker", () => {
+    const f = fixture();
+    const workerGitDir = join(f.worker, "..foo");
+    mkdirSync(workerGitDir);
+    const fake = join(workerGitDir, "git");
+    writeFileSync(fake, "#!/bin/sh\nexit 1\n");
+    chmodSync(fake, 0o700);
+    const previous = process.env["PATH"];
+    process.env["PATH"] = `${workerGitDir}:${previous ?? ""}`;
+    try {
+      const resolved = resolveRunnerGit(f.worker);
+      expect(resolved.binary).not.toBe(realpathSync(fake));
+      expect(workerControlledPath(resolved.binary, f.worker)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = previous;
+    }
   });
 
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
