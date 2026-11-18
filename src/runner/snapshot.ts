@@ -237,17 +237,12 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
     "--",
   ]);
   if (converters.code > 1) throw new Error(`cannot compare CI configuration: ${converters.stderr}`);
+  const ciRoots = [".github/workflows", ".github/actions", ".circleci", ".buildkite"];
+  const ciFiles = [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"];
   return new TextDecoder()
     .decode(changed.stdout)
     .split("\0")
-    .some(
-      (path) =>
-        path.startsWith(".github/workflows/") ||
-        path.startsWith(".github/actions/") ||
-        path.startsWith(".circleci/") ||
-        path.startsWith(".buildkite/") ||
-        [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"].includes(path),
-    );
+    .some((path) => ciFiles.includes(path) || ciRoots.some((root) => path === root || path.startsWith(`${root}/`)));
 }
 
 export function mergeTreeClean(context: RunnerGitContext, project: string, baseRef: string, head: string): boolean {
@@ -284,20 +279,18 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
     }
     if ((init.status ?? -1) !== 0)
       throw new Error(`cannot inspect merge tree: ${(init.stderr ?? "").toString().trim() || "init failed"}`);
-    const result = gitProcess(
-      context,
-      project,
-      ["merge-tree", "--write-tree", left, right],
-      10_000,
-      undefined,
-      {
-        GIT_DIR: scratch,
-        GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir,
-      },
-      attrTree.text,
-    );
-    if (result.code > 1) throw new Error(`cannot inspect merge tree: ${result.stderr}`);
-    return result.code === 0;
+    const extraEnv = {
+      GIT_DIR: scratch,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir,
+    };
+    const inspect = (tree?: string) =>
+      gitProcess(context, project, ["merge-tree", "--write-tree", left, right], 10_000, undefined, extraEnv, tree);
+    const mergeBaseRun = inspect(attrTree.text);
+    if (mergeBaseRun.code > 1) throw new Error(`cannot inspect merge tree: ${mergeBaseRun.stderr}`);
+    if (mergeBaseRun.code !== 0) return false;
+    const emptyRun = inspect();
+    if (emptyRun.code > 1) throw new Error(`cannot inspect merge tree: ${emptyRun.stderr}`);
+    return emptyRun.code === 0;
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

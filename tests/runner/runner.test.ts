@@ -1206,9 +1206,42 @@ describe("runner guards", () => {
     expect(after.verdict?.invalidated_by).toBe("patch-changed");
   });
 
+  test("a trunk gitlink bump at .github/workflows voids a verdict", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      const sub = join(worker, ".github", "workflows");
+      mkdirSync(sub, { recursive: true });
+      git(sub, "init", "-q");
+      writeFileSync(join(sub, "ci.yml"), "name: a\n");
+      git(sub, "add", ".");
+      git(sub, "commit", "-qm", "ci a");
+      writeFileSync(
+        join(worker, ".gitmodules"),
+        `[submodule ".github/workflows"]\n\tpath = .github/workflows\n\turl = ./.github/workflows\n\tignore = all\n`,
+      );
+      git(worker, "add", ".github/workflows", ".gitmodules");
+      git(worker, "commit", "-qm", "add workflows gitlink");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+    });
+    f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: b\n");
+    git(join(f.worker, ".github", "workflows"), "commit", "-qam", "ci b");
+    git(f.worker, "add", ".github/workflows");
+    git(f.worker, "commit", "-qm", "bump workflows gitlink");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
   test("trunk CI configuration drift voids a verdict even when the patch is identical", () => {
     const f = patchVerdictFixture();
     f.runner.bindVerdict("toy-run");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.ignoreSubmodules", "all"]).exitCode).toBe(0);
     git(f.worker, "checkout", "main");
     mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
     writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
@@ -1472,6 +1505,40 @@ describe("runner guards", () => {
     expect(failed).toBe(false);
   });
 
+  test("verdict cleanliness does not run committed merge-base filters or textconv", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "feature.txt filter=lie diff=lie\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "merge-base filters");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+    });
+    const marker = join(f.privateDir, "merge-base-filter.marker");
+    const script = join(f.privateDir, "merge-base-filter.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\ncat\n`);
+    chmodSync(script, 0o700);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", script]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.lie.textconv", script]).exitCode).toBe(0);
+    const feature = join(f.worker, "feature.txt");
+    const past = new Date("2020-01-01T00:00:00Z");
+    utimesSync(feature, past, past);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "update-index", "--refresh"]).exitCode).toBe(0);
+    if (existsSync(marker)) unlinkSync(marker);
+    writeFileSync(feature, readFileSync(feature));
+    Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]);
+    expect(existsSync(marker)).toBe(true);
+    unlinkSync(marker);
+    let failed = false;
+    try {
+      f.runner.bindVerdict("toy-run");
+    } catch {
+      failed = true;
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(failed).toBe(false);
+  });
+
   test("verdict cleanliness recurses into a dirty gitlink", () => {
     const f = patchVerdictFixture(false, true, (worker) => {
       const sub = join(worker, "vendor");
@@ -1554,6 +1621,42 @@ describe("runner guards", () => {
     }
   });
 
+  test("verdict merge-tree throws when the branches have no merge-base", () => {
+    const f = patchVerdictFixture();
+    git(f.worker, "checkout", "--orphan", "unrelated");
+    git(f.worker, "commit", "-qm", "unrelated root");
+    git(f.worker, "branch", "-M", "main");
+    git(f.worker, "checkout", "feature");
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("cannot inspect merge tree");
+  });
+
+  test("verdict merge-tree uses one merge-base tree when the history is criss-cross", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      const ancestor = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      writeFileSync(join(worker, "left.txt"), "B\n");
+      git(worker, "add", "left.txt");
+      git(worker, "commit", "-qm", "B");
+      const b = Bun.spawnSync(["git", "-C", worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+      git(worker, "checkout", "-qb", "right", ancestor);
+      writeFileSync(join(worker, "right.txt"), "C\n");
+      git(worker, "add", "right.txt");
+      git(worker, "commit", "-qm", "C");
+      git(worker, "checkout", "-B", "feature", b);
+      git(worker, "merge", "--no-edit", "-q", "right");
+      git(worker, "checkout", "-B", "main", "right");
+      git(worker, "merge", "--no-edit", "-q", b);
+      git(worker, "checkout", "feature");
+    });
+    const all = Bun.spawnSync(["git", "-C", f.worker, "merge-base", "--all", "main", "HEAD"]);
+    expect(all.exitCode).toBe(0);
+    expect(all.stdout.toString().trim().split("\n")).toHaveLength(2);
+    const one = Bun.spawnSync(["git", "-C", f.worker, "merge-base", "main", "HEAD"]);
+    expect(one.exitCode).toBe(0);
+    expect(all.stdout.toString()).toContain(one.stdout.toString().trim());
+    expect(f.runner.bindVerdict("toy-run").head_revision).toBe(f.revision);
+  });
+
   test("verdict merge-tree does not honor worker merge.default union", () => {
     const f = patchVerdictFixture(false, true, conflictingReadme);
     expect(Bun.spawnSync(["git", "-C", f.worker, "config", "merge.default", "union"]).exitCode).toBe(0);
@@ -1598,6 +1701,83 @@ describe("runner guards", () => {
         { "file.dat": "line1\nFEATURE\nline3\nline4\nline5\n" },
         { "file.dat": "line1\nline2\nline3\nMAIN\nline5\n" },
       );
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor ancestor-only merge=union", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      commitOnMergeBaseThenDiverge(
+        worker,
+        {
+          ".gitattributes": "file.dat merge=union\n",
+          "file.dat": "line1\nBASE\nline3\n",
+        },
+        {
+          ".gitattributes": "file.dat merge=text\n",
+          "file.dat": "line1\nFEATURE\nline3\n",
+        },
+        {
+          ".gitattributes": "file.dat merge=text\n",
+          "file.dat": "line1\nMAIN\nline3\n",
+        },
+      );
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor merge-base merge=union", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      commitOnMergeBaseThenDiverge(
+        worker,
+        {
+          ".gitattributes": "file.dat merge=union\n",
+          "file.dat": "line1\nBASE\nline3\n",
+        },
+        { "file.dat": "line1\nFEATURE\nline3\n" },
+        { "file.dat": "line1\nMAIN\nline3\n" },
+      );
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor union planted on local main", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "file.dat merge=union\n");
+      writeFileSync(join(worker, "file.dat"), "line1\nBASE\nline3\n");
+      git(worker, "add", ".gitattributes", "file.dat");
+      git(worker, "commit", "-qm", "plant union on main");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+      writeFileSync(join(worker, "file.dat"), "line1\nFEATURE\nline3\n");
+      git(worker, "add", "file.dat");
+      git(worker, "commit", "-qm", "feature side");
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, "file.dat"), "line1\nMAIN\nline3\n");
+      git(worker, "add", "file.dat");
+      git(worker, "commit", "-qm", "main side");
+      git(worker, "checkout", "feature");
+    });
+    expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
+  });
+
+  test("verdict merge-tree does not honor merge-base * merge=union on add/add", () => {
+    const f = patchVerdictFixture(false, true, (worker) => {
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, ".gitattributes"), "* merge=union\n");
+      git(worker, "add", ".gitattributes");
+      git(worker, "commit", "-qm", "star union");
+      git(worker, "checkout", "feature");
+      git(worker, "merge", "--no-edit", "-q", "main");
+      writeFileSync(join(worker, "added.txt"), "FEATURE\n");
+      git(worker, "add", "added.txt");
+      git(worker, "commit", "-qm", "feature add");
+      git(worker, "checkout", "main");
+      writeFileSync(join(worker, "added.txt"), "MAIN\n");
+      git(worker, "add", "added.txt");
+      git(worker, "commit", "-qm", "main add");
+      git(worker, "checkout", "feature");
     });
     expect(() => f.runner.bindVerdict("toy-run")).toThrow("merge-tree reports a conflict");
   });
