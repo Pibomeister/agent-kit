@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { parse, stringify } from "yaml";
 
-import { loadAdaptationFragments, parseDonorSource } from "../src/validation/provenance.ts";
+import { loadAdaptationFragments, loadDonors, parseDonorSource } from "../src/validation/provenance.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const EGM_COMMIT = "403d8881d62022490637d740657b33f01e321ea8";
+const LOCK = "provenance/upstream.lock.yaml";
 const CATALOG_PREFIXES = [
   "skills/",
   "roles/",
@@ -16,40 +19,31 @@ const CATALOG_PREFIXES = [
   "adapters/",
 ] as const;
 
-function licenseByDonorId(lockText: string): Map<string, string> {
-  const out = new Map<string, string>();
-  const re = /\n  - id: ([a-z0-9-]+)\n(?:    .*\n)*?    license: (\S+)/g;
-  for (const match of lockText.matchAll(re)) {
-    const id = match[1];
-    const license = match[2];
-    if (id === undefined || license === undefined) continue;
-    out.set(id, license);
+function catalogDonorLicenses(root: string): Map<string, string> {
+  const { donors } = loadDonors(root);
+  const { rows } = loadAdaptationFragments(root);
+  const catalog = new Map<string, string>();
+  for (const row of rows) {
+    const src = parseDonorSource(row.source);
+    if (src === null) continue;
+    if (!CATALOG_PREFIXES.some((prefix) => row.path.startsWith(prefix))) continue;
+    const donor = donors.get(src.donor);
+    if (donor === undefined || donor.license === "") continue;
+    catalog.set(src.donor, donor.license);
   }
-  return out;
+  return catalog;
 }
 
 describe("EGM provenance (GS-004f)", () => {
   test("pins google/elephant-goldfish-model at the PRD commit", () => {
-    const lock = readFileSync(join(REPO, "provenance/upstream.lock.yaml"), "utf8");
-    expect(lock).toContain("repo: google/elephant-goldfish-model");
-    expect(lock).toMatch(
-      new RegExp(`id: egm\\n(?:    .*\\n)*    commit: ${EGM_COMMIT}\\n(?:    .*\\n)*    license: Apache-2\\.0`),
-    );
+    const { donors } = loadDonors(REPO);
+    const egm = donors.get("egm");
+    expect(egm?.commit).toBe(EGM_COMMIT);
+    expect(egm?.license).toBe("Apache-2.0");
   });
 
   test("counts twelve catalog donors, ten MIT and two Apache-2.0", () => {
-    const lock = readFileSync(join(REPO, "provenance/upstream.lock.yaml"), "utf8");
-    const licenses = licenseByDonorId(lock);
-    const { rows } = loadAdaptationFragments(REPO);
-    const catalog = new Map<string, string>();
-    for (const row of rows) {
-      const src = parseDonorSource(row.source);
-      if (src === null) continue;
-      if (!CATALOG_PREFIXES.some((prefix) => row.path.startsWith(prefix))) continue;
-      const license = licenses.get(src.donor);
-      if (license === undefined) continue;
-      catalog.set(src.donor, license);
-    }
+    const catalog = catalogDonorLicenses(REPO);
     const apache: string[] = [];
     const mit: string[] = [];
     for (const [id, license] of catalog) {
@@ -59,6 +53,19 @@ describe("EGM provenance (GS-004f)", () => {
     expect(catalog.size).toBe(12);
     expect(mit).toHaveLength(10);
     expect(apache.toSorted()).toEqual(["claude-mem", "egm"]);
+  });
+
+  test("re-indenting the lock keeps the pin and the catalog counts", () => {
+    const original = readFileSync(join(REPO, LOCK), "utf8");
+    const rewritten = stringify(parse(original), { indent: 4 });
+    const scratch = processScratch("egm-lock-indent-");
+    mkdirSync(join(scratch, "provenance"));
+    writeFileSync(join(scratch, LOCK), rewritten);
+    const { donors } = loadDonors(scratch);
+    const egm = donors.get("egm");
+    expect(egm?.commit).toBe(EGM_COMMIT);
+    expect(egm?.license).toBe("Apache-2.0");
+    expect(catalogDonorLicenses(REPO).size).toBe(12);
   });
 
   test("GAP-PROBE is a named coverage limit and not a pass", () => {
