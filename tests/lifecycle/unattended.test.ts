@@ -373,9 +373,23 @@ describe("selection and start (command seam)", () => {
       expect(check("--overnight").code).toBe(2);
     }
     setEnv({ AK_LIFECYCLE_SUPERVISOR: undefined });
-    const unsupervised = ak(cwd, "unattended", "check", "--phase", "super-align", ...held);
-    expect(unsupervised.code).toBe(1);
-    expect(unsupervised.err).toContain("AK_LIFECYCLE_SUPERVISOR");
+    for (const phase of [
+      "super-align",
+      "super-bound",
+      "super-scout",
+      "super-build",
+      "super-verify",
+      "super-review",
+      "super-ship",
+    ]) {
+      const unsupervised = ak(cwd, "unattended", "check", "--phase", phase, ...held);
+      expect(unsupervised.code, phase).toBe(2);
+      expect(unsupervised.err).toContain("AK_LIFECYCLE_SUPERVISOR");
+    }
+    setEnv({ AK_LIFECYCLE_SUPERVISOR: "firstmate", AK_LIFECYCLE_SUPERVISOR_DECLARATION: undefined });
+    const undeclared = ak(cwd, "unattended", "check", "--phase", "super-align", ...held);
+    expect(undeclared.code).toBe(1);
+    expect(undeclared.err).toContain("supervisor declaration");
     setEnv({ AK_LIFECYCLE_POLICY: undefined, AK_LIFECYCLE_SUPERVISOR: "firstmate" });
     const legacy = ak(cwd, "unattended", "check", "--phase", "super-build", ...held);
     expect(legacy.code).toBe(2);
@@ -2050,6 +2064,31 @@ describe("final ship (AC-5)", () => {
     expect(r.code).toBe(1);
     expect(r.err).toContain("does not descend from the shipped revision");
     expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
+  test("final ship refuses a GIT_GRAFT_FILE graft when info/grafts is empty", () => {
+    const s = shipped();
+    const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
+    const unrelated = execGit(s.cwd, [["commit-tree", tree, "-m", "unrelated graft file"]]);
+    const located = git(s.cwd, "rev-parse", "--git-path", "info/grafts");
+    const graftPath = join(s.cwd, located);
+    mkdirSync(dirname(graftPath), { recursive: true });
+    writeFileSync(graftPath, "");
+    const graftFile = join(outsideDir(), "grafts");
+    writeFileSync(graftFile, `${unrelated} ${s.head}\n`);
+    setEnv({ GIT_GRAFT_FILE: graftFile });
+    expect(
+      Bun.spawnSync(["git", "--no-replace-objects", "merge-base", "--is-ancestor", s.head, unrelated], {
+        cwd: s.cwd,
+        env: { ...process.env, GIT_GRAFT_FILE: graftFile },
+      }).exitCode,
+    ).toBe(0);
+    const r = finalShip(s.cwd, files(attestationOf(unrelated)).flags);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("does not descend from the shipped revision");
+    expect(r.err).not.toContain("final ship:");
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+    expect(JSON.stringify(recordsOf(s.cwd, s.run, "ship-preflight")[0])).not.toContain(unrelated);
   });
 
   test("final ship refuses a head whose descent exists only in a non-empty info/grafts file", () => {

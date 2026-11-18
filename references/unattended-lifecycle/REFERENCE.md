@@ -150,9 +150,11 @@ A supervisor named by `AK_LIFECYCLE_SUPERVISOR` reports a held human-only step t
 `--kind <kind> --started-at <epoch-ms> --now <epoch-ms>`, plus the applicable `--overnight`,
 `--escalated --channel <channel>`, `--target <target> --blocked-on <reason>` and `--prompt-held-open`.
 The check runs the classifier and all three violation checks before returning. Its JSON result
-includes `human_step`; exit 1 reports a violation, and exit 2 reports malformed inputs or a missing
-supervisor. With no human-step options, phase checks keep their existing result. The supervisor
-supplies the observed step and escalation state; this check does not discover steps or monitor them.
+includes `human_step`. A missing supervisor or malformed flags exit 2. A human-started phase with
+the supervisor set but no valid declaration exits 1. Model-started phases exit 2. Exit 1 also
+reports a stall violation. With no human-step options, phase checks keep their existing result.
+The supervisor supplies the observed step and escalation state; this check does not discover
+steps or monitor them.
 
 The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
 an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive

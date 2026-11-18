@@ -238,10 +238,10 @@ export interface GitResult {
   stderr: string;
 }
 
-export function git(cwd: string, args: readonly string[], env?: Record<string, string>): GitResult {
+export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): GitResult {
   const proc = spawnSync("git", [...args], {
     cwd,
-    env: env === undefined ? process.env : { ...process.env, ...env },
+    env: env ?? process.env,
     maxBuffer: 1 << 30,
   });
   if (proc.error !== undefined) {
@@ -274,7 +274,7 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       const { atime, mtime } = statSync(index);
       utimesSync(temp, atime, mtime);
     }
-    const env = { GIT_INDEX_FILE: temp };
+    const env = { ...process.env, GIT_INDEX_FILE: temp };
     const untracked = git(project, ["ls-files", "--others", "--exclude-standard", "-z"], env);
     if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
     const paths = untracked.text
@@ -2967,14 +2967,34 @@ const RECOVERY =
 /**
  * How final ship reads objects in the worker's repository, which the worker can write, here and in the policy read:
  * no lazy fetch, so a missing object runs no promisor remote's program; no replace refs; and no signature display, so
- * no `gpg.program` runs in the supervisor's process. A git older than 2.44 rejects `--no-lazy-fetch`, and the call's
+ * no `gpg.program` runs in the supervisor's process. The call drops GIT_GRAFT_FILE and the git-directory redirect
+ * variables, the same stance placeGit takes. A git older than 2.44 rejects `--no-lazy-fetch`, and the call's
  * failure refuses. Any other program-valued key git reads in the worker's repository is outside this guarantee: only
  * OS user separation closes it.
  */
 const FINAL_SHIP_GIT = ["--no-lazy-fetch", "--no-replace-objects", "-c", "log.showSignature=false"] as const;
+const FINAL_SHIP_UNSET_ENV = [
+  "GIT_GRAFT_FILE",
+  "GIT_DIR",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+] as const;
+
+function finalShipEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of FINAL_SHIP_UNSET_ENV) Reflect.deleteProperty(env, name);
+  return env;
+}
+
+function gitFinal(project: string, extra: readonly string[]): GitResult {
+  return git(project, [...FINAL_SHIP_GIT, ...extra], finalShipEnv());
+}
 
 function graftsRefusal(project: string): string | undefined {
-  const located = git(project, [...FINAL_SHIP_GIT, "rev-parse", "--git-path", "info/grafts"]);
+  const located = gitFinal(project, ["rev-parse", "--git-path", "info/grafts"]);
   if (located.code !== 0 || located.text === "")
     return "cannot locate info/grafts, so descent from the shipped revision cannot be read";
   try {
@@ -3097,12 +3117,12 @@ function shipUnattended(
   const authors = review.authors;
   if (authors.includes(reviewer))
     return deny(`reviewer ${reviewer} is among the authors; the review is not independent`, false);
-  if (git(project, [...FINAL_SHIP_GIT, "cat-file", "-e", `${head}^{commit}`]).code !== 0)
+  if (gitFinal(project, ["cat-file", "-e", `${head}^{commit}`]).code !== 0)
     return deny(`commit ${head} is not in this repository; fetch it, then record again`, false);
   const grafts = graftsRefusal(project);
   if (grafts !== undefined) return deny(grafts, false);
   const shippedRevision = shipped.snapshot.revision;
-  if (git(project, [...FINAL_SHIP_GIT, "merge-base", "--is-ancestor", shippedRevision, head]).code !== 0)
+  if (gitFinal(project, ["merge-base", "--is-ancestor", shippedRevision, head]).code !== 0)
     return deny(`head ${head} does not descend from the shipped revision ${shippedRevision}`, true);
   let bodyBytes: Buffer;
   try {
@@ -3120,13 +3140,7 @@ function shipUnattended(
       false,
     );
   }
-  const commits = git(project, [
-    ...FINAL_SHIP_GIT,
-    "log",
-    "--no-show-signature",
-    "--format=%H%x09%s",
-    `${shippedRevision}..${head}`,
-  ])
+  const commits = gitFinal(project, ["log", "--no-show-signature", "--format=%H%x09%s", `${shippedRevision}..${head}`])
     .text.split("\n")
     .filter((line) => line !== "")
     .map((line) => {
@@ -3348,7 +3362,10 @@ export function main(
     }
   }
   const finalShipGit = sub === "record" && flags.has("attestation") ? FINAL_SHIP_GIT : [];
-  const resolved = sub === "bypass grant" ? { ok: true as const } : resolvePolicy(project, process.env, finalShipGit);
+  const resolved =
+    sub === "bypass grant"
+      ? { ok: true as const }
+      : resolvePolicy(project, process.env, finalShipGit, finalShipGit.length > 0 ? finalShipEnv() : undefined);
   if (!resolved.ok) {
     io.err(`ak lifecycle ${sub}: ${resolved.reason}`);
     return 2;
@@ -3358,6 +3375,12 @@ export function main(
     const phase = str("phase");
     if (phase === undefined || !UNATTENDED_PHASES.includes(phase)) {
       io.err(`ak lifecycle unattended check: ${unknownSelector("phase", phase ?? "", UNATTENDED_PHASES)}`);
+      return 2;
+    }
+    if (HUMAN_STEP_FLAGS.some((flag) => flags.has(flag)) && policy?.supervisor === undefined) {
+      io.err(
+        "ak lifecycle unattended check: human-step options require an unattended policy with AK_LIFECYCLE_SUPERVISOR",
+      );
       return 2;
     }
     const modelStarted = MODEL_STARTED_PHASES.some((started) => started === phase);
@@ -3376,16 +3399,10 @@ export function main(
               start: "model-started",
             };
       if (HUMAN_STEP_FLAGS.some((flag) => flags.has(flag))) {
-        if (policy?.supervisor === undefined) {
-          io.err(
-            "ak lifecycle unattended check: human-step options require an unattended policy with AK_LIFECYCLE_SUPERVISOR",
-          );
-          return 2;
-        }
         return runHumanStep(io, flags, (assessment) =>
           io.out(
             JSON.stringify(
-              { ...started, supervisor: valid?.supervisor ?? policy.supervisor, human_step: assessment },
+              { ...started, supervisor: valid?.supervisor ?? policy?.supervisor, human_step: assessment },
               null,
               2,
             ),

@@ -715,6 +715,27 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     secondDoc.behavior = freeze;
     writeFileSync(runFile(dir, "second-run"), `${JSON.stringify(secondDoc, null, 2)}\n`);
     expect(classifyRun(readRun(dir, "second-run"), "second-run").kind).toBe("incomplete");
+    recordPhases(dir, "second-run");
+    expect(
+      ak(
+        dir,
+        "record",
+        "--gate",
+        "verify",
+        "--run",
+        "second-run",
+        "--receipt",
+        receipt(dir, "second-run", secondTicket),
+      ).code,
+    ).toBe(0);
+    const checked = ak(dir, "check", "--run", "second-run");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("wrong-run");
+    expect(checked.err).toContain("behavior snapshot is for run");
+    const shipped = ak(dir, "record", "--gate", "ship-preflight", "--run", "second-run");
+    expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("wrong-run");
+    expect(shipped.err).toContain("behavior snapshot is for run");
   });
 
   test("a new enabled run missing its snapshot is incomplete, not legacy", () => {

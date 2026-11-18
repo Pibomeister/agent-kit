@@ -74,8 +74,8 @@ export const parseJson = (source: string): Json | undefined => {
 export const sha256Digest = (bytes: Uint8Array | string): string =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
-const exec = (cmd: string, args: readonly string[], cwd?: string) => {
-  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const exec = (cmd: string, args: readonly string[], cwd?: string, env?: NodeJS.ProcessEnv) => {
+  const r = spawnSync(cmd, args, { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   return { code: r.status ?? 1, out: r.stdout ?? "" };
 };
 
@@ -84,11 +84,13 @@ const exec = (cmd: string, args: readonly string[], cwd?: string) => {
  * `refs/remotes/origin/HEAD`, never the working tree or the task branch. Undefined is the legacy policy.
  * Only the configuration's `policy` key is read; any other key is ignored. `gitOptions` go before each git
  * subcommand: final ship passes its guard there, and a read that fails under it is the legacy policy.
+ * `gitEnv`, when set, is the environment those git reads run in, so final ship can drop redirecting variables.
  */
 export function resolvePolicy(
   project: string,
   env: NodeJS.ProcessEnv = process.env,
   gitOptions: readonly string[] = [],
+  gitEnv?: NodeJS.ProcessEnv,
 ): { ok: true; policy?: Policy } | { ok: false; reason: string } {
   const supervisor = env[SUPERVISOR_ENV];
   if (supervisor !== undefined && !SUPERVISOR_PATTERN.test(supervisor))
@@ -105,10 +107,11 @@ export function resolvePolicy(
     "git",
     [...gitOptions, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD^{commit}"],
     project,
+    gitEnv,
   );
   const revision = rev.out.trim();
   if (rev.code !== 0 || revision === "") return { ok: true };
-  const file = exec("git", [...gitOptions, "show", `${revision}:${CONFIG_FILE}`], project);
+  const file = exec("git", [...gitOptions, "show", `${revision}:${CONFIG_FILE}`], project, gitEnv);
   if (file.code !== 0 || field(parseJson(file.out), "policy") !== UNATTENDED) return { ok: true };
   return { ok: true, policy: stamp(`default-branch:${revision}`) };
 }
