@@ -657,7 +657,13 @@ function serveLoop(
   return { socket, service, workerToken, request: join(f.requestDir, "audit.json") };
 }
 
-function serveEvents(f: ReturnType<typeof fixture>, clock: string, eventCommand: string[], timeoutMs = 100) {
+function serveEvents(
+  f: ReturnType<typeof fixture>,
+  clock: string,
+  eventCommand: string[],
+  timeoutMs = 100,
+  loopCommand?: string[],
+) {
   const socket = join(f.privateDir, "runner.sock");
   const eventConfig = join(f.privateDir, "event.json");
   const loopConfig = join(f.privateDir, "loop.json");
@@ -670,7 +676,7 @@ function serveEvents(f: ReturnType<typeof fixture>, clock: string, eventCommand:
     loopConfig,
     JSON.stringify({
       timeout_ms: 1000,
-      command: [
+      command: loopCommand ?? [
         process.execPath,
         "-e",
         "const x=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
@@ -3008,7 +3014,7 @@ describe("runner guards", () => {
         mode: "autonomous",
         missing: [],
       });
-      writeFileSync(clock, "305000\n");
+      writeFileSync(clock, "600000\n");
       await waitUntil("status to name event-delivery-failed after the reset window", () =>
         autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("event-delivery-failed"),
       );
@@ -3624,13 +3630,19 @@ describe("runner guards", () => {
       unlinkSync(release);
       writeFileSync(clock, "10000\n");
       await waitUntil("the second failure to run", () => readFileSync(stamp, "utf8").length >= 3);
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
       writeFileSync(clock, "300000\n");
       await Bun.sleep(200);
       expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
         mode: "autonomous",
         missing: [],
       });
-      writeFileSync(clock, "310000\n");
+      writeFileSync(clock, "600000\n");
       await waitUntil("status to name audit-failed after the reset window", () =>
         autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
       );
@@ -3762,7 +3774,7 @@ describe("runner guards", () => {
     }
   });
 
-  test("a frozen file clock still names the outage when wall time reaches the window", async () => {
+  test("a frozen file clock still names the outage when real time reaches the window", async () => {
     const f = fixture();
     withAuditCadence(f, undefined, 300);
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
@@ -3778,25 +3790,36 @@ describe("runner guards", () => {
     );
     try {
       await waitForPath(socket, service);
-      await waitUntil("the first failing probe to run", () => existsSync(stamp));
+      await waitUntil(
+        "the first failing probe to run",
+        () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1,
+      );
       writeFileSync(request, JSON.stringify({ run: "toy-run" }));
       expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
         mode: "autonomous",
         missing: [],
       });
-      writeFileSync(clock, "0 300000\n");
-      await waitUntil("status to name audit-failed from wall elapsed", () =>
-        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      await waitUntil("the frozen clock to retry on real elapsed", () => readFileSync(stamp, "utf8").length >= 2);
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      expect(readFileSync(clock, "utf8").trim()).toBe("0 0");
+      await waitUntil(
+        "status to name audit-failed from real elapsed",
+        () => autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+        400_000,
       );
       expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
         mode: "guided",
         missing: ["audit-failed"],
       });
+      expect(readFileSync(clock, "utf8").trim()).toBe("0 0");
     } finally {
       service.kill("SIGTERM");
       await service.exited;
     }
-  });
+  }, 420_000);
 
   test("an unreadable clock file names the outage without throwing from a timer", async () => {
     const f = fixture();
@@ -3836,6 +3859,151 @@ describe("runner guards", () => {
     expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow(
       "invalid charter",
     );
+  });
+
+  test("a charter outage backoff under five minutes is refused at start", () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 299);
+    expect(() => f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f))).toThrow(
+      "invalid charter",
+    );
+  });
+
+  test("outage backoff names both audit-failed and event-delivery-failed after both windows", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const clock = join(f.privateDir, "clock");
+    const started = join(f.privateDir, "consumer-started");
+    const stamp = join(f.privateDir, "loop-stamp");
+    writeFileSync(clock, "0\n");
+    const hangEvent = [
+      process.execPath,
+      "-e",
+      "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); await Bun.sleep(60_000);",
+      started,
+    ];
+    const failLoop = [
+      process.execPath,
+      "-e",
+      "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); throw new Error('transient');",
+      stamp,
+    ];
+    const { socket, service, adminToken, workerToken, request } = serveEvents(f, clock, hangEvent, 100, failLoop);
+    try {
+      await waitForPath(socket, service);
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitUntil("the event consumer to start", () => existsSync(started));
+      await waitUntil("the failing probe to run", () => existsSync(stamp));
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "300000\n");
+      await waitUntil("status to name both outages", () => {
+        const missing = autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing;
+        return missing.includes("audit-failed") && missing.includes("event-delivery-failed");
+      });
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["event-delivery-failed", "audit-failed"],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a visible event-delivery-failed outage alone leaves the run guided", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const clock = join(f.privateDir, "clock");
+    const started = join(f.privateDir, "consumer-started");
+    writeFileSync(clock, "0\n");
+    const { socket, service, adminToken, workerToken, request } = serveEvents(f, clock, [
+      process.execPath,
+      "-e",
+      "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); await Bun.sleep(60_000);",
+      started,
+    ]);
+    try {
+      await waitForPath(socket, service);
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitUntil("the event consumer to start", () => existsSync(started));
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "300000\n");
+      await waitUntil("status to name only event-delivery-failed", () => {
+        const autonomy = autonomyOf(callRunnerCli("status", request, socket, workerToken));
+        return autonomy.mode === "guided" && autonomy.missing.includes("event-delivery-failed");
+      });
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["event-delivery-failed"],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("a serve restart starts a new outage window", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "loop-stamp");
+    const clock = join(f.privateDir, "clock");
+    writeFileSync(clock, "0\n");
+    const script =
+      "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); throw new Error('transient');";
+    let { socket, service, workerToken, request } = serveLoop(f, script, stamp, clock);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the first failing probe to run",
+        () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1,
+      );
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      service.kill("SIGTERM");
+      await service.exited;
+      const firstFails = readFileSync(stamp, "utf8").length;
+      ({ socket, service, workerToken, request } = serveLoop(f, script, stamp, clock));
+      await waitForPath(socket, service);
+      await waitUntil("the restarted serve to fail again", () => readFileSync(stamp, "utf8").length > firstFails);
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "300000\n");
+      await waitUntil("the fresh window to name audit-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      );
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["audit-failed"],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
   });
 
   test("a failed loop adapter approves no checkpoint", async () => {

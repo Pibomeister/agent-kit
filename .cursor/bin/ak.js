@@ -44776,12 +44776,7 @@ async function serve(argv, io) {
       const n = Number(parts[0]);
       if (!Number.isFinite(n))
         return null;
-      if (parts[1] === undefined)
-        return { now: n, wall: wallNow() };
-      const w = Number(parts[1]);
-      if (!Number.isFinite(w))
-        return null;
-      return { now: n, wall: w };
+      return { now: n };
     } catch {
       return null;
     }
@@ -44796,17 +44791,11 @@ async function serve(argv, io) {
     }
     return read2.now;
   };
-  const clockWall = () => {
-    const read2 = readClockFile();
-    if (read2 === null)
-      return wallNow();
-    return read2.wall;
-  };
   const wait = (ms) => {
     if (clockPath === undefined)
       return new Promise((done) => setTimeout(done, ms));
     const fileStart = now();
-    const wallStart = clockWall();
+    const realStart = wallNow();
     return new Promise((done) => {
       const poll = () => {
         if (!open) {
@@ -44819,7 +44808,7 @@ async function serve(argv, io) {
           done();
           return;
         }
-        if (read2.now - fileStart >= ms || read2.wall - wallStart >= ms) {
+        if (read2.now - fileStart >= ms || wallNow() - realStart >= ms) {
           done();
           return;
         }
@@ -44832,12 +44821,17 @@ async function serve(argv, io) {
   let deliveryOutage = null;
   const outageElapsedMs = (streak) => {
     const fileElapsed = now() - streak.startedAt;
-    const wallElapsed = clockWall() - streak.wallStartedAt;
-    return fileElapsed > wallElapsed ? fileElapsed : wallElapsed;
+    const realElapsed = wallNow() - streak.realStartedAt;
+    return fileElapsed > realElapsed ? fileElapsed : realElapsed;
+  };
+  const outageDue = (streak) => {
+    const fileDue = now() >= streak.retryAt;
+    const realDue = wallNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
+    return fileDue || realDue;
   };
   const startOutage = () => ({
     startedAt: now(),
-    wallStartedAt: clockWall(),
+    realStartedAt: wallNow(),
     attempts: 0,
     retryAt: 0
   });
@@ -44861,7 +44855,7 @@ async function serve(argv, io) {
   const wakeEvents = () => {
     if (eventCommand === null)
       return;
-    if (deliveryOutage !== null && now() < deliveryOutage.retryAt)
+    if (deliveryOutage !== null && !outageDue(deliveryOutage))
       return;
     if (delivering) {
       rescanEvents = true;
@@ -45031,7 +45025,7 @@ async function serve(argv, io) {
   const runAudit = async () => {
     if (loopCommand === null || auditRunning || auditHalted || !open)
       return;
-    if (auditOutage !== null && now() < auditOutage.retryAt)
+    if (auditOutage !== null && !outageDue(auditOutage))
       return;
     auditRunning = true;
     try {

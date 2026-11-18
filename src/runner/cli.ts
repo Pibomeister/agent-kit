@@ -612,16 +612,13 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   let deliveryHealthy = true;
   let open = true;
   let clockBroken = false;
-  const readClockFile = (): { now: number; wall: number } | null => {
+  const readClockFile = (): { now: number } | null => {
     if (clockPath === undefined) return null;
     try {
       const parts = readFileSync(clockPath, "utf8").trim().split(/\s+/);
       const n = Number(parts[0]);
       if (!Number.isFinite(n)) return null;
-      if (parts[1] === undefined) return { now: n, wall: wallNow() };
-      const w = Number(parts[1]);
-      if (!Number.isFinite(w)) return null;
-      return { now: n, wall: w };
+      return { now: n };
     } catch {
       return null;
     }
@@ -635,15 +632,10 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     }
     return read.now;
   };
-  const clockWall = (): number => {
-    const read = readClockFile();
-    if (read === null) return wallNow();
-    return read.wall;
-  };
   const wait = (ms: number): Promise<void> => {
     if (clockPath === undefined) return new Promise((done) => setTimeout(done, ms));
     const fileStart = now();
-    const wallStart = clockWall();
+    const realStart = wallNow();
     return new Promise((done) => {
       const poll = () => {
         if (!open) {
@@ -656,7 +648,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           done();
           return;
         }
-        if (read.now - fileStart >= ms || read.wall - wallStart >= ms) {
+        if (read.now - fileStart >= ms || wallNow() - realStart >= ms) {
           done();
           return;
         }
@@ -665,17 +657,22 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       poll();
     });
   };
-  type OutageStreak = { startedAt: number; wallStartedAt: number; attempts: number; retryAt: number };
+  type OutageStreak = { startedAt: number; realStartedAt: number; attempts: number; retryAt: number };
   let auditOutage: OutageStreak | null = null;
   let deliveryOutage: OutageStreak | null = null;
   const outageElapsedMs = (streak: OutageStreak): number => {
     const fileElapsed = now() - streak.startedAt;
-    const wallElapsed = clockWall() - streak.wallStartedAt;
-    return fileElapsed > wallElapsed ? fileElapsed : wallElapsed;
+    const realElapsed = wallNow() - streak.realStartedAt;
+    return fileElapsed > realElapsed ? fileElapsed : realElapsed;
+  };
+  const outageDue = (streak: OutageStreak): boolean => {
+    const fileDue = now() >= streak.retryAt;
+    const realDue = wallNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
+    return fileDue || realDue;
   };
   const startOutage = (): OutageStreak => ({
     startedAt: now(),
-    wallStartedAt: clockWall(),
+    realStartedAt: wallNow(),
     attempts: 0,
     retryAt: 0,
   });
@@ -695,7 +692,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   };
   const wakeEvents = () => {
     if (eventCommand === null) return;
-    if (deliveryOutage !== null && now() < deliveryOutage.retryAt) return;
+    if (deliveryOutage !== null && !outageDue(deliveryOutage)) return;
     if (delivering) {
       rescanEvents = true;
       return;
@@ -860,7 +857,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   };
   const runAudit = async () => {
     if (loopCommand === null || auditRunning || auditHalted || !open) return;
-    if (auditOutage !== null && now() < auditOutage.retryAt) return;
+    if (auditOutage !== null && !outageDue(auditOutage)) return;
     auditRunning = true;
     try {
       applyPersistedCap();
