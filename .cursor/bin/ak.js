@@ -38810,7 +38810,7 @@ init_common_schema();
 var import_ajv18 = __toESM(require_ajv(), 1);
 var import__202014 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync7 } from "child_process";
-import { existsSync as existsSync42, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
+import { existsSync as existsSync41, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
 import { homedir as homedir6 } from "os";
 import { basename as basename23, isAbsolute as isAbsolute18, join as join54, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
@@ -41832,7 +41832,7 @@ function resolveLink(absolute) {
 // src/runner/cli.ts
 init_hash();
 import { timingSafeEqual } from "crypto";
-import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync36, realpathSync as realpathSync17, unlinkSync } from "fs";
+import { chmodSync as chmodSync4, existsSync as existsSync40, readFileSync as readFileSync36, realpathSync as realpathSync17, unlinkSync as unlinkSync2 } from "fs";
 import { createConnection, createServer } from "net";
 import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
 
@@ -41840,7 +41840,7 @@ import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative1
 init_dist();
 init_hash();
 import { createHash as createHash12 } from "crypto";
-import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync13, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
+import { existsSync as existsSync39, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync13, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
 import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
@@ -41853,29 +41853,106 @@ function isDesignReport(value) {
 
 // src/lifecycle/persist-run.ts
 import { createHash as createHash10 } from "crypto";
-import { existsSync as existsSync38, mkdirSync as mkdirSync23, readFileSync as readFileSync30, renameSync as renameSync5, writeFileSync as writeFileSync14 } from "fs";
+import { lstatSync as lstatSync4, mkdirSync as mkdirSync23, readFileSync as readFileSync30, renameSync as renameSync5, unlinkSync, writeFileSync as writeFileSync14 } from "fs";
 import { dirname as dirname20, join as join43 } from "path";
 var safeRunId = (id) => id.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
-var atomicJson = (path, value) => {
-  mkdirSync23(dirname20(path), { recursive: true });
-  const staging = `${path}.partial-${process.pid}`;
-  writeFileSync14(staging, `${JSON.stringify(value, null, 2)}
-`);
-  renameSync5(staging, path);
+var toBytes = (value) => new Uint8Array(value);
+var sameBytes = (left, right) => left.byteLength === right.byteLength && Buffer.from(left).equals(Buffer.from(right));
+var confirmBytes = (path, expected, observed) => {
+  if (!sameBytes(observed, expected))
+    throw new Error(`lifecycle persist: read-back mismatch: ${path}`);
 };
-var atomicBytes = (path, value) => {
-  mkdirSync23(dirname20(path), { recursive: true });
-  const staging = `${path}.partial-${process.pid}`;
-  writeFileSync14(staging, value);
-  renameSync5(staging, path);
-};
+var stagingFor = (path) => `${path}.partial-${process.pid}`;
 var sha256 = (value) => `sha256:${createHash10("sha256").update(value).digest("hex")}`;
-function persistFrozenRun(dir, record, ticketBytes) {
-  atomicJson(join43(dir, "runs", safeRunId(record.run_id), "run.json"), record);
+var isEnoent = (cause) => cause instanceof Error && ("code" in cause) && cause.code === "ENOENT";
+var removeRegularFile = (path) => {
+  let st;
+  try {
+    st = lstatSync4(path);
+  } catch (error2) {
+    if (isEnoent(error2))
+      return;
+    throw error2;
+  }
+  if (!st.isFile())
+    return;
+  unlinkSync(path);
+};
+var ignoreCleanupFailure = (cleanup) => {
+  try {
+    cleanup();
+  } catch {
+    return;
+  }
+};
+var stillOurBytes = (path, expected) => {
+  let st;
+  try {
+    st = lstatSync4(path);
+  } catch (error2) {
+    if (isEnoent(error2))
+      return false;
+    throw error2;
+  }
+  if (!st.isFile())
+    return false;
+  return sameBytes(new Uint8Array(readFileSync30(path)), expected);
+};
+function persistFrozenRun(dir, record, ticketBytes, read2 = (path) => new Uint8Array(readFileSync30(path))) {
   const hash = sha256(ticketBytes);
-  const path = join43(dir, safeRunId(record.run_id), "artifacts", hash.slice("sha256:".length));
-  if (!existsSync38(path) || sha256(readFileSync30(path)) !== hash)
-    atomicBytes(path, ticketBytes);
+  const ticketPath = join43(dir, safeRunId(record.run_id), "artifacts", hash.slice("sha256:".length));
+  const jsonPath = join43(dir, "runs", safeRunId(record.run_id), "run.json");
+  const jsonBytes = new TextEncoder().encode(`${JSON.stringify(record, null, 2)}
+`);
+  const jsonStaging = stagingFor(jsonPath);
+  const ticketStaging = stagingFor(ticketPath);
+  if (hash !== record.ticket.hash)
+    throw new Error(`lifecycle persist: ticket hash mismatch: ${ticketPath}`);
+  const skipTicket = lstatSync4(ticketPath, { throwIfNoEntry: false })?.isFile() === true && sha256(readFileSync30(ticketPath)) === hash;
+  let usedJsonStaging = false;
+  let usedTicketStaging = false;
+  let wroteJson = false;
+  let wroteTicket = false;
+  try {
+    mkdirSync23(dirname20(jsonPath), { recursive: true });
+    usedJsonStaging = true;
+    writeFileSync14(jsonStaging, jsonBytes);
+    renameSync5(jsonStaging, jsonPath);
+    wroteJson = true;
+    confirmBytes(jsonPath, jsonBytes, toBytes(read2(jsonPath)));
+    if (!skipTicket) {
+      mkdirSync23(dirname20(ticketPath), { recursive: true });
+      usedTicketStaging = true;
+      writeFileSync14(ticketStaging, ticketBytes);
+      renameSync5(ticketStaging, ticketPath);
+      wroteTicket = true;
+      confirmBytes(ticketPath, ticketBytes, toBytes(read2(ticketPath)));
+    }
+    const observedJson = new Uint8Array(readFileSync30(jsonPath));
+    if (!sameBytes(observedJson, jsonBytes))
+      throw new Error(`lifecycle persist: read-back mismatch: ${jsonPath}`);
+    const observedTicket = new Uint8Array(readFileSync30(ticketPath));
+    if (!sameBytes(observedTicket, ticketBytes))
+      throw new Error(`lifecycle persist: read-back mismatch: ${ticketPath}`);
+  } catch (error2) {
+    ignoreCleanupFailure(() => {
+      if (usedJsonStaging)
+        removeRegularFile(jsonStaging);
+    });
+    ignoreCleanupFailure(() => {
+      if (usedTicketStaging)
+        removeRegularFile(ticketStaging);
+    });
+    ignoreCleanupFailure(() => {
+      if (wroteTicket && stillOurBytes(ticketPath, ticketBytes))
+        removeRegularFile(ticketPath);
+    });
+    ignoreCleanupFailure(() => {
+      if (wroteJson && stillOurBytes(jsonPath, jsonBytes))
+        removeRegularFile(jsonPath);
+    });
+    throw error2;
+  }
 }
 
 // src/runner/core.ts
@@ -42211,11 +42288,11 @@ var isEffectConfig = ajv6.compile({
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync5 } from "child_process";
 import { createHash as createHash11 } from "crypto";
-import { accessSync, constants, existsSync as existsSync39, lstatSync as lstatSync5, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
+import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync6, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
 import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
 
 // src/runner/path.ts
-import { lstatSync as lstatSync4, realpathSync as realpathSync11 } from "fs";
+import { lstatSync as lstatSync5, realpathSync as realpathSync11 } from "fs";
 import { delimiter as delimiter4, dirname as dirname21, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
 function workerControlledPath(path, workerRoot) {
   if (!isAbsolute12(path))
@@ -42223,7 +42300,7 @@ function workerControlledPath(path, workerRoot) {
   let existing = resolve14(path);
   for (;; ) {
     try {
-      lstatSync4(existing);
+      lstatSync5(existing);
       break;
     } catch (cause) {
       if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
@@ -42317,7 +42394,7 @@ function checkGitControls(context, project) {
   const entryPath = join45(project, ".git");
   let paths2;
   try {
-    const entry = lstatSync5(entryPath);
+    const entry = lstatSync6(entryPath);
     if (entry.isDirectory())
       paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
     else if (entry.isFile() && entry.size <= 4096) {
@@ -42344,7 +42421,7 @@ function checkGitControls(context, project) {
     if (path === undefined)
       return failedGit(`runner cannot locate git ${name}`);
     try {
-      if (!lstatSync5(isAbsolute13(path) ? path : resolve15(project, path)).isFile())
+      if (!lstatSync6(isAbsolute13(path) ? path : resolve15(project, path)).isFile())
         return failedGit(`runner git ${name} must be a regular file`);
     } catch (cause) {
       if (name === "index" && cause instanceof Error && "code" in cause && cause.code === "ENOENT")
@@ -42398,13 +42475,13 @@ function cleanCommittedTree(context, project) {
 function rawFile(context, project, path) {
   try {
     const at = join45(project, path);
-    const stat = lstatSync5(at);
+    const stat = lstatSync6(at);
     if (stat.isSymbolicLink())
       return `link:${readlinkSync3(at)}`;
     if (stat.isFile())
       return `file:${stat.mode & 73}:${createHash11("sha256").update(readFileSync32(at)).digest("hex")}`;
     if (stat.isDirectory()) {
-      if (!existsSync39(join45(at, ".git")))
+      if (!existsSync38(join45(at, ".git")))
         return "dir";
       const tree = treeHash(context, at, []);
       if (!(tree instanceof Object))
@@ -42549,7 +42626,7 @@ function inside(path, root) {
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
   const missing2 = [];
-  while (!existsSync40(existing)) {
+  while (!existsSync39(existing)) {
     missing2.unshift(basename20(existing));
     existing = dirname22(existing);
   }
@@ -42748,7 +42825,7 @@ class Runner {
       ".claude-plugin/plugin.json",
       ".kimi-plugin/plugin.json",
       ".factory-plugin/plugin.json"
-    ].map((path) => join46(this.kitRoot, path)).find((path) => existsSync40(path));
+    ].map((path) => join46(this.kitRoot, path)).find((path) => existsSync39(path));
     if (manifestPath === undefined)
       throw new Error("recorded bundle version is unavailable");
     const manifest = JSON.parse(readFileSync33(manifestPath, "utf8"));
@@ -43193,7 +43270,7 @@ class Runner {
     if (ticketId === undefined)
       throw new Error("approved ticket is unnamed");
     const path = join46(this.stateDir, `${ticketId}.json`);
-    if (existsSync40(path)) {
+    if (existsSync39(path)) {
       this.assertPrivatePath(path);
       let parsed;
       try {
@@ -44660,7 +44737,7 @@ async function serve(argv, io) {
   const relativeSocket = relative14(workerRoot, socketPath);
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
     throw new Error("runner socket is inside worker root");
-  if (existsSync41(socketPath)) {
+  if (existsSync40(socketPath)) {
     const live = await new Promise((done, fail2) => {
       const probe = createConnection(socketPath);
       probe.once("connect", () => {
@@ -44676,8 +44753,8 @@ async function serve(argv, io) {
     });
     if (live)
       throw new Error("runner socket already has a live service");
-    if (existsSync41(socketPath))
-      unlinkSync(socketPath);
+    if (existsSync40(socketPath))
+      unlinkSync2(socketPath);
   }
   const socketParent = realpathSync17(dirname24(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
@@ -45201,8 +45278,8 @@ async function serve(argv, io) {
       clearInterval(auditTimer);
     for (const pid of activeChildren)
       killGroup(pid);
-    if (existsSync41(socketPath))
-      unlinkSync(socketPath);
+    if (existsSync40(socketPath))
+      unlinkSync2(socketPath);
     process.exit(0);
   };
   process.once("SIGHUP", close);
@@ -45480,9 +45557,9 @@ async function runCouncil(argv, io) {
 }
 
 // src/semantic-lint/key.ts
-import { lstatSync as lstatSync6, readFileSync as readFileSync38 } from "fs";
+import { lstatSync as lstatSync7, readFileSync as readFileSync38 } from "fs";
 function readKeyFile(path) {
-  const stat = lstatSync6(path, { throwIfNoEntry: false });
+  const stat = lstatSync7(path, { throwIfNoEntry: false });
   if (stat === undefined)
     return null;
   if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 511) !== 384 || process.getuid !== undefined && stat.uid !== process.getuid())
@@ -45777,7 +45854,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync40, realpathSync as realpathSync18 } from "fs";
+import { lstatSync as lstatSync8, readFileSync as readFileSync40, realpathSync as realpathSync18 } from "fs";
 import { isAbsolute as isAbsolute17, join as join50, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
@@ -45815,7 +45892,7 @@ function collectInput(cwd) {
       reason2 = "unsupported";
     else {
       try {
-        const stat = lstatSync7(absolute);
+        const stat = lstatSync8(absolute);
         const rel = relative15(root, realpathSync18(absolute));
         if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
           reason2 = "symlink";
@@ -46359,7 +46436,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync42(join54(root, BINDING_FILE)) ? root : null;
+  return existsSync41(join54(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -46418,7 +46495,7 @@ function checkLinearis(root, backend) {
   const top = topResult.ok ? realpathSync19(topResult.output) : realpathSync19(root);
   for (const base2 of new Set([root, top])) {
     const binary2 = join54(base2, "node_modules", ".bin", "linearis");
-    if (!existsSync42(binary2))
+    if (!existsSync41(binary2))
       continue;
     const target = realpathSync19(binary2);
     if ([root, top].every((folder) => relative16(join54(realpathSync19(folder), "node_modules"), target).startsWith("..")))
