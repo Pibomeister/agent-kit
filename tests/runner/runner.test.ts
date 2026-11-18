@@ -4104,6 +4104,15 @@ describe("runner guards", () => {
     expect(nestedClean).toBe(false);
   });
 
+  test("a bare workerRoot refuses verdict-bearing git", () => {
+    const bare = mkdtempSync(join(scratchRoot, "ak-bare-"));
+    git(bare, "init", "--bare", "-q");
+    const context = resolveRunnerGit(bare);
+    expect(context.gitDir).toBeUndefined();
+    expect(context.workTree).toBeUndefined();
+    expect(() => cleanCommittedTree(context, bare)).toThrow("git layout is not pinned");
+  });
+
   test("a planted gitfile after bind cannot hide dirt or reuse a verdict", () => {
     const f = patchVerdictFixture();
     const head = workerHead(f.worker);

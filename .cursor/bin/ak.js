@@ -42444,7 +42444,7 @@ function pinnedGitKind(workTree) {
 }
 function assertPinnedLayout(context) {
   if (context.gitDir === undefined || context.workTree === undefined)
-    return;
+    throw new Error("git layout is not pinned");
   const now = layoutAt(context.workerRoot);
   if (now !== undefined && now.gitDir !== context.gitDir)
     throw new Error(LAYOUT_CHANGED);

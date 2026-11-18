@@ -419,10 +419,13 @@ entries instead of trusting a Git text diff. At service start it pins an absolut
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
 have a ten-second timeout with a kill signal, pin `--git-dir` and `--work-tree` from the layout
-resolved once at start so a nested cwd cannot retarget the repository, fail closed when that
-layout later changes, ignore worker `diff.relative` with `-c diff.relative=false` and
-`--no-relative` on diffs, set `attr.tree` to the empty tree so worker `.gitattributes` cannot
-assign merge drivers, textconv or filters, and do not invoke those programs. Verdict `merge-tree` is the exception: it runs twice against a throwaway `GIT_DIR`
+resolved once at start so a nested cwd cannot retarget the repository, ignore worker `diff.relative`
+with `-c diff.relative=false` and `--no-relative` on diffs, set `attr.tree` to the empty tree so
+worker `.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
+programs. Layout fail-closed is only the verdict-bearing calls `patchIdentity`, `ciConfigDrift`,
+`mergeTreeClean` and `cleanCommittedTree`, plus `Runner.revision` after a bound verdict. Those throw
+when no layout was resolved at start, or when that layout later changes. Non-verdict spawns
+(`runnerGit` and the like) are outside that guarantee. Verdict `merge-tree` is the exception: it runs twice against a throwaway `GIT_DIR`
 initialized with the worker's object format, outside the worker root, so neither
 `.git/info/attributes` nor a worker `merge.<driver>.driver` can run. One pass sets `attr.tree` to
 the merge-base tree so committed `binary` and `-merge` attributes still conflict. The other sets
