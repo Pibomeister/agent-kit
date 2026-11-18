@@ -9,22 +9,28 @@ import { describe, expect, test } from "bun:test";
 
 const REPO = join(import.meta.dir, "..");
 const read = (p: string): string => readFileSync(join(REPO, p), "utf8").replace(/\s+/g, " ");
+const times = (hay: string, needle: string): number => hay.split(needle).length - 1;
 
-/** Instructional clause from skills/super-review/SKILL.md workflow step 12. */
-const RECORDS = "`changes-requested` records `review-full --verdict changes-requested`";
+/** Collapsed skills/super-review/SKILL.md workflow step 12, including the trailing space before Hard gates. */
+const STEP12 =
+  "12. On `approved`, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate review-full`, `review-delta` or `review-readiness` (the bundle's `bin/`). A `full` that returned `changes-requested` records `review-full --verdict changes-requested`; no other verdict is recorded. A full record on an earlier head, or one that requested changes, counts once an approved delta recorded after it covers the head. Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the branch-named v1 run) and records to the git directory. A binding's brief supplies `--dir`. A record on a run that `ship-preflight` has closed is refused; the task needs a new `open`. ";
 
 describe("super-review wording", () => {
   test("step 12 records a changes-requested full review with --verdict changes-requested", () => {
     const body = read("skills/super-review/SKILL.md");
+    expect(times(body, "## Workflow")).toBe(1);
+    expect(times(body, "## Hard gates")).toBe(1);
     const workflow = body.indexOf("## Workflow");
-    expect(workflow).toBeGreaterThan(-1);
+    const hard = body.indexOf("## Hard gates");
+    expect(hard).toBeGreaterThan(workflow);
+    const mid = body.slice(workflow, hard);
+    expect(times(mid, "12. On `approved`")).toBe(1);
     const at = body.indexOf("12. On `approved`", workflow);
-    expect(at).toBeGreaterThan(-1);
-    const end = body.indexOf("## Hard gates", at);
-    expect(end).toBeGreaterThan(at);
-    const step = body.slice(at, end);
-    expect(step).toContain(RECORDS);
-    expect(step).not.toContain("and only then");
-    expect(step).not.toContain("does not record");
+    const step = body.slice(at, hard);
+    try {
+      expect(step).toBe(STEP12);
+    } catch (cause) {
+      throw new Error("issue #147: step 12 must tell reviewers to record a changes-requested full review", { cause });
+    }
   });
 });
