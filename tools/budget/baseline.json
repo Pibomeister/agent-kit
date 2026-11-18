@@ -393,8 +393,8 @@
     },
     "bundle/claude-code:references/shared/schemas/finding.schema.json": {
       "file": "schemas/finding.schema.json",
-      "bytes": 27606,
-      "tokens": 6902
+      "bytes": 27581,
+      "tokens": 6896
     },
     "bundle/claude-code:references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
@@ -1268,8 +1268,8 @@
     },
     "bundle/codex:references/shared/schemas/finding.schema.json": {
       "file": "schemas/finding.schema.json",
-      "bytes": 27606,
-      "tokens": 6902
+      "bytes": 27581,
+      "tokens": 6896
     },
     "bundle/codex:references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
@@ -2143,8 +2143,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/finding.schema.json": {
       "file": "schemas/finding.schema.json",
-      "bytes": 27606,
-      "tokens": 6902
+      "bytes": 27581,
+      "tokens": 6896
     },
     "bundle/cursor:.cursor/references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
@@ -3018,8 +3018,8 @@
     },
     "bundle/droid:references/shared/schemas/finding.schema.json": {
       "file": "schemas/finding.schema.json",
-      "bytes": 27606,
-      "tokens": 6902
+      "bytes": 27581,
+      "tokens": 6896
     },
     "bundle/droid:references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
@@ -3893,8 +3893,8 @@
     },
     "bundle/grok:references/shared/schemas/finding.schema.json": {
       "file": "schemas/finding.schema.json",
-      "bytes": 27606,
-      "tokens": 6902
+      "bytes": 27581,
+      "tokens": 6896
     },
     "bundle/grok:references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",
@@ -4768,8 +4768,8 @@
     },
     "bundle/kimi:references/shared/schemas/finding.schema.json": {
       "file": "schemas/finding.schema.json",
-      "bytes": 27606,
-      "tokens": 6902
+      "bytes": 27581,
+      "tokens": 6896
     },
     "bundle/kimi:references/shared/schemas/firstmate-binding.schema.json": {
       "file": "schemas/firstmate-binding.schema.json",

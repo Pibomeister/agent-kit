@@ -20119,7 +20119,7 @@ var init_finding_schema = __esm(() => {
         const: "finding"
       },
       status: {
-        description: "Plan 5.5. 'accepted' is a disposition, not a fix; 'awaiting-verification' is not 'resolved'; only independent verification evidence and policy close a finding, and a classifier's output stays advisory (plan 11).",
+        description: "Plan 5.5. 'accepted' is a disposition, not a fix; 'awaiting-verification' is not 'resolved'; only independent verification evidence and policy close a finding, and a classifier's output stays advisory (plan 11). A comprehension finding is never rejected on the author's word (ruling `comprehension-gap-not-contestable`).",
         enum: [
           "open",
           "accepted",
@@ -20142,7 +20142,7 @@ var init_finding_schema = __esm(() => {
         $ref: "common.schema.json#/$defs/role_id"
       },
       fingerprint: {
-        description: "Identity candidate across fixes (plan 5.5). 'inputs' is closed and has no line-number member: rule or cause, the symbol or path, and a digest of the evidence are the only things identity may depend on. A finding whose line moved keeps its fingerprint; a genuinely different cause at the same line gets a different one (release scenario 9). The fingerprint plus the evidence digest is also what a continuing seat retains and what a replacement seat receives in its prior-finding packet, so a later closure pass sees the old finding rather than starting from zero (ruling `reviewer-continuity-not-amnesia`).",
+        description: "Identity candidate across fixes (plan 5.5). 'inputs' is closed and has no line-number member: rule or cause, the symbol or path, and a digest of the evidence are the only things identity may depend on. A finding whose line moved keeps its fingerprint; a genuinely different cause at the same line gets a different one (release scenario 9). The fingerprint plus the evidence digest is also what a continuing seat retains and what a replacement seat receives in its prior-finding packet, so a later closure pass sees the old finding rather than starting from zero (ruling `reviewer-continuity-not-amnesia`). The comprehension seat and the ticket cold reader receive no prior-finding packet (ruling `comprehension-seat-stays-naive`).",
         type: "object",
         additionalProperties: false,
         required: ["value", "inputs"],
@@ -20350,7 +20350,6 @@ var init_finding_schema = __esm(() => {
             $ref: "common.schema.json#/$defs/actor_role"
           },
           outcome: {
-            description: "A comprehension finding is never rejected on the author's word (ruling `comprehension-gap-not-contestable`). The comprehension seat and the ticket cold reader keep no prior-finding packet (ruling `comprehension-seat-stays-naive`).",
             enum: ["accepted", "rejected", "deferred", "escalated"]
           },
           rationale: {
