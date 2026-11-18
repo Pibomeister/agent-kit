@@ -309,6 +309,18 @@ The first follow-up above is closed this way:
   ancestry alone, so a run the supervisor has since merged still verifies. The pre-ship default checks
   `build-checks, verify, review-full, review-readiness`, since `ship-preflight` does not exist yet
   when super-ship checks.
+- A `review-full` record with no `verdict` field still counts as approved. `readRecords` treats
+  `verdict === undefined` as well-formed (`src/lifecycle/gate.ts:1318`). The CLI usage text says to
+  leave `--verdict` out for an approved full review (`src/lifecycle/gate.ts:2575-2576`). Existing
+  records stay valid. No migration is needed.
+- Issue #147 reported that a changes-requested full review left no `review-full` record, because
+  super-review recorded the gate only on `approved`. The same claim is in
+  `research/reviews/verification-receipts/01-full-review.md:53`. What was measured at 0.1.37
+  (`e2cab1b6`) is separate. The skill said to record the gate "On `approved`, and only then"
+  (`skills/super-review/SKILL.md:161-163`). At that revision the check refuses a gate with no
+  record (`src/lifecycle/gate.ts:1150-1152`) and does not read `review-delta` for that refusal. A
+  `review-delta` at the head makes an earlier `review-full` record count
+  (`src/lifecycle/gate.ts:1174-1178`).
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the
