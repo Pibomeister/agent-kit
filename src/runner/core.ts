@@ -36,7 +36,6 @@ import {
   cleanCommittedTree,
   mergeTreeClean,
   patchIdentity,
-  resolvedRevision,
   resolveRunnerGit,
   runnerGit,
   takeRunnerSnapshot,
@@ -157,12 +156,6 @@ function canonicalFuturePath(path: string): string {
 
 function digest(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-function verdictBase(run: Run): string {
-  const baseRef = run.charter.repos[0]?.base_branch;
-  if (baseRef === undefined) throw new Error("charter names no verdict base branch");
-  return baseRef;
 }
 
 /** A card as `prepare` freezes it: judgments and the veto arrive only through their own operations. */
@@ -709,8 +702,8 @@ export class Runner {
   }
 
   /**
-   * Merge-base of the validated start revision and the charter base branch,
-   * resolved as `refs/remotes/origin/<branch>` then `refs/heads/<branch>`.
+   * Charter base commit for start, verify and verdict checks, resolved as
+   * `refs/remotes/origin/<branch>` then `refs/heads/<branch>`.
    * The merge-base trusts the base ref, so it rests on host write isolation of
    * `.git`. A worker that can move those refs can make the merge-base equal the
    * start revision. Pinning a base SHA is a captain follow-up.
@@ -736,9 +729,18 @@ export class Runner {
     return undefined;
   }
 
+  private verdictBase(run: Run): string {
+    const base = this.charterBaseCommit(run.charter);
+    if (base === undefined) throw new Error("cannot resolve charter verdict base branch");
+    return base;
+  }
+
   private hasCommittedBinding(revision: string, gitFn: GitFn): boolean {
     const projectRoot = findKbProjectRoot(this.workerRoot, revision, gitFn);
-    return loadKbBinding(projectRoot, revision, gitFn, false).binding !== null;
+    const loaded = loadKbBinding(projectRoot, revision, gitFn, false);
+    const bindingError = loaded.issues.find((issue) => issue.severity === "error");
+    if (bindingError !== undefined) throw new Error(bindingError.message);
+    return loaded.binding !== null;
   }
 
   /** Committed project and ticket at `revision`. Missing KB, project or ticket is absent, not a throw. */
@@ -1115,7 +1117,7 @@ export class Runner {
       !run.decisions.some((decision) => decision.card.operation === "review.readiness" && approved(decision))
     )
       throw new Error("a completed review round and current head are required before verdict binding");
-    const baseRef = verdictBase(run);
+    const baseRef = this.verdictBase(run);
     const verifiedBase = run.verified_base_revision;
     if (verifiedBase === undefined) throw new Error("verification recorded no trunk base");
     if (!cleanCommittedTree(this.gitContext, this.workerRoot))
@@ -1131,12 +1133,11 @@ export class Runner {
 
   /** The one classification of a bound verdict against a head; revision() and ship both use it. */
   private verdictInvalidation(run: Run, verdict: PatchVerdict, head: string): VerdictInvalidation | null {
-    const baseRef = verdictBase(run);
+    const baseRef = this.verdictBase(run);
     const clean = cleanCommittedTree(this.gitContext, this.workerRoot);
     if ((clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== verdict.patch_id)
       return "patch-changed";
-    const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
-    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, trunk))
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, baseRef))
       return "ci-config-drift";
     return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
   }
@@ -1162,7 +1163,9 @@ export class Runner {
       if (reason !== "merge-conflict") throw new Error(`verdict invalidated by ${reason}; verification is required`);
     }
     if (verdict.invalidated_by === "merge-conflict")
-      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${verdictBase(run)} is required`);
+      throw new Error(
+        `verdict invalidated by merge-conflict; rebase onto ${run.charter.repos[0]?.base_branch} is required`,
+      );
     throw new Error("current patch verdict required before unattended ship");
   }
 

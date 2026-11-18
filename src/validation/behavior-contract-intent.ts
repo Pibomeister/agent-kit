@@ -25,7 +25,7 @@ export interface IntentSourceArtifact {
   doc: JsonObject;
 }
 
-export type IntentLookup = (id: string) => IntentSourceArtifact | undefined;
+export type IntentLookup = (id: string, match?: { schema?: string; hash?: string }) => IntentSourceArtifact | undefined;
 
 function rows(value: Json | undefined): Json[] {
   return Array.isArray(value) ? value : [];
@@ -104,7 +104,7 @@ function requirementsSourceProblem(
   if (ref === originId || seen.has(ref)) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not an accepted source`;
   }
-  const artifact = lookup(ref);
+  const artifact = lookup(ref, { schema: "behavior-contract", hash: expectedHash });
   if (artifact === undefined || artifact.schema !== "behavior-contract") {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
@@ -147,15 +147,15 @@ function acceptedSourceProblem(
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is not resolved at admission`;
   }
   if (kind === "requirements") return requirementsSourceProblem(requirementId, source, lookup, originId, seen);
-  const artifact = lookup(ref);
+  const expectedHash = textField(source.hash);
+  const expectedSchema = sourceKindSchema(kind);
+  const artifact = lookup(ref, { schema: expectedSchema, hash: expectedHash });
   if (artifact === undefined) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
-  const expectedSchema = sourceKindSchema(kind);
   if (expectedSchema !== undefined && artifact.schema !== expectedSchema) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} is unknown`;
   }
-  const expectedHash = textField(source.hash);
   if (expectedHash === undefined) {
     return `${RULE_ACCEPTED_INTENT}: requirement ${requirementId} accepted source ${ref} needs an immutable hash`;
   }
