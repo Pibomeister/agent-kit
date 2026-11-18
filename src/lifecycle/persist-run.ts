@@ -2,11 +2,11 @@
  * Write a frozen run record without importing the lifecycle CLI.
  * `gate.ts` is `bin/ak-gate.mjs`. Inlining it into `bin/ak` makes `invokedDirectly()` true.
  *
+ * One writer per run directory. Overlapping writers are out of scope.
+ * Success means both files held this call's bytes at the final readFileSync checks.
  * After each write, the file is read back. A mismatch throws and names the path.
- * Success requires readFileSync of run.json and of the ticket to equal this call's bytes.
- * A throw removes this call's `${path}.partial-${pid}` staging files when they are regular
- * files, and destination files this call renamed. Pre-existing run.json or ticket bytes stay.
- * If run.json on disk is no longer this call's bytes, it is left in place.
+ * A throw removes staging files this call attempted to write when they are regular
+ * files, and destination files this call renamed whose bytes are still this call's.
  */
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -86,16 +86,20 @@ export function persistFrozenRun(
   if (hash !== record.ticket.hash) throw new Error(`lifecycle persist: ticket hash mismatch: ${ticketPath}`);
   const skipTicket =
     lstatSync(ticketPath, { throwIfNoEntry: false })?.isFile() === true && sha256(readFileSync(ticketPath)) === hash;
+  let usedJsonStaging = false;
+  let usedTicketStaging = false;
   let wroteJson = false;
   let wroteTicket = false;
   try {
     mkdirSync(dirname(jsonPath), { recursive: true });
+    usedJsonStaging = true;
     writeFileSync(jsonStaging, jsonBytes);
     renameSync(jsonStaging, jsonPath);
     wroteJson = true;
     confirmBytes(jsonPath, jsonBytes, toBytes(read(jsonPath)));
     if (!skipTicket) {
       mkdirSync(dirname(ticketPath), { recursive: true });
+      usedTicketStaging = true;
       writeFileSync(ticketStaging, ticketBytes);
       renameSync(ticketStaging, ticketPath);
       wroteTicket = true;
@@ -107,10 +111,14 @@ export function persistFrozenRun(
     if (!sameBytes(observedTicket, ticketBytes))
       throw new Error(`lifecycle persist: read-back mismatch: ${ticketPath}`);
   } catch (error) {
-    ignoreCleanupFailure(() => removeRegularFile(jsonStaging));
-    ignoreCleanupFailure(() => removeRegularFile(ticketStaging));
     ignoreCleanupFailure(() => {
-      if (wroteTicket) removeRegularFile(ticketPath);
+      if (usedJsonStaging) removeRegularFile(jsonStaging);
+    });
+    ignoreCleanupFailure(() => {
+      if (usedTicketStaging) removeRegularFile(ticketStaging);
+    });
+    ignoreCleanupFailure(() => {
+      if (wroteTicket && stillOurBytes(ticketPath, ticketBytes)) removeRegularFile(ticketPath);
     });
     ignoreCleanupFailure(() => {
       if (wroteJson && stillOurBytes(jsonPath, jsonBytes)) removeRegularFile(jsonPath);

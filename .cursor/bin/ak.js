@@ -41903,16 +41903,20 @@ function persistFrozenRun(dir, record, ticketBytes, read2 = (path) => new Uint8A
   if (hash !== record.ticket.hash)
     throw new Error(`lifecycle persist: ticket hash mismatch: ${ticketPath}`);
   const skipTicket = lstatSync4(ticketPath, { throwIfNoEntry: false })?.isFile() === true && sha256(readFileSync30(ticketPath)) === hash;
+  let usedJsonStaging = false;
+  let usedTicketStaging = false;
   let wroteJson = false;
   let wroteTicket = false;
   try {
     mkdirSync23(dirname20(jsonPath), { recursive: true });
+    usedJsonStaging = true;
     writeFileSync14(jsonStaging, jsonBytes);
     renameSync5(jsonStaging, jsonPath);
     wroteJson = true;
     confirmBytes(jsonPath, jsonBytes, toBytes(read2(jsonPath)));
     if (!skipTicket) {
       mkdirSync23(dirname20(ticketPath), { recursive: true });
+      usedTicketStaging = true;
       writeFileSync14(ticketStaging, ticketBytes);
       renameSync5(ticketStaging, ticketPath);
       wroteTicket = true;
@@ -41925,10 +41929,16 @@ function persistFrozenRun(dir, record, ticketBytes, read2 = (path) => new Uint8A
     if (!sameBytes(observedTicket, ticketBytes))
       throw new Error(`lifecycle persist: read-back mismatch: ${ticketPath}`);
   } catch (error2) {
-    ignoreCleanupFailure(() => removeRegularFile(jsonStaging));
-    ignoreCleanupFailure(() => removeRegularFile(ticketStaging));
     ignoreCleanupFailure(() => {
-      if (wroteTicket)
+      if (usedJsonStaging)
+        removeRegularFile(jsonStaging);
+    });
+    ignoreCleanupFailure(() => {
+      if (usedTicketStaging)
+        removeRegularFile(ticketStaging);
+    });
+    ignoreCleanupFailure(() => {
+      if (wroteTicket && stillOurBytes(ticketPath, ticketBytes))
         removeRegularFile(ticketPath);
     });
     ignoreCleanupFailure(() => {

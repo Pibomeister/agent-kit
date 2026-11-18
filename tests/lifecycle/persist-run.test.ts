@@ -1,6 +1,6 @@
 /**
  * persistFrozenRun read-after-write: refuse when the bytes on disk are not what was written.
- * A throw removes only what this call wrote, including pid staging files that are regular files.
+ * One writer per run directory. A throw removes only what this call wrote.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -328,7 +328,8 @@ describe("persistFrozenRun", () => {
         return new Uint8Array(readFileSync(path));
       }),
     ).toThrow(ticketFile);
-    assertNoPersist(dir, runId);
+    expect(Buffer.from(readFileSync(ticketFile)).equals(Buffer.from(plantedTicket))).toBe(true);
+    expect(existsSync(json)).toBe(false);
   });
 
   test("a planted matching ticket mutated during the json read is refused", () => {
@@ -350,6 +351,23 @@ describe("persistFrozenRun", () => {
       }),
     ).toThrow(ticketFile);
     expect(Buffer.from(readFileSync(ticketFile)).equals(Buffer.from(plantedTicket))).toBe(true);
+    expect(existsSync(json)).toBe(false);
+  });
+
+  test("a planted ticket staging file survives a failed json confirm", () => {
+    const dir = processScratch("ak-persist-planted-staging-");
+    const runId = "run-planted-staging";
+    const json = jsonPath(dir, runId);
+    const ticketFile = ticketPath(dir, runId);
+    const ticketStaging = `${ticketFile}.partial-${process.pid}`;
+    plantFile(ticketStaging, "planted-ticket-staging\n");
+    expect(() =>
+      persistFrozenRun(dir, recordFor(runId), ticketBytes, (path) => {
+        if (path === json) return new Uint8Array([1, 2, 3]);
+        return new Uint8Array(readFileSync(path));
+      }),
+    ).toThrow(json);
+    expect(readFileSync(ticketStaging, "utf8")).toBe("planted-ticket-staging\n");
     expect(existsSync(json)).toBe(false);
   });
 });
