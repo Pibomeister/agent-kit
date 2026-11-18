@@ -1,11 +1,11 @@
 /**
  * persistFrozenRun read-after-write: refuse when the bytes on disk are not what was written.
- * A throw leaves no run.json and no ticket this call wrote.
+ * A throw removes only what this call wrote.
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { persistFrozenRun, type FrozenRunRecord } from "../../src/lifecycle/persist-run.ts";
 import { artifactHash, canonicalJson } from "../../src/util/hash.ts";
@@ -16,6 +16,9 @@ const ticketBytes = new TextEncoder().encode(
   canonicalJson(Object.fromEntries(Object.entries(ticket).filter(([key]) => key !== "approvals"))),
 );
 const ticketHash = artifactHash(ticket);
+const plantedJson = "planted-run-json\n";
+const plantedTicket = new Uint8Array([9, 9, 9]);
+const foreignJson = "foreign-run-json\n";
 
 function recordFor(runId: string, hash = ticketHash): FrozenRunRecord {
   return {
@@ -39,6 +42,11 @@ function sha256(value: Uint8Array): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+function plantFile(path: string, bytes: string | Uint8Array): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, bytes);
+}
+
 function assertNoPersist(dir: string, runId: string): void {
   expect(existsSync(jsonPath(dir, runId))).toBe(false);
   expect(existsSync(ticketPath(dir, runId))).toBe(false);
@@ -60,12 +68,93 @@ describe("persistFrozenRun", () => {
     assertNoPersist(dir, runId);
   });
 
-  test("a ticket artifact whose on-disk hash is not record.ticket.hash is refused", () => {
-    const dir = processScratch("ak-persist-ticket-hash-");
-    const runId = "run-ticket-hash";
+  test("a planted run.json survives a ticket-hash mismatch and no ticket is created", () => {
+    const dir = processScratch("ak-persist-t1-");
+    const runId = "run-t1";
+    const json = jsonPath(dir, runId);
+    plantFile(json, plantedJson);
     const record = recordFor(runId, `sha256:${"0".repeat(64)}`);
     expect(() => persistFrozenRun(dir, record, ticketBytes)).toThrow(ticketPath(dir, runId));
+    expect(readFileSync(json, "utf8")).toBe(plantedJson);
+    expect(existsSync(ticketPath(dir, runId))).toBe(false);
+  });
+
+  test("a planted run.json survives when json staging is a directory", () => {
+    const dir = processScratch("ak-persist-c1-");
+    const runId = "run-c1";
+    const json = jsonPath(dir, runId);
+    plantFile(json, plantedJson);
+    mkdirSync(`${json}.partial-${process.pid}`);
+    expect(() => persistFrozenRun(dir, recordFor(runId), ticketBytes)).toThrow();
+    expect(readFileSync(json, "utf8")).toBe(plantedJson);
+  });
+
+  test("a planted unmatched ticket survives a failed json confirm", () => {
+    const dir = processScratch("ak-persist-t2-");
+    const runId = "run-t2";
+    const json = jsonPath(dir, runId);
+    const ticketFile = ticketPath(dir, runId);
+    plantFile(ticketFile, plantedTicket);
+    expect(() =>
+      persistFrozenRun(dir, recordFor(runId), ticketBytes, (path) => {
+        if (path === json) return new Uint8Array([1, 2, 3]);
+        return new Uint8Array(readFileSync(path));
+      }),
+    ).toThrow(json);
+    expect(Buffer.from(readFileSync(ticketFile)).equals(Buffer.from(plantedTicket))).toBe(true);
+    expect(existsSync(json)).toBe(false);
+  });
+
+  test("a planted matching ticket survives a failed json confirm and this call's run.json is gone", () => {
+    const dir = processScratch("ak-persist-t4-");
+    const runId = "run-t4";
+    const json = jsonPath(dir, runId);
+    const ticketFile = ticketPath(dir, runId);
+    plantFile(ticketFile, ticketBytes);
+    expect(() =>
+      persistFrozenRun(dir, recordFor(runId), ticketBytes, (path) => {
+        if (path === json) return new Uint8Array([1, 2, 3]);
+        return new Uint8Array(readFileSync(path));
+      }),
+    ).toThrow(json);
+    expect(Buffer.from(readFileSync(ticketFile)).equals(Buffer.from(ticketBytes))).toBe(true);
+    expect(existsSync(json)).toBe(false);
+  });
+
+  test("compact JSON that parses equal is still a run.json read-back mismatch", () => {
+    const dir = processScratch("ak-persist-t3-");
+    const runId = "run-t3";
+    const record = recordFor(runId);
+    const json = jsonPath(dir, runId);
+    const compact = new TextEncoder().encode(JSON.stringify(record));
+    expect(() =>
+      persistFrozenRun(dir, record, ticketBytes, (path) => {
+        if (path === json) return compact;
+        return new Uint8Array(readFileSync(path));
+      }),
+    ).toThrow(json);
     assertNoPersist(dir, runId);
+  });
+
+  test("foreign run.json bytes after confirm are left in place", () => {
+    const dir = processScratch("ak-persist-adv3-");
+    const runId = "run-adv3";
+    const record = recordFor(runId);
+    const json = jsonPath(dir, runId);
+    const ticketFile = ticketPath(dir, runId);
+    const jsonBytes = new TextEncoder().encode(`${JSON.stringify(record, null, 2)}\n`);
+    expect(() =>
+      persistFrozenRun(dir, record, ticketBytes, (path) => {
+        if (path === json) return jsonBytes;
+        if (path === ticketFile) {
+          writeFileSync(json, foreignJson);
+          return ticketBytes;
+        }
+        return new Uint8Array(readFileSync(path));
+      }),
+    ).toThrow(json);
+    expect(readFileSync(json, "utf8")).toBe(foreignJson);
+    expect(existsSync(ticketFile)).toBe(false);
   });
 
   test("a matching read-back leaves the same run.json and ticket bytes on disk", () => {
@@ -85,7 +174,7 @@ describe("persistFrozenRun", () => {
     const runId = "run-enotdir";
     writeFileSync(join(dir, runId), "not a directory\n");
     expect(() => persistFrozenRun(dir, recordFor(runId), ticketBytes)).toThrow();
-    assertNoPersist(dir, runId);
+    expect(existsSync(jsonPath(dir, runId))).toBe(false);
   });
 
   test("a path-aware injected read that lies about the ticket names the ticket path", () => {
@@ -99,28 +188,6 @@ describe("persistFrozenRun", () => {
       persistFrozenRun(dir, record, ticketBytes, (path) => {
         if (path === json) return jsonBytes;
         if (path === ticketFile) return new Uint8Array([1, 2, 3]);
-        return new Uint8Array(readFileSync(path));
-      }),
-    ).toThrow(ticketFile);
-    assertNoPersist(dir, runId);
-  });
-
-  test("a second ticket read that does not match is refused", () => {
-    const dir = processScratch("ak-persist-ticket-second-");
-    const runId = "run-ticket-second";
-    const record = recordFor(runId);
-    const json = jsonPath(dir, runId);
-    const ticketFile = ticketPath(dir, runId);
-    const jsonBytes = new TextEncoder().encode(`${JSON.stringify(record, null, 2)}\n`);
-    let ticketReads = 0;
-    expect(() =>
-      persistFrozenRun(dir, record, ticketBytes, (path) => {
-        if (path === json) return jsonBytes;
-        if (path === ticketFile) {
-          ticketReads += 1;
-          if (ticketReads === 1) return ticketBytes;
-          return new Uint8Array([1, 2, 3]);
-        }
         return new Uint8Array(readFileSync(path));
       }),
     ).toThrow(ticketFile);

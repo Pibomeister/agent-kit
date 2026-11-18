@@ -41856,37 +41856,62 @@ var confirmBytes = (path, expected, observed) => {
   if (!sameBytes(observed, expected))
     throw new Error(`lifecycle persist: read-back mismatch: ${path}`);
 };
-var atomicWrite = (path, value, read2) => {
-  mkdirSync23(dirname20(path), { recursive: true });
-  const staging = `${path}.partial-${process.pid}`;
-  writeFileSync14(staging, value);
-  renameSync5(staging, path);
-  confirmBytes(path, value, toBytes(read2(path)));
-};
+var stagingFor = (path) => `${path}.partial-${process.pid}`;
 var sha256 = (value) => `sha256:${createHash10("sha256").update(value).digest("hex")}`;
-var removeIfPresent = (path) => {
+var removeFileIfPresent = (path) => {
   if (existsSync38(path))
     unlinkSync(path);
+};
+var stillOurBytes = (path, expected) => {
+  if (!existsSync38(path))
+    return false;
+  return sameBytes(new Uint8Array(readFileSync30(path)), expected);
 };
 function persistFrozenRun(dir, record, ticketBytes, read2 = (path) => new Uint8Array(readFileSync30(path))) {
   const hash = sha256(ticketBytes);
   const ticketPath = join43(dir, safeRunId(record.run_id), "artifacts", hash.slice("sha256:".length));
   const jsonPath = join43(dir, "runs", safeRunId(record.run_id), "run.json");
+  const jsonBytes = new TextEncoder().encode(`${JSON.stringify(record, null, 2)}
+`);
+  const jsonStaging = stagingFor(jsonPath);
+  const ticketStaging = stagingFor(ticketPath);
   if (hash !== record.ticket.hash)
     throw new Error(`lifecycle persist: ticket hash mismatch: ${ticketPath}`);
-  const ticketExisted = existsSync38(ticketPath) && sha256(readFileSync30(ticketPath)) === hash;
+  const skipTicket = existsSync38(ticketPath) && sha256(readFileSync30(ticketPath)) === hash;
+  let wroteJsonStaging = false;
+  let wroteTicketStaging = false;
+  let wroteJson = false;
+  let wroteTicket = false;
   try {
-    atomicWrite(jsonPath, new TextEncoder().encode(`${JSON.stringify(record, null, 2)}
-`), read2);
-    if (!ticketExisted)
-      atomicWrite(ticketPath, ticketBytes, read2);
-    const observed = toBytes(read2(ticketPath));
-    if (!sameBytes(observed, ticketBytes) || sha256(observed) !== record.ticket.hash)
+    mkdirSync23(dirname20(jsonPath), { recursive: true });
+    writeFileSync14(jsonStaging, jsonBytes);
+    wroteJsonStaging = true;
+    renameSync5(jsonStaging, jsonPath);
+    wroteJson = true;
+    confirmBytes(jsonPath, jsonBytes, toBytes(read2(jsonPath)));
+    if (!skipTicket) {
+      mkdirSync23(dirname20(ticketPath), { recursive: true });
+      writeFileSync14(ticketStaging, ticketBytes);
+      wroteTicketStaging = true;
+      renameSync5(ticketStaging, ticketPath);
+      wroteTicket = true;
+      confirmBytes(ticketPath, ticketBytes, toBytes(read2(ticketPath)));
+    }
+    const observedTicket = toBytes(read2(ticketPath));
+    if (!sameBytes(observedTicket, ticketBytes) || sha256(observedTicket) !== record.ticket.hash)
       throw new Error(`lifecycle persist: read-back mismatch: ${ticketPath}`);
+    const observedJson = new Uint8Array(readFileSync30(jsonPath));
+    if (!sameBytes(observedJson, jsonBytes))
+      throw new Error(`lifecycle persist: read-back mismatch: ${jsonPath}`);
   } catch (error2) {
-    removeIfPresent(jsonPath);
-    if (!ticketExisted)
-      removeIfPresent(ticketPath);
+    if (wroteJsonStaging && !wroteJson)
+      removeFileIfPresent(jsonStaging);
+    if (wroteTicketStaging && !wroteTicket)
+      removeFileIfPresent(ticketStaging);
+    if (wroteTicket)
+      removeFileIfPresent(ticketPath);
+    if (wroteJson && stillOurBytes(jsonPath, jsonBytes))
+      removeFileIfPresent(jsonPath);
     throw error2;
   }
 }
