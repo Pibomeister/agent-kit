@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { launchSeat, type Spawn } from "../src/council/seat.ts";
+import { MIXED_JSON_PLUS_VERDICT } from "./helpers/mixed-stdout.ts";
 import {
   ADVERSARIAL_VERDICTS,
   failClosedAdversarialVerdict,
@@ -112,9 +113,22 @@ describe("council seat verdict consumption", () => {
     expect(failClosedAdversarialVerdict("This looks WORTHY at first glance.\nVERDICT: REJECT")).toBe("REJECT");
   });
 
-  test("a malformed JSON object is still not a transcript fallback", async () => {
+  test("well-formed JSON missing rationale is a schema refusal, not a transcript", async () => {
     const result = await launchSeat(seat, "payload", options, spawnWith(JSON.stringify({ choice: "WORTHY" })));
     expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).toContain("invalid answer");
+    expect(JSON.stringify(result)).not.toContain("structured final verdict field");
+  });
+
+  test("well-formed JSON missing rationale then a VERDICT line is unavailable", async () => {
+    const result = await launchSeat(
+      seat,
+      "payload",
+      options,
+      spawnWith(`${JSON.stringify({ choice: "WORTHY" })}\nVERDICT: WORTHY\n`),
+    );
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("structured final verdict field");
   });
 
   test("a yes/no card plus VERDICT: yes is unavailable", async () => {
@@ -159,6 +173,15 @@ describe("council seat verdict consumption", () => {
       const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
       expect(result.ok, name).toBe(false);
       expect(result.attempts, name).toHaveLength(1);
+    }
+  });
+
+  test("mixed JSON-plus-VERDICT stdout is unavailable for each ADV-001 shape", async () => {
+    for (const [name, stdout] of MIXED_JSON_PLUS_VERDICT) {
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(false);
+      expect(result.attempts, name).toHaveLength(1);
+      expect(JSON.stringify(result), name).not.toContain("structured final verdict field");
     }
   });
 });

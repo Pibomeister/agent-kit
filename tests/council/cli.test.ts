@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { runCouncil } from "../../src/council/cli.ts";
 import { parseJson, updated, type JsonValue } from "../helpers/json.ts";
+import { MIXED_JSON_PLUS_VERDICT } from "../helpers/mixed-stdout.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 const transcriptLauncher = (actor: string, body: string) => ({
@@ -202,6 +203,22 @@ describe("ak council run", () => {
     const { result, out } = await runTranscriptCouncil(worthyTranscript);
     expect(result.code).toBe(0);
     expect(record(out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+  });
+
+  test("mixed JSON-plus-VERDICT stdout from every seat escalates rather than approving", async () => {
+    for (const [name, body] of MIXED_JSON_PLUS_VERDICT) {
+      const { result, out } = await runTranscriptCouncil(body);
+      expect(result.code, name).toBe(1);
+      expect(record(out), name).toMatchObject({
+        outcome: "escalate",
+        choice: null,
+        causes: ["a primary seat was unavailable"],
+        seats: [
+          { seat: "primary-a", choice: null },
+          { seat: "primary-b", choice: null },
+        ],
+      });
+    }
   });
 
   test("a yes/no card with a well-formed VERDICT: WORTHY escalates rather than recording WORTHY", async () => {

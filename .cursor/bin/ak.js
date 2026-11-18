@@ -44365,6 +44365,9 @@ function parsesAsJson(text5) {
     return false;
   }
 }
+function stripBom(text5) {
+  return text5.charCodeAt(0) === 65279 ? text5.slice(1) : text5;
+}
 function remainderAfterFinalVerdictLine(text5) {
   const lines = text5.split(/\r\n|\r|\n/);
   let last = lines.length - 1;
@@ -44377,9 +44380,28 @@ function remainderAfterFinalVerdictLine(text5) {
   return lines.slice(0, last).join(`
 `);
 }
-function adversarialChoiceFromTranscript(text5, options) {
+function mixedJsonAndTranscript(text5) {
   const remainder = remainderAfterFinalVerdictLine(text5);
-  if (remainder !== undefined && parsesAsJson(remainder))
+  if (remainder === undefined)
+    return false;
+  const head = stripBom(text5).trimStart();
+  if (head.startsWith("{") || head.startsWith("[") || head.startsWith("```"))
+    return true;
+  if (parsesAsJson(stripBom(remainder).trim()))
+    return true;
+  for (const line of remainder.split(/\r\n|\r|\n/)) {
+    if (line.trimStart().startsWith("```"))
+      continue;
+    const trimmed = line.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("["))
+      return true;
+    if (parsesAsJson(trimmed))
+      return true;
+  }
+  return false;
+}
+function adversarialChoiceFromTranscript(text5, options) {
+  if (mixedJsonAndTranscript(text5))
     return null;
   const verdict = failClosedAdversarialVerdict(text5);
   if (!parseAdversarialVerdict(text5).ok || !options.includes(verdict))

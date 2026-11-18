@@ -43,13 +43,18 @@ Stdout that is not JSON is read through `failClosedAdversarialVerdict`,
 which only yields `WORTHY` or `REJECT`. A well-formed final
 `VERDICT: WORTHY` or `VERDICT: REJECT` is the seat's choice when that
 value is one of the card options. A yes/no card is not answered by a
-`VERDICT` field. If stdout with its final `VERDICT` line removed parses
-as any JSON value, the seat is unavailable: a JSON value is never a
-transcript. Garbage, an empty transcript, a missing field, or a value
-outside the card options is not an answer, so the substitute chain
-moves on and an exhausted chain leaves the seat unavailable, which
-escalates rather than approves. A well-formed `VERDICT: REJECT` is a
-recorded rejection, not an unavailable seat.
+`VERDICT` field. Mixed JSON-plus-transcript stdout is unavailable. The
+substitute chain continues and no REJECT is synthesized. After a BOM
+and leading whitespace are stripped, stdout is mixed when it starts
+with `{` or `[` or a markdown fence, or when the remainder before the
+final `VERDICT` line has a line that parses as JSON or starts with `{`
+or `[` once fence markers are ignored. A JSON value is never a
+transcript.
+Garbage, an empty transcript, a missing field, or a value outside the
+card options is not an answer, so the substitute chain moves on and an
+exhausted chain leaves the seat unavailable, which escalates rather
+than approves. A well-formed `VERDICT: REJECT` on a plain prose
+transcript is a recorded rejection, not an unavailable seat.
 
 ## Downstream adoption (Casco handoff)
 

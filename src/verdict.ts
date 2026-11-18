@@ -85,6 +85,10 @@ function parsesAsJson(text: string): boolean {
   }
 }
 
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 /**
  * The text before the final non-empty line when that line starts with
  * `VERDICT:`. Empty when the transcript is only that line. Undefined
@@ -100,17 +104,36 @@ function remainderAfterFinalVerdictLine(text: string): string | undefined {
 }
 
 /**
+ * True when stdout mixes JSON-looking text with a final VERDICT line.
+ * A JSON value is never a transcript: fenced JSON, a leading { or [,
+ * a remainder line that parses as JSON or starts with { or [, and a
+ * remainder that is itself JSON, all refuse the transcript fallback.
+ */
+function mixedJsonAndTranscript(text: string): boolean {
+  const remainder = remainderAfterFinalVerdictLine(text);
+  if (remainder === undefined) return false;
+  const head = stripBom(text).trimStart();
+  if (head.startsWith("{") || head.startsWith("[") || head.startsWith("```")) return true;
+  if (parsesAsJson(stripBom(remainder).trim())) return true;
+  for (const line of remainder.split(/\r\n|\r|\n/)) {
+    if (line.trimStart().startsWith("```")) continue;
+    const trimmed = line.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) return true;
+    if (parsesAsJson(trimmed)) return true;
+  }
+  return false;
+}
+
+/**
  * A non-JSON transcript's adversarial choice, or null when stdout has
  * no well-formed final VERDICT field whose value is in `options`. The
  * choice is always `failClosedAdversarialVerdict`: WORTHY only from a
- * valid field. If the text before that field parses as any JSON value,
- * this is not a transcript: a JSON value is never a transcript.
+ * valid field. Mixed JSON-plus-VERDICT stdout is not a transcript.
  * Callers that already parsed JSON must not use this as a fallback for
  * a malformed object.
  */
 export function adversarialChoiceFromTranscript(text: string, options: readonly string[]): AdversarialVerdict | null {
-  const remainder = remainderAfterFinalVerdictLine(text);
-  if (remainder !== undefined && parsesAsJson(remainder)) return null;
+  if (mixedJsonAndTranscript(text)) return null;
   const verdict = failClosedAdversarialVerdict(text);
   if (!parseAdversarialVerdict(text).ok || !options.includes(verdict)) return null;
   return verdict;
