@@ -418,7 +418,7 @@ The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
 Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
-have a ten-second timeout with a kill signal, set `--work-tree` to the inspected directory so a
+have a ten-second timeout with a kill signal, set `--work-tree` to the containing worktree so a
 worker `core.worktree` cannot hide untracked files, set `attr.tree` to the empty tree so worker
 `.gitattributes` cannot assign merge drivers, textconv or filters, and do not invoke those
 programs. Verdict `merge-tree` is the exception: it runs twice against a throwaway `GIT_DIR`

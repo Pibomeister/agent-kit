@@ -12,7 +12,7 @@ import {
   realpathSync,
   rmSync,
 } from "node:fs";
-import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
 import { relativeInsideRoot, workerControlledPath, workerFreePath } from "./path.ts";
@@ -87,6 +87,26 @@ export function isolatedGitArgv(project: string, args: readonly string[]): strin
 }
 
 const emptyTrees = new Map<string, string>();
+const workTrees = new Map<string, string>();
+
+function containingWorkTree(project: string): string {
+  const start = realpathSync(project);
+  const cached = workTrees.get(start);
+  if (cached !== undefined) return cached;
+  let dir = start;
+  for (;;) {
+    if (existsSync(join(dir, ".git"))) {
+      workTrees.set(start, dir);
+      return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      workTrees.set(start, start);
+      return start;
+    }
+    dir = parent;
+  }
+}
 
 function emptyTreeId(context: RunnerGitContext, project: string, timeoutMs: number): GitResult {
   const key = realpathSync(project);
@@ -130,7 +150,7 @@ export function gitProcess(
   }
   const proc = spawnSync(
     context.binary,
-    ["--work-tree", realpathSync(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])],
+    ["--work-tree", containingWorkTree(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])],
     {
       cwd: project,
       env: { ...gitEnv(context), ...extraEnv },

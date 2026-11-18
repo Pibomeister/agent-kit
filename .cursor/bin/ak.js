@@ -41803,14 +41803,14 @@ init_hash();
 import { timingSafeEqual } from "crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync36, realpathSync as realpathSync17, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
+import { dirname as dirname25, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
 
 // src/runner/core.ts
 init_dist();
 init_hash();
 import { createHash as createHash12 } from "crypto";
 import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync13, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
-import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
+import { basename as basename20, dirname as dirname23, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -42225,7 +42225,7 @@ import {
   realpathSync as realpathSync12,
   rmSync as rmSync14
 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
+import { delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
   for (const directory of path.split(delimiter5)) {
@@ -42279,6 +42279,26 @@ function isolatedGitArgv(project, args) {
   return [...isolationArgs(project), ...args];
 }
 var emptyTrees = new Map;
+var workTrees = new Map;
+function containingWorkTree(project) {
+  const start = realpathSync12(project);
+  const cached = workTrees.get(start);
+  if (cached !== undefined)
+    return cached;
+  let dir = start;
+  for (;; ) {
+    if (existsSync39(join45(dir, ".git"))) {
+      workTrees.set(start, dir);
+      return dir;
+    }
+    const parent = dirname22(dir);
+    if (parent === dir) {
+      workTrees.set(start, start);
+      return start;
+    }
+    dir = parent;
+  }
+}
 function emptyTreeId(context, project, timeoutMs) {
   const key = realpathSync12(project);
   const cached = emptyTrees.get(key);
@@ -42312,7 +42332,7 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv, at
       return empty;
     tree = empty.text;
   }
-  const proc = spawnSync5(context.binary, ["--work-tree", realpathSync12(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])], {
+  const proc = spawnSync5(context.binary, ["--work-tree", containingWorkTree(project), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])], {
     cwd: project,
     env: { ...gitEnv2(context), ...extraEnv },
     input,
@@ -42730,7 +42750,7 @@ function canonicalFuturePath(path) {
   const missing2 = [];
   while (!existsSync40(existing)) {
     missing2.unshift(basename20(existing));
-    existing = dirname22(existing);
+    existing = dirname23(existing);
   }
   return join46(realpathSync13(existing), ...missing2);
 }
@@ -44480,13 +44500,13 @@ function chainFailures(seat2, attempts) {
 
 // src/runner/token.ts
 import { readFileSync as readFileSync35, realpathSync as realpathSync16, statSync as statSync19 } from "fs";
-import { dirname as dirname23, isAbsolute as isAbsolute15, relative as relative13 } from "path";
+import { dirname as dirname24, isAbsolute as isAbsolute15, relative as relative13 } from "path";
 function readAdminToken(path, forbiddenRoot) {
   const at = realpathSync16(path);
   const root = realpathSync16(forbiddenRoot);
   const rel = relative13(root, at);
   const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
-  const probe = gitProcess(resolveRunnerGit(root), dirname23(at), [
+  const probe = gitProcess(resolveRunnerGit(root), dirname24(at), [
     "rev-parse",
     "--is-inside-work-tree",
     "--is-inside-git-dir"
@@ -44829,7 +44849,7 @@ async function serve(argv, io) {
     if (existsSync41(socketPath))
       unlinkSync(socketPath);
   }
-  const socketParent = realpathSync17(dirname24(socketPath));
+  const socketParent = realpathSync17(dirname25(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
   if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
