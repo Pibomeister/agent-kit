@@ -39,13 +39,17 @@ Permission is never inferred from surrounding prose.
 are the shared parser for review and adversarial transcripts.
 `ak council run` reads a seat through `launchSeat`. A JSON council
 answer whose `choice` is one of the card's exact options still stands.
-Non-JSON stdout is read through `failClosedAdversarialVerdict`: a
-well-formed final `VERDICT:` field whose value is a card option is the
-seat's choice. Garbage, an empty transcript, a missing field, or a
-value outside the card options is not an answer, so the substitute
-chain moves on and an exhausted chain leaves the seat unavailable,
-which escalates rather than approves. A well-formed `VERDICT: REJECT`
-is a recorded rejection, not an unavailable seat.
+Stdout that is not JSON is read through `failClosedAdversarialVerdict`,
+which only yields `WORTHY` or `REJECT`. A well-formed final
+`VERDICT: WORTHY` or `VERDICT: REJECT` is the seat's choice when that
+value is one of the card options. A yes/no card is not answered by a
+`VERDICT` field. If stdout with its final `VERDICT` line removed parses
+as any JSON value, the seat is unavailable: a JSON value is never a
+transcript. Garbage, an empty transcript, a missing field, or a value
+outside the card options is not an answer, so the substitute chain
+moves on and an exhausted chain leaves the seat unavailable, which
+escalates rather than approves. A well-formed `VERDICT: REJECT` is a
+recorded rejection, not an unavailable seat.
 
 ## Downstream adoption (Casco handoff)
 

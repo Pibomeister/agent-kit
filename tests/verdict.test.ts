@@ -54,6 +54,15 @@ const spawnWith =
   (stdout: string): Spawn =>
   async () => ({ exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) });
 
+const spawnSequence = (outputs: string[]): Spawn => {
+  let i = 0;
+  return () => {
+    const stdout = outputs[i] ?? "";
+    i += 1;
+    return Promise.resolve({ exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) });
+  };
+};
+
 describe("council seat verdict consumption", () => {
   const seat = { seat: "adversarial", chain: [{ actor: "a", lineage: ["a"], command: ["unused"] }] };
   const options = [...ADVERSARIAL_VERDICTS];
@@ -106,5 +115,50 @@ describe("council seat verdict consumption", () => {
   test("a malformed JSON object is still not a transcript fallback", async () => {
     const result = await launchSeat(seat, "payload", options, spawnWith(JSON.stringify({ choice: "WORTHY" })));
     expect(result.ok).toBe(false);
+  });
+
+  test("a yes/no card plus VERDICT: yes is unavailable", async () => {
+    const result = await launchSeat(seat, "payload", ["yes", "no"], spawnWith("the change is ready\nVERDICT: yes\n"));
+    expect(result.ok).toBe(false);
+    expect(result.attempts).toHaveLength(1);
+  });
+
+  test("a yes/no card plus VERDICT: WORTHY is unavailable and the substitute runs", async () => {
+    const chained = {
+      seat: "adversarial",
+      chain: [
+        { actor: "first", lineage: ["first"], command: ["unused"] },
+        { actor: "second", lineage: ["second"], command: ["unused"] },
+      ],
+    };
+    const result = await launchSeat(
+      chained,
+      "payload",
+      ["yes", "no"],
+      spawnSequence(["review done\nVERDICT: WORTHY\n", JSON.stringify({ choice: "yes", rationale: "ok" })]),
+    );
+    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({
+      answer: { choice: "yes", rationale: "ok" },
+      attempts: [{ actor: "first" }, { actor: "second" }],
+    });
+    const exhausted = await launchSeat(seat, "payload", ["yes", "no"], spawnWith("review done\nVERDICT: WORTHY\n"));
+    expect(exhausted.ok).toBe(false);
+    expect(exhausted.attempts).toHaveLength(1);
+  });
+
+  test("a JSON array, a JSON primitive, and a JSON council answer followed by VERDICT are unavailable", async () => {
+    for (const [name, stdout] of [
+      ["JSON array", "[1,2]"],
+      ["JSON primitive", "true"],
+      [
+        "JSON council answer followed by VERDICT",
+        `${JSON.stringify({ choice: "REJECT", rationale: "x" })}\nVERDICT: WORTHY\n`,
+      ],
+    ] as const) {
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(false);
+      expect(result.attempts, name).toHaveLength(1);
+    }
   });
 });

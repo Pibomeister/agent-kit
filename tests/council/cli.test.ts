@@ -15,7 +15,10 @@ const transcriptLauncher = (actor: string, body: string) => ({
 const rejectTranscript = "This looks WORTHY at first glance.\nThe constructed failure still stands.\nVERDICT: REJECT";
 const worthyTranscript = "Careful review, no blocking findings.\nVERDICT: WORTHY";
 
-async function runTranscriptCouncil(body: string) {
+async function runTranscriptCouncil(
+  body: string,
+  cardBody = { id: "q2", question: "Merge it?", options: ["WORTHY", "REJECT"], approve: "WORTHY" },
+) {
   const dir = processScratch("ak-council-verdict-");
   const config = join(dir, "council.json");
   writeFileSync(
@@ -30,10 +33,7 @@ async function runTranscriptCouncil(body: string) {
     { mode: 0o600 },
   );
   const card = join(dir, "card.json");
-  writeFileSync(
-    card,
-    JSON.stringify({ id: "q2", question: "Merge it?", options: ["WORTHY", "REJECT"], approve: "WORTHY" }),
-  );
+  writeFileSync(card, JSON.stringify(cardBody));
   const out = join(dir, "record.json");
   const result = await run(["run", "--card", card, "--council-config", config, "--out", out]);
   return { result, out };
@@ -202,6 +202,21 @@ describe("ak council run", () => {
     const { result, out } = await runTranscriptCouncil(worthyTranscript);
     expect(result.code).toBe(0);
     expect(record(out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+  });
+
+  test("a yes/no card with a well-formed VERDICT: WORTHY escalates rather than recording WORTHY", async () => {
+    const { result, out } = await runTranscriptCouncil(worthyTranscript, {
+      id: "q2",
+      question: "Adopt it?",
+      options: ["yes", "no"],
+      approve: "yes",
+    });
+    expect(result.code).toBe(1);
+    expect(record(out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      causes: ["a primary seat was unavailable"],
+    });
   });
 
   test("early WORTHY prose with a final VERDICT: REJECT declines as REJECT", async () => {

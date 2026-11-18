@@ -76,14 +76,41 @@ export function failClosedAdversarialVerdict(text: string): AdversarialVerdict {
   return parsed.ok ? parsed.verdict : "REJECT";
 }
 
+function parsesAsJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The text before the final non-empty line when that line starts with
+ * `VERDICT:`. Empty when the transcript is only that line. Undefined
+ * when there is no such final line.
+ */
+function remainderAfterFinalVerdictLine(text: string): string | undefined {
+  const lines = text.split(/\r\n|\r|\n/);
+  let last = lines.length - 1;
+  while (last >= 0 && (lines[last] ?? "").trim() === "") last -= 1;
+  if (last < 0) return undefined;
+  if (!(lines[last] ?? "").startsWith(FIELD_PREFIX)) return undefined;
+  return lines.slice(0, last).join("\n");
+}
+
 /**
  * A non-JSON transcript's adversarial choice, or null when stdout has
  * no well-formed final VERDICT field whose value is in `options`. The
  * choice is always `failClosedAdversarialVerdict`: WORTHY only from a
- * valid field. Callers that already parsed JSON must not use this as a
- * fallback for a malformed object.
+ * valid field. If the text before that field parses as any JSON value,
+ * this is not a transcript: a JSON value is never a transcript.
+ * Callers that already parsed JSON must not use this as a fallback for
+ * a malformed object.
  */
 export function adversarialChoiceFromTranscript(text: string, options: readonly string[]): AdversarialVerdict | null {
+  const remainder = remainderAfterFinalVerdictLine(text);
+  if (remainder !== undefined && parsesAsJson(remainder)) return null;
   const verdict = failClosedAdversarialVerdict(text);
   if (!parseAdversarialVerdict(text).ok || !options.includes(verdict)) return null;
   return verdict;

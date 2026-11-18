@@ -44280,7 +44280,30 @@ function failClosedAdversarialVerdict(text5) {
   const parsed = parseAdversarialVerdict(text5);
   return parsed.ok ? parsed.verdict : "REJECT";
 }
+function parsesAsJson(text5) {
+  try {
+    JSON.parse(text5);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function remainderAfterFinalVerdictLine(text5) {
+  const lines = text5.split(/\r\n|\r|\n/);
+  let last = lines.length - 1;
+  while (last >= 0 && (lines[last] ?? "").trim() === "")
+    last -= 1;
+  if (last < 0)
+    return;
+  if (!(lines[last] ?? "").startsWith(FIELD_PREFIX))
+    return;
+  return lines.slice(0, last).join(`
+`);
+}
 function adversarialChoiceFromTranscript(text5, options) {
+  const remainder = remainderAfterFinalVerdictLine(text5);
+  if (remainder !== undefined && parsesAsJson(remainder))
+    return null;
   const verdict = failClosedAdversarialVerdict(text5);
   if (!parseAdversarialVerdict(text5).ok || !options.includes(verdict))
     return null;
