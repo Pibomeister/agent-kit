@@ -23710,11 +23710,25 @@ function lookupPublishedProject(kb, projectId, at) {
     return { status: "absent" };
   return { status: "found", project: found };
 }
+function humanApprovedAt(artifact, hash) {
+  const approvals = artifact.approvals;
+  if (!Array.isArray(approvals))
+    return false;
+  for (const row of approvals) {
+    if (!asJsonObject(row))
+      continue;
+    const who = isText3(row.role) ? row.role : isText3(row.by) ? row.by : undefined;
+    if (who === "human" && isText3(row.artifact_hash) && row.artifact_hash === hash)
+      return true;
+  }
+  return false;
+}
 function lookupCommittedArtifact(kb, id, match) {
   const file = lookupArtifactsFile(kb, match);
   if (file.status !== "found")
     return file;
   let found;
+  let accepted;
   for (const line of file.text.split(`
 `)) {
     const stored = parseStored(line);
@@ -23727,10 +23741,12 @@ function lookupCommittedArtifact(kb, id, match) {
     if (match?.hash !== undefined && artifactHash(stored.artifact) !== match.hash)
       continue;
     found = stored.artifact;
+    if (match?.hash !== undefined && humanApprovedAt(stored.artifact, match.hash))
+      accepted = stored.artifact;
   }
   if (found === undefined)
     return { status: "absent" };
-  return { status: "found", artifact: found };
+  return { status: "found", artifact: accepted ?? found };
 }
 var import__20205, KB_KINDS, PROJECT_SCOPE = "project", ARTIFACTS_FILE = "artifacts.jsonl", KEBAB2, ARTIFACT_ID, RESERVED_SEGMENTS, MAX_SCOPE_DEPTH = 8, LOCK_ATTEMPTS = 50, LOCK_WAIT_MS = 100, LOCK_STALE_MS = 120000, ajv, validMeta, validStored;
 var init_local_git = __esm(() => {
@@ -24166,7 +24182,9 @@ function findKbProjectRoot(start, revision, gitFn) {
       const rel = relative4(ceiling, dir).split(sep3).join("/");
       const path = rel === "" ? BINDING_FILE2 : `${rel}/${BINDING_FILE2}`;
       const listed = run(ceiling, ["ls-tree", "-z", revision, "--", path]);
-      if (listed.status !== 0 || listed.stdout !== "")
+      if (listed.status !== 0)
+        throw new Error("cannot locate committed knowledgebase binding");
+      if (listed.stdout !== "")
         return dir;
     } else if (existsSync5(join7(dir, BINDING_FILE2)))
       return dir;

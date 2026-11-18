@@ -389,7 +389,9 @@ resolves that committed file at the merge-base of the validated start revision a
 `refs/heads/<branch>`. The committed binding at that explicit revision wins over the working file.
 Ticket charters never fall back to the working file. They refuse when the resolved base tip has
 the binding and the merge-base does not. Fall back to the working file only when a non-ticket
-start's revision has no committed `ak.kb.yaml`. When the merge-base cannot be computed, the base
+start's revision has no committed `ak.kb.yaml`. A committed `ak.kb.yaml` that git lists but
+cannot read is `kb.binding-unreadable`, which is failed, not unbound, and the working file is
+not read. When the merge-base cannot be computed, the base
 branch is missing, or the base ref cannot be resolved, and the charter cites no ticket, start is
 allowed as unbound; the working `ak.kb.yaml` is not read. When the charter cites a ticket, those
 cases are refused. That merge-base trusts the base ref, so it rests on host write isolation of `.git`. An

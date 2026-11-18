@@ -905,7 +905,21 @@ export function lookupPublishedProject(
   return { status: "found", project: found };
 }
 
-/** Latest committed run artifact whose envelope id is `id`, optionally pinned to schema and hash. */
+function humanApprovedAt(artifact: JsonObject, hash: string): boolean {
+  const approvals = artifact.approvals;
+  if (!Array.isArray(approvals)) return false;
+  for (const row of approvals) {
+    if (!asJsonObject(row)) continue;
+    const who = isText(row.role) ? row.role : isText(row.by) ? row.by : undefined;
+    if (who === "human" && isText(row.artifact_hash) && row.artifact_hash === hash) return true;
+  }
+  return false;
+}
+
+/**
+ * Latest committed run artifact whose envelope id is `id`, optionally pinned to
+ * schema and hash. A pinned hash prefers a human-approved copy of that digest.
+ */
 export function lookupCommittedArtifact(
   kb: ResolvedKb,
   id: string,
@@ -914,6 +928,7 @@ export function lookupCommittedArtifact(
   const file = lookupArtifactsFile(kb, match);
   if (file.status !== "found") return file;
   let found: JsonObject | undefined;
+  let accepted: JsonObject | undefined;
   for (const line of file.text.split("\n")) {
     const stored = parseStored(line);
     if (stored === null || stored.artifact.id !== id) continue;
@@ -921,9 +936,10 @@ export function lookupCommittedArtifact(
     if (match?.schema !== undefined && stored.artifact.schema !== match.schema) continue;
     if (match?.hash !== undefined && artifactHash(stored.artifact) !== match.hash) continue;
     found = stored.artifact;
+    if (match?.hash !== undefined && humanApprovedAt(stored.artifact, match.hash)) accepted = stored.artifact;
   }
   if (found === undefined) return { status: "absent" };
-  return { status: "found", artifact: found };
+  return { status: "found", artifact: accepted ?? found };
 }
 
 export function readCommittedArtifact(kb: ResolvedKb, id: string): JsonObject | undefined {

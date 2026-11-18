@@ -267,7 +267,8 @@ export function findKbProjectRoot(start: string, revision?: string, gitFn?: GitF
       const rel = relative(ceiling, dir).split(sep).join("/");
       const path = rel === "" ? BINDING_FILE : `${rel}/${BINDING_FILE}`;
       const listed = run(ceiling, ["ls-tree", "-z", revision, "--", path]);
-      if (listed.status !== 0 || listed.stdout !== "") return dir;
+      if (listed.status !== 0) throw new Error("cannot locate committed knowledgebase binding");
+      if (listed.stdout !== "") return dir;
     } else if (existsSync(join(dir, BINDING_FILE))) return dir;
     if (dir === ceiling || dirname(dir) === dir || relative(ceiling, dir).startsWith("..")) return from;
   }

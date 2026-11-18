@@ -250,6 +250,44 @@ describe("behavior-contract schema", () => {
     });
   });
 
+  test("KB admission accepts a pinned hash after a later same-hash copy drops approvals", () => {
+    const root = processScratch("ak-bv-intent-same-hash-");
+    expect(git(root, ["init", "-q", "-b", "main"]).status).toBe(0);
+    expect(git(root, ["config", "user.name", "fixture"]).status).toBe(0);
+    expect(git(root, ["config", "user.email", "fixture@example.invalid"]).status).toBe(0);
+    expect(git(root, ["config", "commit.gpgsign", "false"]).status).toBe(0);
+    mkdirSync(join(root, "projects", "example-project", "runs"), { recursive: true });
+    const kb: ResolvedKb = {
+      root,
+      knowledgebase: "fixture-kb",
+      binding: { backend: "local-git", project: "example-project", locator: { knowledgebase: "fixture-kb" } },
+    };
+    const body = { ...asObject(ticket), run_id: null };
+    const hash = artifactHash(body);
+    const approved = {
+      ...body,
+      approvals: [{ artifact_hash: hash, by: "human", authority: "explicit", at: "2026-09-19T09:00:00Z" }],
+    };
+    const unsigned = { ...body, approvals: [] };
+    expect(artifactHash(approved)).toBe(hash);
+    expect(artifactHash(unsigned)).toBe(hash);
+    expect(publishRunArtifact(kb, JSON.stringify(approved), "desk-1", [])).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
+    expect(publishRunArtifact(kb, JSON.stringify(unsigned), "desk-2", [])).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
+    const citing = withRequirement(0, {
+      sources: [{ kind: "ticket", ref: "example-ticket-1", hash }],
+    });
+    expect(publishRunArtifact(kb, JSON.stringify(citing), "example-run-1", [])).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
+  });
+
   test("a requirements source cannot cite this contract or a cycle", () => {
     const self = withRequirement(0, {
       sources: [{ kind: "requirements", ref: "example-behavior-contract-1", hash: artifactHash(contract) }],

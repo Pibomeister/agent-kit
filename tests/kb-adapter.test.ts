@@ -73,6 +73,14 @@ function git(dir: string, ...args: string[]): string {
   return run.stdout ?? "";
 }
 
+function lsTreeFailsForSrc(root: string, args: readonly string[], input?: string) {
+  if (args[0] === "ls-tree") {
+    const path = args[args.length - 1] ?? "";
+    if (path.includes("src/")) return { status: 1, stdout: "", stderr: "fixture nested ls-tree failure" };
+  }
+  return kbGit(root, args, input);
+}
+
 /** A repository whose commits need nothing from the operator's own git configuration. */
 function repoTemplate(): string {
   const dir = processScratch("ak-kb-template-");
@@ -421,6 +429,18 @@ describe("an explicit revision never falls back to the working binding", () => {
       expect(loaded.binding).toBeNull();
       expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
     });
+
+  test("a failed nested ls-tree is unreadable, not a binding hit", () => {
+    const fx = fixture();
+    const nested = join(fx.project, "src", "deep");
+    mkdirSync(nested, { recursive: true });
+    expect(() => findKbProjectRoot(nested, "HEAD", lsTreeFailsForSrc)).toThrow(
+      "cannot locate committed knowledgebase binding",
+    );
+    const loaded = loadKbBinding(nested, "HEAD", lsTreeFailsForSrc);
+    expect(loaded.binding).toBeNull();
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+  });
 
   test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
     const fx = fixture();
