@@ -4,8 +4,9 @@
 // agent-kit
 // Copyright (c) 2026 Eduardo Picazo
 //
-// The installable catalog adapts material from eleven catalog donors: ten under
-// the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
+// The installable catalog adapts material from twelve catalog donors: ten under
+// the MIT License and two under the Apache License 2.0 (claude-mem and
+// google/elephant-goldfish-model). Each adapted
 // file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
 // source and a note of what was changed. Full license texts that accompany this copy
 // are:
@@ -34,12 +35,13 @@
 // The review-isolation probe adapts child-session joining and spawn-argument
 // inspection from google/elephant-goldfish-model, Copyright 2026 Google LLC, under
 // the Apache License 2.0. super-bound's independent ticket cold read adapts the
-// zero-decision rule and the proposed-files rule from the same pin. The files were
-// modified; provenance/adaptations.yaml states the change for each. bin/ak carries
-// that probe (src/review-isolation-probe/ and the doctor host-version check that
-// imports it). The license text is
-// provenance/licenses/google_elephant-goldfish-model.LICENSE. It is not one of the
-// catalog donors listed below.
+// zero-decision rule and the proposed-files rule from the same pin. The
+// comprehension seat adapts the naive-reader paraphrase and the four resolutions
+// of a comprehension gap. The files were modified; provenance/adaptations.yaml
+// states the change for each. bin/ak carries that probe
+// (src/review-isolation-probe/ and the doctor host-version check that imports it).
+// The license text is provenance/licenses/google_elephant-goldfish-model.LICENSE.
+// EGM ships no NOTICE file.
 //
 // - compound-engineering-plugin — Copyright (c) 2025 Every
 //   https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
@@ -67,7 +69,7 @@
 //   learning runtime's skill doctor.
 //
 // The above copyright notices and the MIT permission notice apply to the
-// substantial portions adapted from each MIT project among those eleven catalog
+// substantial portions adapted from each MIT project among those twelve catalog
 // donors: the ten listed above.
 //
 // - claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
@@ -84,6 +86,13 @@
 //     Licensed under the Apache License, Version 2.0.
 //
 //     If other attributions are required by dependencies or included code, add them here.
+//
+// - elephant-goldfish-model — Copyright 2026 Google LLC — Apache License 2.0
+//   https://github.com/google/elephant-goldfish-model @ 403d8881d62022490637d740657b33f01e321ea8
+//   The files adapted from elephant-goldfish-model were modified;
+//   provenance/adaptations.yaml states the change for each. The license text is
+//   provenance/licenses/google_elephant-goldfish-model.LICENSE. EGM ships no
+//   NOTICE file, so nothing is quoted here.
 //
 // Runtime dependencies bundled into bin/ak-gate.mjs, whose license texts ship
 // with every bundle under LICENSES/:
@@ -20341,6 +20350,7 @@ var init_finding_schema = __esm(() => {
             $ref: "common.schema.json#/$defs/actor_role"
           },
           outcome: {
+            description: "A comprehension finding is never rejected on the author's word (ruling `comprehension-gap-not-contestable`). The comprehension seat and the ticket cold reader keep no prior-finding packet (ruling `comprehension-seat-stays-naive`).",
             enum: ["accepted", "rejected", "deferred", "escalated"]
           },
           rationale: {

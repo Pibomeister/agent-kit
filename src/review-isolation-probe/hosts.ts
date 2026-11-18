@@ -2,9 +2,12 @@
  * What each host exposes for the review-isolation probe, and how a live arm
  * would dispatch a fresh generic subagent the way doc-review does.
  *
- * mastracode has no adapter on main: there is no CLI dispatch path to invoke,
- * and child transcripts are unobservable unless a fixture or an operator-supplied
- * file provides them. That is recorded rather than scored as a pass.
+ * GAP-MASTRA: mastracode has no adapter on main. There is no CLI dispatch path
+ * to invoke, and child transcripts are unobservable unless a fixture or an
+ * operator-supplied file provides them. Recorded, not a pass.
+ * GAP-PROBE: the GS-004e Claude Code and Codex live probe arms did not run.
+ * They need a host login nobody granted. Recorded, not a pass. Do not copy,
+ * read, or use any credential. See research/host-facts/2026-11-18/GAP-PROBE.md.
  */
 import type { ArmId, ProbeHost } from "./types.ts";
 

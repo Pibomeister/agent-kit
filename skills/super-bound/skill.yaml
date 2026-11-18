@@ -363,6 +363,7 @@ provenance:
     - sensitive-surface-sets-the-floor
     - delegation-class-is-authority-not-finding
     - advisor-consultation-follows-class
+    - comprehension-seat-stays-naive
 
 tests:
   - id: approved-direction-stops-at-open-decisions

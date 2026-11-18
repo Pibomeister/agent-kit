@@ -252,6 +252,7 @@
           "$ref": "common.schema.json#/$defs/actor_role"
         },
         "outcome": {
+          "description": "A comprehension finding is never rejected on the author's word (ruling `comprehension-gap-not-contestable`). The comprehension seat and the ticket cold reader keep no prior-finding packet (ruling `comprehension-seat-stays-naive`).",
           "enum": ["accepted", "rejected", "deferred", "escalated"]
         },
         "rationale": {
