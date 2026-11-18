@@ -3,12 +3,13 @@
  * `gate.ts` is `bin/ak-gate.mjs`. Inlining it into `bin/ak` makes `invokedDirectly()` true.
  *
  * After each write, the file is read back. A mismatch throws and names the path.
- * Read-back of run.json requires the exact pretty-printed bytes that were written.
- * A throw removes only what this call wrote. Pre-existing run.json or ticket bytes stay.
+ * Success requires readFileSync of run.json and of the ticket to equal this call's bytes.
+ * A throw removes this call's `${path}.partial-${pid}` staging files when they are regular
+ * files, and destination files this call renamed. Pre-existing run.json or ticket bytes stay.
  * If run.json on disk is no longer this call's bytes, it is left in place.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export interface FrozenRunRecord {
@@ -36,12 +37,37 @@ const stagingFor = (path: string): string => `${path}.partial-${process.pid}`;
 
 const sha256 = (value: Uint8Array | string): string => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
-const removeFileIfPresent = (path: string): void => {
-  if (existsSync(path)) unlinkSync(path);
+const isEnoent = (cause: unknown): boolean => cause instanceof Error && "code" in cause && cause.code === "ENOENT";
+
+const removeRegularFile = (path: string): void => {
+  let st;
+  try {
+    st = lstatSync(path);
+  } catch (error) {
+    if (isEnoent(error)) return;
+    throw error;
+  }
+  if (!st.isFile()) return;
+  unlinkSync(path);
+};
+
+const ignoreCleanupFailure = (cleanup: () => void): void => {
+  try {
+    cleanup();
+  } catch {
+    return;
+  }
 };
 
 const stillOurBytes = (path: string, expected: Uint8Array): boolean => {
-  if (!existsSync(path)) return false;
+  let st;
+  try {
+    st = lstatSync(path);
+  } catch (error) {
+    if (isEnoent(error)) return false;
+    throw error;
+  }
+  if (!st.isFile()) return false;
   return sameBytes(new Uint8Array(readFileSync(path)), expected);
 };
 
@@ -58,36 +84,37 @@ export function persistFrozenRun(
   const jsonStaging = stagingFor(jsonPath);
   const ticketStaging = stagingFor(ticketPath);
   if (hash !== record.ticket.hash) throw new Error(`lifecycle persist: ticket hash mismatch: ${ticketPath}`);
-  const skipTicket = existsSync(ticketPath) && sha256(readFileSync(ticketPath)) === hash;
-  let wroteJsonStaging = false;
-  let wroteTicketStaging = false;
+  const skipTicket =
+    lstatSync(ticketPath, { throwIfNoEntry: false })?.isFile() === true && sha256(readFileSync(ticketPath)) === hash;
   let wroteJson = false;
   let wroteTicket = false;
   try {
     mkdirSync(dirname(jsonPath), { recursive: true });
     writeFileSync(jsonStaging, jsonBytes);
-    wroteJsonStaging = true;
     renameSync(jsonStaging, jsonPath);
     wroteJson = true;
     confirmBytes(jsonPath, jsonBytes, toBytes(read(jsonPath)));
     if (!skipTicket) {
       mkdirSync(dirname(ticketPath), { recursive: true });
       writeFileSync(ticketStaging, ticketBytes);
-      wroteTicketStaging = true;
       renameSync(ticketStaging, ticketPath);
       wroteTicket = true;
       confirmBytes(ticketPath, ticketBytes, toBytes(read(ticketPath)));
     }
-    const observedTicket = toBytes(read(ticketPath));
-    if (!sameBytes(observedTicket, ticketBytes) || sha256(observedTicket) !== record.ticket.hash)
-      throw new Error(`lifecycle persist: read-back mismatch: ${ticketPath}`);
     const observedJson = new Uint8Array(readFileSync(jsonPath));
     if (!sameBytes(observedJson, jsonBytes)) throw new Error(`lifecycle persist: read-back mismatch: ${jsonPath}`);
+    const observedTicket = new Uint8Array(readFileSync(ticketPath));
+    if (!sameBytes(observedTicket, ticketBytes))
+      throw new Error(`lifecycle persist: read-back mismatch: ${ticketPath}`);
   } catch (error) {
-    if (wroteJsonStaging && !wroteJson) removeFileIfPresent(jsonStaging);
-    if (wroteTicketStaging && !wroteTicket) removeFileIfPresent(ticketStaging);
-    if (wroteTicket) removeFileIfPresent(ticketPath);
-    if (wroteJson && stillOurBytes(jsonPath, jsonBytes)) removeFileIfPresent(jsonPath);
+    ignoreCleanupFailure(() => removeRegularFile(jsonStaging));
+    ignoreCleanupFailure(() => removeRegularFile(ticketStaging));
+    ignoreCleanupFailure(() => {
+      if (wroteTicket) removeRegularFile(ticketPath);
+    });
+    ignoreCleanupFailure(() => {
+      if (wroteJson && stillOurBytes(jsonPath, jsonBytes)) removeRegularFile(jsonPath);
+    });
     throw error;
   }
 }
