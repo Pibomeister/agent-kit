@@ -18630,6 +18630,11 @@ var init_charter_schema = __esm(() => {
             description: "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. A cap of N allows N failed attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed probe records no progress, and a failed replacement records no replacement for its delegate. Effects of earlier steps in the same tick stand. No failed attempt approves a checkpoint.",
             type: "integer",
             minimum: 0
+          },
+          outage_backoff_seconds: {
+            description: "Seconds a transient loop-probe or event-delivery failure may last before status goes guided and names audit-failed or event-delivery-failed. When set, those failures retry with exponential delay starting at five seconds and doubling, capped by the time left in this window. The name appears only after the failure has lasted at least this many seconds from the first failure in the streak. A later success clears the streak. The clock is in memory, so a serve restart starts with no streak. Absence keeps the first-failure behavior. Auth failures, bundle drift, and a refused auditTick still go guided on the first failure.",
+            type: "integer",
+            minimum: 300
           }
         }
       },
@@ -44584,6 +44589,18 @@ function flag2(argv, name) {
 function auditFailure(cause) {
   return `ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`;
 }
+var OUTAGE_BACKOFF_INITIAL_MS = 5000;
+function outageWindowMs(seconds) {
+  return seconds === undefined ? undefined : seconds * 1000;
+}
+function outageRetryDelayMs(attempts, elapsedMs, windowMs) {
+  const remaining = windowMs - elapsedMs;
+  if (remaining <= 0)
+    return 0;
+  const shift = attempts < 8 ? attempts : 8;
+  const delay = OUTAGE_BACKOFF_INITIAL_MS * 2 ** shift;
+  return delay < remaining ? delay : remaining;
+}
 async function serve(argv, io) {
   const socket = flag2(argv, "socket");
   const state = flag2(argv, "state-dir");
@@ -44710,8 +44727,52 @@ async function serve(argv, io) {
   let delivering = false;
   let rescanEvents = false;
   let deliveryHealthy = true;
+  const clockFile = process.env["AK_RUNNER_CLOCK"];
+  let open = true;
+  const now = () => {
+    if (clockFile === undefined)
+      return Date.now();
+    const n = Number(readFileSync36(clockFile, "utf8").trim());
+    if (!Number.isFinite(n))
+      throw new Error("runner clock file is not a finite number");
+    return n;
+  };
+  const wait = (ms) => {
+    if (clockFile === undefined)
+      return new Promise((done) => setTimeout(done, ms));
+    const start = now();
+    return new Promise((done) => {
+      const poll = () => {
+        if (!open || now() - start >= ms) {
+          done();
+          return;
+        }
+        setTimeout(poll, 5);
+      };
+      poll();
+    });
+  };
+  let auditOutage = null;
+  let deliveryOutage = null;
+  const outageWindow = () => {
+    try {
+      return outageWindowMs(runner.status(runId).charter.limits.outage_backoff_seconds);
+    } catch {
+      return;
+    }
+  };
+  const deliveryFailedVisible = () => {
+    if (deliveryHealthy)
+      return false;
+    const windowMs = outageWindow();
+    if (windowMs === undefined || deliveryOutage === null)
+      return true;
+    return now() - deliveryOutage.startedAt >= windowMs;
+  };
   const wakeEvents = () => {
     if (eventCommand === null)
+      return;
+    if (deliveryOutage !== null && now() < deliveryOutage.retryAt)
       return;
     if (delivering) {
       rescanEvents = true;
@@ -44732,19 +44793,48 @@ async function serve(argv, io) {
             runner.ackEvent(runId, event.key);
           } catch (cause) {
             deliveryHealthy = false;
+            if (deliveryOutage === null)
+              deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
             io.err(`ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`);
           }
         }
       } while (rescanEvents);
-      if (runner.pendingEvents(runId).length === 0)
+      if (runner.pendingEvents(runId).length === 0) {
         deliveryHealthy = true;
+        deliveryOutage = null;
+      } else if (!deliveryHealthy)
+        scheduleDeliveryBackoff();
     })().catch((cause) => {
       if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT")) {
         deliveryHealthy = false;
+        if (deliveryOutage === null)
+          deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
         io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+        scheduleDeliveryBackoff();
       }
     }).finally(() => {
       delivering = false;
+    });
+  };
+  const scheduleDeliveryBackoff = () => {
+    const windowMs = outageWindow();
+    if (windowMs === undefined)
+      return;
+    const t = now();
+    if (deliveryOutage === null)
+      deliveryOutage = { startedAt: t, attempts: 0, retryAt: 0 };
+    const delay = outageRetryDelayMs(deliveryOutage.attempts, t - deliveryOutage.startedAt, windowMs);
+    deliveryOutage.attempts += 1;
+    if (delay <= 0)
+      return;
+    const attempts = deliveryOutage.attempts;
+    const startedAt = deliveryOutage.startedAt;
+    deliveryOutage.retryAt = t + delay;
+    wait(delay).then(() => {
+      if (!open || deliveryOutage === null || deliveryOutage.startedAt !== startedAt || deliveryOutage.attempts !== attempts)
+        return;
+      wakeEvents();
+      return;
     });
   };
   let questionAlarm = null;
@@ -44770,6 +44860,16 @@ async function serve(argv, io) {
   let auditRunning = false;
   let auditHalted = false;
   let auditBlock = "ok";
+  const auditFailedVisible = () => {
+    if (auditBlock !== "failed")
+      return false;
+    if (auditHalted)
+      return true;
+    const windowMs = outageWindow();
+    if (windowMs === undefined || auditOutage === null)
+      return true;
+    return now() - auditOutage.startedAt >= windowMs;
+  };
   const recoveryBudget = () => {
     try {
       const run2 = runner.status(runId);
@@ -44793,8 +44893,31 @@ async function serve(argv, io) {
     if (cap !== undefined && spent > 0 && spent >= cap)
       haltAudit("cap");
   };
+  const scheduleAuditBackoff = () => {
+    const windowMs = outageWindow();
+    if (windowMs === undefined)
+      return;
+    const t = now();
+    if (auditOutage === null)
+      auditOutage = { startedAt: t, attempts: 0, retryAt: 0 };
+    const delay = outageRetryDelayMs(auditOutage.attempts, t - auditOutage.startedAt, windowMs);
+    auditOutage.attempts += 1;
+    if (delay <= 0)
+      return;
+    const attempts = auditOutage.attempts;
+    const startedAt = auditOutage.startedAt;
+    auditOutage.retryAt = t + delay;
+    wait(delay).then(() => {
+      if (!open || auditOutage === null || auditOutage.startedAt !== startedAt || auditOutage.attempts !== attempts)
+        return;
+      runAudit();
+      return;
+    });
+  };
   const runAudit = async () => {
-    if (loopCommand === null || auditRunning || auditHalted)
+    if (loopCommand === null || auditRunning || auditHalted || !open)
+      return;
+    if (auditOutage !== null && now() < auditOutage.retryAt)
       return;
     auditRunning = true;
     try {
@@ -44814,6 +44937,7 @@ async function serve(argv, io) {
           clearInterval(auditTimer);
         auditTimer = null;
         auditBlock = "ok";
+        auditOutage = null;
         return;
       }
       try {
@@ -44836,7 +44960,10 @@ async function serve(argv, io) {
           runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
         }
         auditBlock = "ok";
+        auditOutage = null;
       } catch (cause) {
+        if (auditOutage === null)
+          auditOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
         try {
           const outcome = runner.recordAuditAdapterFailure(runId);
           if (outcome.cap !== undefined && !outcome.exhausted)
@@ -44850,6 +44977,8 @@ async function serve(argv, io) {
           io.err(`ak runner: audit failure was not recorded: ${recordCause instanceof Error ? recordCause.message : String(recordCause)}`);
         }
         io.err(auditFailure(cause));
+        if (!auditHalted)
+          scheduleAuditBackoff();
       }
     } finally {
       auditRunning = false;
@@ -44884,17 +45013,17 @@ async function serve(argv, io) {
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
-        const adaptersReady = eventCommand !== null && loopCommand !== null && deliveryHealthy;
+        const adaptersReady = eventCommand !== null && loopCommand !== null && !deliveryFailedVisible();
         const auditRetryOpen = adaptersReady && auditBlock === "retry";
-        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && auditBlock === "ok", auditRetryOpen);
+        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && (auditBlock === "ok" || auditBlock === "failed" && !auditFailedVisible()), auditRetryOpen);
         const missing2 = [
           eventCommand === null ? "event-adapter" : null,
-          !deliveryHealthy ? "event-delivery-failed" : null,
+          deliveryFailedVisible() ? "event-delivery-failed" : null,
           loopCommand === null ? "loop-adapter" : null,
           !runner.status(runId).charter.allowed_capabilities.includes("event-delivery") ? "charter-event-delivery" : null,
           loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined ? "charter-cadence" : null,
           auditBlock === "cap" ? "delegate-replacements" : null,
-          auditBlock === "failed" ? "audit-failed" : null
+          auditFailedVisible() ? "audit-failed" : null
         ].filter((part) => part !== null);
         const visibleStatus = () => {
           const run2 = runner.status(runId);
@@ -44936,6 +45065,7 @@ async function serve(argv, io) {
     armQuestionAlarm();
   });
   const close = () => {
+    open = false;
     if (questionAlarm !== null)
       clearTimeout(questionAlarm);
     if (auditTimer !== null)

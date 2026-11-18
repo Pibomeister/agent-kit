@@ -95,7 +95,13 @@ while `limits.delegate_replacements` is unspent and a delegate remains active. S
 when that cap is spent and names `delegate-replacements`. A cap of N allows N failed attempts,
 and the Nth one halts the audit, so a cap of 1 allows no retry. A charter that omits the cap supplies no
 retry budget, so the first loop failure goes guided and names `audit-failed` until a later tick
-succeeds. On a charter cadence the loop receives a `probe` request listing every active delegate
+succeeds. When the charter sets `limits.outage_backoff_seconds` (minimum 300), a transient loop-probe
+or event-delivery failure retries with exponential delay starting at 5 seconds and doubling, capped
+by the time left in that window. Status names `audit-failed` or `event-delivery-failed` only after
+the failure has lasted at least that many seconds from the first failure in the streak. A later
+success clears the streak. The clock is in memory. A serve restart starts with no streak. Auth
+failures, bundle drift, and a refused `auditTick` still go guided on the first failure. A charter
+that omits the field keeps the first-failure behavior above. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
 whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
 effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,

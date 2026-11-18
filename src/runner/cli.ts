@@ -443,6 +443,20 @@ function auditFailure(cause: unknown): string {
   return `ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`;
 }
 
+const OUTAGE_BACKOFF_INITIAL_MS = 5_000;
+
+function outageWindowMs(seconds: number | undefined): number | undefined {
+  return seconds === undefined ? undefined : seconds * 1000;
+}
+
+function outageRetryDelayMs(attempts: number, elapsedMs: number, windowMs: number): number {
+  const remaining = windowMs - elapsedMs;
+  if (remaining <= 0) return 0;
+  const shift = attempts < 8 ? attempts : 8;
+  const delay = OUTAGE_BACKOFF_INITIAL_MS * 2 ** shift;
+  return delay < remaining ? delay : remaining;
+}
+
 async function serve(argv: readonly string[], io: Io): Promise<number> {
   const socket = flag(argv, "socket");
   const state = flag(argv, "state-dir");
@@ -571,8 +585,47 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   let delivering = false;
   let rescanEvents = false;
   let deliveryHealthy = true;
+  const clockFile = process.env["AK_RUNNER_CLOCK"];
+  let open = true;
+  const now = (): number => {
+    if (clockFile === undefined) return Date.now();
+    const n = Number(readFileSync(clockFile, "utf8").trim());
+    if (!Number.isFinite(n)) throw new Error("runner clock file is not a finite number");
+    return n;
+  };
+  const wait = (ms: number): Promise<void> => {
+    if (clockFile === undefined) return new Promise((done) => setTimeout(done, ms));
+    const start = now();
+    return new Promise((done) => {
+      const poll = () => {
+        if (!open || now() - start >= ms) {
+          done();
+          return;
+        }
+        setTimeout(poll, 5);
+      };
+      poll();
+    });
+  };
+  type OutageStreak = { startedAt: number; attempts: number; retryAt: number };
+  let auditOutage: OutageStreak | null = null;
+  let deliveryOutage: OutageStreak | null = null;
+  const outageWindow = (): number | undefined => {
+    try {
+      return outageWindowMs(runner.status(runId).charter.limits.outage_backoff_seconds);
+    } catch {
+      return undefined;
+    }
+  };
+  const deliveryFailedVisible = (): boolean => {
+    if (deliveryHealthy) return false;
+    const windowMs = outageWindow();
+    if (windowMs === undefined || deliveryOutage === null) return true;
+    return now() - deliveryOutage.startedAt >= windowMs;
+  };
   const wakeEvents = () => {
     if (eventCommand === null) return;
+    if (deliveryOutage !== null && now() < deliveryOutage.retryAt) return;
     if (delivering) {
       rescanEvents = true;
       return;
@@ -598,23 +651,52 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
             runner.ackEvent(runId, event.key);
           } catch (cause) {
             deliveryHealthy = false;
+            if (deliveryOutage === null) deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
             io.err(
               `ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`,
             );
           }
         }
       } while (rescanEvents);
-      if (runner.pendingEvents(runId).length === 0) deliveryHealthy = true;
+      if (runner.pendingEvents(runId).length === 0) {
+        deliveryHealthy = true;
+        deliveryOutage = null;
+      } else if (!deliveryHealthy) scheduleDeliveryBackoff();
     })()
       .catch((cause) => {
         if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
           deliveryHealthy = false;
+          if (deliveryOutage === null) deliveryOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
           io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+          scheduleDeliveryBackoff();
         }
       })
       .finally(() => {
         delivering = false;
       });
+  };
+  const scheduleDeliveryBackoff = () => {
+    const windowMs = outageWindow();
+    if (windowMs === undefined) return;
+    const t = now();
+    if (deliveryOutage === null) deliveryOutage = { startedAt: t, attempts: 0, retryAt: 0 };
+    const delay = outageRetryDelayMs(deliveryOutage.attempts, t - deliveryOutage.startedAt, windowMs);
+    deliveryOutage.attempts += 1;
+    if (delay <= 0) return;
+    const attempts = deliveryOutage.attempts;
+    const startedAt = deliveryOutage.startedAt;
+    deliveryOutage.retryAt = t + delay;
+    void wait(delay).then(() => {
+      if (
+        !open ||
+        deliveryOutage === null ||
+        deliveryOutage.startedAt !== startedAt ||
+        deliveryOutage.attempts !== attempts
+      )
+        return undefined;
+      wakeEvents();
+      return undefined;
+    });
   };
   let questionAlarm: ReturnType<typeof setTimeout> | null = null;
   const armQuestionAlarm = () => {
@@ -637,6 +719,13 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   let auditRunning = false;
   let auditHalted = false;
   let auditBlock: "ok" | "retry" | "cap" | "failed" = "ok";
+  const auditFailedVisible = (): boolean => {
+    if (auditBlock !== "failed") return false;
+    if (auditHalted) return true;
+    const windowMs = outageWindow();
+    if (windowMs === undefined || auditOutage === null) return true;
+    return now() - auditOutage.startedAt >= windowMs;
+  };
   const recoveryBudget = () => {
     try {
       const run = runner.status(runId);
@@ -658,8 +747,27 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     const { cap, spent } = recoveryBudget();
     if (cap !== undefined && spent > 0 && spent >= cap) haltAudit("cap");
   };
+  const scheduleAuditBackoff = () => {
+    const windowMs = outageWindow();
+    if (windowMs === undefined) return;
+    const t = now();
+    if (auditOutage === null) auditOutage = { startedAt: t, attempts: 0, retryAt: 0 };
+    const delay = outageRetryDelayMs(auditOutage.attempts, t - auditOutage.startedAt, windowMs);
+    auditOutage.attempts += 1;
+    if (delay <= 0) return;
+    const attempts = auditOutage.attempts;
+    const startedAt = auditOutage.startedAt;
+    auditOutage.retryAt = t + delay;
+    void wait(delay).then(() => {
+      if (!open || auditOutage === null || auditOutage.startedAt !== startedAt || auditOutage.attempts !== attempts)
+        return undefined;
+      void runAudit();
+      return undefined;
+    });
+  };
   const runAudit = async () => {
-    if (loopCommand === null || auditRunning || auditHalted) return;
+    if (loopCommand === null || auditRunning || auditHalted || !open) return;
+    if (auditOutage !== null && now() < auditOutage.retryAt) return;
     auditRunning = true;
     try {
       applyPersistedCap();
@@ -676,6 +784,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         if (auditTimer !== null) clearInterval(auditTimer);
         auditTimer = null;
         auditBlock = "ok";
+        auditOutage = null;
         return;
       }
       try {
@@ -710,7 +819,9 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
         }
         auditBlock = "ok";
+        auditOutage = null;
       } catch (cause) {
+        if (auditOutage === null) auditOutage = { startedAt: now(), attempts: 0, retryAt: 0 };
         try {
           const outcome = runner.recordAuditAdapterFailure(runId);
           if (outcome.cap !== undefined && !outcome.exhausted) auditBlock = "retry";
@@ -723,6 +834,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           );
         }
         io.err(auditFailure(cause));
+        if (!auditHalted) scheduleAuditBackoff();
       }
     } finally {
       auditRunning = false;
@@ -757,7 +869,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
-        const adaptersReady = eventCommand !== null && loopCommand !== null && deliveryHealthy;
+        const adaptersReady = eventCommand !== null && loopCommand !== null && !deliveryFailedVisible();
         const auditRetryOpen = adaptersReady && auditBlock === "retry";
         const result = await execute(
           runner,
@@ -771,12 +883,12 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           effectAdapters,
           decisions,
           activeChildren,
-          adaptersReady && auditBlock === "ok",
+          adaptersReady && (auditBlock === "ok" || (auditBlock === "failed" && !auditFailedVisible())),
           auditRetryOpen,
         );
         const missing = [
           eventCommand === null ? "event-adapter" : null,
-          !deliveryHealthy ? "event-delivery-failed" : null,
+          deliveryFailedVisible() ? "event-delivery-failed" : null,
           loopCommand === null ? "loop-adapter" : null,
           !runner.status(runId).charter.allowed_capabilities.includes("event-delivery")
             ? "charter-event-delivery"
@@ -785,7 +897,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
             ? "charter-cadence"
             : null,
           auditBlock === "cap" ? "delegate-replacements" : null,
-          auditBlock === "failed" ? "audit-failed" : null,
+          auditFailedVisible() ? "audit-failed" : null,
         ].filter((part): part is string => part !== null);
         const visibleStatus = () => {
           const run = runner.status(runId);
@@ -829,6 +941,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     armQuestionAlarm();
   });
   const close = () => {
+    open = false;
     if (questionAlarm !== null) clearTimeout(questionAlarm);
     if (auditTimer !== null) clearInterval(auditTimer);
     for (const pid of activeChildren) killGroup(pid);

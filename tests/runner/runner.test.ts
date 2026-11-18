@@ -390,7 +390,7 @@ function fixture(limit = 3, template = WORKER_TEMPLATE) {
   };
   const charter: typeof initialCharter & {
     audit_cadence_seconds?: number;
-    limits: { delegate_replacements?: number };
+    limits: { delegate_replacements?: number; outage_backoff_seconds?: number };
   } = initialCharter;
   charter.immutability.hash = artifactHash({ ...charter, immutability: { ...charter.immutability, hash: "" } });
   const approval = charter.approvals[0];
@@ -596,7 +596,7 @@ function withRegistry<T>(registry: string, body: () => T): T {
   }
 }
 
-function serveLoop(f: ReturnType<typeof fixture>, script: string, stamp: string) {
+function serveLoop(f: ReturnType<typeof fixture>, script: string, stamp: string, clockFile?: string) {
   const socket = join(f.privateDir, "runner.sock");
   const eventConfig = join(f.privateDir, "event.json");
   const loopConfig = join(f.privateDir, "loop.json");
@@ -615,6 +615,8 @@ function serveLoop(f: ReturnType<typeof fixture>, script: string, stamp: string)
     }),
   );
   writeFileSync(loopConfig, JSON.stringify({ timeout_ms: 10_000, command: ["bun", "-e", script, stamp] }));
+  const env: NodeJS.ProcessEnv = { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken };
+  if (clockFile !== undefined) env["AK_RUNNER_CLOCK"] = clockFile;
   const service = spawnLive(
     [
       "bun",
@@ -636,14 +638,15 @@ function serveLoop(f: ReturnType<typeof fixture>, script: string, stamp: string)
       "--loop-config",
       loopConfig,
     ],
-    { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    { cwd: root, env, stdout: "pipe", stderr: "pipe" },
   );
   return { socket, service, workerToken, request: join(f.requestDir, "audit.json") };
 }
 
-function withAuditCadence(f: ReturnType<typeof fixture>, delegateReplacements?: number) {
+function withAuditCadence(f: ReturnType<typeof fixture>, delegateReplacements?: number, outageBackoffSeconds?: number) {
   f.charter.audit_cadence_seconds = 1;
   if (delegateReplacements !== undefined) f.charter.limits.delegate_replacements = delegateReplacements;
+  if (outageBackoffSeconds !== undefined) f.charter.limits.outage_backoff_seconds = outageBackoffSeconds;
   f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
   const approval = f.charter.approvals[0];
   if (approval === undefined) throw new Error("toy charter approval missing");
@@ -2694,6 +2697,97 @@ describe("runner guards", () => {
     }
   });
 
+  test("outage backoff delays event-delivery-failed until the window", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const socket = join(f.privateDir, "runner.sock");
+    const eventConfig = join(f.privateDir, "event.json");
+    const loopConfig = join(f.privateDir, "loop.json");
+    const clock = join(f.privateDir, "clock");
+    const started = join(f.privateDir, "consumer-started");
+    const tokenFile = join(f.privateDir, "admin.token");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    writeFileSync(clock, "0\n");
+    writeFileSync(tokenFile, adminToken, { mode: 0o600 });
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({
+        timeout_ms: 100,
+        command: [
+          process.execPath,
+          "-e",
+          "await Bun.write(process.argv[1], 'started'); await Bun.sleep(60_000);",
+          started,
+        ],
+      }),
+    );
+    writeFileSync(
+      loopConfig,
+      JSON.stringify({
+        timeout_ms: 1000,
+        command: [
+          process.execPath,
+          "-e",
+          "const x=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
+        ],
+      }),
+    );
+    const service = spawnLive(
+      [
+        process.execPath,
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        tokenFile,
+        "--event-config",
+        eventConfig,
+        "--loop-config",
+        loopConfig,
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken, AK_RUNNER_CLOCK: clock },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    try {
+      await waitForPath(socket, service);
+      const request = join(f.requestDir, "event.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitUntil("the event consumer to start", () => existsSync(started));
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "300000\n");
+      await waitUntil("status to report event-delivery-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("event-delivery-failed"),
+      );
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["event-delivery-failed"],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
   test.each(["order", "code", "evidence"])("priority question continues with a supported %s answer", (kind) => {
     const f = ready();
     const answer = `answer from ${kind}\n`;
@@ -3247,6 +3341,97 @@ describe("runner guards", () => {
       expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"]).toBeUndefined();
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("active");
       expect(f.runner.status("toy-run").delegates?.["owner-1"]?.progress ?? []).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("outage backoff keeps a recovered loop probe autonomous across the window", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const clock = join(f.privateDir, "clock");
+    writeFileSync(clock, "0\n");
+    const stamp = join(f.privateDir, "probe-attempt");
+    const release = `${stamp}.release`;
+    const script = [
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "const fs=await import('node:fs');",
+      "const stamp=process.argv[1];",
+      "if(x.action!=='probe') process.exit(2);",
+      "if(!fs.existsSync(stamp)) fs.writeFileSync(stamp,'failed');",
+      "if(!fs.existsSync(stamp+'.release')){",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+      "}",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'observed-report'}]}));",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp, clock);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil("the failed probe to run", () => existsSync(stamp));
+      await Bun.sleep(300);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(release, "go\n");
+      writeFileSync(clock, "5000\n");
+      await waitUntil(
+        "the retry to record the observed report",
+        () =>
+          f.runner
+            .status("toy-run")
+            .delegates?.["owner-1"]?.progress.some((entry) => entry.ref === "observed-report") === true,
+      );
+      writeFileSync(clock, "300000\n");
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("outage backoff names audit-failed only after the window", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const clock = join(f.privateDir, "clock");
+    writeFileSync(clock, "0\n");
+    const stamp = join(f.privateDir, "probe-fail");
+    const script = [
+      "const fs=await import('node:fs');",
+      "fs.appendFileSync(process.argv[1],'x');",
+      "console.log(JSON.stringify({probed:[],progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+      "process.exit(1);",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp, clock);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil("the failed probe to run", () => existsSync(stamp));
+      await Bun.sleep(300);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "299999\n");
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      writeFileSync(clock, "300000\n");
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["audit-failed"],
+      });
     } finally {
       service.kill("SIGTERM");
       await service.exited;

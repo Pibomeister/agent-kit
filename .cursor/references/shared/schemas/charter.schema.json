@@ -168,6 +168,11 @@
           "description": "Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided and names delegate-replacements. A cap of N allows N failed attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later successful tick. The runner enforces the integer it was handed and does not invent one. Absence supplies no retry budget, so the first failed attempt goes guided and names audit-failed until a later tick succeeds. A failed probe records no progress, and a failed replacement records no replacement for its delegate. Effects of earlier steps in the same tick stand. No failed attempt approves a checkpoint.",
           "type": "integer",
           "minimum": 0
+        },
+        "outage_backoff_seconds": {
+          "description": "Seconds a transient loop-probe or event-delivery failure may last before status goes guided and names audit-failed or event-delivery-failed. When set, those failures retry with exponential delay starting at five seconds and doubling, capped by the time left in this window. The name appears only after the failure has lasted at least this many seconds from the first failure in the streak. A later success clears the streak. The clock is in memory, so a serve restart starts with no streak. Absence keeps the first-failure behavior. Auth failures, bundle drift, and a refused auditTick still go guided on the first failure.",
+          "type": "integer",
+          "minimum": 300
         }
       }
     },
