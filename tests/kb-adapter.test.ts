@@ -430,6 +430,27 @@ describe("an explicit revision never falls back to the working binding", () => {
       expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
     });
 
+  test("a failed show-toplevel does not shrink the binding ceiling", () => {
+    const fx = fixture();
+    expect(() =>
+      findKbProjectRoot(fx.project, "HEAD", (root, args, input) => {
+        if (args.includes("--show-toplevel")) return { status: 1, stdout: "", stderr: "no toplevel" };
+        return kbGit(root, args, input);
+      }),
+    ).toThrow("cannot locate committed knowledgebase binding");
+  });
+
+  test("a show-toplevel that is not an ancestor does not shrink the binding ceiling", () => {
+    const fx = fixture();
+    const elsewhere = processScratch("ak-kb-elsewhere-");
+    expect(() =>
+      findKbProjectRoot(fx.project, "HEAD", (root, args, input) => {
+        if (args.includes("--show-toplevel")) return { status: 0, stdout: `${elsewhere}\n`, stderr: "" };
+        return kbGit(root, args, input);
+      }),
+    ).toThrow("cannot locate committed knowledgebase binding");
+  });
+
   test("a failed nested ls-tree is unreadable, not a binding hit", () => {
     const fx = fixture();
     const nested = join(fx.project, "src", "deep");

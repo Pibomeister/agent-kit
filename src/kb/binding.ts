@@ -262,7 +262,9 @@ export function findKbProjectRoot(start: string, revision?: string, gitFn?: GitF
   let ceiling = from;
   if (gitFn !== undefined) {
     const top = gitFn(from, ["rev-parse", "--show-toplevel"]);
-    if (top.status === 0 && top.stdout.trim() !== "") ceiling = realpathSync(top.stdout.trim());
+    if (top.status !== 0 || top.stdout.trim() === "") throw new Error("cannot locate committed knowledgebase binding");
+    ceiling = realpathSync(top.stdout.trim());
+    if (!isInside(from, ceiling)) throw new Error("cannot locate committed knowledgebase binding");
   } else ceiling = workTreeTop(from) ?? from;
   const explicit = revision !== undefined && revision !== "";
   const run = gitForRevision(revision, gitFn);

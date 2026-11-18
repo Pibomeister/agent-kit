@@ -1063,6 +1063,7 @@ export class Runner {
     if (!REVISION.test(revision)) throw new Error("revision must be a full version-control object id");
     const run = this.load(id);
     if (STOPPED.has(run.run_state)) throw new Error("run is stopped; revision cannot advance");
+    if (run.verdict !== undefined) cleanCommittedTree(this.gitContext, this.workerRoot);
     const observed = this.observedSnapshot();
     if (observed !== null && observed.revision !== revision) throw new Error("revision differs from worker checkout");
     const diffHash = observed?.diff_hash ?? run.diff_hash;

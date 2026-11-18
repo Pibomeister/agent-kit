@@ -24177,8 +24177,11 @@ function findKbProjectRoot(start, revision, gitFn) {
   let ceiling = from;
   if (gitFn !== undefined) {
     const top = gitFn(from, ["rev-parse", "--show-toplevel"]);
-    if (top.status === 0 && top.stdout.trim() !== "")
-      ceiling = realpathSync4(top.stdout.trim());
+    if (top.status !== 0 || top.stdout.trim() === "")
+      throw new Error("cannot locate committed knowledgebase binding");
+    ceiling = realpathSync4(top.stdout.trim());
+    if (!isInside(from, ceiling))
+      throw new Error("cannot locate committed knowledgebase binding");
   } else
     ceiling = workTreeTop(from) ?? from;
   const explicit = revision !== undefined && revision !== "";
@@ -38812,7 +38815,7 @@ var import__202014 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync7 } from "child_process";
 import { existsSync as existsSync42, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename23, isAbsolute as isAbsolute17, join as join54, relative as relative16 } from "path";
+import { basename as basename24, isAbsolute as isAbsolute17, join as join54, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -41841,7 +41844,7 @@ init_dist();
 init_hash();
 import { createHash as createHash12 } from "crypto";
 import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync13, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
-import { basename as basename20, dirname as dirname23, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
+import { basename as basename21, dirname as dirname23, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -42256,22 +42259,58 @@ import {
   realpathSync as realpathSync12,
   rmSync as rmSync14
 } from "fs";
-import { delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
-function parseGitFile(dir, entryPath) {
-  const pointer = /^gitdir: (.+)$/.exec(readFileSync32(entryPath, "utf8").trim())?.[1];
+import { basename as basename20, delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
+var LAYOUT_CHANGED = "git layout changed since start";
+var REALPATH_HOPS = 32;
+function parseGitFile(filePath) {
+  const pointer = /^gitdir: (.+)$/.exec(readFileSync32(filePath, "utf8").trim())?.[1];
   if (pointer === undefined)
     return;
-  return isAbsolute13(pointer) ? pointer : resolve15(dir, pointer);
+  return isAbsolute13(pointer) ? pointer : resolve15(dirname22(filePath), pointer);
 }
-function workTreeOf(gitDir) {
+function boundedResolve(path) {
+  let current = path;
+  const seen = new Set;
+  for (let hop = 0;hop < REALPATH_HOPS; hop++) {
+    if (seen.has(current))
+      return;
+    seen.add(current);
+    let stat;
+    try {
+      stat = lstatSync5(current);
+    } catch {
+      return;
+    }
+    if (!stat.isSymbolicLink()) {
+      try {
+        return realpathSync12(current);
+      } catch {
+        return;
+      }
+    }
+    const next = readlinkSync3(current);
+    current = isAbsolute13(next) ? next : resolve15(dirname22(current), next);
+  }
+  return;
+}
+function workTreeOf(gitDir, foundAt, gitfile) {
+  if (!gitfile)
+    return realpathSync12(foundAt);
   try {
     const pointed = readFileSync32(join45(gitDir, "gitdir"), "utf8").trim();
     if (pointed !== "") {
-      const gitfile = isAbsolute13(pointed) ? pointed : resolve15(gitDir, pointed);
-      return realpathSync12(dirname22(gitfile));
+      const marker = isAbsolute13(pointed) ? pointed : resolve15(gitDir, pointed);
+      return realpathSync12(dirname22(marker));
     }
   } catch {}
-  return realpathSync12(dirname22(gitDir));
+  try {
+    readFileSync32(join45(gitDir, "commondir"), "utf8");
+    return realpathSync12(foundAt);
+  } catch {
+    if (basename20(gitDir) === ".git")
+      return realpathSync12(dirname22(gitDir));
+    return realpathSync12(foundAt);
+  }
 }
 function layoutAt(dir) {
   const entryPath = join45(dir, ".git");
@@ -42284,22 +42323,51 @@ function layoutAt(dir) {
   if (entry.isFIFO() || entry.isSocket())
     return;
   let gitDir;
-  if (entry.isDirectory())
+  let gitfile = false;
+  if (entry.isSymbolicLink()) {
+    const target = boundedResolve(entryPath);
+    if (target === undefined)
+      return;
+    let dest;
+    try {
+      dest = lstatSync5(target);
+    } catch {
+      return;
+    }
+    if (dest.isDirectory())
+      gitDir = realpathSync12(target);
+    else if (dest.isFile() && dest.size <= 4096) {
+      const pointer = parseGitFile(target);
+      if (pointer === undefined)
+        return;
+      gitDir = realpathSync12(pointer);
+      gitfile = true;
+    } else
+      return;
+  } else if (entry.isDirectory())
     gitDir = realpathSync12(entryPath);
   else if (entry.isFile() && entry.size <= 4096) {
-    const pointer = parseGitFile(dir, entryPath);
+    const pointer = parseGitFile(entryPath);
     if (pointer === undefined)
       return;
     gitDir = realpathSync12(pointer);
+    gitfile = true;
   } else
     return;
-  return { gitDir, workTree: workTreeOf(gitDir) };
+  return { gitDir, workTree: workTreeOf(gitDir, dir, gitfile) };
+}
+function ownsDirectory(layout, dir) {
+  try {
+    return layout.workTree === realpathSync12(dir);
+  } catch {
+    return false;
+  }
 }
 function resolveLayout(start) {
   let dir = realpathSync12(start);
   for (;; ) {
     const layout = layoutAt(dir);
-    if (layout !== undefined)
+    if (layout !== undefined && ownsDirectory(layout, dir))
       return layout;
     const parent = dirname22(dir);
     if (parent === dir)
@@ -42307,24 +42375,87 @@ function resolveLayout(start) {
     dir = parent;
   }
 }
-function repoPin(context, project, extraEnv) {
+function repoCommonDir(gitDir) {
+  try {
+    const text5 = readFileSync32(join45(gitDir, "commondir"), "utf8").trim();
+    if (text5 !== "")
+      return realpathSync12(isAbsolute13(text5) ? text5 : resolve15(gitDir, text5));
+  } catch {}
+  return gitDir;
+}
+function isAbsorbedGitlink(context, gitDir) {
+  if (context.gitDir === undefined)
+    return false;
+  const modules = join45(repoCommonDir(context.gitDir), "modules");
+  return gitDir === modules || relativeInsideRoot(relative11(modules, gitDir));
+}
+function selectedRepo(context, project, extraEnv) {
   if (extraEnv?.GIT_DIR !== undefined && extraEnv.GIT_DIR !== "")
-    return [];
+    return;
+  if (context.gitDir === undefined || context.workTree === undefined)
+    return;
   let dir;
   try {
     dir = realpathSync12(project);
   } catch {
-    return [];
+    return;
   }
-  const own = layoutAt(dir);
-  const insideWorker = context.workTree !== undefined && (dir === context.workTree || relativeInsideRoot(relative11(context.workTree, dir)));
-  if (own !== undefined && context.gitDir !== undefined && own.gitDir !== realpathSync12(context.gitDir))
-    return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
-  if (own !== undefined && !insideWorker)
-    return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
-  if (context.gitDir !== undefined && context.workTree !== undefined && insideWorker)
-    return ["--git-dir", context.gitDir, "--work-tree", context.workTree];
-  return [];
+  const inside = dir === context.workTree || relativeInsideRoot(relative11(context.workTree, dir));
+  if (!inside) {
+    const own = layoutAt(dir);
+    if (own !== undefined && ownsDirectory(own, dir))
+      return own;
+    return;
+  }
+  if (dir !== context.workTree) {
+    const own = layoutAt(dir);
+    if (own !== undefined && own.gitDir !== context.gitDir) {
+      let gitDirectory = false;
+      try {
+        gitDirectory = lstatSync5(join45(dir, ".git")).isDirectory();
+      } catch {
+        gitDirectory = false;
+      }
+      if (gitDirectory || isAbsorbedGitlink(context, own.gitDir))
+        return own;
+    }
+  }
+  return { gitDir: context.gitDir, workTree: context.workTree };
+}
+function repoPin(context, project, extraEnv) {
+  const repo = selectedRepo(context, project, extraEnv);
+  if (repo === undefined)
+    return [];
+  return ["--git-dir", repo.gitDir, "--work-tree", repo.workTree];
+}
+function pinnedGitKind(workTree) {
+  try {
+    const entry = lstatSync5(join45(workTree, ".git"));
+    if (entry.isSymbolicLink())
+      return "symlink";
+    if (entry.isDirectory())
+      return "directory";
+    if (entry.isFile())
+      return "file";
+    return "missing";
+  } catch {
+    return "missing";
+  }
+}
+function assertPinnedLayout(context) {
+  if (context.gitDir === undefined || context.workTree === undefined)
+    return;
+  const now = layoutAt(context.workerRoot);
+  if (now !== undefined && now.gitDir !== context.gitDir)
+    throw new Error(LAYOUT_CHANGED);
+  try {
+    const entry = lstatSync5(join45(context.workTree, ".git"));
+    if ((entry.isSymbolicLink() || entry.isFile()) && context.pinnedGitKind === "directory")
+      throw new Error(LAYOUT_CHANGED);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === LAYOUT_CHANGED)
+      throw cause;
+  }
 }
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
@@ -42335,7 +42466,15 @@ function resolveRunnerGit(workerRoot) {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync12(candidate);
       if (!workerControlledPath(binary, workerRoot))
-        return { binary, path, workerRoot, home: "/dev/null", gitDir: layout?.gitDir, workTree: layout?.workTree };
+        return {
+          binary,
+          path,
+          workerRoot,
+          home: "/dev/null",
+          gitDir: layout?.gitDir,
+          workTree: layout?.workTree,
+          pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree)
+        };
     } catch {}
   }
   throw new Error("runner cannot find a trusted git executable outside the worker root");
@@ -42437,23 +42576,28 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv, at
   };
 }
 function checkGitControls(context, project) {
+  const pinned = selectedRepo(context, project);
   const entryPath = join45(project, ".git");
   let paths2;
   try {
-    const entry = lstatSync5(entryPath);
-    if (entry.isDirectory())
-      paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
-    else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = parseGitFile(project, entryPath);
-      if (pointer === undefined)
-        return failedGit("runner git directory pointer is invalid");
-      paths2 = [join45(pointer, "index"), join45(pointer, "HEAD")];
-    } else {
-      const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2000);
-      if (controls.code !== 0)
-        return controls;
-      paths2 = controls.text.split(`
+    if (pinned !== undefined)
+      paths2 = [join45(pinned.gitDir, "index"), join45(pinned.gitDir, "HEAD")];
+    else {
+      const entry = lstatSync5(entryPath);
+      if (entry.isDirectory())
+        paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
+      else if (entry.isFile() && entry.size <= 4096) {
+        const pointer = parseGitFile(entryPath);
+        if (pointer === undefined)
+          return failedGit("runner git directory pointer is invalid");
+        paths2 = [join45(pointer, "index"), join45(pointer, "HEAD")];
+      } else {
+        const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2000);
+        if (controls.code !== 0)
+          return controls;
+        paths2 = controls.text.split(`
 `);
+      }
     }
   } catch (cause) {
     if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
@@ -42488,6 +42632,7 @@ function runnerGit(context, project, args, input) {
   return gitProcess(context, project, args, 1e4, input);
 }
 function patchIdentity(context, project, baseRef, head) {
+  assertPinnedLayout(context);
   const base2 = runnerGit(context, project, ["merge-base", baseRef, head]);
   if (base2.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(base2.text))
     throw new Error(`cannot resolve verdict base: ${base2.stderr || base2.text}`);
@@ -42516,6 +42661,7 @@ function patchIdentity(context, project, baseRef, head) {
 function ciConfigDrift(context, project, oldBase, newBase) {
   if (oldBase === newBase)
     return false;
+  assertPinnedLayout(context);
   const converterGuard = ["--no-ext-diff", "--no-textconv", "--no-relative"];
   const changed = runnerGit(context, project, [
     "diff",
@@ -42548,6 +42694,7 @@ function ciConfigDrift(context, project, oldBase, newBase) {
   return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path !== "" && (ciFiles.includes(path) || ciRoots.some((root) => path === root || path.startsWith(`${root}/`) || root.startsWith(`${path}/`))));
 }
 function mergeTreeClean(context, project, baseRef, head) {
+  assertPinnedLayout(context);
   const left = resolvedRevision(context, project, baseRef);
   const right = resolvedRevision(context, project, head);
   const mergeBase = runnerGit(context, project, ["merge-base", left, right]);
@@ -42559,10 +42706,15 @@ function mergeTreeClean(context, project, baseRef, head) {
   const objectFormat = runnerGit(context, project, ["rev-parse", "--show-object-format"]);
   if (objectFormat.code !== 0 || objectFormat.text !== "sha1" && objectFormat.text !== "sha256")
     throw new Error(`cannot inspect merge tree: ${objectFormat.stderr || objectFormat.text}`);
-  const gitDir = runnerGit(context, project, ["rev-parse", "--absolute-git-dir"]);
-  if (gitDir.code !== 0)
-    throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
-  const objectDir = realpathSync12(join45(gitDir.text, "objects"));
+  const objects2 = runnerGit(context, project, ["rev-parse", "--git-path", "objects"]);
+  if (objects2.code !== 0 || objects2.text === "")
+    throw new Error(`cannot inspect merge tree: ${objects2.stderr || objects2.text}`);
+  let objectDir;
+  try {
+    objectDir = realpathSync12(isAbsolute13(objects2.text) ? objects2.text : resolve15(project, objects2.text));
+  } catch {
+    throw new Error("cannot inspect merge tree: cannot resolve object directory");
+  }
   const scratch = mkdtempSync3(join45(context.home, "ak-merge-"));
   try {
     const init = spawnSync5(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q", `--object-format=${objectFormat.text}`], {
@@ -42604,6 +42756,7 @@ function escapesWorktree(path, rel) {
   return path === "" || isAbsolute13(path) || rel === "" || !relativeInsideRoot(rel);
 }
 function cleanCommittedTree(context, project) {
+  assertPinnedLayout(context);
   return treeIsClean(context, project, new Set);
 }
 function treeIsClean(context, project, seen) {
@@ -42837,7 +42990,7 @@ function canonicalFuturePath(path) {
   let existing = resolve16(path);
   const missing2 = [];
   while (!existsSync40(existing)) {
-    missing2.unshift(basename20(existing));
+    missing2.unshift(basename21(existing));
     existing = dirname23(existing);
   }
   return join46(realpathSync13(existing), ...missing2);
@@ -43646,6 +43799,8 @@ class Runner {
     const run2 = this.load(id);
     if (STOPPED.has(run2.run_state))
       throw new Error("run is stopped; revision cannot advance");
+    if (run2.verdict !== undefined)
+      cleanCommittedTree(this.gitContext, this.workerRoot);
     const observed = this.observedSnapshot();
     if (observed !== null && observed.revision !== revision)
       throw new Error("revision differs from worker checkout");
@@ -44438,7 +44593,7 @@ function readCouncilConfig(path) {
 // src/council/outbound.ts
 init_secrets();
 import { realpathSync as realpathSync15 } from "fs";
-import { basename as basename21 } from "path";
+import { basename as basename22 } from "path";
 var DEFAULT_MAX_BYTES = 262144;
 var BUILT_IN_DENY = [
   ".env",
@@ -44472,7 +44627,7 @@ function segmentPattern(entry) {
 }
 function deniedSegment(path) {
   const segments = path.split(/[\\/]+/).filter((segment) => segment.length > 0);
-  const name = basename21(path);
+  const name = basename22(path);
   for (const entry of BUILT_IN_DENY) {
     const pattern = segmentPattern(entry);
     if (pattern.test(name) || segments.some((segment) => pattern.test(segment)))
@@ -45335,7 +45490,7 @@ var import__202013 = __toESM(require_2020(), 1);
 import { createHash as createHash13 } from "crypto";
 import { mkdtempSync as mkdtempSync4, readFileSync as readFileSync37, rmSync as rmSync15, writeFileSync as writeFileSync17 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { basename as basename22, join as join47 } from "path";
+import { basename as basename23, join as join47 } from "path";
 var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
 var isCouncilCard = new import__202013.default({ strict: false }).compile({
   type: "object",
@@ -45431,7 +45586,7 @@ async function run2(args, io) {
   const card = cardValue;
   if (!card.options.includes(card.approve))
     throw new Error("the card's approving option is not one of its options");
-  const context = args.context.map((path) => ({ path, name: basename22(path), text: readFileSync37(path, "utf8") }));
+  const context = args.context.map((path) => ({ path, name: basename23(path), text: readFileSync37(path, "utf8") }));
   const items2 = [
     { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}
@@ -46583,7 +46738,7 @@ function checkMaintenanceCommand(current2, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename23(path) !== "ak")
+  if (!path || basename24(path) !== "ak")
     return null;
   try {
     const current2 = readFileSync42(path, "utf8");

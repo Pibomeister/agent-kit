@@ -12,7 +12,7 @@ import {
   realpathSync,
   rmSync,
 } from "node:fs";
-import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
 import { relativeInsideRoot, workerControlledPath, workerFreePath } from "./path.ts";
@@ -24,6 +24,7 @@ export interface RunnerGitContext {
   home: string;
   gitDir?: string;
   workTree?: string;
+  pinnedGitKind?: "directory" | "file" | "symlink" | "missing";
 }
 
 interface RepoLayout {
@@ -31,23 +32,58 @@ interface RepoLayout {
   workTree: string;
 }
 
-function parseGitFile(dir: string, entryPath: string): string | undefined {
-  const pointer = /^gitdir: (.+)$/.exec(readFileSync(entryPath, "utf8").trim())?.[1];
+const LAYOUT_CHANGED = "git layout changed since start";
+const REALPATH_HOPS = 32;
+
+function parseGitFile(filePath: string): string | undefined {
+  const pointer = /^gitdir: (.+)$/.exec(readFileSync(filePath, "utf8").trim())?.[1];
   if (pointer === undefined) return undefined;
-  return isAbsolute(pointer) ? pointer : resolve(dir, pointer);
+  return isAbsolute(pointer) ? pointer : resolve(dirname(filePath), pointer);
 }
 
-function workTreeOf(gitDir: string): string {
+function boundedResolve(path: string): string | undefined {
+  let current = path;
+  const seen = new Set<string>();
+  for (let hop = 0; hop < REALPATH_HOPS; hop++) {
+    if (seen.has(current)) return undefined;
+    seen.add(current);
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      return undefined;
+    }
+    if (!stat.isSymbolicLink()) {
+      try {
+        return realpathSync(current);
+      } catch {
+        return undefined;
+      }
+    }
+    const next = readlinkSync(current);
+    current = isAbsolute(next) ? next : resolve(dirname(current), next);
+  }
+  return undefined;
+}
+
+function workTreeOf(gitDir: string, foundAt: string, gitfile: boolean): string {
+  if (!gitfile) return realpathSync(foundAt);
   try {
     const pointed = readFileSync(join(gitDir, "gitdir"), "utf8").trim();
     if (pointed !== "") {
-      const gitfile = isAbsolute(pointed) ? pointed : resolve(gitDir, pointed);
-      return realpathSync(dirname(gitfile));
+      const marker = isAbsolute(pointed) ? pointed : resolve(gitDir, pointed);
+      return realpathSync(dirname(marker));
     }
   } catch {
-    // Main git directory: the work tree is its parent.
+    // Linked-worktree git dirs carry gitdir; absorbed modules carry commondir.
   }
-  return realpathSync(dirname(gitDir));
+  try {
+    readFileSync(join(gitDir, "commondir"), "utf8");
+    return realpathSync(foundAt);
+  } catch {
+    if (basename(gitDir) === ".git") return realpathSync(dirname(gitDir));
+    return realpathSync(foundAt);
+  }
 }
 
 function layoutAt(dir: string): RepoLayout | undefined {
@@ -60,43 +96,131 @@ function layoutAt(dir: string): RepoLayout | undefined {
   }
   if (entry.isFIFO() || entry.isSocket()) return undefined;
   let gitDir: string;
-  if (entry.isDirectory()) gitDir = realpathSync(entryPath);
+  let gitfile = false;
+  if (entry.isSymbolicLink()) {
+    const target = boundedResolve(entryPath);
+    if (target === undefined) return undefined;
+    let dest;
+    try {
+      dest = lstatSync(target);
+    } catch {
+      return undefined;
+    }
+    if (dest.isDirectory()) gitDir = realpathSync(target);
+    else if (dest.isFile() && dest.size <= 4096) {
+      const pointer = parseGitFile(target);
+      if (pointer === undefined) return undefined;
+      gitDir = realpathSync(pointer);
+      gitfile = true;
+    } else return undefined;
+  } else if (entry.isDirectory()) gitDir = realpathSync(entryPath);
   else if (entry.isFile() && entry.size <= 4096) {
-    const pointer = parseGitFile(dir, entryPath);
+    const pointer = parseGitFile(entryPath);
     if (pointer === undefined) return undefined;
     gitDir = realpathSync(pointer);
+    gitfile = true;
   } else return undefined;
-  return { gitDir, workTree: workTreeOf(gitDir) };
+  return { gitDir, workTree: workTreeOf(gitDir, dir, gitfile) };
+}
+
+function ownsDirectory(layout: RepoLayout, dir: string): boolean {
+  try {
+    return layout.workTree === realpathSync(dir);
+  } catch {
+    return false;
+  }
 }
 
 function resolveLayout(start: string): RepoLayout | undefined {
   let dir = realpathSync(start);
   for (;;) {
     const layout = layoutAt(dir);
-    if (layout !== undefined) return layout;
+    if (layout !== undefined && ownsDirectory(layout, dir)) return layout;
     const parent = dirname(dir);
     if (parent === dir) return undefined;
     dir = parent;
   }
 }
 
-function repoPin(context: RunnerGitContext, project: string, extraEnv?: NodeJS.ProcessEnv): string[] {
-  if (extraEnv?.GIT_DIR !== undefined && extraEnv.GIT_DIR !== "") return [];
+function repoCommonDir(gitDir: string): string {
+  try {
+    const text = readFileSync(join(gitDir, "commondir"), "utf8").trim();
+    if (text !== "") return realpathSync(isAbsolute(text) ? text : resolve(gitDir, text));
+  } catch {
+    // Main git directories have no commondir file.
+  }
+  return gitDir;
+}
+
+function isAbsorbedGitlink(context: RunnerGitContext, gitDir: string): boolean {
+  if (context.gitDir === undefined) return false;
+  const modules = join(repoCommonDir(context.gitDir), "modules");
+  return gitDir === modules || relativeInsideRoot(relative(modules, gitDir));
+}
+
+function selectedRepo(
+  context: RunnerGitContext,
+  project: string,
+  extraEnv?: NodeJS.ProcessEnv,
+): RepoLayout | undefined {
+  if (extraEnv?.GIT_DIR !== undefined && extraEnv.GIT_DIR !== "") return undefined;
+  if (context.gitDir === undefined || context.workTree === undefined) return undefined;
   let dir: string;
   try {
     dir = realpathSync(project);
   } catch {
-    return [];
+    return undefined;
   }
-  const own = layoutAt(dir);
-  const insideWorker =
-    context.workTree !== undefined && (dir === context.workTree || relativeInsideRoot(relative(context.workTree, dir)));
-  if (own !== undefined && context.gitDir !== undefined && own.gitDir !== realpathSync(context.gitDir))
-    return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
-  if (own !== undefined && !insideWorker) return ["--git-dir", own.gitDir, "--work-tree", own.workTree];
-  if (context.gitDir !== undefined && context.workTree !== undefined && insideWorker)
-    return ["--git-dir", context.gitDir, "--work-tree", context.workTree];
-  return [];
+  const inside = dir === context.workTree || relativeInsideRoot(relative(context.workTree, dir));
+  if (!inside) {
+    const own = layoutAt(dir);
+    if (own !== undefined && ownsDirectory(own, dir)) return own;
+    return undefined;
+  }
+  if (dir !== context.workTree) {
+    const own = layoutAt(dir);
+    if (own !== undefined && own.gitDir !== context.gitDir) {
+      let gitDirectory = false;
+      try {
+        gitDirectory = lstatSync(join(dir, ".git")).isDirectory();
+      } catch {
+        gitDirectory = false;
+      }
+      if (gitDirectory || isAbsorbedGitlink(context, own.gitDir)) return own;
+    }
+  }
+  return { gitDir: context.gitDir, workTree: context.workTree };
+}
+
+function repoPin(context: RunnerGitContext, project: string, extraEnv?: NodeJS.ProcessEnv): string[] {
+  const repo = selectedRepo(context, project, extraEnv);
+  if (repo === undefined) return [];
+  return ["--git-dir", repo.gitDir, "--work-tree", repo.workTree];
+}
+
+function pinnedGitKind(workTree: string): RunnerGitContext["pinnedGitKind"] {
+  try {
+    const entry = lstatSync(join(workTree, ".git"));
+    if (entry.isSymbolicLink()) return "symlink";
+    if (entry.isDirectory()) return "directory";
+    if (entry.isFile()) return "file";
+    return "missing";
+  } catch {
+    return "missing";
+  }
+}
+
+function assertPinnedLayout(context: RunnerGitContext): void {
+  if (context.gitDir === undefined || context.workTree === undefined) return;
+  const now = layoutAt(context.workerRoot);
+  if (now !== undefined && now.gitDir !== context.gitDir) throw new Error(LAYOUT_CHANGED);
+  try {
+    const entry = lstatSync(join(context.workTree, ".git"));
+    if ((entry.isSymbolicLink() || entry.isFile()) && context.pinnedGitKind === "directory")
+      throw new Error(LAYOUT_CHANGED);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === LAYOUT_CHANGED) throw cause;
+  }
 }
 
 export function resolveRunnerGit(workerRoot: string): RunnerGitContext {
@@ -108,7 +232,15 @@ export function resolveRunnerGit(workerRoot: string): RunnerGitContext {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync(candidate);
       if (!workerControlledPath(binary, workerRoot))
-        return { binary, path, workerRoot, home: "/dev/null", gitDir: layout?.gitDir, workTree: layout?.workTree };
+        return {
+          binary,
+          path,
+          workerRoot,
+          home: "/dev/null",
+          gitDir: layout?.gitDir,
+          workTree: layout?.workTree,
+          pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree),
+        };
     } catch {
       // Try the next supervisor-owned PATH entry.
     }
@@ -238,19 +370,28 @@ export function gitProcess(
 }
 
 function checkGitControls(context: RunnerGitContext, project: string): GitResult | null {
+  const pinned = selectedRepo(context, project);
   const entryPath = join(project, ".git");
   let paths: string[];
   try {
-    const entry = lstatSync(entryPath);
-    if (entry.isDirectory()) paths = [join(entryPath, "index"), join(entryPath, "HEAD")];
-    else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = parseGitFile(project, entryPath);
-      if (pointer === undefined) return failedGit("runner git directory pointer is invalid");
-      paths = [join(pointer, "index"), join(pointer, "HEAD")];
-    } else {
-      const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2_000);
-      if (controls.code !== 0) return controls;
-      paths = controls.text.split("\n");
+    if (pinned !== undefined) paths = [join(pinned.gitDir, "index"), join(pinned.gitDir, "HEAD")];
+    else {
+      const entry = lstatSync(entryPath);
+      if (entry.isDirectory()) paths = [join(entryPath, "index"), join(entryPath, "HEAD")];
+      else if (entry.isFile() && entry.size <= 4096) {
+        const pointer = parseGitFile(entryPath);
+        if (pointer === undefined) return failedGit("runner git directory pointer is invalid");
+        paths = [join(pointer, "index"), join(pointer, "HEAD")];
+      } else {
+        const controls = gitProcess(
+          context,
+          project,
+          ["rev-parse", "--git-path", "index", "--git-path", "HEAD"],
+          2_000,
+        );
+        if (controls.code !== 0) return controls;
+        paths = controls.text.split("\n");
+      }
     }
   } catch (cause) {
     if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
@@ -287,6 +428,7 @@ export function runnerGit(
 
 /** Stable identity for the complete committed change relative to its current merge base. */
 export function patchIdentity(context: RunnerGitContext, project: string, baseRef: string, head: string) {
+  assertPinnedLayout(context);
   const base = runnerGit(context, project, ["merge-base", baseRef, head]);
   if (base.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(base.text))
     throw new Error(`cannot resolve verdict base: ${base.stderr || base.text}`);
@@ -314,6 +456,7 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
 /** Only trunk-side CI configuration changes invalidate an otherwise identical patch. */
 export function ciConfigDrift(context: RunnerGitContext, project: string, oldBase: string, newBase: string): boolean {
   if (oldBase === newBase) return false;
+  assertPinnedLayout(context);
   const converterGuard = ["--no-ext-diff", "--no-textconv", "--no-relative"] as const;
   const changed = runnerGit(context, project, [
     "diff",
@@ -353,6 +496,7 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
 }
 
 export function mergeTreeClean(context: RunnerGitContext, project: string, baseRef: string, head: string): boolean {
+  assertPinnedLayout(context);
   const left = resolvedRevision(context, project, baseRef);
   const right = resolvedRevision(context, project, head);
   const mergeBase = runnerGit(context, project, ["merge-base", left, right]);
@@ -364,9 +508,15 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
   const objectFormat = runnerGit(context, project, ["rev-parse", "--show-object-format"]);
   if (objectFormat.code !== 0 || (objectFormat.text !== "sha1" && objectFormat.text !== "sha256"))
     throw new Error(`cannot inspect merge tree: ${objectFormat.stderr || objectFormat.text}`);
-  const gitDir = runnerGit(context, project, ["rev-parse", "--absolute-git-dir"]);
-  if (gitDir.code !== 0) throw new Error(`cannot inspect merge tree: ${gitDir.stderr || gitDir.text}`);
-  const objectDir = realpathSync(join(gitDir.text, "objects"));
+  const objects = runnerGit(context, project, ["rev-parse", "--git-path", "objects"]);
+  if (objects.code !== 0 || objects.text === "")
+    throw new Error(`cannot inspect merge tree: ${objects.stderr || objects.text}`);
+  let objectDir: string;
+  try {
+    objectDir = realpathSync(isAbsolute(objects.text) ? objects.text : resolve(project, objects.text));
+  } catch {
+    throw new Error("cannot inspect merge tree: cannot resolve object directory");
+  }
   const scratch = mkdtempSync(join(context.home, "ak-merge-"));
   try {
     const init = spawnSync(
@@ -423,6 +573,7 @@ function escapesWorktree(path: string, rel: string): boolean {
  * ls-files --exclude-standard, matching main.
  */
 export function cleanCommittedTree(context: RunnerGitContext, project: string): boolean {
+  assertPinnedLayout(context);
   return treeIsClean(context, project, new Set());
 }
 
