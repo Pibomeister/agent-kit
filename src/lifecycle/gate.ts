@@ -255,14 +255,31 @@ export function git(cwd: string, args: readonly string[], env?: Record<string, s
   };
 }
 
+/**
+ * A git call whose command must print its answer (a revision, a path, a branch, a ref list that
+ * cannot be empty where it is asked). Exit 0 with no output is a failed call, not an empty answer:
+ * under host load git has been seen to exit 0 silently, and a caller reading the silence as a real
+ * answer invents a missing revision, a non-checkout or an empty list. The failure names the
+ * command, so the caller's own refusal carries the evidence. Commands that legitimately print
+ * nothing (a clean diff, no untracked files, `--is-ancestor`) keep using `git`.
+ */
+export function gitMustPrint(cwd: string, args: readonly string[], env?: Record<string, string>): GitResult {
+  const result = git(cwd, args, env);
+  if (result.code !== 0 || result.text !== "") return result;
+  return { ...result, code: -1, stderr: `git ${args.join(" ")} in ${cwd} exited 0 with no output` };
+}
+
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
-  const head = git(project, ["rev-parse", "HEAD"]);
+  const head = gitMustPrint(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
-  const indexPath = git(project, ["rev-parse", "--git-path", "index"]);
+  const indexPath = gitMustPrint(project, ["rev-parse", "--git-path", "index"]);
   // An empty path joins back to the project directory, and copying that directory throws.
-  if (indexPath.code !== 0 || indexPath.text === "") return `cannot locate the index of ${project}`;
+  if (indexPath.code !== 0 || indexPath.text === "")
+    return indexPath.stderr === ""
+      ? `cannot locate the index of ${project}`
+      : `cannot locate the index of ${project}: ${indexPath.stderr}`;
   const index = isAbsolute(indexPath.text) ? indexPath.text : join(project, indexPath.text);
 
   const scratch = mkdtempSync(join(tmpdir(), "ak-index-"));
@@ -419,7 +436,7 @@ const same = (a: Snapshot, b: Snapshot) => a.revision === b.revision && a.diff_h
  * repository finds them and none is ever committed.
  */
 export function defaultEvidenceDir(project: string): string {
-  const common = git(project, ["rev-parse", "--git-common-dir"]);
+  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
   if (common.code !== 0 || common.text === "") throw new Error(`${project} is not a git checkout: ${common.stderr}`);
   const dir = isAbsolute(common.text) ? common.text : join(project, common.text);
   return join(dir, "agent-kit", "evidence");
@@ -897,10 +914,24 @@ function importPhaseRecords(dir: string, run: RunRecord, now: string): void {
 }
 
 export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false; reason: string } {
-  const branch = git(a.project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (branch.code !== 0 || branch.text === "") return { ok: false, reason: `${a.project} is on a detached head` };
-  const head = git(a.project, ["rev-parse", "HEAD"]);
-  if (head.code !== 0 || head.text === "") return { ok: false, reason: `${a.project} has no committed revision` };
+  const branch = gitMustPrint(a.project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (branch.code !== 0 || branch.text === "")
+    return {
+      ok: false,
+      reason:
+        branch.stderr === ""
+          ? `${a.project} is on a detached head`
+          : `cannot read the current branch of ${a.project}: ${branch.stderr}`,
+    };
+  const head = gitMustPrint(a.project, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.text === "")
+    return {
+      ok: false,
+      reason:
+        head.stderr === ""
+          ? `${a.project} has no committed revision`
+          : `${a.project} has no committed revision: ${head.stderr}`,
+    };
 
   let ticket: unknown;
   try {
@@ -1414,14 +1445,14 @@ const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
 function forkPoint(project: string, head: string): { branch: string; base: string } | undefined {
   const current = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]).text;
   for (const key of ["refs/remotes/origin/HEAD", "main", "master"]) {
-    const ref = git(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
+    const ref = gitMustPrint(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
     if (ref.code !== 0) continue;
     const name =
       key === "main" || key === "master"
         ? key
         : git(project, ["symbolic-ref", "--quiet", "--short", key]).text.replace(/^origin\//, "");
     if (current !== "" && current === name) return undefined;
-    const base = git(project, ["merge-base", head, ref.text]);
+    const base = gitMustPrint(project, ["merge-base", head, ref.text]);
     return base.code === 0 ? { branch: name === "" ? "origin/HEAD" : name, base: base.text } : undefined;
   }
   return undefined;
@@ -2211,8 +2242,10 @@ function worktreeOf(dir: string): string | undefined {
 
 /** The repository's identity and the places a worker in it can write: its git directory and every worktree. */
 function repoOf(project: string): { common: string; writable: string[] } | undefined {
-  const common = git(project, ["rev-parse", "--git-common-dir"]);
-  const trees = git(project, ["worktree", "list", "--porcelain"]);
+  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
+  // A checkout always lists at least its own worktree; a silent empty list would drop every
+  // worktree from the writable set this returns.
+  const trees = gitMustPrint(project, ["worktree", "list", "--porcelain"]);
   if (common.code !== 0 || trees.code !== 0 || common.text === "") return undefined;
   const real = realOr(isAbsolute(common.text) ? common.text : join(project, common.text));
   const worktrees = trees.text
@@ -2308,7 +2341,8 @@ function foreignRun(dir: string, project: string, run: string): string | undefin
   if (opened !== undefined && opened.branch !== branch.text)
     return `run ${run} was opened as ${String(opened.run_id)} for branch ${String(opened.branch)}, not ${branch.text}; open a run for this branch with \`open --ticket\``;
   const folded = run.toLowerCase();
-  const branches = git(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]);
+  // The checked-out branch is itself a head ref, so this list cannot be empty here.
+  const branches = gitMustPrint(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]);
   if (branches.code !== 0)
     return `cannot list the branches of ${project}, so run ${run} cannot be shown to be branch ${branch.text}'s`;
   const shared = branches.text
