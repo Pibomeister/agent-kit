@@ -80,7 +80,9 @@ creates a missing tag at the merged commit before it publishes, and refuses when
 exists at another commit. Pushing that tag by hand runs the workflow at the tagged commit, which it
 builds and publishes once it confirms the commit is on `main`. To retry, dispatch the workflow with
 the tag as its ref; a dispatch at the tip of `main` refuses once `main` has moved past the tagged
-commit. On the first merge, wait for the push-to-main run of publish-bundle to complete, then use the commands above. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
+commit. On the first merge, wait for the push-to-main run of publish-bundle to complete, then use
+the commands above. Later bundle changes require a new matching version in `catalog.yaml` and
+`package.json`;
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
