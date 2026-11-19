@@ -1440,24 +1440,27 @@ const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
 /**
  * Where this branch left the default branch (origin/HEAD, else main, else master): the merge-base of
  * the head with it. Undefined when none of them resolves, and when the default branch itself is checked
- * out, which has no fork point to bound by.
+ * out, which has no fork point to bound by. A git call that fails names itself in `error`, because
+ * dropping the bound would loosen the check.
  */
-function forkPoint(project: string, head: string): { branch: string; base: string } | undefined {
+function forkPoint(project: string, head: string): { branch: string; base: string } | { error: string } | undefined {
+  const failed = (r: GitResult) => r.code !== 0 && r.stderr !== "";
   const branchRef = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (branchRef.code !== 0 && branchRef.stderr !== "") return undefined;
+  if (failed(branchRef)) return { error: branchRef.stderr };
   const current = branchRef.text;
   for (const key of ["refs/remotes/origin/HEAD", "main", "master"]) {
     const ref = gitMustPrint(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
-    if (ref.code !== 0 && ref.stderr !== "") return undefined;
+    if (failed(ref)) return { error: ref.stderr };
     if (ref.code !== 0) continue;
     let name = key;
     if (key !== "main" && key !== "master") {
       const symbolic = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", key]);
-      if (symbolic.code !== 0 && symbolic.stderr !== "") return undefined;
+      if (failed(symbolic)) return { error: symbolic.stderr };
       name = symbolic.text.replace(/^origin\//, "");
     }
     if (current !== "" && current === name) return undefined;
     const base = gitMustPrint(project, ["merge-base", head, ref.text]);
+    if (failed(base)) return { error: base.stderr };
     return base.code === 0 ? { branch: name === "" ? "origin/HEAD" : name, base: base.text } : undefined;
   }
   return undefined;
@@ -2025,8 +2028,15 @@ export function checkGates(a: CheckArgs): CheckResult {
   const refusals: string[] = [];
   const notes: string[] = [];
   const stale = (g: Gate, why: string) => refusals.push(`refused: gate ${g} has no current evidence (${why})`);
-  const fork =
+  const bound =
     a.forkBound === true && a.gates.some((g) => EARLIER.has(g)) ? forkPoint(a.project, head.revision) : undefined;
+  if (bound !== undefined && "error" in bound)
+    return {
+      ok: false,
+      refusals: [`refused: cannot find where this branch left the default branch: ${bound.error}`],
+      notes: [],
+    };
+  const fork = bound;
 
   for (const gate of a.gates) {
     const records = readRecords(a.dir, a.run, gate).sort((x, y) => x.recorded_at.localeCompare(y.recorded_at));

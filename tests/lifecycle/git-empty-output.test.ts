@@ -11,7 +11,14 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { defaultEvidenceDir, main, openRun, takeSnapshot, type Snapshot } from "../../src/lifecycle/gate.ts";
+import {
+  checkGates,
+  defaultEvidenceDir,
+  main,
+  openRun,
+  takeSnapshot,
+  type Snapshot,
+} from "../../src/lifecycle/gate.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 setDefaultTimeout(60_000);
@@ -125,5 +132,23 @@ describe("a must-print git call that exits 0 silently", () => {
     expect(code).toBe(2);
     expect(err.join("\n")).not.toContain("detached head");
     expect(err.join("\n")).toContain("git symbolic-ref --quiet --short HEAD");
+  });
+
+  test("checkGates refuses rather than drop the fork bound when a fork probe goes silent", () => {
+    const dir = repo();
+    for (const silent of [["symbolic-ref"], ["merge-base"]]) {
+      const result = withSilentGit(silent, () =>
+        checkGates({
+          dir: join(dir, "evidence"),
+          run: "feature",
+          gates: ["build-checks"],
+          project: dir,
+          forkBound: true,
+        }),
+      );
+      expect(result.ok).toBe(false);
+      expect(result.refusals.join("\n")).toContain(`git ${silent[0]}`);
+      expect(result.refusals.join("\n")).toContain("no output");
+    }
   });
 });
