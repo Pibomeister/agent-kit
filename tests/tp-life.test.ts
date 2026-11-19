@@ -169,7 +169,6 @@ interface WrittenOracle {
   run: SpawnSyncReturns<string>;
   oracle: string;
   receipt: string;
-  status: number;
   repo: string;
 }
 
@@ -275,7 +274,7 @@ function writeOracle(base: string, dir: string, name: string, repo = boundRepo()
   const written = runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", receiptPath]);
   expect(written.status, written.stderr).toBe(0);
   expect(written.stderr.includes("will stale")).toBe(false);
-  return { run: oracle, oracle: oracleJson, receipt: receiptPath, status: oracle.status ?? 1, repo };
+  return { run: oracle, oracle: oracleJson, receipt: receiptPath, repo };
 }
 
 describe("independence", () => {
@@ -784,7 +783,7 @@ describe("G4 evidence", () => {
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
     const written = writeOracle(base, dir, "failed");
-    expect(written.status).toBe(1);
+    await expectOracle(written.run, 1);
     copyFileSync(written.receipt, join(receiptsDir, "failed.json"));
     const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "failed.json")]);
     expect(check.status).toBe(0);
@@ -804,9 +803,9 @@ describe("G4 evidence", () => {
     mkdirSync(receiptsDir);
     const repo = boundRepo();
     const failed = writeOracle(failedBase, dir, "failed", repo);
-    expect(failed.status).toBe(1);
+    await expectOracle(failed.run, 1);
     const passed = writeOracle(passedBase, dir, "passed", repo);
-    expect(passed.status).toBe(0);
+    await expectOracle(passed.run, 0);
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed-copy.json"));
@@ -834,9 +833,9 @@ describe("G4 evidence", () => {
     mkdirSync(receiptsDir);
     const repo = boundRepo();
     const failed = writeOracle(failedBase, dir, "failed", repo);
-    expect(failed.status).toBe(1);
+    await expectOracle(failed.run, 1);
     const passed = writeOracle(passedBase, dir, "passed", repo);
-    expect(passed.status).toBe(0);
+    await expectOracle(passed.run, 0);
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
     const run = evidenceAt(receiptsDir, repo);
@@ -854,9 +853,9 @@ describe("G4 evidence", () => {
     const failedBase = await startFixture("duplicate");
     const repo = boundRepo();
     const failed = writeOracle(failedBase, dir, "failed", repo);
-    expect(failed.status).toBe(1);
+    await expectOracle(failed.run, 1);
     const passed = writeOracle(base, dir, "passed", repo);
-    expect(passed.status).toBe(0);
+    await expectOracle(passed.run, 0);
     const mutated = readFileSync(passed.receipt, "utf8").replace(
       '\\"id\\":\\"success\\",\\"verdict\\":\\"pass\\"',
       '\\"id\\":\\"success\\",\\"verdict\\":\\"fail\\"',
