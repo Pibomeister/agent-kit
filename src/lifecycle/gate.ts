@@ -1444,7 +1444,7 @@ const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
  * dropping the bound would loosen the check.
  */
 function forkPoint(project: string, head: string): { branch: string; base: string } | { error: string } | undefined {
-  const failed = (r: GitResult) => r.code !== 0 && r.stderr !== "";
+  const failed = (r: GitResult) => r.code === -1 || r.code >= 128;
   const branchRef = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   if (failed(branchRef)) return { error: branchRef.stderr };
   const current = branchRef.text;

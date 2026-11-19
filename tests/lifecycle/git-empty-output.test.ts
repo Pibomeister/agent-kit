@@ -151,4 +151,18 @@ describe("a must-print git call that exits 0 silently", () => {
       expect(result.refusals.join("\n")).toContain("no output");
     }
   });
+
+  test("a dangling origin/HEAD is an absent default ref, not a failed call", () => {
+    const dir = repo();
+    git(dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone");
+    const result = checkGates({
+      dir: join(dir, "evidence"),
+      run: "feature",
+      gates: ["build-checks"],
+      project: dir,
+      forkBound: true,
+    });
+    expect(result.refusals.join("\n")).not.toContain("cannot find where this branch left the default branch");
+    expect(result.refusals.join("\n")).toContain("no record for run feature");
+  });
 });
