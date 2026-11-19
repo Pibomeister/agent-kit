@@ -1443,14 +1443,19 @@ const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
  * out, which has no fork point to bound by.
  */
 function forkPoint(project: string, head: string): { branch: string; base: string } | undefined {
-  const current = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]).text;
+  const branchRef = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (branchRef.code !== 0 && branchRef.stderr !== "") return undefined;
+  const current = branchRef.text;
   for (const key of ["refs/remotes/origin/HEAD", "main", "master"]) {
     const ref = gitMustPrint(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
+    if (ref.code !== 0 && ref.stderr !== "") return undefined;
     if (ref.code !== 0) continue;
-    const name =
-      key === "main" || key === "master"
-        ? key
-        : git(project, ["symbolic-ref", "--quiet", "--short", key]).text.replace(/^origin\//, "");
+    let name = key;
+    if (key !== "main" && key !== "master") {
+      const symbolic = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", key]);
+      if (symbolic.code !== 0 && symbolic.stderr !== "") return undefined;
+      name = symbolic.text.replace(/^origin\//, "");
+    }
     if (current !== "" && current === name) return undefined;
     const base = gitMustPrint(project, ["merge-base", head, ref.text]);
     return base.code === 0 ? { branch: name === "" ? "origin/HEAD" : name, base: base.text } : undefined;
@@ -2325,9 +2330,11 @@ const refuse = (reason: string) => ({ ok: false as const, reason });
  * earlier one of this branch, an id the worker makes up) is refused.
  */
 function foreignRun(dir: string, project: string, run: string): string | undefined {
-  const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  const branch = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   if (branch.code !== 0 || branch.text === "")
-    return `${project} is on a detached head, so it has no current run, and a bypass grant starts phases only in its branch's current run`;
+    return branch.stderr === ""
+      ? `${project} is on a detached head, so it has no current run, and a bypass grant starts phases only in its branch's current run`
+      : `cannot read the current branch of ${project}: ${branch.stderr}, so its current run is unknown, and a bypass grant starts phases only there`;
   const pointer = pointerRun(dir, branch.text);
   if (pointer.error !== undefined) return pointer.error;
   const current = pointer.run ?? safeRunId(branch.text);
@@ -3237,10 +3244,12 @@ export function main(
   let run = explicitRun;
   let forkBound = false;
   if (run === undefined) {
-    const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    const branch = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
     if (branch.code !== 0 || branch.text === "") {
       io.err(
-        `ak lifecycle ${sub}: ${project} is on a detached head, so there is no branch to name the run; pass --run <id>`,
+        branch.stderr === ""
+          ? `ak lifecycle ${sub}: ${project} is on a detached head, so there is no branch to name the run; pass --run <id>`
+          : `ak lifecycle ${sub}: cannot read the current branch of ${project}: ${branch.stderr}`,
       );
       return 2;
     }

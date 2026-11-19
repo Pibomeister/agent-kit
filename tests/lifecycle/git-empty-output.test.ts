@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { defaultEvidenceDir, openRun, takeSnapshot, type Snapshot } from "../../src/lifecycle/gate.ts";
+import { defaultEvidenceDir, main, openRun, takeSnapshot, type Snapshot } from "../../src/lifecycle/gate.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 setDefaultTimeout(60_000);
@@ -113,5 +113,17 @@ describe("a must-print git call that exits 0 silently", () => {
       expect(opened.reason).toContain("git symbolic-ref --quiet --short HEAD");
       expect(opened.reason).toContain("no output");
     }
+  });
+
+  test("a run resolved from the branch does not read a silent symbolic-ref as a detached head", () => {
+    const dir = repo();
+    const err: string[] = [];
+    const io = { out: () => {}, err: (line: string) => err.push(line) };
+    const code = withSilentGit(["symbolic-ref"], () =>
+      main(["check", "--dir", join(dir, "evidence"), "--project", dir, "--gates", "build"], io, dir),
+    );
+    expect(code).toBe(2);
+    expect(err.join("\n")).not.toContain("detached head");
+    expect(err.join("\n")).toContain("git symbolic-ref --quiet --short HEAD");
   });
 });
