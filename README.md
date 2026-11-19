@@ -93,7 +93,9 @@ service availability failure, missing executable or timeout. For example:
 `["/opt/judges/secondary --json", "/opt/judges/reserve --json"]`. Commands use the primary's
 quote splitting rules, with no shell expansion. Every command receives the same prompt on stdin
 and must return the same JSON object on stdout. Ordinary failures and malformed replies retain
-one retry; a role's `unavailable` reply ends the call. Exhaustion returns no judgement and writes
+one retry. With no fallback configured, a quota or service availability failure keeps that same
+retry, and a timeout still returns at once. A role's `unavailable` reply ends the call. Exhaustion
+returns no judgement and writes
 no learned content. `judge-calls.jsonl` records each attempt's outcome, `judge_index` (primary 0)
 and `judge_command_sha256` (SHA256 of the configured argv as JSON), identifying the answering binding
 without storing its arguments. No alternatives run unless configured.
