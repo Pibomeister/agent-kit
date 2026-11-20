@@ -212,6 +212,7 @@ interface ScopeBaseline {
   class: keyof typeof CLASS_RANK | null;
   intent: string | null;
   criteria: string | null;
+  review_surface_changed: boolean | null;
 }
 
 const DIGEST = { type: ["string", "null"], pattern: "^sha256:[0-9a-f]{64}$" };
@@ -222,7 +223,7 @@ let baselineValidator: ValidateFunction<ScopeBaseline> | null = null;
 function validateBaseline(): ValidateFunction<ScopeBaseline> {
   baselineValidator ??= new Ajv2020({ strict: false }).compile<ScopeBaseline>({
     type: "object",
-    required: ["schema", "schema_version", "head", "class", "intent", "criteria"],
+    required: ["schema", "schema_version", "head", "class", "intent", "criteria", "review_surface_changed"],
     properties: {
       schema: { const: "review-scope" },
       schema_version: { const: 1 },
@@ -230,6 +231,7 @@ function validateBaseline(): ValidateFunction<ScopeBaseline> {
       class: { enum: [...Object.keys(CLASS_RANK), null] },
       intent: DIGEST,
       criteria: DIGEST,
+      review_surface_changed: { type: ["boolean", "null"] },
     },
   });
   return baselineValidator;
@@ -294,6 +296,10 @@ function scopeCommand(flags: Flags, io: ReviewIo): number {
     requireAgain(flags, "--record", before.class);
     requireAgain(flags, "--intent", before.intent);
     requireAgain(flags, "--criteria", before.criteria);
+    if (before.review_surface_changed !== null && merge?.review_surface_changed === undefined)
+      throw new UsageError(
+        "--record must state review_surface_changed: the record of the last reviewed round holds its value, so run ak delegation --stage merge with --previous",
+      );
   }
   const reading =
     reviewed === null ? null : readDelta(repo, base, resolveCommit(repo, reviewed, "the last reviewed head"), head);

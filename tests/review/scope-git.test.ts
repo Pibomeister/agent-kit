@@ -623,6 +623,21 @@ describe("ak review scope refuses", () => {
     expect(run.err.join("\n")).toContain("--record is required");
   });
 
+  test("a --record without review_surface_changed when the last round's record holds it", () => {
+    const f = delegationFixture();
+    const first = f.merge("merge-1.json", f.head);
+    const one = f.keep("round-1.json", f.head, "--record", first);
+    f.round(f.head);
+    const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const second = f.merge("merge-2.json", fix, "--previous", first);
+    const kept = f.keep("round-2.json", fix, "--previous", one, "--record", second);
+    f.round(fix);
+    const touched = f.commit({ "src/shared/util.ts": lines("shared", 2) }, "touch the shared helper");
+    const run = f.scope(touched, "--previous", kept, "--record", f.merge("merge-3.json", touched));
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("--record must state review_surface_changed");
+  });
+
   test.each(["--intent", "--criteria"])("a %s file that does not exist", (flag) => {
     const f = fixture();
     const absent = join(f.dir, "absent.txt");
