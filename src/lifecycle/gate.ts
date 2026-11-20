@@ -255,14 +255,31 @@ export function git(cwd: string, args: readonly string[], env?: Record<string, s
   };
 }
 
+/**
+ * A git call whose command must print its answer (a revision, a path, a branch, a ref list that
+ * cannot be empty where it is asked). Exit 0 with no output is a failed call, not an empty answer:
+ * under host load git has been seen to exit 0 silently, and a caller reading the silence as a real
+ * answer invents a missing revision, a non-checkout or an empty list. The failure names the
+ * command, so the caller's own refusal carries the evidence. Commands that legitimately print
+ * nothing (a clean diff, no untracked files, `--is-ancestor`) keep using `git`.
+ */
+export function gitMustPrint(cwd: string, args: readonly string[], env?: Record<string, string>): GitResult {
+  const result = git(cwd, args, env);
+  if (result.code !== 0 || result.text !== "") return result;
+  return { ...result, code: -1, stderr: `git ${args.join(" ")} in ${cwd} exited 0 with no output` };
+}
+
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
-  const head = git(project, ["rev-parse", "HEAD"]);
+  const head = gitMustPrint(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
-  const indexPath = git(project, ["rev-parse", "--git-path", "index"]);
+  const indexPath = gitMustPrint(project, ["rev-parse", "--git-path", "index"]);
   // An empty path joins back to the project directory, and copying that directory throws.
-  if (indexPath.code !== 0 || indexPath.text === "") return `cannot locate the index of ${project}`;
+  if (indexPath.code !== 0 || indexPath.text === "")
+    return indexPath.stderr === ""
+      ? `cannot locate the index of ${project}`
+      : `cannot locate the index of ${project}: ${indexPath.stderr}`;
   const index = isAbsolute(indexPath.text) ? indexPath.text : join(project, indexPath.text);
 
   const scratch = mkdtempSync(join(tmpdir(), "ak-index-"));
@@ -419,7 +436,7 @@ const same = (a: Snapshot, b: Snapshot) => a.revision === b.revision && a.diff_h
  * repository finds them and none is ever committed.
  */
 export function defaultEvidenceDir(project: string): string {
-  const common = git(project, ["rev-parse", "--git-common-dir"]);
+  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
   if (common.code !== 0 || common.text === "") throw new Error(`${project} is not a git checkout: ${common.stderr}`);
   const dir = isAbsolute(common.text) ? common.text : join(project, common.text);
   return join(dir, "agent-kit", "evidence");
@@ -556,7 +573,7 @@ function workerWritable(path: string, project?: string): boolean {
   const at = realExisting(path);
   if (inside(at, resolve(project))) return true;
   const repo = repoOf(project);
-  if (repo === undefined) return false;
+  if ("error" in repo) return false;
   return repo.writable.some((root) => inside(at, root));
 }
 
@@ -897,10 +914,24 @@ function importPhaseRecords(dir: string, run: RunRecord, now: string): void {
 }
 
 export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false; reason: string } {
-  const branch = git(a.project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (branch.code !== 0 || branch.text === "") return { ok: false, reason: `${a.project} is on a detached head` };
-  const head = git(a.project, ["rev-parse", "HEAD"]);
-  if (head.code !== 0 || head.text === "") return { ok: false, reason: `${a.project} has no committed revision` };
+  const branch = gitMustPrint(a.project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (branch.code !== 0 || branch.text === "")
+    return {
+      ok: false,
+      reason:
+        branch.stderr === ""
+          ? `${a.project} is on a detached head`
+          : `cannot read the current branch of ${a.project}: ${branch.stderr}`,
+    };
+  const head = gitMustPrint(a.project, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.text === "")
+    return {
+      ok: false,
+      reason:
+        head.stderr === ""
+          ? `${a.project} has no committed revision`
+          : `${a.project} has no committed revision: ${head.stderr}`,
+    };
 
   let ticket: unknown;
   try {
@@ -1406,22 +1437,32 @@ const isAncestor = (project: string, older: string, newer: string): boolean =>
 
 const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
 
+/** A git call that failed outright: a silent must-print exit, a spawn error or a git fatal, not an absent answer. */
+const gitFailed = (r: GitResult): boolean => r.code === -1 || r.code >= 128;
+
 /**
  * Where this branch left the default branch (origin/HEAD, else main, else master): the merge-base of
  * the head with it. Undefined when none of them resolves, and when the default branch itself is checked
- * out, which has no fork point to bound by.
+ * out, which has no fork point to bound by. A git call that fails names itself in `error`, because
+ * dropping the bound would loosen the check.
  */
-function forkPoint(project: string, head: string): { branch: string; base: string } | undefined {
-  const current = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]).text;
+function forkPoint(project: string, head: string): { branch: string; base: string } | { error: string } | undefined {
+  const branchRef = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (gitFailed(branchRef)) return { error: branchRef.stderr };
+  const current = branchRef.text;
   for (const key of ["refs/remotes/origin/HEAD", "main", "master"]) {
-    const ref = git(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
+    const ref = gitMustPrint(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
+    if (gitFailed(ref)) return { error: ref.stderr };
     if (ref.code !== 0) continue;
-    const name =
-      key === "main" || key === "master"
-        ? key
-        : git(project, ["symbolic-ref", "--quiet", "--short", key]).text.replace(/^origin\//, "");
+    let name = key;
+    if (key !== "main" && key !== "master") {
+      const symbolic = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", key]);
+      if (gitFailed(symbolic)) return { error: symbolic.stderr };
+      name = symbolic.text.replace(/^origin\//, "");
+    }
     if (current !== "" && current === name) return undefined;
-    const base = git(project, ["merge-base", head, ref.text]);
+    const base = gitMustPrint(project, ["merge-base", head, ref.text]);
+    if (gitFailed(base)) return { error: base.stderr };
     return base.code === 0 ? { branch: name === "" ? "origin/HEAD" : name, base: base.text } : undefined;
   }
   return undefined;
@@ -1989,8 +2030,15 @@ export function checkGates(a: CheckArgs): CheckResult {
   const refusals: string[] = [];
   const notes: string[] = [];
   const stale = (g: Gate, why: string) => refusals.push(`refused: gate ${g} has no current evidence (${why})`);
-  const fork =
+  const bound =
     a.forkBound === true && a.gates.some((g) => EARLIER.has(g)) ? forkPoint(a.project, head.revision) : undefined;
+  if (bound !== undefined && "error" in bound)
+    return {
+      ok: false,
+      refusals: [`refused: cannot find where this branch left the default branch: ${bound.error}`],
+      notes: [],
+    };
+  const fork = bound;
 
   for (const gate of a.gates) {
     const records = readRecords(a.dir, a.run, gate).sort((x, y) => x.recorded_at.localeCompare(y.recorded_at));
@@ -2009,9 +2057,11 @@ export function checkGates(a: CheckArgs): CheckResult {
       }
       const counted = onLine[onLine.length - 1]!;
       if (a.forkBound === true && fork !== undefined) {
-        const forkTime = git(a.project, ["show", "-s", "--format=%ct", fork.base]);
+        const forkTime = gitMustPrint(a.project, ["show", "-s", "--format=%ct", fork.base]);
         const recorded = Date.parse(counted.recorded_at);
-        if (forkTime.code === 0 && Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
+        if (forkTime.code !== 0)
+          notes.push(`note: cannot tell whether ${gate} for run ${a.run} predates ${fork.branch} (${forkTime.stderr})`);
+        else if (Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
           notes.push(
             `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run`,
           );
@@ -2203,17 +2253,20 @@ function firstmateHome(path: string): string | undefined {
   }
 }
 
-/** The real path of the worktree containing `dir`, or undefined outside any checkout. */
-function worktreeOf(dir: string): string | undefined {
-  const top = git(dir, ["rev-parse", "--show-toplevel"]);
-  return top.code === 0 && top.text !== "" ? realOr(top.text) : undefined;
+/** The real path of the worktree containing `dir`, or the failed git call that would have named it. */
+function worktreeOf(dir: string): { path: string } | { error: string } {
+  const top = gitMustPrint(dir, ["rev-parse", "--show-toplevel"]);
+  return top.code === 0 ? { path: realOr(top.text) } : { error: top.stderr };
 }
 
 /** The repository's identity and the places a worker in it can write: its git directory and every worktree. */
-function repoOf(project: string): { common: string; writable: string[] } | undefined {
-  const common = git(project, ["rev-parse", "--git-common-dir"]);
-  const trees = git(project, ["worktree", "list", "--porcelain"]);
-  if (common.code !== 0 || trees.code !== 0 || common.text === "") return undefined;
+function repoOf(project: string): { common: string; writable: string[] } | { error: string } {
+  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
+  // A checkout always lists at least its own worktree; a silent empty list would drop every
+  // worktree from the writable set this returns.
+  const trees = gitMustPrint(project, ["worktree", "list", "--porcelain"]);
+  if (common.code !== 0) return { error: common.stderr };
+  if (trees.code !== 0) return { error: trees.stderr };
   const real = realOr(isAbsolute(common.text) ? common.text : join(project, common.text));
   const worktrees = trees.text
     .split("\n")
@@ -2292,9 +2345,11 @@ const refuse = (reason: string) => ({ ok: false as const, reason });
  * earlier one of this branch, an id the worker makes up) is refused.
  */
 function foreignRun(dir: string, project: string, run: string): string | undefined {
-  const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  const branch = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   if (branch.code !== 0 || branch.text === "")
-    return `${project} is on a detached head, so it has no current run, and a bypass grant starts phases only in its branch's current run`;
+    return branch.stderr === ""
+      ? `${project} is on a detached head, so it has no current run, and a bypass grant starts phases only in its branch's current run`
+      : `cannot read the current branch of ${project}: ${branch.stderr}, so its current run is unknown, and a bypass grant starts phases only there`;
   const pointer = pointerRun(dir, branch.text);
   if (pointer.error !== undefined) return pointer.error;
   const current = pointer.run ?? safeRunId(branch.text);
@@ -2308,7 +2363,8 @@ function foreignRun(dir: string, project: string, run: string): string | undefin
   if (opened !== undefined && opened.branch !== branch.text)
     return `run ${run} was opened as ${String(opened.run_id)} for branch ${String(opened.branch)}, not ${branch.text}; open a run for this branch with \`open --ticket\``;
   const folded = run.toLowerCase();
-  const branches = git(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]);
+  // The checked-out branch is itself a head ref, so this list cannot be empty here.
+  const branches = gitMustPrint(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]);
   if (branches.code !== 0)
     return `cannot list the branches of ${project}, so run ${run} cannot be shown to be branch ${branch.text}'s`;
   const shared = branches.text
@@ -2347,11 +2403,12 @@ export function grantBypass(
   if (!Number.isInteger(a.hours) || a.hours < 1 || a.hours > BYPASS_MAX_HOURS)
     return no(`--hours must be a whole number from 1 to ${BYPASS_MAX_HOURS}`);
   const repo = repoOf(a.project);
-  if (repo === undefined) return no(`${a.project} is not a git checkout`);
+  if ("error" in repo) return no(`${a.project} is not a git checkout: ${repo.error}`);
   const cwd = realOr(a.cwd);
   const home = firstmateHome(cwd);
+  const cwdRepo = repoOf(a.cwd);
   if (
-    repoOf(a.cwd)?.common === repo.common ||
+    ("common" in cwdRepo && cwdRepo.common === repo.common) ||
     repo.writable.some((dir) => within(cwd, dir)) ||
     (home !== undefined && within(cwd, join(home, "projects")))
   )
@@ -2461,11 +2518,16 @@ export function checkBypass(
   if (entry.grant_sha256 !== hash)
     return no(`bypass grant ${path} hashes to ${hash}, not the ${String(entry.grant_sha256)} that was registered`);
   // From here the bytes are the ones `grantBypass` wrote and registered.
-  const tree = worktreeOf(a.cwd);
-  if (tree === undefined) return no(`${a.cwd} is not inside a git worktree`);
-  if (worktreeOf(a.project) !== tree) return no(`--project ${a.project} is not the worktree this runs from, ${tree}`);
+  const treeOf = worktreeOf(a.cwd);
+  if ("error" in treeOf) return no(`${a.cwd} is not inside a git worktree: ${treeOf.error}`);
+  const tree = treeOf.path;
+  const projectTreeOf = worktreeOf(a.project);
+  if ("error" in projectTreeOf)
+    return no(`--project ${a.project} is not inside a git worktree: ${projectTreeOf.error}`);
+  const projectTree = projectTreeOf.path;
+  if (projectTree !== tree) return no(`--project ${a.project} is not the worktree this runs from, ${tree}`);
   const repo = repoOf(tree);
-  if (repo === undefined) return no(`${tree} is not a git checkout`);
+  if ("error" in repo) return no(`${tree} is not a git checkout: ${repo.error}`);
   if (g.repo !== repo.common) return no(`bypass grant ${id} is for ${String(g.repo)}, not ${repo.common}`);
   if (g.worktree !== tree) return no(`bypass grant ${id} is for worktree ${String(g.worktree)}, not ${tree}`);
   for (const dir of repo.writable)
@@ -3203,10 +3265,12 @@ export function main(
   let run = explicitRun;
   let forkBound = false;
   if (run === undefined) {
-    const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    const branch = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
     if (branch.code !== 0 || branch.text === "") {
       io.err(
-        `ak lifecycle ${sub}: ${project} is on a detached head, so there is no branch to name the run; pass --run <id>`,
+        branch.stderr === ""
+          ? `ak lifecycle ${sub}: ${project} is on a detached head, so there is no branch to name the run; pass --run <id>`
+          : `ak lifecycle ${sub}: cannot read the current branch of ${project}: ${branch.stderr}`,
       );
       return 2;
     }
