@@ -1437,6 +1437,9 @@ const isAncestor = (project: string, older: string, newer: string): boolean =>
 
 const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
 
+/** A git call that failed outright: a silent must-print exit, a spawn error or a git fatal, not an absent answer. */
+const gitFailed = (r: GitResult): boolean => r.code === -1 || r.code >= 128;
+
 /**
  * Where this branch left the default branch (origin/HEAD, else main, else master): the merge-base of
  * the head with it. Undefined when none of them resolves, and when the default branch itself is checked
@@ -1444,23 +1447,22 @@ const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
  * dropping the bound would loosen the check.
  */
 function forkPoint(project: string, head: string): { branch: string; base: string } | { error: string } | undefined {
-  const failed = (r: GitResult) => r.code === -1 || r.code >= 128;
   const branchRef = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (failed(branchRef)) return { error: branchRef.stderr };
+  if (gitFailed(branchRef)) return { error: branchRef.stderr };
   const current = branchRef.text;
   for (const key of ["refs/remotes/origin/HEAD", "main", "master"]) {
     const ref = gitMustPrint(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
-    if (failed(ref)) return { error: ref.stderr };
+    if (gitFailed(ref)) return { error: ref.stderr };
     if (ref.code !== 0) continue;
     let name = key;
     if (key !== "main" && key !== "master") {
       const symbolic = gitMustPrint(project, ["symbolic-ref", "--quiet", "--short", key]);
-      if (failed(symbolic)) return { error: symbolic.stderr };
+      if (gitFailed(symbolic)) return { error: symbolic.stderr };
       name = symbolic.text.replace(/^origin\//, "");
     }
     if (current !== "" && current === name) return undefined;
     const base = gitMustPrint(project, ["merge-base", head, ref.text]);
-    if (failed(base)) return { error: base.stderr };
+    if (gitFailed(base)) return { error: base.stderr };
     return base.code === 0 ? { branch: name === "" ? "origin/HEAD" : name, base: base.text } : undefined;
   }
   return undefined;
@@ -2252,9 +2254,9 @@ function firstmateHome(path: string): string | undefined {
 }
 
 /** The real path of the worktree containing `dir`, or the failed git call that would have named it. */
-function worktreeOf(dir: string): string | { error: string } {
+function worktreeOf(dir: string): { path: string } | { error: string } {
   const top = gitMustPrint(dir, ["rev-parse", "--show-toplevel"]);
-  return top.code === 0 ? realOr(top.text) : { error: top.stderr };
+  return top.code === 0 ? { path: realOr(top.text) } : { error: top.stderr };
 }
 
 /** The repository's identity and the places a worker in it can write: its git directory and every worktree. */
@@ -2516,11 +2518,13 @@ export function checkBypass(
   if (entry.grant_sha256 !== hash)
     return no(`bypass grant ${path} hashes to ${hash}, not the ${String(entry.grant_sha256)} that was registered`);
   // From here the bytes are the ones `grantBypass` wrote and registered.
-  const tree = worktreeOf(a.cwd);
-  if (typeof tree !== "string") return no(`${a.cwd} is not inside a git worktree: ${tree.error}`);
-  const projectTree = worktreeOf(a.project);
-  if (typeof projectTree !== "string")
-    return no(`--project ${a.project} is not inside a git worktree: ${projectTree.error}`);
+  const treeOf = worktreeOf(a.cwd);
+  if ("error" in treeOf) return no(`${a.cwd} is not inside a git worktree: ${treeOf.error}`);
+  const tree = treeOf.path;
+  const projectTreeOf = worktreeOf(a.project);
+  if ("error" in projectTreeOf)
+    return no(`--project ${a.project} is not inside a git worktree: ${projectTreeOf.error}`);
+  const projectTree = projectTreeOf.path;
   if (projectTree !== tree) return no(`--project ${a.project} is not the worktree this runs from, ${tree}`);
   const repo = repoOf(tree);
   if ("error" in repo) return no(`${tree} is not a git checkout: ${repo.error}`);
