@@ -308,6 +308,25 @@ describe("ak review scope: what is not a trigger", () => {
     expect([f.numstat(f.head, folded), f.numstat(f.head, pushed)]).toEqual([1, 17]);
   });
 
+  test("a reviewed fix commit squashed into its commit with one more line counts one changed line", () => {
+    const f = fixture();
+    f.round(f.head);
+    const fix = f.commit({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 15) }, "fix a finding");
+    f.round(fix);
+    f.git("reset", "--soft", f.head);
+    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 16) });
+    f.git("add", "-A");
+    f.git("commit", "--amend", "--no-edit");
+    const squashed = f.git("rev-parse", "HEAD");
+    expect(f.git("rev-list", "--count", `main..${squashed}`)).toBe("2");
+    expect(f.record(squashed)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { pr_lines: 65, rewritten_lines: f.numstat(fix, squashed), added_lines: 1 },
+    });
+    expect(f.numstat(fix, squashed)).toBe(1);
+  });
+
   test("a rewrite that changes a small share of the lines is not a large rebase", () => {
     const f = fixture();
     const third = f.commit({ "src/main.ts": lines("m", 10) + lines("third", 5) }, "third change");

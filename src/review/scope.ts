@@ -96,28 +96,26 @@ export interface OwnCommit {
 /**
  * Changed lines that a rewrite changed. `before` holds the rewritten commits
  * of the last reviewed head, and `after` the own commits of the new head that
- * no commit of the last reviewed head has.
+ * no commit of the last reviewed head has, each oldest first.
  *
  * Each rewritten commit is paired with the first unpaired commit of `after`
- * with its subject, as `--amend` and `--fixup` with `--autosquash` keep it. A
- * pair counts the larger of the lines the old version held and the new one
- * does not, and the reverse. A rewritten commit with no pair counts the lines
- * that no commit of `after` holds. A commit of `after` with no pair is a new
- * commit and counts nothing: scope growth reads it.
+ * with its subject, as `--amend` and `--fixup` with `--autosquash` keep it.
+ * The rewritten commits are pooled, and so are their new versions. The count
+ * is the larger of the lines the first pool holds and the second does not,
+ * and the reverse, so a commit squashed into another moves no line. A commit
+ * of `after` with no pair is a new commit and counts nothing: scope growth
+ * reads it.
  */
 export function linesRewritten(before: readonly OwnCommit[], after: readonly OwnCommit[]): number {
   const unpaired = [...after];
-  const all = pooled(after.map((commit) => commit.patch));
-  let total = 0;
-  for (const old of before) {
-    const index = unpaired.findIndex((commit) => commit.subject === old.subject);
-    const pair = index === -1 ? undefined : unpaired.splice(index, 1)[0];
-    total +=
-      pair === undefined
-        ? linesNotIn(old.patch, all)
-        : Math.max(linesNotIn(old.patch, pair.patch), linesNotIn(pair.patch, old.patch));
+  const pairs: Patch[] = [];
+  for (const rewritten of before) {
+    const index = unpaired.findIndex((commit) => commit.subject === rewritten.subject);
+    if (index !== -1) pairs.push(...unpaired.splice(index, 1).map((commit) => commit.patch));
   }
-  return total;
+  const old = pooled(before.map((commit) => commit.patch));
+  const now = pooled(pairs);
+  return Math.max(linesNotIn(old, now), linesNotIn(now, old));
 }
 
 /** The pull request at the new head against the pull request at the last reviewed head. */
@@ -133,7 +131,7 @@ export interface DeltaFacts {
   /**
    * Changed lines that the rewritten commits changed, by `linesRewritten`.
    * A commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
-   * It is compared with its new version, the own commit of the new head with its subject.
+   * They are compared, pooled, with their new versions: the own commits of the new head with their subjects.
    */
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */

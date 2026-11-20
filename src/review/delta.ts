@@ -82,9 +82,9 @@ export function readHead(repo: string, base: string, head: string): HeadReading 
   return headPatch(repo, base, head).reading;
 }
 
-/** Each own commit of a head: every commit after the merge base that is not a merge. */
+/** Each own commit of a head, oldest first: every commit after the merge base that is not a merge. */
 function ownCommits(repo: string, from: string, head: string): OwnCommit[] {
-  const log = git(repo, ["log", "--no-merges", "--format=%x00%s", "-p", ...DIFF, `${from}..${head}`]).out;
+  const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00%s", "-p", ...DIFF, `${from}..${head}`]).out;
   return log
     .split("\0")
     .slice(1)

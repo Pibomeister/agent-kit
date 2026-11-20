@@ -255,9 +255,23 @@ describe("linesRewritten", () => {
     expect(linesRewritten([commit], [fix, amended])).toBe(1);
   });
 
-  test("a rewritten commit with no pair counts the lines no new commit holds", () => {
+  test("a rewritten commit with no pair counts all its lines", () => {
     const moved = { subject: "y", patch: readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+one\n+two\n`) };
-    expect(linesRewritten([commit], [moved])).toBe(1);
+    expect(linesRewritten([commit], [moved])).toBe(4);
+  });
+
+  test("a fix commit squashed into a commit with one more line counts one", () => {
+    const fix = { subject: "fix", patch: readPatch(`${HEADER}@@ -9 +9,2 @@\n+f1\n+f2\n`) };
+    const squashed = amend("@@ -1 +1,6 @@\n-x\n+one\n+two\n+three\n+f1\n+f2\n+new\n");
+    expect(linesRewritten([commit, fix], [squashed])).toBe(1);
+  });
+
+  test("two commits with one subject pair in order", () => {
+    const fix = (lines: string) => ({ subject: "fix review", patch: readPatch(`${HEADER}@@ -9 +9 @@\n${lines}`) });
+    const first = fix("+f1\n+f2\n+f3\n");
+    const amended = fix("+f1\n+f2\n+f3\n+f4\n");
+    const appended = fix("+g1\n+g2\n+g3\n+g4\n+g5\n");
+    expect(linesRewritten([first], [amended, appended])).toBe(1);
   });
 
   test("with no rewritten commit, a new commit counts nothing", () => {
