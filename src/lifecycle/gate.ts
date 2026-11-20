@@ -573,7 +573,7 @@ function workerWritable(path: string, project?: string): boolean {
   const at = realExisting(path);
   if (inside(at, resolve(project))) return true;
   const repo = repoOf(project);
-  if (repo === undefined) return false;
+  if ("error" in repo) return false;
   return repo.writable.some((root) => inside(at, root));
 }
 
@@ -2055,9 +2055,11 @@ export function checkGates(a: CheckArgs): CheckResult {
       }
       const counted = onLine[onLine.length - 1]!;
       if (a.forkBound === true && fork !== undefined) {
-        const forkTime = git(a.project, ["show", "-s", "--format=%ct", fork.base]);
+        const forkTime = gitMustPrint(a.project, ["show", "-s", "--format=%ct", fork.base]);
         const recorded = Date.parse(counted.recorded_at);
-        if (forkTime.code === 0 && Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
+        if (forkTime.code !== 0)
+          notes.push(`note: cannot tell whether ${gate} for run ${a.run} predates ${fork.branch} (${forkTime.stderr})`);
+        else if (Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
           notes.push(
             `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run`,
           );
@@ -2249,19 +2251,20 @@ function firstmateHome(path: string): string | undefined {
   }
 }
 
-/** The real path of the worktree containing `dir`, or undefined outside any checkout. */
-function worktreeOf(dir: string): string | undefined {
-  const top = git(dir, ["rev-parse", "--show-toplevel"]);
-  return top.code === 0 && top.text !== "" ? realOr(top.text) : undefined;
+/** The real path of the worktree containing `dir`, or the failed git call that would have named it. */
+function worktreeOf(dir: string): string | { error: string } {
+  const top = gitMustPrint(dir, ["rev-parse", "--show-toplevel"]);
+  return top.code === 0 ? realOr(top.text) : { error: top.stderr };
 }
 
 /** The repository's identity and the places a worker in it can write: its git directory and every worktree. */
-function repoOf(project: string): { common: string; writable: string[] } | undefined {
+function repoOf(project: string): { common: string; writable: string[] } | { error: string } {
   const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
   // A checkout always lists at least its own worktree; a silent empty list would drop every
   // worktree from the writable set this returns.
   const trees = gitMustPrint(project, ["worktree", "list", "--porcelain"]);
-  if (common.code !== 0 || trees.code !== 0 || common.text === "") return undefined;
+  if (common.code !== 0) return { error: common.stderr };
+  if (trees.code !== 0) return { error: trees.stderr };
   const real = realOr(isAbsolute(common.text) ? common.text : join(project, common.text));
   const worktrees = trees.text
     .split("\n")
@@ -2398,11 +2401,12 @@ export function grantBypass(
   if (!Number.isInteger(a.hours) || a.hours < 1 || a.hours > BYPASS_MAX_HOURS)
     return no(`--hours must be a whole number from 1 to ${BYPASS_MAX_HOURS}`);
   const repo = repoOf(a.project);
-  if (repo === undefined) return no(`${a.project} is not a git checkout`);
+  if ("error" in repo) return no(`${a.project} is not a git checkout: ${repo.error}`);
   const cwd = realOr(a.cwd);
   const home = firstmateHome(cwd);
+  const cwdRepo = repoOf(a.cwd);
   if (
-    repoOf(a.cwd)?.common === repo.common ||
+    ("common" in cwdRepo && cwdRepo.common === repo.common) ||
     repo.writable.some((dir) => within(cwd, dir)) ||
     (home !== undefined && within(cwd, join(home, "projects")))
   )
@@ -2513,10 +2517,13 @@ export function checkBypass(
     return no(`bypass grant ${path} hashes to ${hash}, not the ${String(entry.grant_sha256)} that was registered`);
   // From here the bytes are the ones `grantBypass` wrote and registered.
   const tree = worktreeOf(a.cwd);
-  if (tree === undefined) return no(`${a.cwd} is not inside a git worktree`);
-  if (worktreeOf(a.project) !== tree) return no(`--project ${a.project} is not the worktree this runs from, ${tree}`);
+  if (typeof tree !== "string") return no(`${a.cwd} is not inside a git worktree: ${tree.error}`);
+  const projectTree = worktreeOf(a.project);
+  if (typeof projectTree !== "string")
+    return no(`--project ${a.project} is not inside a git worktree: ${projectTree.error}`);
+  if (projectTree !== tree) return no(`--project ${a.project} is not the worktree this runs from, ${tree}`);
   const repo = repoOf(tree);
-  if (repo === undefined) return no(`${tree} is not a git checkout`);
+  if ("error" in repo) return no(`${tree} is not a git checkout: ${repo.error}`);
   if (g.repo !== repo.common) return no(`bypass grant ${id} is for ${String(g.repo)}, not ${repo.common}`);
   if (g.worktree !== tree) return no(`bypass grant ${id} is for worktree ${String(g.worktree)}, not ${tree}`);
   for (const dir of repo.writable)

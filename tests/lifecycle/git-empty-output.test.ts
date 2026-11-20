@@ -14,6 +14,7 @@ import { join } from "node:path";
 import {
   checkGates,
   defaultEvidenceDir,
+  grantBypass,
   main,
   openRun,
   takeSnapshot,
@@ -164,5 +165,33 @@ describe("a must-print git call that exits 0 silently", () => {
     });
     expect(result.refusals.join("\n")).not.toContain("cannot find where this branch left the default branch");
     expect(result.refusals.join("\n")).toContain("no record for run feature");
+  });
+
+  test("grantBypass names the silent call instead of calling the project not a checkout", () => {
+    const dir = repo();
+    const outside = makeTree({}, { provenance: false });
+    for (const silent of [
+      ["rev-parse", "--git-common-dir"],
+      ["worktree", "list"],
+    ]) {
+      const granted = withSilentGit(silent, () =>
+        grantBypass({
+          task: "t",
+          project: dir,
+          worktree: dir,
+          by: "supervisor",
+          reason: "r",
+          out: join(outside, "grant.json"),
+          hours: 1,
+          cwd: outside,
+          ledger: join(outside, "ledger"),
+        }),
+      );
+      expect(granted.ok).toBe(false);
+      if (!granted.ok) {
+        expect(granted.reason).toContain(`git ${silent.join(" ")}`);
+        expect(granted.reason).toContain("no output");
+      }
+    }
   });
 });
