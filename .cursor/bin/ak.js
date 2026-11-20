@@ -46137,16 +46137,9 @@ function pooled(patches) {
   return { id: "", lines: 0, counts };
 }
 function linesRewritten(before, after) {
-  const unpaired = [...after];
-  const pairs = [];
-  for (const rewritten of before) {
-    const index = unpaired.findIndex((commit) => commit.subject === rewritten.subject);
-    if (index !== -1)
-      pairs.push(...unpaired.splice(index, 1).map((commit) => commit.patch));
-  }
-  const old = pooled(before.map((commit) => commit.patch));
-  const all = pooled(after.map((commit) => commit.patch));
-  return Math.max(linesNotIn(old, all), linesNotIn(pooled(pairs), old));
+  const old = pooled(before);
+  const versions = after.filter((patch) => 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines);
+  return Math.max(linesNotIn(old, pooled(after)), linesNotIn(pooled(versions), old));
 }
 function changedDigest(value) {
   return value.before === null || value.now === null ? null : value.before !== value.now;
@@ -46246,12 +46239,8 @@ function readHead(repo, base2, head) {
   return headPatch(repo, base2, head).reading;
 }
 function ownCommits(repo, from, head) {
-  const log = git4(repo, ["log", "--reverse", "--no-merges", "--format=%x00%s", "-p", ...DIFF, `${from}..${head}`]).out;
-  return log.split("\x00").slice(1).map((entry) => {
-    const end = entry.indexOf(`
-`);
-    return { subject: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
-  });
+  const log = git4(repo, ["log", "--reverse", "--no-merges", "--format=%x00", "-p", ...DIFF, `${from}..${head}`]).out;
+  return log.split("\x00").slice(1).map((entry) => readPatch(entry));
 }
 function conflictPaths(repo, base2, previous, head) {
   const merges = git4(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base2}`]).out.split(`
@@ -46278,10 +46267,10 @@ function readDelta(repo, base2, previous, head) {
   const now = headPatch(repo, base2, head);
   const older = ownCommits(repo, before.reading.merge_base, previous);
   const newer = ownCommits(repo, now.reading.merge_base, head);
-  const kept = new Set(newer.map((commit) => commit.patch.id));
-  const held = new Set(older.map((commit) => commit.patch.id));
-  const rewritten = older.filter((commit) => !kept.has(commit.patch.id));
-  const rewrites = newer.filter((commit) => !held.has(commit.patch.id));
+  const kept = new Set(newer.map((patch) => patch.id));
+  const held = new Set(older.map((patch) => patch.id));
+  const rewritten = older.filter((patch) => !kept.has(patch.id));
+  const rewrites = newer.filter((patch) => !held.has(patch.id));
   return {
     now: now.reading,
     previous: before.reading,

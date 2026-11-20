@@ -148,13 +148,14 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 - **A rewritten commit is one whose patch no commit of the new head has.** This is the exact-match
   rule of `git range-diff`, applied to patches with no context. A reworded message is not a
   rewrite. The share counts only the changed part of the rewritten commits, over all the pull
-  request's changed lines. Each rewritten commit is paired, oldest first, with the new commit of
-  the same subject, as `--amend` and `--fixup` with `--autosquash` keep it. The rewritten commits
-  are pooled, and so are their paired new versions. The count is the larger of two figures: the
-  lines the rewritten pool holds and no new commit holds, and the lines the paired pool holds and
-  the rewritten pool does not. So a fix commit squashed into another commit moves no line, and a
-  commit whose subject changed counts only the lines it lost. A new commit with no pair adds
-  nothing here: scope growth reads it.
+  request's changed lines. The rewritten commits are pooled. A new commit is a new version of
+  rewritten work when the pool holds at least half of its changed lines, as `git range-diff` pairs
+  commits by how alike their patches are; any other new commit is a fix commit, which scope
+  growth reads and which adds nothing here. "At least half" is a fixed reading, not a policy
+  value. The count is the larger of two figures: the lines the pool holds and no new commit
+  holds, and the lines the new versions hold and the pool does not. So a fix commit squashed into
+  another commit moves no line, a reworded commit counts only what its patch changed, and the
+  order of the commits does not change the count. No commit message is read.
 - **A rebase that leaves the patch of the pull request unchanged opens nothing**, whatever it did
   to the commits. A squash with the same patch carries. A fix folded into a commit with
   `--amend`, or with `--fixup` and `--autosquash`, counts only the lines the fix changed, so it

@@ -15,7 +15,7 @@
 
 import { spawnSync } from "node:child_process";
 
-import { linesNotIn, linesRewritten, readPatch, type DeltaFacts, type OwnCommit, type Patch } from "./scope.ts";
+import { linesNotIn, linesRewritten, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
 
 const DIFF = [
   "-U0",
@@ -83,15 +83,12 @@ export function readHead(repo: string, base: string, head: string): HeadReading 
 }
 
 /** Each own commit of a head, oldest first: every commit after the merge base that is not a merge. */
-function ownCommits(repo: string, from: string, head: string): OwnCommit[] {
-  const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00%s", "-p", ...DIFF, `${from}..${head}`]).out;
+function ownCommits(repo: string, from: string, head: string): Patch[] {
+  const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00", "-p", ...DIFF, `${from}..${head}`]).out;
   return log
     .split("\0")
     .slice(1)
-    .map((entry) => {
-      const end = entry.indexOf("\n");
-      return { subject: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
-    });
+    .map((entry) => readPatch(entry));
 }
 
 /**
@@ -135,10 +132,10 @@ export function readDelta(repo: string, base: string, previous: string, head: st
   // An own commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
   const older = ownCommits(repo, before.reading.merge_base, previous);
   const newer = ownCommits(repo, now.reading.merge_base, head);
-  const kept = new Set(newer.map((commit) => commit.patch.id));
-  const held = new Set(older.map((commit) => commit.patch.id));
-  const rewritten = older.filter((commit) => !kept.has(commit.patch.id));
-  const rewrites = newer.filter((commit) => !held.has(commit.patch.id));
+  const kept = new Set(newer.map((patch) => patch.id));
+  const held = new Set(older.map((patch) => patch.id));
+  const rewritten = older.filter((patch) => !kept.has(patch.id));
+  const rewrites = newer.filter((patch) => !held.has(patch.id));
   return {
     now: now.reading,
     previous: before.reading,

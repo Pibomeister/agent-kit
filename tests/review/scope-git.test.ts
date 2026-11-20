@@ -305,7 +305,28 @@ describe("ak review scope: what is not a trigger", () => {
     expect(f.record(reworded)).toMatchObject({
       outcome: "closure",
       triggers: [],
-      delta: { pr_lines: 50, rewritten_lines: 0, added_lines: 1, removed_lines: 0 },
+      delta: { pr_lines: 50, rewritten_lines: 1, added_lines: 1, removed_lines: 0 },
+    });
+  });
+
+  test("a reviewed fix commit squashed away while a new commit reuses its subject counts no rewritten line", () => {
+    const f = fixture();
+    f.round(f.head);
+    const fix = f.commit({ "src/main.ts": lines("m", 10) + lines("review", 10) }, "address review");
+    f.round(fix);
+    f.git("reset", "--soft", f.head);
+    f.git("commit", "--amend", "--no-edit");
+    const pushed = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("more", 20) }, "address review");
+    expect(f.git("log", "--format=%s", `main..${pushed}`).split("\n")).toEqual([
+      "address review",
+      "second change",
+      "first change",
+    ]);
+    // The new commit adds 20 of the 60 lines, 33%: under scope growth's 50%, and over 30% if it counted as rewritten.
+    expect(f.record(pushed)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { pr_lines: 60, rewritten_lines: 0, added_lines: 20, removed_lines: 0 },
     });
   });
 
