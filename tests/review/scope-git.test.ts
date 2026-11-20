@@ -290,6 +290,25 @@ describe("ak review scope: what is not a trigger", () => {
     expect(f.numstat(f.head, folded)).toBe(1);
   });
 
+  test("an amend that changes the subject and one line gets a closure round", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 1) });
+    f.git("add", "-A");
+    f.git("commit", "--amend", "-m", "second change, reworded");
+    const reworded = f.git("rev-parse", "HEAD");
+    expect(f.git("log", "--format=%s", `main..${reworded}`).split("\n")).toEqual([
+      "second change, reworded",
+      "first change",
+    ]);
+    // Counting the whole rewritten commit would read 20 of the 50 lines, 40%, over the 30% of a large rebase.
+    expect(f.record(reworded)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { pr_lines: 50, rewritten_lines: 0, added_lines: 1, removed_lines: 0 },
+    });
+  });
+
   test("a one-line fixup pushed with a new fix commit counts one changed line", () => {
     const f = fixture();
     f.round(f.head);

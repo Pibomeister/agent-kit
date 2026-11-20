@@ -150,10 +150,11 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   rewrite. The share counts only the changed part of the rewritten commits, over all the pull
   request's changed lines. Each rewritten commit is paired, oldest first, with the new commit of
   the same subject, as `--amend` and `--fixup` with `--autosquash` keep it. The rewritten commits
-  are pooled, and so are their new versions. The count is the larger of the lines the first pool
-  holds and the second does not, and the reverse, so a fix commit squashed into another commit
-  moves no line. A new commit with no pair is a fix commit and counts nothing here: scope growth
-  reads it.
+  are pooled, and so are their paired new versions. The count is the larger of two figures: the
+  lines the rewritten pool holds and no new commit holds, and the lines the paired pool holds and
+  the rewritten pool does not. So a fix commit squashed into another commit moves no line, and a
+  commit whose subject changed counts only the lines it lost. A new commit with no pair adds
+  nothing here: scope growth reads it.
 - **A rebase that leaves the patch of the pull request unchanged opens nothing**, whatever it did
   to the commits. A squash with the same patch carries. A fix folded into a commit with
   `--amend`, or with `--fixup` and `--autosquash`, counts only the lines the fix changed, so it
