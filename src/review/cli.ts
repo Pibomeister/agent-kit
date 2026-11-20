@@ -1,10 +1,15 @@
 /**
- * `ak review ledger add|show` and `ak review decide`: the convergence ledger of
- * one pull request and the verdict the engine reads from it (ADR-0018).
+ * `ak review ledger add|show`, `ak review scope` and `ak review decide`: the
+ * convergence ledger of one pull request, what its next review covers and the
+ * verdict the engine reads from it (ADR-0018).
  *
  * - `ledger add` turns what seats, the author and the gate reported into
  *   ledger lines and appends them, or refuses the whole input.
  * - `ledger show` prints the state the lines fold to.
+ * - `scope` compares the pull request at a head with the pull request at the
+ *   last reviewed head and prints what the next review covers: the whole
+ *   change, the delta, nothing, or a new scope. It reads git and appends
+ *   nothing. Its record holds the ledger input that records a carry or a new scope.
  * - `decide` prints the verdict for one exact head: `approved`, `blocked` or
  *   `incomplete`, and the one next action.
  *
@@ -17,10 +22,15 @@
  * writer says happened: the engine does not check who appended a line.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
+import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
+
+import { CLASS_RANK, readMergeRecord } from "../delegation.ts";
 import { decide, fold } from "./converge.ts";
-import { addEvents, appendLedger, parseInput, readLedger, type AddOptions, type LedgerFile } from "./ledger.ts";
+import { readDelta, readHead, resolveCommit } from "./delta.ts";
+import { addEvents, appendLedger, parseInput, readLedger, sha256, type AddOptions, type LedgerFile } from "./ledger.ts";
+import { scopeOutcome, scopeTriggers, type ScopeFacts } from "./scope.ts";
 import { DEFAULT_POLICY, type ConvergencePolicy } from "./types.ts";
 
 export interface ReviewIo {
@@ -33,6 +43,7 @@ export interface ReviewIo {
 const USAGE = [
   "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
   "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
+  "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
   "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]",
 ];
 
@@ -44,14 +55,15 @@ const REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
 const FLAGS = {
   add: ["--ledger", "--event", "--snapshot", "--max-rounds", "--out"],
   show: ["--ledger", "--out"],
+  scope: ["--ledger", "--base", "--head", "--repo", "--previous", "--record", "--intent", "--criteria", "--out"],
   decide: ["--ledger", "--head", "--seats", "--missing-evidence", "--integrity-failure", "--out"],
 };
 
 type Command = keyof typeof FLAGS;
 
-/** `ledger add`, `ledger show` or `decide`, or undefined for anything else. */
+/** `ledger add`, `ledger show`, `scope` or `decide`, or undefined for anything else. */
 function commandOf(argv: readonly string[]): Command | undefined {
-  if (argv[0] === "decide") return "decide";
+  if (argv[0] === "decide" || argv[0] === "scope") return argv[0];
   if (argv[0] !== "ledger") return undefined;
   return argv[1] === "add" || argv[1] === "show" ? argv[1] : undefined;
 }
@@ -194,14 +206,161 @@ function decideCommand(flags: Flags, io: ReviewIo): number {
   return decision.verdict === "approved" ? 0 : 1;
 }
 
-/** Exit 0 when the command did its work and, for `decide`, the verdict is `approved`. 1 for any other verdict. 2 for a usage error or a ledger that cannot be read. */
+/** What a later `scope` run reads back from the record of the last reviewed round. */
+interface ScopeBaseline {
+  head: string;
+  class: keyof typeof CLASS_RANK | null;
+  intent: string | null;
+  criteria: string | null;
+}
+
+const DIGEST = { type: ["string", "null"], pattern: "^sha256:[0-9a-f]{64}$" };
+
+let baselineValidator: ValidateFunction<ScopeBaseline> | null = null;
+
+/** The members of a `scope` record that a later run reads. The record's other members are not read back. */
+function validateBaseline(): ValidateFunction<ScopeBaseline> {
+  baselineValidator ??= new Ajv2020({ strict: false }).compile<ScopeBaseline>({
+    type: "object",
+    required: ["schema", "schema_version", "head", "class", "intent", "criteria"],
+    properties: {
+      schema: { const: "review-scope" },
+      schema_version: { const: 1 },
+      head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+      class: { enum: [...Object.keys(CLASS_RANK), null] },
+      intent: DIGEST,
+      criteria: DIGEST,
+    },
+  });
+  return baselineValidator;
+}
+
+/** The `scope` record of the last reviewed round, which must be the record of `reviewed`. */
+function readBaseline(path: string, reviewed: string): ScopeBaseline {
+  if (!existsSync(path)) throw new UsageError(`--previous ${path} does not exist`);
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new Error(`--previous ${path} is not JSON`);
+  }
+  const valid = validateBaseline();
+  if (!valid(value)) throw new Error(`--previous ${path} is not a record of ak review scope`);
+  if (value.head !== reviewed)
+    throw new Error(
+      `--previous ${path} is the record of ${value.head}, and the last reviewed head is ${reviewed}: give the record of that head, or none`,
+    );
+  return value;
+}
+
+function fileDigest(flags: Flags, name: string): string | null {
+  const path = flags.one.get(name);
+  if (path === undefined) return null;
+  if (!existsSync(path)) throw new UsageError(`${name} ${path} does not exist`);
+  return sha256(readFileSync(path));
+}
+
+/** An input the last round's record holds must be given again, so a trigger evaluated once is never dropped. */
+function requireAgain(flags: Flags, name: string, held: string | null): void {
+  if (held !== null && flags.one.get(name) === undefined)
+    throw new UsageError(`${name} is required: the record of the last reviewed round holds its value`);
+}
+
+function scopeCommand(flags: Flags, io: ReviewIo): number {
+  const path = required(flags, "--ledger");
+  const repo = flags.one.get("--repo") ?? process.cwd();
+  // Every required flag is read before the repository is: a missing flag is a usage error, whatever the repository holds.
+  const revisions = { base: required(flags, "--base"), head: required(flags, "--head") };
+  const base = resolveCommit(repo, revisions.base, "--base");
+  const head = resolveCommit(repo, revisions.head, "--head");
+  const file = readLedger(path);
+  const state = fold(file.events, DEFAULT_POLICY);
+  if (state.problems.length > 0) throw new Error(`the ledger has refused lines: ${state.problems.join("; ")}`);
+  if (state.open !== null)
+    throw new Error(`round ${state.open.round} of scope ${state.open.scope} is open: close it before the next scope`);
+  const recordPath = flags.one.get("--record");
+  const merge = recordPath === undefined ? null : readMergeRecord(recordPath, process.cwd(), "--record");
+  const now = {
+    class: merge?.class ?? null,
+    intent: fileDigest(flags, "--intent"),
+    criteria: fileDigest(flags, "--criteria"),
+  };
+  const reviewed = state.covered_head;
+  const position = { scope: state.scope, reviewed: reviewed !== null };
+  // Before round 1 of a scope there is no reviewed head, so nothing is compared and `--previous` is not read.
+  const previousPath = reviewed === null ? undefined : flags.one.get("--previous");
+  const before = previousPath === undefined || reviewed === null ? null : readBaseline(previousPath, reviewed);
+  if (before !== null) {
+    requireAgain(flags, "--record", before.class);
+    requireAgain(flags, "--intent", before.intent);
+    requireAgain(flags, "--criteria", before.criteria);
+  }
+  const reading =
+    reviewed === null ? null : readDelta(repo, base, resolveCommit(repo, reviewed, "the last reviewed head"), head);
+  const facts: ScopeFacts | null =
+    reading === null
+      ? null
+      : {
+          delta: reading.delta,
+          class_rose:
+            before === null || before.class === null || now.class === null
+              ? null
+              : CLASS_RANK[now.class] > CLASS_RANK[before.class],
+          surface_changed: merge?.review_surface_changed ?? null,
+          intent: { before: before?.intent ?? null, now: now.intent },
+          criteria: { before: before?.criteria ?? null, now: now.criteria },
+        };
+  const triggers = facts === null ? null : scopeTriggers(facts, DEFAULT_POLICY);
+  const outcome = scopeOutcome(position, triggers, facts?.delta ?? null, DEFAULT_POLICY);
+  const trigger = triggers?.fired[0];
+  const event =
+    outcome === "new-scope" && trigger !== undefined
+      ? { kind: "scope-open", trigger, head }
+      : outcome === "carry" && head !== reviewed
+        ? { kind: "carry", head }
+        : null;
+  const record = {
+    schema: "review-scope",
+    schema_version: 1,
+    ledger: ledgerRef(path, file),
+    policy: DEFAULT_POLICY,
+    scope: state.scope,
+    reviewed,
+    head,
+    outcome,
+    triggers: triggers?.fired ?? [],
+    reasons: triggers?.reasons ?? [],
+    unevaluated: triggers?.unevaluated ?? [],
+    pull_request: reading === null ? readHead(repo, base, head) : reading.now,
+    previous: reading?.previous ?? null,
+    delta: reading?.delta ?? null,
+    ...now,
+    review_surface_changed: merge?.review_surface_changed ?? null,
+    event,
+    grants: [],
+    note: NOTE,
+  };
+  emit(
+    io,
+    flags.one.get("--out"),
+    `review scope outcome=${outcome} triggers=${record.triggers.join(",") || "none"} unevaluated=${record.unevaluated.length}`,
+    record,
+  );
+  return 0;
+}
+
+/**
+ * Exit 0 when the command did its work and, for `decide`, the verdict is `approved`. 1 for any
+ * other verdict. 2 for a usage error, or a ledger, a record or a revision that cannot be read.
+ * `scope` exits 0 for every outcome: the outcome is in the record and in the line.
+ */
 export function runReview(argv: readonly string[], io: ReviewIo): number {
   const command = commandOf(argv);
   if (command === undefined) {
     for (const line of USAGE) io.err(line);
     return 2;
   }
-  const parsed = parseFlags(argv.slice(command === "decide" ? 1 : 2), FLAGS[command]);
+  const parsed = parseFlags(argv.slice(command === "decide" || command === "scope" ? 1 : 2), FLAGS[command]);
   if (!parsed.ok) {
     io.err(`ak review: ${parsed.error}`);
     for (const line of USAGE) io.err(line);
@@ -210,6 +369,7 @@ export function runReview(argv: readonly string[], io: ReviewIo): number {
   try {
     if (command === "add") return add(parsed.flags, io);
     if (command === "show") return show(parsed.flags, io);
+    if (command === "scope") return scopeCommand(parsed.flags, io);
     return decideCommand(parsed.flags, io);
   } catch (cause) {
     io.err(`ak review: ${cause instanceof Error ? cause.message : String(cause)}`);

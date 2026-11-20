@@ -382,6 +382,7 @@ describe("ak doctor checks", () => {
   test("the packaged CLI dispatches ak review instead of the generic usage", () => {
     expect(reviewAlone.status).toBe(2);
     expect(reviewAlone.stderr).toContain("usage: ak review ledger add --ledger <ledger.jsonl> --event <file|->");
+    expect(reviewAlone.stderr).toContain("ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev>");
     expect(reviewShow.status).toBe(0);
     expect(reviewShow.stdout).toContain('"schema": "review-ledger-state"');
   });

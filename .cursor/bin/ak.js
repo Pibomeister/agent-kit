@@ -38802,9 +38802,9 @@ var init_cli5 = __esm(() => {
 // src/maintenance/cli.ts
 init_common_schema();
 var import_ajv18 = __toESM(require_ajv(), 1);
-var import__202015 = __toESM(require_2020(), 1);
-import { spawnSync as spawnSync7 } from "child_process";
-import { existsSync as existsSync42, readFileSync as readFileSync44, realpathSync as realpathSync20 } from "fs";
+var import__202016 = __toESM(require_2020(), 1);
+import { spawnSync as spawnSync8 } from "child_process";
+import { existsSync as existsSync43, readFileSync as readFileSync44, realpathSync as realpathSync20 } from "fs";
 import { homedir as homedir6 } from "os";
 import { basename as basename23, isAbsolute as isAbsolute18, join as join55, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
@@ -39429,6 +39429,46 @@ function scoreMergeDelegationFiles(ticketInput, projectInput, changedPaths, evid
     throw cause;
   }
 }
+function floorEntries(floor) {
+  return [
+    ...(floor.shared_surfaces ?? []).map((path) => `surface:${path}`),
+    ...floor.packs.flatMap((pack) => PACK_FLOORS.has(pack) ? [`pack:${pack}`] : []),
+    ...floor.sensitive_actions.map((action) => `action:${action}`)
+  ];
+}
+function reviewSurfaceChanged(record, previous) {
+  const before = new Set(floorEntries(previous.floor));
+  return floorEntries(record.floor).some((entry) => !before.has(entry));
+}
+var printedValidator = null;
+function readMergeRecord(input, cwd, label) {
+  const path = resolve(cwd, input);
+  if (!existsSync3(path))
+    throw new Error(`${label} does not exist: ${input}`);
+  if (printedValidator === null) {
+    const block = ticket_schema_default.properties.delegation;
+    const schema = {
+      $id: ticket_schema_default.$id,
+      ...block,
+      properties: { ...block.properties, review_surface_changed: { type: "boolean" } },
+      $defs: ticket_schema_default.$defs
+    };
+    printedValidator = makeValidation().compile(schema);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync2(path, "utf8"));
+  } catch (cause) {
+    throw new Error(`${label} ${input} is not JSON: ${cause instanceof Error ? cause.message : String(cause)}`, {
+      cause
+    });
+  }
+  if (!printedValidator(parsed))
+    throw new Error(`${label} ${input} is not a delegation record: ${schemaDetail(printedValidator.errors)}`);
+  if (parsed.stage !== "merge")
+    throw new Error(`${label} ${input} is not a merge-stage record`);
+  return parsed;
+}
 function gitChangedPaths(cwd, base, head) {
   for (const revision of [base, head]) {
     const check = spawnSync2("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
@@ -39446,14 +39486,18 @@ function delegationRunProblem(run) {
     return "ak delegation: --stage must be ticket or merge";
   if (run.stage !== "merge" && (run.base !== undefined || run.head !== undefined || run.evidence !== undefined))
     return "ak delegation: --base, --head and --evidence require --stage merge";
+  if (run.stage !== "merge" && run.previous !== undefined)
+    return "ak delegation: --previous requires --stage merge";
   if (run.stage === "merge" && run.base === undefined)
     return "ak delegation: --stage merge requires --base <rev>";
   return null;
 }
 function scoreDelegationRun(run, cwd) {
   if (run.stage === "merge" && run.base !== undefined) {
+    const previous = run.previous === undefined ? undefined : readMergeRecord(run.previous, cwd, "previous record");
     const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
-    return scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+    const record = scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+    return previous === undefined ? record : { ...record, review_surface_changed: reviewSurfaceChanged(record, previous) };
   }
   return scoreDelegationFiles(run.ticket, run.project, cwd);
 }
@@ -45320,16 +45364,25 @@ async function runCouncil(argv, io) {
 }
 
 // src/review/cli.ts
-import { readFileSync as readFileSync39, writeFileSync as writeFileSync18 } from "fs";
+var import__202015 = __toESM(require_2020(), 1);
+import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSync as writeFileSync18 } from "fs";
 
 // src/review/types.ts
 var UNRESOLVED = ["open", "disputed", "addressed"];
+var SCOPE_TRIGGERS = [
+  "large-rebase",
+  "risk-tier-rise",
+  "surface-changed",
+  "scope-growth",
+  "requirement-change"
+];
 var PIPELINE_SEAT = "pipeline";
 var DEFAULT_POLICY = {
   max_rounds: 3,
   max_scopes: 2,
   always_block: ["security", "destructive", "data-loss"],
-  blocking_severities: ["P0", "P1"]
+  blocking_severities: ["P0", "P1"],
+  triggers: { rebase_rewritten_percent: 30, growth_percent: 50, growth_lines: 400 }
 };
 
 // src/review/converge.ts
@@ -46022,11 +46075,216 @@ function decide3(events, policy, context) {
   return result2("approved", "none", []);
 }
 
+// src/review/delta.ts
+import { spawnSync as spawnSync6 } from "child_process";
+
+// src/review/scope.ts
+import { createHash as createHash14 } from "crypto";
+var MODE = /^(old mode|new mode|new file mode|deleted file mode) /;
+function readPatch(diff) {
+  const hash = createHash14("sha256");
+  const counts = new Map;
+  let lines = 0;
+  let file = "";
+  let blob = "";
+  let inHunk = false;
+  const changed = (text5) => {
+    hash.update(`${text5}
+`);
+    lines += 1;
+    const key = `${file}
+${text5}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  };
+  for (const line of diff.split(`
+`)) {
+    if (line.startsWith("diff --git ")) {
+      file = line;
+      blob = "";
+      inHunk = false;
+      hash.update(`${line}
+`);
+    } else if (line.startsWith("@@")) {
+      inHunk = true;
+    } else if (inHunk) {
+      if (line.startsWith("+") || line.startsWith("-"))
+        changed(line);
+      else if (line.startsWith("\\"))
+        hash.update(`${line}
+`);
+    } else if (line.startsWith("index ")) {
+      blob = line.slice("index ".length).split("..")[1]?.split(" ")[0] ?? "";
+    } else if (line.startsWith("Binary files ") || line === "GIT binary patch") {
+      changed(`binary ${blob}`);
+    } else if (MODE.test(line)) {
+      hash.update(`${line}
+`);
+    }
+  }
+  return { id: `sha256:${hash.digest("hex")}`, lines, counts };
+}
+function linesNotIn(patch, other) {
+  let total = 0;
+  for (const [key, count] of patch.counts)
+    total += Math.max(0, count - (other.counts.get(key) ?? 0));
+  return total;
+}
+function linesHeldBy(patch, others) {
+  const held = new Map;
+  for (const other of others)
+    for (const [key, count] of other.counts)
+      held.set(key, (held.get(key) ?? 0) + count);
+  let total = 0;
+  for (const [key, count] of patch.counts)
+    total += Math.min(count, held.get(key) ?? 0);
+  return total;
+}
+function changedDigest(value) {
+  return value.before === null || value.now === null ? null : value.before !== value.now;
+}
+function scopeTriggers(facts, policy) {
+  const { delta } = facts;
+  const limits = policy.triggers;
+  const reason2 = new Map;
+  const unevaluated = [];
+  if (delta.conflict_paths.length > 0)
+    reason2.set("large-rebase", `a merge resolved a conflict in ${delta.conflict_paths.join(", ")}`);
+  else if (!delta.empty && delta.rewritten_lines * 100 > limits.rebase_rewritten_percent * delta.pr_lines)
+    reason2.set("large-rebase", `rewritten commits hold ${delta.rewritten_lines} of the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`);
+  if (facts.class_rose === null)
+    unevaluated.push({ trigger: "risk-tier-rise", needs: "a merge-stage record at this round and the last" });
+  else if (facts.class_rose)
+    reason2.set("risk-tier-rise", "the merge-stage class is above the last round's");
+  if (facts.surface_changed === null)
+    unevaluated.push({
+      trigger: "surface-changed",
+      needs: "a merge-stage record computed with the last round's record"
+    });
+  else if (facts.surface_changed)
+    reason2.set("surface-changed", "review_surface_changed is true");
+  const intent = changedDigest(facts.intent);
+  if (delta.added_lines * 100 > limits.growth_percent * delta.pr_lines)
+    reason2.set("scope-growth", `the delta adds ${delta.added_lines} changed lines to ${delta.pr_lines}, more than ${limits.growth_percent}%`);
+  else if (delta.added_lines > limits.growth_lines)
+    reason2.set("scope-growth", `the delta adds ${delta.added_lines} changed lines, more than ${limits.growth_lines}`);
+  else if (intent === true)
+    reason2.set("scope-growth", "the intent file changed");
+  else if (intent === null)
+    unevaluated.push({ trigger: "scope-growth", needs: "the intent file at this round and the last" });
+  const criteria = changedDigest(facts.criteria);
+  if (criteria === null)
+    unevaluated.push({ trigger: "requirement-change", needs: "the acceptance criteria at this round and the last" });
+  else if (criteria)
+    reason2.set("requirement-change", "the acceptance criteria changed");
+  const fired = SCOPE_TRIGGERS.filter((trigger) => reason2.has(trigger));
+  return { fired, reasons: fired.map((trigger) => reason2.get(trigger) ?? ""), unevaluated };
+}
+function scopeOutcome(position, triggers, delta, policy) {
+  if (position.scope > policy.max_scopes)
+    return "hold";
+  if (!position.reviewed || triggers === null || delta === null)
+    return "full";
+  if (triggers.fired.length > 0)
+    return position.scope < policy.max_scopes ? "new-scope" : "hold";
+  return delta.empty ? "carry" : "closure";
+}
+
+// src/review/delta.ts
+var DIFF = [
+  "-U0",
+  "--no-renames",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--no-color",
+  "--full-index",
+  "--diff-algorithm=myers",
+  "--src-prefix=a/",
+  "--dst-prefix=b/"
+];
+function git4(repo, args, statuses = [0]) {
+  const run3 = spawnSync6("git", ["-c", "core.quotePath=false", ...args], {
+    cwd: repo,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 1024
+  });
+  if (run3.error !== undefined)
+    throw new Error(`git ${args[0] ?? ""} did not run: ${run3.error.message}`);
+  if (run3.status === null || !statuses.includes(run3.status))
+    throw new Error(`git ${args.join(" ")} failed: ${run3.stderr.trim()}`);
+  return { status: run3.status, out: run3.stdout };
+}
+function resolveCommit(repo, revision, role) {
+  const run3 = git4(repo, ["rev-parse", "--verify", "--quiet", `${revision}^{commit}`], [0, 1]);
+  const id = run3.out.trim();
+  if (run3.status !== 0 || id === "")
+    throw new Error(`${role} ${revision} is not a commit in this repository`);
+  return id;
+}
+function mergeBase(repo, base2, head) {
+  const run3 = git4(repo, ["merge-base", base2, head], [0, 1]);
+  const id = run3.out.trim().split(`
+`)[0] ?? "";
+  if (run3.status !== 0 || id === "")
+    throw new Error(`${base2} and ${head} share no commit`);
+  return id;
+}
+function headPatch(repo, base2, head) {
+  const from = mergeBase(repo, base2, head);
+  const patch = readPatch(git4(repo, ["diff", ...DIFF, from, head]).out);
+  return { reading: { head, merge_base: from, patch_id: patch.id, lines: patch.lines }, patch };
+}
+function readHead(repo, base2, head) {
+  return headPatch(repo, base2, head).reading;
+}
+function ownPatches(repo, from, head) {
+  const log = git4(repo, ["log", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
+  return log.split("\x00").slice(1).map((entry) => readPatch(entry.slice(entry.indexOf(`
+`) + 1)));
+}
+function conflictPaths(repo, base2, previous, head) {
+  const merges = git4(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base2}`]).out.split(`
+`);
+  const conflicted = new Set;
+  for (const merge of merges) {
+    if (merge === "")
+      continue;
+    const parents = git4(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
+    const [ours, theirs] = parents;
+    if (parents.length !== 2 || ours === undefined || theirs === undefined)
+      continue;
+    const run3 = git4(repo, ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs], [0, 1]);
+    if (run3.status === 0)
+      continue;
+    for (const path of run3.out.split("\x00").slice(1))
+      if (path !== "")
+        conflicted.add(path);
+  }
+  return [...conflicted].toSorted();
+}
+function readDelta(repo, base2, previous, head) {
+  const before = headPatch(repo, base2, previous);
+  const now = headPatch(repo, base2, head);
+  const kept = new Set(ownPatches(repo, now.reading.merge_base, head).map((patch) => patch.id));
+  const rewritten = ownPatches(repo, before.reading.merge_base, previous).filter((patch) => !kept.has(patch.id));
+  return {
+    now: now.reading,
+    previous: before.reading,
+    delta: {
+      empty: before.patch.id === now.patch.id,
+      pr_lines: before.patch.lines,
+      added_lines: linesNotIn(now.patch, before.patch),
+      removed_lines: linesNotIn(before.patch, now.patch),
+      rewritten_lines: linesHeldBy(before.patch, rewritten),
+      conflict_paths: conflictPaths(repo, base2, previous, head)
+    }
+  };
+}
+
 // src/review/ledger.ts
 init_common_schema();
 var import__202014 = __toESM(require_2020(), 1);
 var import_ajv_formats5 = __toESM(require_dist(), 1);
-import { createHash as createHash14 } from "crypto";
+import { createHash as createHash15 } from "crypto";
 import { appendFileSync as appendFileSync4, existsSync as existsSync41, readFileSync as readFileSync38, realpathSync as realpathSync18, statSync as statSync20 } from "fs";
 import { join as join48, sep as sep8 } from "path";
 // schemas/review-ledger.schema.json
@@ -46460,7 +46718,7 @@ var review_ledger_schema_default = {
 // src/review/ledger.ts
 var SCHEMA_ID = review_ledger_schema_default.$id;
 function sha2563(text5) {
-  return `sha256:${createHash14("sha256").update(text5).digest("hex")}`;
+  return `sha256:${createHash15("sha256").update(text5).digest("hex")}`;
 }
 function fingerprint(category, file, symbol, causeKey) {
   return sha2563(JSON.stringify([category, file, symbol, causeKey]));
@@ -46836,6 +47094,7 @@ function addEvents(existing, items2, options) {
 var USAGE5 = [
   "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
   "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
+  "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
   "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]"
 ];
 var NOTE = "This record grants no authority. It approves no checkpoint, ticket, merge or deploy.";
@@ -46843,11 +47102,12 @@ var REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
 var FLAGS = {
   add: ["--ledger", "--event", "--snapshot", "--max-rounds", "--out"],
   show: ["--ledger", "--out"],
+  scope: ["--ledger", "--base", "--head", "--repo", "--previous", "--record", "--intent", "--criteria", "--out"],
   decide: ["--ledger", "--head", "--seats", "--missing-evidence", "--integrity-failure", "--out"]
 };
 function commandOf(argv) {
-  if (argv[0] === "decide")
-    return "decide";
+  if (argv[0] === "decide" || argv[0] === "scope")
+    return argv[0];
   if (argv[0] !== "ledger")
     return;
   return argv[1] === "add" || argv[1] === "show" ? argv[1] : undefined;
@@ -46976,6 +47236,115 @@ function decideCommand2(flags, io) {
   emit(io, flags.one.get("--out"), `review ${decision.verdict} action=${decision.action}`, record);
   return decision.verdict === "approved" ? 0 : 1;
 }
+var DIGEST = { type: ["string", "null"], pattern: "^sha256:[0-9a-f]{64}$" };
+var baselineValidator = null;
+function validateBaseline() {
+  baselineValidator ??= new import__202015.default({ strict: false }).compile({
+    type: "object",
+    required: ["schema", "schema_version", "head", "class", "intent", "criteria"],
+    properties: {
+      schema: { const: "review-scope" },
+      schema_version: { const: 1 },
+      head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+      class: { enum: [...Object.keys(CLASS_RANK), null] },
+      intent: DIGEST,
+      criteria: DIGEST
+    }
+  });
+  return baselineValidator;
+}
+function readBaseline(path, reviewed) {
+  if (!existsSync42(path))
+    throw new UsageError(`--previous ${path} does not exist`);
+  let value;
+  try {
+    value = JSON.parse(readFileSync39(path, "utf8"));
+  } catch {
+    throw new Error(`--previous ${path} is not JSON`);
+  }
+  const valid = validateBaseline();
+  if (!valid(value))
+    throw new Error(`--previous ${path} is not a record of ak review scope`);
+  if (value.head !== reviewed)
+    throw new Error(`--previous ${path} is the record of ${value.head}, and the last reviewed head is ${reviewed}: give the record of that head, or none`);
+  return value;
+}
+function fileDigest(flags, name) {
+  const path = flags.one.get(name);
+  if (path === undefined)
+    return null;
+  if (!existsSync42(path))
+    throw new UsageError(`${name} ${path} does not exist`);
+  return sha2563(readFileSync39(path));
+}
+function requireAgain(flags, name, held) {
+  if (held !== null && flags.one.get(name) === undefined)
+    throw new UsageError(`${name} is required: the record of the last reviewed round holds its value`);
+}
+function scopeCommand(flags, io) {
+  const path = required(flags, "--ledger");
+  const repo = flags.one.get("--repo") ?? process.cwd();
+  const revisions = { base: required(flags, "--base"), head: required(flags, "--head") };
+  const base2 = resolveCommit(repo, revisions.base, "--base");
+  const head = resolveCommit(repo, revisions.head, "--head");
+  const file = readLedger(path);
+  const state = fold(file.events, DEFAULT_POLICY);
+  if (state.problems.length > 0)
+    throw new Error(`the ledger has refused lines: ${state.problems.join("; ")}`);
+  if (state.open !== null)
+    throw new Error(`round ${state.open.round} of scope ${state.open.scope} is open: close it before the next scope`);
+  const recordPath = flags.one.get("--record");
+  const merge = recordPath === undefined ? null : readMergeRecord(recordPath, process.cwd(), "--record");
+  const now = {
+    class: merge?.class ?? null,
+    intent: fileDigest(flags, "--intent"),
+    criteria: fileDigest(flags, "--criteria")
+  };
+  const reviewed = state.covered_head;
+  const position = { scope: state.scope, reviewed: reviewed !== null };
+  const previousPath = reviewed === null ? undefined : flags.one.get("--previous");
+  const before = previousPath === undefined || reviewed === null ? null : readBaseline(previousPath, reviewed);
+  if (before !== null) {
+    requireAgain(flags, "--record", before.class);
+    requireAgain(flags, "--intent", before.intent);
+    requireAgain(flags, "--criteria", before.criteria);
+  }
+  const reading = reviewed === null ? null : readDelta(repo, base2, resolveCommit(repo, reviewed, "the last reviewed head"), head);
+  const facts = reading === null ? null : {
+    delta: reading.delta,
+    class_rose: before === null || before.class === null || now.class === null ? null : CLASS_RANK[now.class] > CLASS_RANK[before.class],
+    surface_changed: merge?.review_surface_changed ?? null,
+    intent: { before: before?.intent ?? null, now: now.intent },
+    criteria: { before: before?.criteria ?? null, now: now.criteria }
+  };
+  const triggers = facts === null ? null : scopeTriggers(facts, DEFAULT_POLICY);
+  const outcome = scopeOutcome(position, triggers, facts?.delta ?? null, DEFAULT_POLICY);
+  const trigger = triggers?.fired[0];
+  const event = outcome === "new-scope" && trigger !== undefined ? { kind: "scope-open", trigger, head } : outcome === "carry" && head !== reviewed ? { kind: "carry", head } : null;
+  const record = {
+    schema: "review-scope",
+    schema_version: 1,
+    ledger: ledgerRef(path, file),
+    policy: DEFAULT_POLICY,
+    scope: state.scope,
+    reviewed,
+    head,
+    outcome,
+    triggers: triggers?.fired ?? [],
+    reasons: triggers?.reasons ?? [],
+    unevaluated: triggers?.unevaluated ?? [],
+    pull_request: reading === null ? readHead(repo, base2, head) : reading.now,
+    previous: reading?.previous ?? null,
+    delta: reading?.delta ?? null,
+    ...now,
+    review_surface_changed: merge?.review_surface_changed ?? null,
+    event,
+    grants: [],
+    note: NOTE
+  };
+  emit(io, flags.one.get("--out"), `review scope outcome=${outcome} triggers=${record.triggers.join(",") || "none"} unevaluated=${record.unevaluated.length}`, record);
+  return 0;
+}
 function runReview(argv, io) {
   const command = commandOf(argv);
   if (command === undefined) {
@@ -46983,7 +47352,7 @@ function runReview(argv, io) {
       io.err(line);
     return 2;
   }
-  const parsed = parseFlags(argv.slice(command === "decide" ? 1 : 2), FLAGS[command]);
+  const parsed = parseFlags(argv.slice(command === "decide" || command === "scope" ? 1 : 2), FLAGS[command]);
   if (!parsed.ok) {
     io.err(`ak review: ${parsed.error}`);
     for (const line of USAGE5)
@@ -46995,6 +47364,8 @@ function runReview(argv, io) {
       return add(parsed.flags, io);
     if (command === "show")
       return show3(parsed.flags, io);
+    if (command === "scope")
+      return scopeCommand(parsed.flags, io);
     return decideCommand2(parsed.flags, io);
   } catch (cause) {
     io.err(`ak review: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -47217,7 +47588,7 @@ async function askBatch(input, options) {
 // src/semantic-lint/claim.ts
 init_trace();
 var import_ajv16 = __toESM(require_ajv(), 1);
-import { createHash as createHash15, randomBytes as randomBytes4 } from "crypto";
+import { createHash as createHash16, randomBytes as randomBytes4 } from "crypto";
 import { mkdirSync as mkdirSync27, readdirSync as readdirSync13, readFileSync as readFileSync41, renameSync as renameSync7, statSync as statSync21, writeFileSync as writeFileSync20 } from "fs";
 import { join as join50 } from "path";
 var CLAIM_VERSION = 1;
@@ -47235,7 +47606,7 @@ var isRecord = ajv9.compile({
 });
 var GENERATION = /^[1-9][0-9]*$/;
 function claimKey(body) {
-  return createHash15("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
+  return createHash16("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
 }
 function line(record) {
   return `${JSON.stringify(record)}
@@ -47486,7 +47857,7 @@ import { readdirSync as readdirSync14, readFileSync as readFileSync43 } from "fs
 import { join as join54 } from "path";
 
 // src/review-isolation-probe/host-cli.ts
-import { spawnSync as spawnSync6 } from "child_process";
+import { spawnSync as spawnSync7 } from "child_process";
 import { accessSync as accessSync2, constants as constants2 } from "fs";
 import { join as join53 } from "path";
 var VERSION_TIMEOUT_MS = 5000;
@@ -47536,7 +47907,7 @@ function captureHostVersion(binaries, versionArgs, options) {
   const bin = which(binaries, env.PATH);
   if (bin === null)
     return HOST_VERSION_NOT_ON_PATH;
-  const result2 = spawnSync6(bin, [...versionArgs], {
+  const result2 = spawnSync7(bin, [...versionArgs], {
     encoding: "utf8",
     timeout: timeoutMs,
     killSignal: "SIGKILL",
@@ -47762,7 +48133,7 @@ var validSettings = ajv11.compile({
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__202015.default({ strict: false });
+var bindingAjv = new import__202016.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -47780,7 +48151,7 @@ function finding(level, check2, detail2, remedy) {
 }
 function command(binary2, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary2 === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
-  const run3 = spawnSync7(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
+  const run3 = spawnSync8(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run3.status === 0, output: (run3.stdout || run3.stderr || run3.error?.message || "").trim() };
 }
 function parseJson3(source, validate) {
@@ -47885,7 +48256,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync42(join55(root, BINDING_FILE)) ? root : null;
+  return existsSync43(join55(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -47944,7 +48315,7 @@ function checkLinearis(root, backend) {
   const top = topResult.ok ? realpathSync20(topResult.output) : realpathSync20(root);
   for (const base2 of new Set([root, top])) {
     const binary2 = join55(base2, "node_modules", ".bin", "linearis");
-    if (!existsSync42(binary2))
+    if (!existsSync43(binary2))
       continue;
     const target = realpathSync20(binary2);
     if ([root, top].every((folder) => relative16(join55(realpathSync20(folder), "node_modules"), target).startsWith("..")))
@@ -48137,7 +48508,7 @@ function doctorFlags(flags) {
   }
   return { json, lessons };
 }
-var DELEGATION_FLAGS = new Set(["project", "stage", "base", "head", "evidence"]);
+var DELEGATION_FLAGS = new Set(["project", "stage", "base", "head", "evidence", "previous"]);
 function delegationRun(args) {
   const positional = [];
   const values = new Map;
@@ -48165,7 +48536,8 @@ function delegationRun(args) {
     stage: values.get("stage"),
     base: values.get("base"),
     head: values.get("head"),
-    evidence: values.get("evidence")
+    evidence: values.get("evidence"),
+    previous: values.get("previous")
   };
 }
 if (import.meta.main) {
@@ -48210,7 +48582,7 @@ if (import.meta.main) {
       }
     }
   } else {
-    console.error("Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak review ledger add|show \u2026 | ak review decide \u2026 | ak semantic-lint hook [--host codex]");
+    console.error("Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>] [--previous <record>]] | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak review ledger add|show \u2026 | ak review scope \u2026 | ak review decide \u2026 | ak semantic-lint hook [--host codex]");
     process.exitCode = 2;
   }
 }

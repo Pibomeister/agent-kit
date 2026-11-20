@@ -59,7 +59,7 @@ const USAGE = [
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
   "  ak build [--check] [--profile <id>|all] [--project <record>] [--host <id>] [--out <dir>]  emit dist/<host> for all hosts, or one host to --out (relative --out is from the current directory)",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
-  "  ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]]  compute the evidenced delegation record",
+  "  ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>] [--previous <record>]]  compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
   "  ak firstmate <subcommand> …                stock Firstmate tools; patched binding commands deprecated",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
@@ -70,7 +70,7 @@ const USAGE = [
   "  ak guard hook <event> ...                  the opt-in guard runtime's host hook (`ak guard` for help)",
   "  ak runner serve|call ...                   runner service and charter-bound requests",
   "  ak council run --card <file> ...           ask the council one question; the record grants no authority",
-  "  ak review ledger add|show ... | decide ... the review convergence ledger and its verdict; the record grants no authority",
+  "  ak review ledger add|show ... | scope ... | decide ... the review convergence ledger, what the next review covers and the verdict; the record grants no authority",
   "",
   "Exit 0 when nothing failed, non-zero on any error.",
 ];
@@ -103,7 +103,7 @@ const COMMANDS = [
   "review",
 ];
 
-const VALUE_FLAGS = new Set(["profile", "host", "project", "out", "stage", "base", "head", "evidence"]);
+const VALUE_FLAGS = new Set(["profile", "host", "project", "out", "stage", "base", "head", "evidence", "previous"]);
 
 function parse(argv: readonly string[]): Parsed {
   const positional: string[] = [];
@@ -343,6 +343,7 @@ function delegationCommand(parsed: Parsed, options: CliOptions): number {
     base: parsed.values.get("base"),
     head: parsed.values.get("head"),
     evidence: parsed.values.get("evidence"),
+    previous: parsed.values.get("previous"),
   };
   const problem = delegationRunProblem(run);
   if (problem !== null) {

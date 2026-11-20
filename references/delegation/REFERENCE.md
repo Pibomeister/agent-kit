@@ -91,7 +91,7 @@ ak delegation <ticket> --project <project-record>
 For the merge-stage record, run instead:
 
 ```text
-ak delegation <ticket> --project <project-record> --stage merge --base <rev> [--head <rev>] [--evidence <file>]
+ak delegation <ticket> --project <project-record> --stage merge --base <rev> [--head <rev>] [--evidence <file>] [--previous <record>]
 ```
 
 Run in the implementation repository. `--head` defaults to `HEAD`; both revisions must resolve to
@@ -105,7 +105,15 @@ evidence is refused before scoring. Without evidence, the command retains the ti
 it does not derive new factor scores or discover packs and sensitive actions from the diff. Supply
 the re-evidenced factors and additional packs and actions when they differ at merge time.
 
-Persist the command's complete JSON output as the ticket's `delegation` block. Cite the ticket and
+`--previous` names the merge-stage record this command printed for the previous review round. The
+record then also holds `review_surface_changed`: true when its floor holds a shared surface, a pack
+with a floor or a sensitive action that the previous record's floor does not. `ak review scope`
+reads it as a full-re-review trigger (ADR-0018). The field changes no class. A previous record that
+is absent, not JSON, not a merge-stage record or not a delegation record is refused before scoring.
+
+Persist the command's JSON output as the ticket's `delegation` block, without
+`review_surface_changed`: that field is a fact about one review round, and the ticket schema
+refuses it. Cite the ticket and
 project artifact references used for the run wherever another artifact consumes the result. A body
 must not reproduce the formula, weights, cut points, floor table or lowering logic. A missing or
 failed scorer run leaves no delegation record and blocks the checkpoint.

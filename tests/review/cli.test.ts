@@ -1,7 +1,8 @@
 /**
  * `ak review ledger add|show` and `ak review decide` (ADR-0018): the record
  * each command prints, the one line it prints with `--out`, and its exit
- * status.
+ * status. The usage of every `ak review` command is held here too. What
+ * `ak review scope` prints is in `scope-git.test.ts`.
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -299,6 +300,9 @@ describe("usage", () => {
     [["ledger", "show", "--ledger", ledger, "--ledger", ledger], "--ledger is given twice"],
     [["ledger", "add", "--ledger", ledger], "--event is required"],
     [["ledger", "add", "--ledger", ledger, "--event", "--out"], "--event needs a value"],
+    [["scope", "--ledger", ledger, "--head", head(1)], "--base is required"],
+    [["scope", "--ledger", ledger, "--base", head(1)], "--head is required"],
+    [["scope", "--ledger", ledger, "--base", head(1), "--head", head(1), "--seats", "1"], "unknown flag --seats"],
     [["decide", "--ledger", ledger, "--seats", "1"], "--head is required"],
     [["decide", "--ledger", ledger, "--head", head(1)], "--seats is required"],
     [["decide", "--ledger", ledger, "--head", "abc123", "--seats", "1"], "--head is a full commit id"],
@@ -311,6 +315,7 @@ describe("usage", () => {
     expect(err.slice(message === null ? 0 : 1)).toEqual([
       "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
       "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
+      "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
       "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]",
     ]);
   });

@@ -225,7 +225,17 @@ export type LedgerEvent =
   | OwnerEvent
   | ExtensionEvent;
 
-/** The rules `decide` reads. Nothing here is a judgment: each value is compared, never interpreted. */
+/** The numbers the full-re-review triggers compare. `ak review scope` reads them; `decide` does not. */
+export interface TriggerPolicy {
+  /** Large rebase: rewritten commits hold more than this percent of the changed lines of the pull request. */
+  rebase_rewritten_percent: number;
+  /** Scope growth: the delta adds more than this percent to the changed lines of the pull request. */
+  growth_percent: number;
+  /** Scope growth: the delta adds more than this many changed lines. */
+  growth_lines: number;
+}
+
+/** The rules `decide` and `ak review scope` read. Nothing here is a judgment: each value is compared, never interpreted. */
 export interface ConvergencePolicy {
   /** Review rounds per scope: one full and the rest closure. */
   max_rounds: number;
@@ -235,6 +245,7 @@ export interface ConvergencePolicy {
   always_block: readonly Category[];
   /** Severities that can block. A finding of any other severity is filed. */
   blocking_severities: readonly Severity[];
+  triggers: TriggerPolicy;
 }
 
 export const DEFAULT_POLICY: ConvergencePolicy = {
@@ -242,6 +253,7 @@ export const DEFAULT_POLICY: ConvergencePolicy = {
   max_scopes: 2,
   always_block: ["security", "destructive", "data-loss"],
   blocking_severities: ["P0", "P1"],
+  triggers: { rebase_rewritten_percent: 30, growth_percent: 50, growth_lines: 400 },
 };
 
 /** What the caller knows and the ledger does not. The engine reads these; it does not check them. */
