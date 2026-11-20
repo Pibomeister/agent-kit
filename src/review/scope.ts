@@ -87,17 +87,37 @@ function pooled(patches: readonly Patch[]): Patch {
   return { id: "", lines: 0, counts };
 }
 
+/** An own commit of a head: its subject line and its patch. */
+export interface OwnCommit {
+  subject: string;
+  patch: Patch;
+}
+
 /**
- * Changed lines that a rewrite changed: the larger of the lines the `before`
- * commits held and the `after` commits do not, and the lines the `after`
- * commits hold and the `before` commits did not. With no `before` commit
- * nothing was rewritten, and the count is 0.
+ * Changed lines that a rewrite changed. `before` holds the rewritten commits
+ * of the last reviewed head, and `after` the own commits of the new head that
+ * no commit of the last reviewed head has.
+ *
+ * Each rewritten commit is paired with the first unpaired commit of `after`
+ * with its subject, as `--amend` and `--fixup` with `--autosquash` keep it. A
+ * pair counts the larger of the lines the old version held and the new one
+ * does not, and the reverse. A rewritten commit with no pair counts the lines
+ * that no commit of `after` holds. A commit of `after` with no pair is a new
+ * commit and counts nothing: scope growth reads it.
  */
-export function linesRewritten(before: readonly Patch[], after: readonly Patch[]): number {
-  if (before.length === 0) return 0;
-  const old = pooled(before);
-  const now = pooled(after);
-  return Math.max(linesNotIn(old, now), linesNotIn(now, old));
+export function linesRewritten(before: readonly OwnCommit[], after: readonly OwnCommit[]): number {
+  const unpaired = [...after];
+  const all = pooled(after.map((commit) => commit.patch));
+  let total = 0;
+  for (const old of before) {
+    const index = unpaired.findIndex((commit) => commit.subject === old.subject);
+    const pair = index === -1 ? undefined : unpaired.splice(index, 1)[0];
+    total +=
+      pair === undefined
+        ? linesNotIn(old.patch, all)
+        : Math.max(linesNotIn(old.patch, pair.patch), linesNotIn(pair.patch, old.patch));
+  }
+  return total;
 }
 
 /** The pull request at the new head against the pull request at the last reviewed head. */
@@ -113,7 +133,7 @@ export interface DeltaFacts {
   /**
    * Changed lines that the rewritten commits changed, by `linesRewritten`.
    * A commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
-   * It is compared with the own commits of the new head that no commit of the last reviewed head has.
+   * It is compared with its new version, the own commit of the new head with its subject.
    */
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */

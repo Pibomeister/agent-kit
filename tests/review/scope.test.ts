@@ -234,27 +234,30 @@ describe("linesNotIn", () => {
 });
 
 describe("linesRewritten", () => {
-  const commit = readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+one\n+two\n+three\n`);
+  const commit = { subject: "x", patch: readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+one\n+two\n+three\n`) };
+  const amend = (diff: string) => ({ subject: "x", patch: readPatch(`${HEADER}${diff}`) });
 
   test("a line added to a commit counts once, however large the commit", () => {
-    const amended = readPatch(`${HEADER}@@ -1 +1,4 @@\n-x\n+one\n+two\n+three\n+fix\n`);
-    expect(linesRewritten([commit], [amended])).toBe(1);
+    expect(linesRewritten([commit], [amend("@@ -1 +1,4 @@\n-x\n+one\n+two\n+three\n+fix\n")])).toBe(1);
   });
 
   test("a line changed in a commit counts once", () => {
-    const amended = readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+one\n+TWO\n+three\n`);
-    expect(linesRewritten([commit], [amended])).toBe(1);
+    expect(linesRewritten([commit], [amend("@@ -1 +1,3 @@\n-x\n+one\n+TWO\n+three\n")])).toBe(1);
   });
 
   test("a commit whose lines all changed counts all of them", () => {
-    const replaced = readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+four\n+five\n+six\n`);
-    expect(linesRewritten([commit], [replaced])).toBe(3);
+    expect(linesRewritten([commit], [amend("@@ -1 +1,3 @@\n-x\n+four\n+five\n+six\n")])).toBe(3);
   });
 
-  test("lines that moved between rewritten commits are not changed", () => {
-    const first = readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+one\n+two\n`);
-    const second = readPatch(`${HEADER}@@ -3 +3 @@\n+three\n`);
-    expect(linesRewritten([commit], [first, second])).toBe(0);
+  test("a new commit beside the amended one counts nothing", () => {
+    const fix = { subject: "fix", patch: readPatch(`${HEADER}@@ -9 +9,3 @@\n+f1\n+f2\n+f3\n`) };
+    const amended = amend("@@ -1 +1,4 @@\n-x\n+one\n+two\n+three\n+fix\n");
+    expect(linesRewritten([commit], [fix, amended])).toBe(1);
+  });
+
+  test("a rewritten commit with no pair counts the lines no new commit holds", () => {
+    const moved = { subject: "y", patch: readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+one\n+two\n`) };
+    expect(linesRewritten([commit], [moved])).toBe(1);
   });
 
   test("with no rewritten commit, a new commit counts nothing", () => {

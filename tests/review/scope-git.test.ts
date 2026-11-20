@@ -290,6 +290,24 @@ describe("ak review scope: what is not a trigger", () => {
     expect(f.numstat(f.head, folded)).toBe(1);
   });
 
+  test("a one-line fixup pushed with a new fix commit counts one changed line", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 1) });
+    f.git("add", "-A");
+    f.git("commit", "--fixup", "HEAD");
+    f.git("-c", "sequence.editor=true", "rebase", "-i", "--autosquash", "main");
+    const folded = f.git("rev-parse", "HEAD");
+    const pushed = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("more", 16) }, "fix a finding");
+    // The delta adds 17 of the 50 lines, 34%: under scope growth's 50%, and over 30% if the new commit counted as rewritten.
+    expect(f.record(pushed)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { pr_lines: 50, rewritten_lines: f.numstat(f.head, folded), added_lines: f.numstat(f.head, pushed) },
+    });
+    expect([f.numstat(f.head, folded), f.numstat(f.head, pushed)]).toEqual([1, 17]);
+  });
+
   test("a rewrite that changes a small share of the lines is not a large rebase", () => {
     const f = fixture();
     const third = f.commit({ "src/main.ts": lines("m", 10) + lines("third", 5) }, "third change");
