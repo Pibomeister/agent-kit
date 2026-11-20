@@ -81,13 +81,23 @@ export function linesNotIn(patch: Patch, other: Patch): number {
   return total;
 }
 
-/** Changed lines of `patch` that one of `others` holds too, each counted as often as `patch` and they share it. */
-export function linesHeldBy(patch: Patch, others: readonly Patch[]): number {
-  const held = new Map<string, number>();
-  for (const other of others) for (const [key, count] of other.counts) held.set(key, (held.get(key) ?? 0) + count);
-  let total = 0;
-  for (const [key, count] of patch.counts) total += Math.min(count, held.get(key) ?? 0);
-  return total;
+function pooled(patches: readonly Patch[]): Patch {
+  const counts = new Map<string, number>();
+  for (const patch of patches) for (const [key, count] of patch.counts) counts.set(key, (counts.get(key) ?? 0) + count);
+  return { id: "", lines: 0, counts };
+}
+
+/**
+ * Changed lines that a rewrite changed: the larger of the lines the `before`
+ * commits held and the `after` commits do not, and the lines the `after`
+ * commits hold and the `before` commits did not. With no `before` commit
+ * nothing was rewritten, and the count is 0.
+ */
+export function linesRewritten(before: readonly Patch[], after: readonly Patch[]): number {
+  if (before.length === 0) return 0;
+  const old = pooled(before);
+  const now = pooled(after);
+  return Math.max(linesNotIn(old, now), linesNotIn(now, old));
 }
 
 /** The pull request at the new head against the pull request at the last reviewed head. */
@@ -101,8 +111,9 @@ export interface DeltaFacts {
   /** Changed lines of the patch at the last reviewed head that the patch at the new head no longer holds. */
   removed_lines: number;
   /**
-   * Changed lines of the pull request at the last reviewed head that a rewritten commit holds.
+   * Changed lines that the rewritten commits changed, by `linesRewritten`.
    * A commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
+   * It is compared with the own commits of the new head that no commit of the last reviewed head has.
    */
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */
@@ -165,7 +176,7 @@ export function scopeTriggers(facts: ScopeFacts, policy: ConvergencePolicy): Tri
   else if (!delta.empty && delta.rewritten_lines * 100 > limits.rebase_rewritten_percent * delta.pr_lines)
     reason.set(
       "large-rebase",
-      `rewritten commits hold ${delta.rewritten_lines} of the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`,
+      `rewritten commits changed ${delta.rewritten_lines} lines against the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`,
     );
 
   if (facts.class_rose === null)

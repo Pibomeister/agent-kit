@@ -291,7 +291,11 @@ function scopeCommand(flags: Flags, io: ReviewIo): number {
   const position = { scope: state.scope, reviewed: reviewed !== null };
   // Before round 1 of a scope there is no reviewed head, so nothing is compared and `--previous` is not read.
   const previousPath = reviewed === null ? undefined : flags.one.get("--previous");
-  const before = previousPath === undefined || reviewed === null ? null : readBaseline(previousPath, reviewed);
+  if (reviewed !== null && previousPath === undefined)
+    throw new UsageError(
+      `--previous is required: the ledger holds a reviewed round at ${reviewed}, so give the scope record of that head`,
+    );
+  const before = reviewed === null || previousPath === undefined ? null : readBaseline(previousPath, reviewed);
   if (before !== null) {
     requireAgain(flags, "--record", before.class);
     requireAgain(flags, "--intent", before.intent);

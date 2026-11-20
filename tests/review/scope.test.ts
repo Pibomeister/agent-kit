@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  linesHeldBy,
+  linesRewritten,
   linesNotIn,
   readPatch,
   scopeOutcome,
@@ -51,8 +51,8 @@ describe("scopeTriggers", () => {
   });
 
   const deltaCases: [string, Partial<DeltaFacts>, ScopeTrigger[]][] = [
-    ["rewritten commits that hold 30% of the lines", { rewritten_lines: 30 }, []],
-    ["rewritten commits that hold 31% of the lines", { rewritten_lines: 31 }, ["large-rebase"]],
+    ["rewritten commits that changed 30% of the lines", { rewritten_lines: 30 }, []],
+    ["rewritten commits that changed 31% of the lines", { rewritten_lines: 31 }, ["large-rebase"]],
     ["every commit rewritten while the patch is unchanged", { empty: true, rewritten_lines: 100 }, []],
     ["a conflict resolved in a path of the pull request", { conflict_paths: ["src/a.ts"] }, ["large-rebase"]],
     [
@@ -233,19 +233,31 @@ describe("linesNotIn", () => {
   });
 });
 
-describe("linesHeldBy", () => {
-  const whole = readPatch(`${HEADER}@@ -1 +1,4 @@\n-x\n+one\n+two\n+}\n+}\n`);
+describe("linesRewritten", () => {
+  const commit = readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+one\n+two\n+three\n`);
 
-  test("counts the lines of the patch that the other patches hold between them", () => {
-    const first = readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+one\n+}\n`);
-    const second = readPatch(`${HEADER}@@ -2 +2,2 @@\n+}\n+gone\n`);
-    expect(linesHeldBy(whole, [first])).toBe(3);
-    expect(linesHeldBy(whole, [first, second])).toBe(4);
-    expect(linesHeldBy(whole, [])).toBe(0);
+  test("a line added to a commit counts once, however large the commit", () => {
+    const amended = readPatch(`${HEADER}@@ -1 +1,4 @@\n-x\n+one\n+two\n+three\n+fix\n`);
+    expect(linesRewritten([commit], [amended])).toBe(1);
   });
 
-  test("a line the patch no longer holds is not counted, however often the others hold it", () => {
-    const churn = readPatch(`${HEADER}@@ -1 +1,3 @@\n+gone\n+gone\n+one\n`);
-    expect(linesHeldBy(whole, [churn, churn])).toBe(1);
+  test("a line changed in a commit counts once", () => {
+    const amended = readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+one\n+TWO\n+three\n`);
+    expect(linesRewritten([commit], [amended])).toBe(1);
+  });
+
+  test("a commit whose lines all changed counts all of them", () => {
+    const replaced = readPatch(`${HEADER}@@ -1 +1,3 @@\n-x\n+four\n+five\n+six\n`);
+    expect(linesRewritten([commit], [replaced])).toBe(3);
+  });
+
+  test("lines that moved between rewritten commits are not changed", () => {
+    const first = readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+one\n+two\n`);
+    const second = readPatch(`${HEADER}@@ -3 +3 @@\n+three\n`);
+    expect(linesRewritten([commit], [first, second])).toBe(0);
+  });
+
+  test("with no rewritten commit, a new commit counts nothing", () => {
+    expect(linesRewritten([], [commit])).toBe(0);
   });
 });

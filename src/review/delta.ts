@@ -15,7 +15,7 @@
 
 import { spawnSync } from "node:child_process";
 
-import { linesHeldBy, linesNotIn, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
+import { linesNotIn, linesRewritten, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
 
 const DIFF = [
   "-U0",
@@ -130,8 +130,12 @@ export function readDelta(repo: string, base: string, previous: string, head: st
   const before = headPatch(repo, base, previous);
   const now = headPatch(repo, base, head);
   // An own commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
-  const kept = new Set(ownPatches(repo, now.reading.merge_base, head).map((patch) => patch.id));
-  const rewritten = ownPatches(repo, before.reading.merge_base, previous).filter((patch) => !kept.has(patch.id));
+  const older = ownPatches(repo, before.reading.merge_base, previous);
+  const newer = ownPatches(repo, now.reading.merge_base, head);
+  const kept = new Set(newer.map((patch) => patch.id));
+  const held = new Set(older.map((patch) => patch.id));
+  const rewritten = older.filter((patch) => !kept.has(patch.id));
+  const rewrites = newer.filter((patch) => !held.has(patch.id));
   return {
     now: now.reading,
     previous: before.reading,
@@ -140,7 +144,7 @@ export function readDelta(repo: string, base: string, previous: string, head: st
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
-      rewritten_lines: linesHeldBy(before.patch, rewritten),
+      rewritten_lines: linesRewritten(rewritten, rewrites),
       conflict_paths: conflictPaths(repo, base, previous, head),
     },
   };

@@ -227,7 +227,7 @@ export type LedgerEvent =
 
 /** The numbers the full-re-review triggers compare. `ak review scope` reads them; `decide` does not. */
 export interface TriggerPolicy {
-  /** Large rebase: rewritten commits hold more than this percent of the changed lines of the pull request. */
+  /** Large rebase: the lines rewritten commits changed are more than this percent of the changed lines of the pull request. */
   rebase_rewritten_percent: number;
   /** Scope growth: the delta adds more than this percent to the changed lines of the pull request. */
   growth_percent: number;

@@ -80,8 +80,9 @@ next review covers.
     A pull request opens one new scope. A further one holds it for a split-or-replan decision.
 13. **Five triggers open a new scope, and nothing else does.** `ak review scope` compares the pull
     request at a head with the pull request at the last reviewed head, which the ledger names.
-    - `large-rebase`: the patch changed and rewritten commits hold more than 30% of the pull
-      request's changed lines, or a merge resolved a conflict in a path of the pull request.
+    - `large-rebase`: the patch changed and the rewritten commits changed lines amounting to more
+      than 30% of the pull request's changed lines, or a merge resolved a conflict in a path of
+      the pull request.
     - `risk-tier-rise`: the merge-stage class is above the class of the last reviewed round.
     - `surface-changed`: `review_surface_changed` is true in the merge-stage record.
       `ak delegation --stage merge --previous <record>` prints that field.
@@ -146,11 +147,14 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   so a change beside the pull request's lines on the base branch would change it.
 - **A rewritten commit is one whose patch no commit of the new head has.** This is the exact-match
   rule of `git range-diff`, applied to patches with no context. A reworded message is not a
-  rewrite. The share is the pull request's changed lines that the rewritten commits hold, over all
-  its changed lines.
+  rewrite. The share counts only the changed part of the rewritten commits, over all the pull
+  request's changed lines. The rewritten commits of the last reviewed head are pooled, and so are
+  the own commits of the new head that no commit of the last reviewed head has. The changed part
+  is the larger of the lines the first pool holds and the second does not, and the reverse.
 - **A rebase that leaves the patch of the pull request unchanged opens nothing**, whatever it did
-  to the commits. A squash with the same patch carries. A squash that also changes content reads
-  as a large rebase.
+  to the commits. A squash with the same patch carries. A fix folded into a commit with
+  `--amend`, or with `--fixup` and `--autosquash`, counts only the lines the fix changed, so it
+  reads like the fix commit it replaces.
 - **A resolved conflict is read from merges.** Each two-parent merge that is new at the head is
   repeated with `git merge-tree`, and a conflicted path counts when the pull request changes it.
   Git records no conflict for a rebase. A conflict resolved in a rebase changes the patch, and the
@@ -160,8 +164,9 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 - **The caller supplies three inputs, and a missing one is reported.** The class, the intent file
   and the acceptance criteria come from flags, and their earlier values come from the scope record
   of the last reviewed round. A trigger with a missing side is listed as `unevaluated` and does
-  not fire. An input the earlier record holds must be given again, so a trigger evaluated once is
-  never dropped without a refusal.
+  not fire. While the ledger holds a reviewed round, `--previous` is required. An input the earlier
+  record holds must be given again, `review_surface_changed` included, so a trigger evaluated once
+  is never dropped without a refusal.
 - **Before round 1 of a scope nothing is compared.** The outcome is `full`.
 - **Several triggers at once open one scope.** The record lists them all, and the ledger line
   names the first in the order of the schema.

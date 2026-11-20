@@ -94,14 +94,14 @@ function fixture() {
     const added = review(["ledger", "add", "--ledger", ledger, "--event", "-"], JSON.stringify(events));
     if (added.code !== 0) throw new Error(added.err.join("\n"));
   };
-  /** Record one closed round of review at `at`. */
-  const round = (at: string): void =>
-    add({ kind: "round-open", head: at }, { kind: "verdict", seat: "a", word: "approve" }, { kind: "round-close" });
+  /** The scope record a caller last kept, and its head. */
+  let kept: { path: string; at: string } | null = null;
   const scope = (at: string, ...flags: string[]): Run =>
     review(["scope", "--ledger", ledger, "--repo", root, "--base", "main", "--head", at, ...flags]);
-  /** The record of a run that must exit 0. */
+  /** The record of a run that must exit 0. Without `--previous`, it passes the record kept last. */
   const record = (at: string, ...flags: string[]): JsonValue => {
-    const run = scope(at, ...flags);
+    const previous = flags.includes("--previous") || kept === null ? [] : ["--previous", kept.path];
+    const run = scope(at, ...flags, ...previous);
     expect({ code: run.code, err: run.err }).toEqual({ code: 0, err: [] });
     return parseJson(run.out[0] ?? "");
   };
@@ -109,7 +109,13 @@ function fixture() {
   const keep = (name: string, at: string, ...flags: string[]): string => {
     const path = join(dir, name);
     writeFileSync(path, JSON.stringify(record(at, ...flags)));
+    kept = { path, at };
     return path;
+  };
+  /** Record one closed round of review at `at`, keeping the scope record of `at` first unless one is kept. */
+  const round = (at: string): void => {
+    if (kept?.at !== at) keep(`scope-${at}.json`, at);
+    add({ kind: "round-open", head: at }, { kind: "verdict", seat: "a", word: "approve" }, { kind: "round-close" });
   };
   const file = (name: string, text: string): string => {
     writeFileSync(join(dir, name), text);
@@ -203,7 +209,7 @@ describe("ak review scope: what is not a trigger", () => {
       expect.stringContaining(" = "),
       expect.stringContaining(" = "),
     ]);
-    const scoped = f.record(rebased);
+    const scoped = parseJson(readFileSync(f.keep("carry.json", rebased), "utf8"));
     expect(scoped).toMatchObject({
       outcome: "carry",
       triggers: [],
@@ -253,7 +259,38 @@ describe("ak review scope: what is not a trigger", () => {
     expect(f.record(fourth)).toMatchObject({ scope: 1, reviewed: third, outcome: "closure", triggers: [] });
   });
 
-  test("a rewritten commit that holds a small share of the lines is not a large rebase", () => {
+  test.each([
+    ["--amend", (f: ReturnType<typeof fixture>) => f.git("commit", "--amend", "--no-edit")],
+    [
+      "--fixup and --autosquash",
+      (f: ReturnType<typeof fixture>) => {
+        f.git("commit", "--fixup", "HEAD");
+        f.git("-c", "sequence.editor=true", "rebase", "-i", "--autosquash", "main");
+      },
+    ],
+  ])("a one-line fix folded into a commit with %s counts one changed line", (_, fold) => {
+    const f = fixture();
+    f.round(f.head);
+    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 1) });
+    f.git("add", "-A");
+    fold(f);
+    const folded = f.git("rev-parse", "HEAD");
+    // git's own comparison: the first commit is unchanged and the second is rewritten.
+    expect(f.git("range-diff", "-s", `main..${f.head}`, `main..${folded}`).split("\n")).toEqual([
+      expect.stringContaining(" = "),
+      expect.stringContaining(" ! "),
+    ]);
+    expect(f.git("rev-list", "--count", `main..${folded}`)).toBe("2");
+    expect(f.record(folded)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { pr_lines: 50, rewritten_lines: f.numstat(f.head, folded), added_lines: 1, removed_lines: 0 },
+      event: null,
+    });
+    expect(f.numstat(f.head, folded)).toBe(1);
+  });
+
+  test("a rewrite that changes a small share of the lines is not a large rebase", () => {
     const f = fixture();
     const third = f.commit({ "src/main.ts": lines("m", 10) + lines("third", 5) }, "third change");
     f.round(third);
@@ -262,33 +299,28 @@ describe("ak review scope: what is not a trigger", () => {
       { "src/main.ts": lines("m", 10) + lines("third", 4) + lines("other", 1) },
       "third change",
     );
-    // The rewritten commit holds 5 of the 55 changed lines: 9%.
+    // The rewrite changed 1 of the 55 changed lines: one line left and one came in.
     expect(f.record(rewritten)).toMatchObject({
       outcome: "closure",
       triggers: [],
-      delta: { pr_lines: 55, rewritten_lines: 5, added_lines: 1, removed_lines: 1 },
+      delta: { pr_lines: 55, rewritten_lines: 1, added_lines: 1, removed_lines: 1 },
     });
   });
 });
 
 describe("ak review scope: large rebase", () => {
-  test("a rebase whose rewritten commits hold more than 30% of the lines opens a new scope", () => {
+  test("a rebase whose rewritten commits changed more than 30% of the lines opens a new scope", () => {
     const f = fixture();
     f.round(f.head);
     f.git("reset", "--hard", "HEAD~1");
-    const rewritten = f.commit(
-      { "src/b.ts": lines("b", 10) + lines("second", 17) + lines("other", 3) },
-      "second change",
-    );
-    // git's own comparison: the first commit is unchanged and the second is rewritten.
-    expect(f.git("range-diff", "-s", `main...${f.head}`, `main..${rewritten}`).split("\n")).toEqual([
-      expect.stringContaining(" = "),
-      expect.stringContaining(" ! "),
-    ]);
+    const rewritten = f.commit({ "src/b.ts": lines("b", 10) + lines("other", 20) }, "second change");
+    // git's own comparison: the first commit is unchanged, and no commit of the new head keeps the second.
+    const pairs = f.git("range-diff", "-s", `main...${f.head}`, `main..${rewritten}`).split("\n");
+    expect(pairs.filter((pair) => pair.includes(" = "))).toEqual([expect.stringMatching(/^1: .* = 1: /)]);
     const base = f.git("merge-base", "main", f.head);
     const second = f.numstat(`${f.head}~1`, f.head);
     const scoped = f.record(rewritten);
-    // The rewritten commit holds 20 of the 50 changed lines: 40%. The delta adds 3 lines: 6%.
+    // The rewrite changed all 20 lines of the second commit, 40% of the 50. The delta adds 20 lines: 40%.
     expect(scoped).toMatchObject({
       outcome: "new-scope",
       triggers: ["large-rebase"],
@@ -296,8 +328,8 @@ describe("ak review scope: large rebase", () => {
         empty: false,
         pr_lines: f.numstat(base, f.head),
         rewritten_lines: second,
-        added_lines: 3,
-        removed_lines: 3,
+        added_lines: 20,
+        removed_lines: 20,
       },
       event: { kind: "scope-open", trigger: "large-rebase", head: rewritten },
     });
@@ -577,10 +609,36 @@ describe("ak review scope refuses", () => {
 
   test("a last reviewed head the repository does not hold", () => {
     const f = fixture();
-    f.round("f".repeat(40));
-    const run = f.scope(f.head);
+    const absent = "f".repeat(40);
+    f.add(
+      { kind: "round-open", head: absent },
+      { kind: "verdict", seat: "a", word: "approve" },
+      { kind: "round-close" },
+    );
+    const kept = f.file(
+      "absent.json",
+      JSON.stringify({
+        schema: "review-scope",
+        schema_version: 1,
+        head: absent,
+        class: null,
+        intent: null,
+        criteria: null,
+        review_surface_changed: null,
+      }),
+    );
+    const run = f.scope(f.head, "--previous", kept);
     expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
     expect(run.err.join("\n")).toContain(`the last reviewed head ${"f".repeat(40)} is not a commit`);
+  });
+
+  test("a run without --previous when the ledger holds a reviewed round", () => {
+    const f = fixture();
+    f.round(f.head);
+    const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const run = f.scope(fix);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain(`--previous is required: the ledger holds a reviewed round at ${f.head}`);
   });
 
   test("a record of another head as the last round's record", () => {
