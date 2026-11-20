@@ -46129,15 +46129,24 @@ function linesNotIn(patch, other) {
     total += Math.max(0, count - (other.counts.get(key) ?? 0));
   return total;
 }
-function linesHeldBy(patch, others) {
-  const held = new Map;
-  for (const other of others)
-    for (const [key, count] of other.counts)
-      held.set(key, (held.get(key) ?? 0) + count);
-  let total = 0;
-  for (const [key, count] of patch.counts)
-    total += Math.min(count, held.get(key) ?? 0);
-  return total;
+function pooled(patches) {
+  const counts = new Map;
+  for (const patch of patches)
+    for (const [key, count] of patch.counts)
+      counts.set(key, (counts.get(key) ?? 0) + count);
+  return { id: "", lines: 0, counts };
+}
+function linesRewritten(before, after) {
+  const unpaired = [...after];
+  const pairs = [];
+  for (const rewritten of before) {
+    const index = unpaired.findIndex((commit) => commit.subject === rewritten.subject);
+    if (index !== -1)
+      pairs.push(...unpaired.splice(index, 1).map((commit) => commit.patch));
+  }
+  const old = pooled(before.map((commit) => commit.patch));
+  const all = pooled(after.map((commit) => commit.patch));
+  return Math.max(linesNotIn(old, all), linesNotIn(pooled(pairs), old));
 }
 function changedDigest(value) {
   return value.before === null || value.now === null ? null : value.before !== value.now;
@@ -46150,7 +46159,7 @@ function scopeTriggers(facts, policy) {
   if (delta.conflict_paths.length > 0)
     reason2.set("large-rebase", `a merge resolved a conflict in ${delta.conflict_paths.join(", ")}`);
   else if (!delta.empty && delta.rewritten_lines * 100 > limits.rebase_rewritten_percent * delta.pr_lines)
-    reason2.set("large-rebase", `rewritten commits hold ${delta.rewritten_lines} of the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`);
+    reason2.set("large-rebase", `rewritten commits changed ${delta.rewritten_lines} lines against the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`);
   if (facts.class_rose === null)
     unevaluated.push({ trigger: "risk-tier-rise", needs: "a merge-stage record at this round and the last" });
   else if (facts.class_rose)
@@ -46236,10 +46245,13 @@ function headPatch(repo, base2, head) {
 function readHead(repo, base2, head) {
   return headPatch(repo, base2, head).reading;
 }
-function ownPatches(repo, from, head) {
-  const log = git4(repo, ["log", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
-  return log.split("\x00").slice(1).map((entry) => readPatch(entry.slice(entry.indexOf(`
-`) + 1)));
+function ownCommits(repo, from, head) {
+  const log = git4(repo, ["log", "--reverse", "--no-merges", "--format=%x00%s", "-p", ...DIFF, `${from}..${head}`]).out;
+  return log.split("\x00").slice(1).map((entry) => {
+    const end = entry.indexOf(`
+`);
+    return { subject: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
+  });
 }
 function conflictPaths(repo, base2, previous, head) {
   const merges = git4(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base2}`]).out.split(`
@@ -46264,8 +46276,12 @@ function conflictPaths(repo, base2, previous, head) {
 function readDelta(repo, base2, previous, head) {
   const before = headPatch(repo, base2, previous);
   const now = headPatch(repo, base2, head);
-  const kept = new Set(ownPatches(repo, now.reading.merge_base, head).map((patch) => patch.id));
-  const rewritten = ownPatches(repo, before.reading.merge_base, previous).filter((patch) => !kept.has(patch.id));
+  const older = ownCommits(repo, before.reading.merge_base, previous);
+  const newer = ownCommits(repo, now.reading.merge_base, head);
+  const kept = new Set(newer.map((commit) => commit.patch.id));
+  const held = new Set(older.map((commit) => commit.patch.id));
+  const rewritten = older.filter((commit) => !kept.has(commit.patch.id));
+  const rewrites = newer.filter((commit) => !held.has(commit.patch.id));
   return {
     now: now.reading,
     previous: before.reading,
@@ -46274,7 +46290,7 @@ function readDelta(repo, base2, previous, head) {
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
-      rewritten_lines: linesHeldBy(before.patch, rewritten),
+      rewritten_lines: linesRewritten(rewritten, rewrites),
       conflict_paths: conflictPaths(repo, base2, previous, head)
     }
   };
@@ -47241,14 +47257,15 @@ var baselineValidator = null;
 function validateBaseline() {
   baselineValidator ??= new import__202015.default({ strict: false }).compile({
     type: "object",
-    required: ["schema", "schema_version", "head", "class", "intent", "criteria"],
+    required: ["schema", "schema_version", "head", "class", "intent", "criteria", "review_surface_changed"],
     properties: {
       schema: { const: "review-scope" },
       schema_version: { const: 1 },
       head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
       class: { enum: [...Object.keys(CLASS_RANK), null] },
       intent: DIGEST,
-      criteria: DIGEST
+      criteria: DIGEST,
+      review_surface_changed: { type: ["boolean", "null"] }
     }
   });
   return baselineValidator;
@@ -47303,11 +47320,15 @@ function scopeCommand(flags, io) {
   const reviewed = state.covered_head;
   const position = { scope: state.scope, reviewed: reviewed !== null };
   const previousPath = reviewed === null ? undefined : flags.one.get("--previous");
-  const before = previousPath === undefined || reviewed === null ? null : readBaseline(previousPath, reviewed);
+  if (reviewed !== null && previousPath === undefined)
+    throw new UsageError(`--previous is required: the ledger holds a reviewed round at ${reviewed}, so give the scope record of that head`);
+  const before = reviewed === null || previousPath === undefined ? null : readBaseline(previousPath, reviewed);
   if (before !== null) {
     requireAgain(flags, "--record", before.class);
     requireAgain(flags, "--intent", before.intent);
     requireAgain(flags, "--criteria", before.criteria);
+    if (before.review_surface_changed !== null && merge?.review_surface_changed === undefined)
+      throw new UsageError("--record must state review_surface_changed: the record of the last reviewed round holds its value, so run ak delegation --stage merge with --previous");
   }
   const reading = reviewed === null ? null : readDelta(repo, base2, resolveCommit(repo, reviewed, "the last reviewed head"), head);
   const facts = reading === null ? null : {
