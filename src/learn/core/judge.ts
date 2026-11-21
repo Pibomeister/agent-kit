@@ -539,8 +539,11 @@ function serviceUnavailable(result: ReturnType<typeof run>, outcome: JudgeOutcom
 }
 
 /**
- * One retry on ordinary failures; quota and service availability failures advance to the next binding.
- * The command runs from the runtime directory, so it discovers no project instructions from its working directory.
+ * One retry on ordinary failures. A quota or service availability failure advances to the
+ * next configured binding without retrying the binding that failed. When no fallback is
+ * configured, that failure keeps the one retry a single command had before fallbacks
+ * existed. A timeout still returns at once in that case. The command runs from the runtime
+ * directory, so it discovers no project instructions from its working directory.
  */
 export function commandJudge(config: LearnConfig, options: CommandJudgeOptions = {}): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
@@ -590,8 +593,12 @@ export function commandJudge(config: LearnConfig, options: CommandJudgeOptions =
         if (outcome === "unavailable") return null;
         if (outcome === "ok") return parsed;
         if (serviceUnavailable(result, outcome)) {
-          advance = true;
-          break;
+          if (config.judgeFallbackCommands.length > 0) {
+            advance = true;
+            break;
+          }
+          // A timeout has no second try when no fallback is configured. Other availability failures do.
+          if (result.timedOut) return null;
         }
       }
       if (!advance) return null;

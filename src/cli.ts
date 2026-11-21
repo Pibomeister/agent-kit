@@ -19,6 +19,7 @@ import { runKb } from "./kb/cli.ts";
 import { readHookStdin, runLearn } from "./learn/cli.ts";
 import { runRunner } from "./runner/cli.ts";
 import { runCouncil } from "./council/cli.ts";
+import { runReview } from "./review/cli.ts";
 import { loadCatalog } from "./catalog/load.ts";
 import type { BuildOptions } from "./packaging/build.ts";
 import { checkBundles, writeAdaptations, writeBundles } from "./packaging/build.ts";
@@ -69,6 +70,7 @@ const USAGE = [
   "  ak guard hook <event> ...                  the opt-in guard runtime's host hook (`ak guard` for help)",
   "  ak runner serve|call ...                   runner service and charter-bound requests",
   "  ak council run --card <file> ...           ask the council one question; the record grants no authority",
+  "  ak review ledger add|show ... | decide ... the review convergence ledger and its verdict; the record grants no authority",
   "",
   "Exit 0 when nothing failed, non-zero on any error.",
 ];
@@ -98,6 +100,7 @@ const COMMANDS = [
   "guard",
   "runner",
   "council",
+  "review",
 ];
 
 const VALUE_FLAGS = new Set(["profile", "host", "project", "out", "stage", "base", "head", "evidence"]);
@@ -445,10 +448,12 @@ if (import.meta.main) {
       ? await runRunner(argv.slice(1), io)
       : argv[0] === "council"
         ? await runCouncil(argv.slice(1), io)
-        : argv[0] === "learn"
-          ? await runLearn(argv.slice(1), { cwd: process.cwd(), io, stdin: readHookStdin(argv) })
-          : argv[0] === "guard"
-            ? runGuard(argv.slice(1), { cwd: process.cwd(), io, stdin: readGuardStdin(argv) })
-            : runCli(argv, { cwd: process.cwd(), io });
+        : argv[0] === "review"
+          ? runReview(argv.slice(1), io)
+          : argv[0] === "learn"
+            ? await runLearn(argv.slice(1), { cwd: process.cwd(), io, stdin: readHookStdin(argv) })
+            : argv[0] === "guard"
+              ? runGuard(argv.slice(1), { cwd: process.cwd(), io, stdin: readGuardStdin(argv) })
+              : runCli(argv, { cwd: process.cwd(), io });
   if (argv[0] !== "runner" || argv[1] !== "serve" || code !== 0) process.exit(code);
 }

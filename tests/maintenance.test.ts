@@ -81,6 +81,20 @@ const councilAlone = spawnSync(process.execPath, [maintenanceCli, "council"], {
   env: maintenanceEnv,
   encoding: "utf8",
 });
+const reviewAlone = spawnSync(process.execPath, [maintenanceCli, "review"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
+const reviewShow = spawnSync(
+  process.execPath,
+  [maintenanceCli, "review", "ledger", "show", "--ledger", "absent.jsonl"],
+  {
+    cwd: maintenanceRoot,
+    env: maintenanceEnv,
+    encoding: "utf8",
+  },
+);
 
 function runLinkedWorktreeFixture() {
   const root = realpathSync(project());
@@ -363,6 +377,13 @@ describe("ak doctor checks", () => {
     expect(councilRun.stderr).toContain("usage: ak council run --card <card.json> --council-config");
     expect(councilAlone.status).toBe(2);
     expect(councilAlone.stderr).toContain("usage: ak council run --card <card.json> --council-config");
+  });
+
+  test("the packaged CLI dispatches ak review instead of the generic usage", () => {
+    expect(reviewAlone.status).toBe(2);
+    expect(reviewAlone.stderr).toContain("usage: ak review ledger add --ledger <ledger.jsonl> --event <file|->");
+    expect(reviewShow.status).toBe(0);
+    expect(reviewShow.stdout).toContain('"schema": "review-ledger-state"');
   });
 
   test("doctor ignores foreign GIT_DIR and GIT_WORK_TREE", () => {
