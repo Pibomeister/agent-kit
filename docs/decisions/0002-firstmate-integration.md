@@ -99,8 +99,8 @@ backing a publish.
 policy, the runner contract's idempotency rule (§5), `compileSchemas`, the packaging and adapter
 machinery, Firstmate's status verbs.
 
-**Changed:** `schemas/common` (`diff_hash`, `$defs.child`, capability `firstmate-supervision`),
-`schemas/review` (`raw_output`), the new binding schema; `super-review`, `super-verify`, `super-ship`
+**Changed:** `schemas/common.schema.json` (`diff_hash`, `$defs.child`, capability `firstmate-supervision`),
+`schemas/review.schema.json` (`raw_output`), the new binding schema; `super-review`, `super-verify`, `super-ship`
 (+ transport reference), `babysit-pr`, `receiving-review`; three rulings; the Claude Code host table;
 `src/firstmate/` and `ak firstmate`.
 
