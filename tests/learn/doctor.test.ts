@@ -925,40 +925,83 @@ describe("subscription-only judge", () => {
     ]);
   });
 
-  test("proxy and trusted-CA variables are dropped, and OpenTelemetry content logging is forced off", () => {
-    const names = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "NODE_EXTRA_CA_CERTS"];
+  test("proxy and trusted-CA variables are dropped, and OpenTelemetry content logging is forced off", async () => {
+    const names = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "NODE_EXTRA_CA_CERTS"];
     const given = Object.fromEntries(names.map((name) => [name, "fixture"]));
     expect(
       subscriptionEnv({ ...given, NO_PROXY: "localhost", OTEL_LOG_USER_PROMPTS: "1", OTEL_LOG_TOOL_DETAILS: "1" }),
     ).toEqual({ NO_PROXY: "localhost", OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" });
 
+    // Run commandJudge in a child process instead of mutating process.env with proxy names:
+    // Bun keeps HTTP_PROXY/HTTPS_PROXY active in its process-wide proxy store after deletion
+    // and leaks them into subsequent --parallel test workers, breaking loopback fetch calls.
+    // A child process also inherits them in its startup environment, exercising Object.entries(process.env).
     const ctx = testContext();
     const claude = fakeClaude(
-      'printf \'{"proxy":"%s","ca":"%s","prompts":"%s","tools":"%s"}\\n\' "$HTTPS_PROXY$HTTP_PROXY$ALL_PROXY" "$NODE_EXTRA_CA_CERTS" "$OTEL_LOG_USER_PROMPTS" "$OTEL_LOG_TOOL_DETAILS"',
+      'printf \'{"proxy":"%s","ca":"%s","prompts":"%s","tools":"%s"}\\n\' "$HTTPS_PROXY$HTTP_PROXY$ALL_PROXY$http_proxy$https_proxy" "$NODE_EXTRA_CA_CERTS" "$OTEL_LOG_USER_PROMPTS" "$OTEL_LOG_TOOL_DETAILS"',
     );
     const config = { ...ctx.config, judgeCommand: [claude] };
     const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
-    const previous = { ...process.env };
-    Object.assign(process.env, {
-      HTTPS_PROXY: "http://proxy",
-      HTTP_PROXY: "http://proxy",
-      ALL_PROXY: "http://proxy",
-      NODE_EXTRA_CA_CERTS: "/ca.pem",
-      OTEL_LOG_USER_PROMPTS: "1",
-      OTEL_LOG_TOOL_DETAILS: "1",
+    const judgeModule = resolve(import.meta.dir, "../../src/learn/core/judge.ts");
+    const probe = join(scratch("ak-judge-proxy-"), "probe.ts");
+    writeFileSync(
+      probe,
+      [
+        `import { commandJudge } from ${JSON.stringify(judgeModule)};`,
+        `const config = ${JSON.stringify(config)};`,
+        `const context = ${JSON.stringify(context)};`,
+        `console.log(JSON.stringify({`,
+        `  subscription: commandJudge(config, { subscriptionOnly: true })("prompt", context),`,
+        `  default: commandJudge(config)("prompt", context),`,
+        `}));`,
+      ].join("\n"),
+    );
+    const ran = runProcess([process.execPath, probe], {
+      timeoutMs: 25_000,
+      env: {
+        ...process.env,
+        HTTPS_PROXY: "http://proxy",
+        HTTP_PROXY: "http://proxy",
+        ALL_PROXY: "http://proxy",
+        http_proxy: "http://proxy",
+        https_proxy: "http://proxy",
+        NODE_EXTRA_CA_CERTS: "/ca.pem",
+        OTEL_LOG_USER_PROMPTS: "1",
+        OTEL_LOG_TOOL_DETAILS: "1",
+      },
     });
-    try {
-      expect(commandJudge(config, { subscriptionOnly: true })("prompt", context)).toEqual({
+    expect(ran.code, ran.stderr).toBe(0);
+    const parsed: unknown = JSON.parse(ran.stdout);
+    expect(parsed).toEqual({
+      subscription: {
         proxy: "",
         ca: "",
         prompts: "0",
         tools: "0",
-      });
-    } finally {
-      for (const name of [...names, "OTEL_LOG_USER_PROMPTS", "OTEL_LOG_TOOL_DETAILS"]) {
-        const value = previous[name];
-        if (value === undefined) Reflect.deleteProperty(process.env, name);
-        else process.env[name] = value;
+      },
+      default: {
+        proxy: "http://proxyhttp://proxyhttp://proxyhttp://proxyhttp://proxy",
+        ca: "/ca.pem",
+        prompts: "1",
+        tools: "1",
+      },
+    });
+
+    // Neither Bun's inherited child env nor loopback fetch in this worker may carry the test proxy.
+    const leaked = Bun.spawnSync([
+      "sh",
+      "-c",
+      'printf "%s|%s|%s|%s" "$HTTP_PROXY" "$HTTPS_PROXY" "$http_proxy" "$https_proxy"',
+    ]);
+    expect(leaked.exitCode).toBe(0);
+    expect(leaked.stdout.toString().split("|")).not.toContain("http://proxy");
+    if ((process.env.HTTP_PROXY ?? "") === "" && (process.env.http_proxy ?? "") === "") {
+      const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("ok") });
+      try {
+        const res = await fetch(server.url);
+        expect(res.status).toBe(200);
+      } finally {
+        await server.stop(true);
       }
     }
   });
