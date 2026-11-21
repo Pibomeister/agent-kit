@@ -6,7 +6,8 @@
  * The compatible v1 path still names a run after its branch. Its earlier records are bounded by the
  * fork point from the default branch, but after a squash or rebase merge a reused branch can keep old
  * `build-checks` and `review-full` records in its history. A successful check prints that known limit
- * when the record predates the branch last taking the default branch.
+ * when the record predates the branch last taking the default branch. If the fork timestamp cannot
+ * be read, it prints that it could not assess the record's age.
  *
  * An opened run has no fork-point bound and prints no note. A run never closed by `ship-preflight`
  * stays the branch's default until a new `open`, so every new task opens a new run.

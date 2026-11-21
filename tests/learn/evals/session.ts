@@ -45,6 +45,8 @@ export function option(argv: readonly string[], name: string): string | undefine
 /**
  * The process basics, the variables explicitly declared by one subject adapter, and the names the
  * operator lists in `$AK_EVAL_PASS_ENV` (whitespace-separated, as `scripts/eval-local.sh` reads it).
+ * Read from `source`, defaulting to `process.env`; tests can supply a map without changing
+ * the process environment.
  * A `CLAUDE_CODE_*` or `EVAL_*` name cannot be opted in: `runSubject` strips those prefixes with
  * `withoutParentSession` after this, keeping only its auth and provider-routing names.
  */
