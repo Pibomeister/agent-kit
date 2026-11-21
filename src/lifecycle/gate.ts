@@ -12,7 +12,8 @@
  * stays the branch's default until a new `open`, so every new task opens a new run.
  *
  * Parent-run trust for a Firstmate skip rests on host write isolation of the
- * evidence store. The recorded start_authority must be a standing grant with a
+ * evidence store. Repository discovery must succeed before an authority path is trusted.
+ * The recorded start_authority must be a standing grant with a
  * grant. A cancelled, failed or cap-reached parent does not skip. A home-ledger check is a
  * follow-up, not this gate.
  *
@@ -567,13 +568,13 @@ function realExisting(path: string): string {
   }
 }
 
-/** True when `path` sits in the project tree or in any git-writable root `repoOf` names, including the common dir. */
+/** True unless `path` is outside the project tree and every git-writable root, or no project was supplied. */
 function workerWritable(path: string, project?: string): boolean {
   if (project === undefined) return false;
   const at = realExisting(path);
   if (inside(at, resolve(project))) return true;
   const repo = repoOf(project);
-  if ("error" in repo) return false;
+  if ("error" in repo) return true;
   return repo.writable.some((root) => inside(at, root));
 }
 
