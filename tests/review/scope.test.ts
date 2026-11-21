@@ -10,7 +10,6 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  linesRewritten,
   linesNotIn,
   readPatch,
   scopeOutcome,
@@ -230,74 +229,5 @@ describe("linesNotIn", () => {
     const here = readPatch(`${HEADER}@@ -1 +1 @@\n+same\n`);
     const there = readPatch(`${HEADER.replaceAll("src/a.ts", "src/b.ts")}@@ -1 +1 @@\n+same\n`);
     expect(linesNotIn(here, there)).toBe(1);
-  });
-});
-
-describe("linesRewritten", () => {
-  const plus = (word: string, n: number) => Array.from({ length: n }, (_, k) => `+${word}${k}\n`).join("");
-  const patch = (...parts: string[]) => readPatch(`${HEADER}@@ -0,0 +1 @@\n${parts.join("")}`);
-  const thirty = patch(plus("a", 30));
-  const feat = patch(plus("a", 20));
-  const fix = patch(plus("f", 15));
-  const big = patch(plus("feat", 390));
-  const review = patch(plus("r", 10));
-
-  test.each([
-    // 30 old lines, 29 kept and 1 replaced: lost 1, gained 1.
-    ["a 30-line commit amended in place, one line replaced", [thirty], [patch(plus("a", 29), "+swap\n")], 40, 1, []],
-    // 20 + 15 old lines all kept, plus 1 new: lost 0, gained 1.
-    [
-      "a fix commit squashed into a 20-line commit, plus one new line",
-      [feat, fix],
-      [patch(plus("a", 20), plus("f", 15), "+new\n")],
-      40,
-      1,
-      [],
-    ],
-    // The older of two same-subject commits gains 1 line; the 5-line new commit shares none of the 10 old lines.
-    [
-      "a same-subject commit amended by one line, and a new commit reusing the subject",
-      [review],
-      [patch(plus("r", 10), "+r10\n"), patch(plus("g", 5))],
-      40,
-      1,
-      [],
-    ],
-    // The message is not read, so this is the 29-kept, 1-replaced case again: 1.
-    ["a reworded 30-line commit with one line replaced", [thirty], [patch(plus("a", 29), "+swap\n")], 40, 1, []],
-    // All 30 lines are gone, and 30 of 40 is 75%.
-    ["a dropped commit whose lines appear nowhere", [thirty], [], 40, 30, ["large-rebase"]],
-    // 10 kept, 20 replaced: lost 20, and 20 of 40 is 50%, over 30%.
-    [
-      "20 of a 30-line commit replaced in a 40-line pull request",
-      [thirty],
-      [patch(plus("a", 10), plus("n", 20))],
-      40,
-      20,
-      ["large-rebase"],
-    ],
-    // 390 + 10 old lines all held by the first new commit; the 150 new lines are a new commit: 0.
-    [
-      "a squashed review commit and a new 150-line commit reusing its subject",
-      [big, review],
-      [patch(plus("feat", 390), plus("r", 10)), patch(plus("x", 150))],
-      400,
-      0,
-      [],
-    ],
-    // The same commits in the opposite order: still 0.
-    [
-      "the same commits in the opposite order",
-      [review, big],
-      [patch(plus("x", 150)), patch(plus("feat", 390), plus("r", 10))],
-      400,
-      0,
-      [],
-    ],
-    ["no rewritten commit beside a new one", [], [thirty], 40, 0, []],
-  ] as const)("%s", (_, before, after, pr_lines, lines, triggers) => {
-    const count = linesRewritten(before, after);
-    expect(count).toBe(lines);
-    expect(fired(facts({ pr_lines, rewritten_lines: count }))).toEqual([...triggers]);
   });
 });

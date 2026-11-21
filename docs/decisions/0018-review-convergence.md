@@ -147,19 +147,21 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   so a change beside the pull request's lines on the base branch would change it.
 - **A rewritten commit is one whose patch no commit of the new head has.** This is the exact-match
   rule of `git range-diff`, applied to patches with no context. A reworded message is not a
-  rewrite. The share counts only the changed part of the rewritten commits, over all the pull
-  request's changed lines. The rewritten commits are pooled. A new commit is a new version of
-  rewritten work when the pool holds at least half of its changed lines, as `git range-diff` pairs
-  commits by how alike their patches are; any other new commit is a fix commit, which scope
-  growth reads and which adds nothing here. "At least half" is a fixed reading, not a policy
-  value. The count is the larger of two figures: the lines the pool holds and no new commit
-  holds, and the lines the new versions hold and the pool does not. So a fix commit squashed into
-  another commit moves no line, a reworded commit counts only what its patch changed, and the
-  order of the commits does not change the count. No commit message is read.
+  rewrite. With no rewritten commit the share is zero. Otherwise it is read from the pull request
+  as a whole, never by adding up commits. A commit of the new head is reviewed work when a reviewed
+  commit has its patch, or when the pull request at the last reviewed head holds at least half of
+  its changed lines. "At least half" is a fixed reading, not a policy value. The cut is the last
+  commit of the new head that is reviewed work, and the pull request is read again at the cut. The
+  count is the larger of two figures: the lines the reviewed pull request holds and the pull
+  request at the cut does not, and the reverse. The commits after the cut are new commits, which
+  scope growth reads and which add nothing here, whether they add lines or remove them. A new
+  commit placed before reviewed work is inside the cut, so its lines count as rewritten. No commit
+  message is read.
 - **A rebase that leaves the patch of the pull request unchanged opens nothing**, whatever it did
-  to the commits. A squash with the same patch carries. A fix folded into a commit with
-  `--amend`, or with `--fixup` and `--autosquash`, counts only the lines the fix changed, so it
-  reads like the fix commit it replaces.
+  to the commits. A reword or a squash with the same patch carries. A fix folded into a commit with
+  `--amend`, or with `--fixup` and `--autosquash`, counts only the lines its fold changed in the
+  pull request, so a reviewed fix commit squashed into its target moves no line, and a line added
+  and removed again nets to nothing.
 - **A resolved conflict is read from merges.** Each two-parent merge that is new at the head is
   repeated with `git merge-tree`, and a conflicted path counts when the pull request changes it.
   Git records no conflict for a rebase. A conflict resolved in a rebase changes the patch, and the

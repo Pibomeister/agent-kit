@@ -236,15 +236,6 @@ describe("ak review scope: what is not a trigger", () => {
     });
   });
 
-  test("a squash of the own commits with the same patch carries the review", () => {
-    const f = fixture();
-    f.round(f.head);
-    f.git("reset", "--soft", "main");
-    f.git("commit", "-m", "one commit");
-    const squashed = f.git("rev-parse", "HEAD");
-    expect(f.record(squashed)).toMatchObject({ outcome: "carry", triggers: [], delta: { empty: true } });
-  });
-
   test("the last round of the cap is a closure round like any other", () => {
     const f = fixture();
     f.round(f.head);
@@ -259,129 +250,152 @@ describe("ak review scope: what is not a trigger", () => {
     expect(f.record(fourth)).toMatchObject({ scope: 1, reviewed: third, outcome: "closure", triggers: [] });
   });
 
-  test.each([
-    ["--amend", (f: ReturnType<typeof fixture>) => f.git("commit", "--amend", "--no-edit")],
-    [
-      "--fixup and --autosquash",
-      (f: ReturnType<typeof fixture>) => {
-        f.git("commit", "--fixup", "HEAD");
-        f.git("-c", "sequence.editor=true", "rebase", "-i", "--autosquash", "main");
-      },
-    ],
-  ])("a one-line fix folded into a commit with %s counts one changed line", (_, fold) => {
-    const f = fixture();
-    f.round(f.head);
-    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 1) });
+  type Fixture = ReturnType<typeof fixture>;
+  /** Fold a commit that writes `files` into `target` with `--fixup` and `--autosquash`. */
+  const fold = (f: Fixture, target: string, files: Record<string, string>): void => {
+    f.write(files);
     f.git("add", "-A");
-    fold(f);
-    const folded = f.git("rev-parse", "HEAD");
-    // git's own comparison: the first commit is unchanged and the second is rewritten.
-    expect(f.git("range-diff", "-s", `main..${f.head}`, `main..${folded}`).split("\n")).toEqual([
-      expect.stringContaining(" = "),
-      expect.stringContaining(" ! "),
-    ]);
-    expect(f.git("rev-list", "--count", `main..${folded}`)).toBe("2");
-    expect(f.record(folded)).toMatchObject({
-      outcome: "closure",
-      triggers: [],
-      delta: { pr_lines: 50, rewritten_lines: f.numstat(f.head, folded), added_lines: 1, removed_lines: 0 },
-      event: null,
-    });
-    expect(f.numstat(f.head, folded)).toBe(1);
-  });
-
-  test("an amend that changes the subject and one line gets a closure round", () => {
-    const f = fixture();
-    f.round(f.head);
-    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 1) });
-    f.git("add", "-A");
-    f.git("commit", "--amend", "-m", "second change, reworded");
-    const reworded = f.git("rev-parse", "HEAD");
-    expect(f.git("log", "--format=%s", `main..${reworded}`).split("\n")).toEqual([
-      "second change, reworded",
-      "first change",
-    ]);
-    // Counting the whole rewritten commit would read 20 of the 50 lines, 40%, over the 30% of a large rebase.
-    expect(f.record(reworded)).toMatchObject({
-      outcome: "closure",
-      triggers: [],
-      delta: { pr_lines: 50, rewritten_lines: 1, added_lines: 1, removed_lines: 0 },
-    });
-  });
-
-  test("a reviewed fix commit squashed away while a new commit reuses its subject counts no rewritten line", () => {
-    const f = fixture();
-    f.round(f.head);
-    const fix = f.commit({ "src/main.ts": lines("m", 10) + lines("review", 10) }, "address review");
-    f.round(fix);
-    f.git("reset", "--soft", f.head);
-    f.git("commit", "--amend", "--no-edit");
-    const pushed = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("more", 20) }, "address review");
-    expect(f.git("log", "--format=%s", `main..${pushed}`).split("\n")).toEqual([
-      "address review",
-      "second change",
-      "first change",
-    ]);
-    // The new commit adds 20 of the 60 lines, 33%: under scope growth's 50%, and over 30% if it counted as rewritten.
-    expect(f.record(pushed)).toMatchObject({
-      outcome: "closure",
-      triggers: [],
-      delta: { pr_lines: 60, rewritten_lines: 0, added_lines: 20, removed_lines: 0 },
-    });
-  });
-
-  test("a one-line fixup pushed with a new fix commit counts one changed line", () => {
-    const f = fixture();
-    f.round(f.head);
-    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 1) });
-    f.git("add", "-A");
-    f.git("commit", "--fixup", "HEAD");
+    f.git("commit", "--fixup", target);
     f.git("-c", "sequence.editor=true", "rebase", "-i", "--autosquash", "main");
-    const folded = f.git("rev-parse", "HEAD");
-    const pushed = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("more", 16) }, "fix a finding");
-    // The delta adds 17 of the 50 lines, 34%: under scope growth's 50%, and over 30% if the new commit counted as rewritten.
-    expect(f.record(pushed)).toMatchObject({
-      outcome: "closure",
-      triggers: [],
-      delta: { pr_lines: 50, rewritten_lines: f.numstat(f.head, folded), added_lines: f.numstat(f.head, pushed) },
-    });
-    expect([f.numstat(f.head, folded), f.numstat(f.head, pushed)]).toEqual([1, 17]);
-  });
-
-  test("a reviewed fix commit squashed into its commit with one more line counts one changed line", () => {
+  };
+  const tip = (f: Fixture): string => f.git("rev-parse", "HEAD");
+  const rows: [
+    string,
+    (f: Fixture) => string,
+    { pr_lines: number; rewritten_lines: number; outcome: string; triggers: string[] },
+  ][] = [
+    [
+      "a 30-line commit amended in place, one line replaced",
+      (f) => {
+        f.round(f.head);
+        fold(f, `${f.head}~1`, { "src/a.ts": lines("a", 10) + lines("first", 29) + lines("other", 1) });
+        return tip(f);
+      },
+      // first29 left and other0 came in: 1 of 50.
+      { pr_lines: 50, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a reviewed 15-line fix commit squashed into its 20-line commit, plus one new line",
+      (f) => {
+        f.round(f.head);
+        f.round(f.commit({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 15) }, "fix a finding"));
+        f.git("reset", "--soft", f.head);
+        f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 16) });
+        f.git("add", "-A");
+        f.git("commit", "--amend", "--no-edit");
+        return tip(f);
+      },
+      // 50 + 15 reviewed lines all stay, and fix15 came in: 1 of 65.
+      { pr_lines: 65, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a same-subject commit amended by one line, then a new commit reusing the subject",
+      (f) => {
+        f.round(f.commit({ "src/main.ts": lines("m", 10) + lines("review", 3) }, "address review"));
+        f.write({ "src/main.ts": lines("m", 10) + lines("review", 4) });
+        f.git("add", "-A");
+        f.git("commit", "--amend", "--no-edit");
+        return f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("more", 16) }, "address review");
+      },
+      // review3 came in: 1 of 53. The 16 new lines are 30.2% of 53 if they counted, and the delta adds 17, 32%.
+      { pr_lines: 53, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a 20-line commit reworded while one line is replaced",
+      (f) => {
+        f.round(f.head);
+        f.write({ "src/b.ts": lines("b", 10) + lines("second", 19) + lines("other", 1) });
+        f.git("add", "-A");
+        f.git("commit", "--amend", "-m", "second change, reworded");
+        return tip(f);
+      },
+      // second19 left and other0 came in: 1 of 50.
+      { pr_lines: 50, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a reworded commit with the same patch",
+      (f) => {
+        f.round(f.head);
+        f.git("commit", "--amend", "-m", "second change, reworded");
+        return tip(f);
+      },
+      // Both commits keep their patch: nothing is rewritten.
+      { pr_lines: 50, rewritten_lines: 0, outcome: "carry", triggers: [] },
+    ],
+    [
+      "a squash of the own commits with the same patch",
+      (f) => {
+        f.round(f.head);
+        f.git("reset", "--soft", "main");
+        f.git("commit", "-m", "one commit");
+        return tip(f);
+      },
+      // The one commit holds the same 50 lines: none moved.
+      { pr_lines: 50, rewritten_lines: 0, outcome: "carry", triggers: [] },
+    ],
+    [
+      "a reviewed commit dropped, its lines nowhere at the new head",
+      (f) => {
+        f.round(f.head);
+        f.git("reset", "--hard", `${f.head}~1`);
+        return tip(f);
+      },
+      // The 20 lines of the second commit left: 20 of 50, 40%.
+      { pr_lines: 50, rewritten_lines: 20, outcome: "new-scope", triggers: ["large-rebase"] },
+    ],
+    [
+      "a 30-line commit with 20 lines replaced, followed by a kept commit",
+      (f) => {
+        f.round(f.head);
+        fold(f, `${f.head}~1`, { "src/a.ts": lines("a", 10) + lines("first", 10) + lines("other", 20) });
+        return tip(f);
+      },
+      // first10..first29 left and other0..other19 came in: 20 of 50, 40%.
+      { pr_lines: 50, rewritten_lines: 20, outcome: "new-scope", triggers: ["large-rebase"] },
+    ],
+    [
+      "a reviewed fix commit squashed away, then a new commit reusing its subject",
+      (f) => {
+        f.round(f.head);
+        f.round(f.commit({ "src/main.ts": lines("m", 10) + lines("review", 10) }, "address review"));
+        f.git("reset", "--soft", f.head);
+        f.git("commit", "--amend", "--no-edit");
+        return f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("more", 20) }, "address review");
+      },
+      // The 60 reviewed lines all stay. The 20 new lines are 33% of 60 if they counted, and the delta adds 33%.
+      { pr_lines: 60, rewritten_lines: 0, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a reviewed fix commit that replaced 15 of 30 lines, autosquashed with one new line",
+      (f) => {
+        const third = f.commit({ "src/main.ts": lines("m", 10) + lines("third", 30) }, "third change");
+        f.round(third);
+        f.write({ "src/main.ts": lines("m", 10) + lines("third", 15) + lines("other", 15) });
+        f.git("add", "-A");
+        f.git("commit", "--fixup", third);
+        f.round(tip(f));
+        fold(f, third, { "src/main.ts": lines("m", 10) + lines("third", 15) + lines("other", 15) + lines("new", 1) });
+        return tip(f);
+      },
+      // The reviewed pull request holds 50 + third0..14 + other0..14 = 80 lines, and only new0 came in: 1.
+      // Adding up the commits would count third15..29 twice, added and removed: 30 of 80, 37.5%.
+      { pr_lines: 80, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a 30-line commit amended with one line replaced, then a new commit removing 12 of its lines",
+      (f) => {
+        f.round(f.head);
+        fold(f, `${f.head}~1`, { "src/a.ts": lines("a", 10) + lines("first", 29) + lines("other", 1) });
+        return f.commit({ "src/a.ts": lines("a", 10) + lines("first", 17) + lines("other", 1) }, "trim");
+      },
+      // first29 left and other0 came in: 1. The removal of first17..first28 comes after the cut.
+      { pr_lines: 50, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+  ];
+  test.each(rows)("%s", (_, build, expected) => {
     const f = fixture();
-    f.round(f.head);
-    const fix = f.commit({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 15) }, "fix a finding");
-    f.round(fix);
-    f.git("reset", "--soft", f.head);
-    f.write({ "src/b.ts": lines("b", 10) + lines("second", 20) + lines("fix", 16) });
-    f.git("add", "-A");
-    f.git("commit", "--amend", "--no-edit");
-    const squashed = f.git("rev-parse", "HEAD");
-    expect(f.git("rev-list", "--count", `main..${squashed}`)).toBe("2");
-    expect(f.record(squashed)).toMatchObject({
-      outcome: "closure",
-      triggers: [],
-      delta: { pr_lines: 65, rewritten_lines: f.numstat(fix, squashed), added_lines: 1 },
-    });
-    expect(f.numstat(fix, squashed)).toBe(1);
-  });
-
-  test("a rewrite that changes a small share of the lines is not a large rebase", () => {
-    const f = fixture();
-    const third = f.commit({ "src/main.ts": lines("m", 10) + lines("third", 5) }, "third change");
-    f.round(third);
-    f.git("reset", "--hard", f.head);
-    const rewritten = f.commit(
-      { "src/main.ts": lines("m", 10) + lines("third", 4) + lines("other", 1) },
-      "third change",
-    );
-    // The rewrite changed 1 of the 55 changed lines: one line left and one came in.
-    expect(f.record(rewritten)).toMatchObject({
-      outcome: "closure",
-      triggers: [],
-      delta: { pr_lines: 55, rewritten_lines: 1, added_lines: 1, removed_lines: 1 },
-    });
+    const { outcome, triggers, ...delta } = expected;
+    expect(f.record(build(f))).toMatchObject({ outcome, triggers, delta });
   });
 });
 

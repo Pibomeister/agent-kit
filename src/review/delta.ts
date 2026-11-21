@@ -15,7 +15,7 @@
 
 import { spawnSync } from "node:child_process";
 
-import { linesNotIn, linesRewritten, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
+import { linesNotIn, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
 
 const DIFF = [
   "-U0",
@@ -83,12 +83,41 @@ export function readHead(repo: string, base: string, head: string): HeadReading 
 }
 
 /** Each own commit of a head, oldest first: every commit after the merge base that is not a merge. */
-function ownCommits(repo: string, from: string, head: string): Patch[] {
-  const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00", "-p", ...DIFF, `${from}..${head}`]).out;
+function ownCommits(repo: string, from: string, head: string): { commit: string; patch: Patch }[] {
+  const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
   return log
     .split("\0")
     .slice(1)
-    .map((entry) => readPatch(entry));
+    .map((entry) => {
+      const end = entry.indexOf("\n");
+      return { commit: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
+    });
+}
+
+/**
+ * Changed lines that a rewrite changed, as `DeltaFacts.rewritten_lines` states.
+ *
+ * A commit of the new head is reviewed work when a reviewed commit has its
+ * patch, or when the pull request at the last reviewed head holds at least
+ * half of its changed lines. The pull request is read again at the last such
+ * commit, the cut, and compared with the reviewed one as a whole, so a line
+ * added and removed again nets to nothing and a squash or a reword moves no
+ * line. With no reviewed work at the new head, the pull request at the cut is
+ * empty.
+ */
+function linesRewritten(repo: string, reviewed: HeadPatch, now: HeadReading, head: string): number {
+  const older = ownCommits(repo, reviewed.reading.merge_base, reviewed.reading.head);
+  const newer = ownCommits(repo, now.merge_base, head);
+  const kept = new Set(newer.map(({ patch }) => patch.id));
+  if (older.every(({ patch }) => kept.has(patch.id))) return 0;
+  const held = new Set(older.map(({ patch }) => patch.id));
+  const old = reviewed.patch;
+  const work = newer.filter(
+    ({ patch }) => held.has(patch.id) || (patch.lines > 0 && 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines),
+  );
+  const cut = work.at(-1)?.commit;
+  const atCut = readPatch(cut === undefined ? "" : git(repo, ["diff", ...DIFF, now.merge_base, cut]).out);
+  return Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
 }
 
 /**
@@ -129,13 +158,6 @@ export interface DeltaReading {
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
   const before = headPatch(repo, base, previous);
   const now = headPatch(repo, base, head);
-  // An own commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
-  const older = ownCommits(repo, before.reading.merge_base, previous);
-  const newer = ownCommits(repo, now.reading.merge_base, head);
-  const kept = new Set(newer.map((patch) => patch.id));
-  const held = new Set(older.map((patch) => patch.id));
-  const rewritten = older.filter((patch) => !kept.has(patch.id));
-  const rewrites = newer.filter((patch) => !held.has(patch.id));
   return {
     now: now.reading,
     previous: before.reading,
@@ -144,7 +166,7 @@ export function readDelta(repo: string, base: string, previous: string, head: st
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
-      rewritten_lines: linesRewritten(rewritten, rewrites),
+      rewritten_lines: linesRewritten(repo, before, now.reading, head),
       conflict_paths: conflictPaths(repo, base, previous, head),
     },
   };

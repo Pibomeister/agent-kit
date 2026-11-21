@@ -81,31 +81,6 @@ export function linesNotIn(patch: Patch, other: Patch): number {
   return total;
 }
 
-function pooled(patches: readonly Patch[]): Patch {
-  const counts = new Map<string, number>();
-  for (const patch of patches) for (const [key, count] of patch.counts) counts.set(key, (counts.get(key) ?? 0) + count);
-  return { id: "", lines: 0, counts };
-}
-
-/**
- * Changed lines that a rewrite changed. `before` holds the patches of the
- * rewritten commits of the last reviewed head, and `after` those of the own
- * commits of the new head that no commit of the last reviewed head has.
- *
- * The rewritten commits are pooled. A commit of `after` is a new version of
- * rewritten work when the pool holds at least half of its changed lines; any
- * other commit of `after` is a new commit, which scope growth reads. The count
- * is the larger of the lines the pool holds and no commit of `after` holds,
- * and the lines the new versions hold and the pool does not. So a commit
- * squashed into another moves no line, a reworded commit counts only what its
- * patch changed, and the order of the commits does not change the count.
- */
-export function linesRewritten(before: readonly Patch[], after: readonly Patch[]): number {
-  const old = pooled(before);
-  const versions = after.filter((patch) => 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines);
-  return Math.max(linesNotIn(old, pooled(after)), linesNotIn(pooled(versions), old));
-}
-
 /** The pull request at the new head against the pull request at the last reviewed head. */
 export interface DeltaFacts {
   /** The patch of the pull request has the id it had at the last reviewed head. */
@@ -117,9 +92,12 @@ export interface DeltaFacts {
   /** Changed lines of the patch at the last reviewed head that the patch at the new head no longer holds. */
   removed_lines: number;
   /**
-   * Changed lines that the rewritten commits changed, by `linesRewritten`.
-   * A commit of the last reviewed head is rewritten when no own commit of the new head has its patch.
-   * Their lost lines are read against every new own commit, and their gained lines against the new commits that are mostly their lines.
+   * Changed lines that a rewrite changed: zero when every own commit of the
+   * last reviewed head has a commit of the new head with its patch. Otherwise
+   * the pull request at the last reviewed head is compared with the pull
+   * request at the cut, the last own commit of the new head that is reviewed
+   * work, and the count is the larger of the lines either holds and the other
+   * does not. Own commits after the cut are new commits, which scope growth reads.
    */
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */

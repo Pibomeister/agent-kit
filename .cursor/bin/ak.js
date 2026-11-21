@@ -46129,18 +46129,6 @@ function linesNotIn(patch, other) {
     total += Math.max(0, count - (other.counts.get(key) ?? 0));
   return total;
 }
-function pooled(patches) {
-  const counts = new Map;
-  for (const patch of patches)
-    for (const [key, count] of patch.counts)
-      counts.set(key, (counts.get(key) ?? 0) + count);
-  return { id: "", lines: 0, counts };
-}
-function linesRewritten(before, after) {
-  const old = pooled(before);
-  const versions = after.filter((patch) => 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines);
-  return Math.max(linesNotIn(old, pooled(after)), linesNotIn(pooled(versions), old));
-}
 function changedDigest(value) {
   return value.before === null || value.now === null ? null : value.before !== value.now;
 }
@@ -46239,8 +46227,25 @@ function readHead(repo, base2, head) {
   return headPatch(repo, base2, head).reading;
 }
 function ownCommits(repo, from, head) {
-  const log = git4(repo, ["log", "--reverse", "--no-merges", "--format=%x00", "-p", ...DIFF, `${from}..${head}`]).out;
-  return log.split("\x00").slice(1).map((entry) => readPatch(entry));
+  const log = git4(repo, ["log", "--reverse", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
+  return log.split("\x00").slice(1).map((entry) => {
+    const end = entry.indexOf(`
+`);
+    return { commit: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
+  });
+}
+function linesRewritten(repo, reviewed, now, head) {
+  const older = ownCommits(repo, reviewed.reading.merge_base, reviewed.reading.head);
+  const newer = ownCommits(repo, now.merge_base, head);
+  const kept = new Set(newer.map(({ patch }) => patch.id));
+  if (older.every(({ patch }) => kept.has(patch.id)))
+    return 0;
+  const held = new Set(older.map(({ patch }) => patch.id));
+  const old = reviewed.patch;
+  const work = newer.filter(({ patch }) => held.has(patch.id) || patch.lines > 0 && 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines);
+  const cut = work.at(-1)?.commit;
+  const atCut = readPatch(cut === undefined ? "" : git4(repo, ["diff", ...DIFF, now.merge_base, cut]).out);
+  return Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
 }
 function conflictPaths(repo, base2, previous, head) {
   const merges = git4(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base2}`]).out.split(`
@@ -46265,12 +46270,6 @@ function conflictPaths(repo, base2, previous, head) {
 function readDelta(repo, base2, previous, head) {
   const before = headPatch(repo, base2, previous);
   const now = headPatch(repo, base2, head);
-  const older = ownCommits(repo, before.reading.merge_base, previous);
-  const newer = ownCommits(repo, now.reading.merge_base, head);
-  const kept = new Set(newer.map((patch) => patch.id));
-  const held = new Set(older.map((patch) => patch.id));
-  const rewritten = older.filter((patch) => !kept.has(patch.id));
-  const rewrites = newer.filter((patch) => !held.has(patch.id));
   return {
     now: now.reading,
     previous: before.reading,
@@ -46279,7 +46278,7 @@ function readDelta(repo, base2, previous, head) {
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
-      rewritten_lines: linesRewritten(rewritten, rewrites),
+      rewritten_lines: linesRewritten(repo, before, now.reading, head),
       conflict_paths: conflictPaths(repo, base2, previous, head)
     }
   };
