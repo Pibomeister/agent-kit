@@ -177,12 +177,16 @@ opened more than one, and the binding's own run id when it opened none), current
 record names. `build-checks` and `review-full` may sit on an earlier head in that head's history; a
 `review-full` on an earlier head, or one that requested changes, also needs a `review-delta` at this
 one recorded after it. That history is bounded
-by ancestry alone. For standalone branch-named runs,
-[ADR-0002, Lifecycle fidelity](../../docs/decisions/0002-firstmate-integration.md#lifecycle-fidelity-enforced-in-core-2026-09-24)
-owns the fork-point bound and its failure rules. An opened run's id is unique per run and
+by ancestry alone. The fork-point bound applies only to a standalone run named after its branch (no
+`--run` and no opened run): there, a record whose snapshot is already on the default branch
+(`origin/HEAD`, else `main`, else `master`) does not count unless it is at the head's own revision,
+so a reused branch does not inherit an old run's records. An absent ref, including a dangling
+`origin/HEAD`, allows the next candidate. A spawn error, a Git fatal, or exit 0 without required
+output refuses the check with the failed call's diagnostic. An opened run's id is unique per run and
 the audit names it explicitly, so the audit keeps counting a run's records after the supervisor merges
-it, and `--run` opts a standalone check out of the bound the same way.
-A bound worker opens its run with `--binding`, records and checks against
+it, and `--run` opts a standalone check out of the bound the same way. The bound's known limit on a
+reused branch, and the task-bound run `ak lifecycle open` mints, are described in the header of
+`src/lifecycle/gate.ts`. A bound worker opens its run with `--binding`, records and checks against
 that opened run, and the run record keeps the binding's run id and evidence store, which is where the
 worker's own `check` looks for the binding's grant records. Then every
 grant the run needed must have left a grant record naming this binding by path and by the hash the ledger registered,
