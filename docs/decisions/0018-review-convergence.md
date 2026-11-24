@@ -151,7 +151,9 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   as a whole, never by adding up commits. A commit of the new head is reviewed work when a reviewed
   commit has its patch, or when the pull request at the last reviewed head holds at least half of
   its changed lines. "At least half" is a fixed reading, not a policy value. The cut is the last
-  commit of the new head that is reviewed work, and the pull request is read again at the cut. The
+  commit of the new head that is reviewed work, and the pull request is read again at the cut,
+  from the cut's own merge base with the base branch, so a merge of the base branch after the cut
+  adds no line. The
   count is the larger of two figures: the lines the reviewed pull request holds and the pull
   request at the cut does not, and the reverse. The commits after the cut are new commits, which
   scope growth reads and which add nothing here, whether they add lines or remove them. A new
