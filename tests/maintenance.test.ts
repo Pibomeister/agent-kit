@@ -295,7 +295,11 @@ describe("ak doctor checks", () => {
   });
 
   test("published manifest fetch distinguishes 404 and times out", async () => {
-    const missing = Bun.serve({ port: 0, fetch: () => new Response("missing", { status: 404 }) });
+    const missing = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("missing", { status: 404 }),
+    });
     try {
       const result = await fetchManifest("claude-code", `http://127.0.0.1:${missing.port}`, 500);
       expect(result.failure).toEqual({ reason: "missing", status: 404 });
