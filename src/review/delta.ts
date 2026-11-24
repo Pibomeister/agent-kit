@@ -100,12 +100,12 @@ function ownCommits(repo: string, from: string, head: string): { commit: string;
  * A commit of the new head is reviewed work when a reviewed commit has its
  * patch, or when the pull request at the last reviewed head holds at least
  * half of its changed lines. The pull request is read again at the last such
- * commit, the cut, and compared with the reviewed one as a whole, so a line
- * added and removed again nets to nothing and a squash or a reword moves no
- * line. With no reviewed work at the new head, the pull request at the cut is
- * empty.
+ * commit, the cut, from the cut's own merge base, and compared with the
+ * reviewed one as a whole, so a line added and removed again nets to nothing
+ * and a squash or a reword moves no line. With no reviewed work at the new
+ * head, the pull request at the cut is empty.
  */
-function linesRewritten(repo: string, reviewed: HeadPatch, now: HeadReading, head: string): number {
+function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: HeadReading, head: string): number {
   const older = ownCommits(repo, reviewed.reading.merge_base, reviewed.reading.head);
   const newer = ownCommits(repo, now.merge_base, head);
   const kept = new Set(newer.map(({ patch }) => patch.id));
@@ -116,7 +116,7 @@ function linesRewritten(repo: string, reviewed: HeadPatch, now: HeadReading, hea
     ({ patch }) => held.has(patch.id) || (patch.lines > 0 && 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines),
   );
   const cut = work.at(-1)?.commit;
-  const atCut = readPatch(cut === undefined ? "" : git(repo, ["diff", ...DIFF, now.merge_base, cut]).out);
+  const atCut = cut === undefined ? readPatch("") : headPatch(repo, base, cut).patch;
   return Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
 }
 
@@ -166,7 +166,7 @@ export function readDelta(repo: string, base: string, previous: string, head: st
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
-      rewritten_lines: linesRewritten(repo, before, now.reading, head),
+      rewritten_lines: linesRewritten(repo, base, before, now.reading, head),
       conflict_paths: conflictPaths(repo, base, previous, head),
     },
   };

@@ -382,6 +382,35 @@ describe("ak review scope: what is not a trigger", () => {
       { pr_lines: 80, rewritten_lines: 1, outcome: "closure", triggers: [] },
     ],
     [
+      "a commit amended with one line replaced, then a merge of a base branch that moved elsewhere",
+      (f) => {
+        f.round(f.head);
+        f.write({ "src/b.ts": lines("b", 10) + lines("second", 19) + lines("other", 1) });
+        f.git("add", "-A");
+        f.git("commit", "--amend", "--no-edit");
+        f.git("checkout", "main");
+        f.commit({ "src/main.ts": lines("m", 10) + lines("moved", 20) }, "main moves");
+        f.git("checkout", "pr");
+        f.git("merge", "--no-ff", "-m", "merge main", "main");
+        return tip(f);
+      },
+      // second19 left and other0 came in: 1 of 50. Reading the cut against the merged base would add moved0..moved19: 21, 42%.
+      { pr_lines: 50, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
+    [
+      "a rebase onto a base branch that moved, with no change to the patches",
+      (f) => {
+        f.round(f.head);
+        f.git("checkout", "main");
+        f.commit({ "src/main.ts": lines("m", 10) + lines("moved", 20) }, "main moves");
+        f.git("checkout", "pr");
+        f.git("rebase", "main");
+        return tip(f);
+      },
+      // Both commits keep their patch: nothing is rewritten.
+      { pr_lines: 50, rewritten_lines: 0, outcome: "carry", triggers: [] },
+    ],
+    [
       "a 30-line commit amended with one line replaced, then a new commit removing 12 of its lines",
       (f) => {
         f.round(f.head);

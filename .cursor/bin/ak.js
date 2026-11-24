@@ -46234,7 +46234,7 @@ function ownCommits(repo, from, head) {
     return { commit: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
   });
 }
-function linesRewritten(repo, reviewed, now, head) {
+function linesRewritten(repo, base2, reviewed, now, head) {
   const older = ownCommits(repo, reviewed.reading.merge_base, reviewed.reading.head);
   const newer = ownCommits(repo, now.merge_base, head);
   const kept = new Set(newer.map(({ patch }) => patch.id));
@@ -46244,7 +46244,7 @@ function linesRewritten(repo, reviewed, now, head) {
   const old = reviewed.patch;
   const work = newer.filter(({ patch }) => held.has(patch.id) || patch.lines > 0 && 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines);
   const cut = work.at(-1)?.commit;
-  const atCut = readPatch(cut === undefined ? "" : git4(repo, ["diff", ...DIFF, now.merge_base, cut]).out);
+  const atCut = cut === undefined ? readPatch("") : headPatch(repo, base2, cut).patch;
   return Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
 }
 function conflictPaths(repo, base2, previous, head) {
@@ -46278,7 +46278,7 @@ function readDelta(repo, base2, previous, head) {
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
-      rewritten_lines: linesRewritten(repo, before, now.reading, head),
+      rewritten_lines: linesRewritten(repo, base2, before, now.reading, head),
       conflict_paths: conflictPaths(repo, base2, previous, head)
     }
   };
