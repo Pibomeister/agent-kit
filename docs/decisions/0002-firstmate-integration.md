@@ -330,12 +330,17 @@ The first follow-up above is closed this way:
   Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
   after CRLF-to-LF only and compares every byte from the start of the file through
   the line before the first `## Hard gates` line to a golden copy of origin/main
-  e6d4dfc6. `## Hard gates` is the sentinel. A later line whose normalized text is
-  exactly `workflow` is refused, including inside fences, block quotes and list
-  items, whether or not it renders as a heading. `- Workflow notes` and prose that
-  mentions workflow stay green. Variant headings and other free text after Hard
-  gates are not detected and are left to review. Editing anything above Hard gates
-  needs a golden update in review.
+  e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, HTML comments
+  `<!-- ... -->` are removed. Each later line is decoded for `&#DDD;`, `&#xHH;`,
+  `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&apos;`. Unicode Cf characters are
+  stripped. HTML tags, `*` `**` `_` `__` emphasis, backtick code, and
+  `[text](url)` / `[text][ref]` / `[text]` wrappers are stripped. Then leading
+  whitespace, `>`, list markers `[-*+]|\d{1,9}[.)]`, ATX `#{1,6}`, and trailing
+  `[ \t]+#+` are stripped, and the remainder is casefolded. Equality with
+  `workflow` is refused, including inside fences, block quotes and list items.
+  `- Workflow notes` and prose that mentions workflow stay green. Free-text
+  protocol changes under other headings are left to review. Editing anything
+  above Hard gates needs a golden update in review.
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the

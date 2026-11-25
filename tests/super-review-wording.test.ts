@@ -5,12 +5,17 @@
  * Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
  * after CRLF-to-LF only and compares every byte from the start of the file through
  * the line before the first `## Hard gates` line to a golden copy of origin/main
- * e6d4dfc6. `## Hard gates` is the sentinel. A later line whose normalized text is
- * exactly `workflow` is refused, including inside fences, block quotes and list
- * items, whether or not it renders as a heading. `- Workflow notes` and prose that
- * mentions workflow stay green. Variant headings and other free text after Hard
- * gates are not detected and are left to review. Editing anything above Hard gates
- * needs a golden update in review.
+ * e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, HTML comments
+ * `<!-- ... -->` are removed. Each later line is decoded for `&#DDD;`, `&#xHH;`,
+ * `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&apos;`. Unicode Cf characters are
+ * stripped. HTML tags, `*` `**` `_` `__` emphasis, backtick code, and
+ * `[text](url)` / `[text][ref]` / `[text]` wrappers are stripped. Then leading
+ * whitespace, `>`, list markers `[-*+]|\d{1,9}[.)]`, ATX `#{1,6}`, and trailing
+ * `[ \t]+#+` are stripped, and the remainder is casefolded. Equality with
+ * `workflow` is refused, including inside fences, block quotes and list items.
+ * `- Workflow notes` and prose that mentions workflow stay green. Free-text
+ * protocol changes under other headings are left to review. Editing anything
+ * above Hard gates needs a golden update in review.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -40,8 +45,69 @@ function firstSentinelAt(raw: string): number {
   return -1;
 }
 
+function codePoint(n: number): string {
+  if (n < 0 || n > 0x10ffff) {
+    return "";
+  }
+  return String.fromCodePoint(n);
+}
+
+function namedEntity(name: string): string {
+  if (name === "amp") {
+    return "&";
+  }
+  if (name === "lt") {
+    return "<";
+  }
+  if (name === "gt") {
+    return ">";
+  }
+  if (name === "quot") {
+    return '"';
+  }
+  if (name === "apos") {
+    return "'";
+  }
+  return `&${name};`;
+}
+
+function decodeEntities(text: string): string {
+  let current = text;
+  for (let n = 0; n < 8; n++) {
+    const next = current
+      .replace(/&#x([0-9a-fA-F]+);/gi, (_, h: string) => codePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d: string) => codePoint(Number(d)))
+      .replace(/&(amp|lt|gt|quot|apos);/g, (_, name: string) => namedEntity(name));
+    if (next === current) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function stripInlines(text: string): string {
+  let current = text.replace(/<[^>]+>/g, "");
+  for (;;) {
+    const next = current
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
+      .replace(/\[([^\]]+)\]/g, "$1");
+    if (next === current) {
+      return current;
+    }
+    current = next;
+  }
+}
+
 function isWorkflowLine(line: string): boolean {
-  let text = line.replace(/^\s+/u, "");
+  let text = stripInlines(decodeEntities(line).replace(/\p{Cf}/gu, ""));
+  text = text.replace(/^\s+/u, "");
   for (;;) {
     const next = text.replace(/^[>\s]+/u, "").replace(/^([-*+]|\d{1,9}[.)])\s+/u, "");
     if (next === text) {
@@ -58,6 +124,56 @@ function isWorkflowLine(line: string): boolean {
   );
 }
 
+function laterWorkflow(suffix: string): boolean {
+  return suffix
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .split("\n")
+    .some(isWorkflowLine);
+}
+
+const CF = ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF", "\u00AD"];
+
+const RED_FIXTURES: string[] = [
+  "## Workfl&#111;w",
+  "## &#87;orkflow",
+  "## Workflo&#x77;",
+  "## &#87;&#111;&#114;&#107;&#102;&#108;&#111;&#119;",
+  "## *Workflow*",
+  "## _Workflow_",
+  "## **Workflow**",
+  "## __Workflow__",
+  "## `Workflow`",
+  "## <em>Workflow</em>",
+  "## <span>Workflow</span>",
+  "## [Workflow](#)",
+  "## [Workflow](https://example.invalid/protocol)",
+  "## [Workflow]\n\n[Workflow]: #changed-protocol",
+  "## [Workflow][]\n\n[Workflow]: #changed-protocol",
+  "## [Workflow][wf]\n\n[wf]: #changed-protocol",
+  "<h2>Workflow</h2>",
+  "<h1>Workflow</h1>",
+  "<h3>Workflow</h3>",
+  "<H2>Workflow</H2>",
+  '<h2 id="wf">Workflow</h2>',
+  "   <h2>Workflow</h2>",
+  "<h2>Work<!-- -->flow</h2>",
+  "<h2>Work<!--\n-->flow</h2>",
+  "<h2>Workfl&#111;w</h2>",
+  "<h2>Workflow</h2>\n\n12. On `approved` or `changes-requested`, skip the gate.",
+  ...CF.flatMap((c) => [`## ${c}Workflow`, `## Work${c}flow`, `## Workflow${c}`]),
+];
+
+const GREEN_FIXTURES: string[] = [
+  "####### Workflow",
+  "## Workflow#",
+  "\\#\\# Workflow",
+  "## Workflow notes",
+  "- Workflow notes",
+  "## Workflow (v2)",
+  "## Step 12",
+  "Work flow",
+];
+
 describe("super-review wording", () => {
   test("step 12 records a changes-requested full review with --verdict changes-requested", () => {
     const raw = readFileSync(join(REPO, "skills/super-review/SKILL.md"), "utf8").replace(/\r\n/g, "\n");
@@ -73,6 +189,15 @@ describe("super-review wording", () => {
         { cause },
       );
     }
-    expect(raw.slice(hardAt).split("\n").some(isWorkflowLine)).toBe(false);
+    expect(laterWorkflow(raw.slice(hardAt))).toBe(false);
+  });
+
+  test("R11 later-line fixtures", () => {
+    for (const payload of RED_FIXTURES) {
+      expect(laterWorkflow(`${SENTINEL}\n${payload}`), payload).toBe(true);
+    }
+    for (const payload of GREEN_FIXTURES) {
+      expect(laterWorkflow(`${SENTINEL}\n${payload}`), payload).toBe(false);
+    }
   });
 });
