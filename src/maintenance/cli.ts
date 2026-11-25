@@ -25,6 +25,7 @@ import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
 import { runRunner } from "../runner/cli.ts";
 import { runCouncil } from "../council/cli.ts";
+import { runReview } from "../review/cli.ts";
 import { readKeyFile } from "../semantic-lint/key.ts";
 import pin from "../../provenance/semantic-lint.json" with { type: "json" };
 import { hookMain } from "../../tools/hooks/semantic-lint.ts";
@@ -793,6 +794,10 @@ if (import.meta.main) {
     // The standalone council (ADR-0015) travels here too: an install with no checkout runs it.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     process.exitCode = await runCouncil(flags, io);
+  } else if (action === "review") {
+    // The convergence ledger and its verdict (ADR-0018) travel here too: a review protocol calls them from an install with no checkout.
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    process.exitCode = runReview(flags, io);
   } else if (action === "semantic-lint" && flags[0] === "hook" && (await hookMain(flags.slice(1))) === 0) {
     // The plugin's Stop hook: hookMain printed the host output.
   } else if (doctorArgs !== null) process.exitCode = await doctor(doctorArgs.json, doctorArgs.lessons);
@@ -814,7 +819,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]",
+      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak review ledger add|show … | ak review decide … | ak semantic-lint hook [--host codex]",
     );
     process.exitCode = 2;
   }
