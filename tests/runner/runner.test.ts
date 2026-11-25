@@ -3978,7 +3978,7 @@ describe("runner guards", () => {
 
   test("a refused auditTick after a successful probe goes guided at clock 0", async () => {
     const f = procedureKit();
-    withAuditCadence(f, undefined, 300);
+    withAuditCadence(f, 30, 300);
     f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
     f.runner.registerDelegate("toy-run", "owner-1", 3_600);
     const stamp = join(f.privateDir, "loop-stamp");
@@ -4014,6 +4014,7 @@ describe("runner guards", () => {
         mode: "guided",
         missing: ["audit-failed"],
       });
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBe(0);
       const probes = readFileSync(stamp, "utf8").length;
       await Bun.sleep(1_500);
       expect(readFileSync(stamp, "utf8").length).toBe(probes);
