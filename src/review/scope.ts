@@ -129,8 +129,10 @@ export function linesNotIn(patch: Patch, other: Patch): number {
 export interface DeltaFacts {
   /**
    * The pull request at the new head has the same path, mode and blob as it
-   * had at the last reviewed head, and every new non-merge commit is empty or
-   * matches a reviewed own-commit patch or the reviewed pull request. The
+   * had at the last reviewed head, every new non-merge commit is empty or
+   * matches a reviewed own-commit patch or the reviewed pull request, and
+   * inspectMerges.novel_merge is false. A two-parent merge whose recorded tree
+   * is not the isolated merge-tree of its parents is not empty. The
    * changed-line patch id of the whole pull request is not this test.
    */
   empty: boolean;
@@ -158,8 +160,10 @@ export interface DeltaFacts {
   path_identity: readonly string[];
   /**
    * Paths `git diff --name-only previous..head` names when the result trees
-   * differ. A closure round reads this list. A move that keeps the patch id
-   * still has a path. Empty when the result trees match.
+   * differ. When they match and empty is false only because of a novel merge
+   * or a novel non-merge, the paths of those commits: merge versus its
+   * isolated merge-tree, commit versus parent. A closure round reads this
+   * list. A move that keeps the patch id still has a path.
    */
   changed_paths: readonly string[];
 }

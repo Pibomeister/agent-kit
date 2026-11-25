@@ -95,12 +95,15 @@ next review covers.
 
     A fix commit, a reached cap and a rebase that leaves the blobs unchanged open nothing.
 14. **An unchanged tree calls no seat only when ancestry is also reviewed work.** When every path
-    of the pull request has the same mode and blob it had at the last reviewed head, and every
+    of the pull request has the same mode and blob it had at the last reviewed head, every
     non-merge commit in `previous..head` excluding `base` is empty or has the patch of a reviewed
-    own commit or of the reviewed pull request, the outcome is `carry` and the earlier verdict
-    covers the new head. A novel own commit is `closure` or a new scope. The changed-line patch
-    id is only for rewritten-commit matching. Content that arrives only through the base branch is
-    trusted base movement. The base branch, like the ledger, must sit outside author write.
+    own commit or of the reviewed pull request, and `inspectMerges.novel_merge` is false, the
+    outcome is `carry` and the earlier verdict covers the new head. A two-parent merge whose
+    recorded tree is not the isolated merge-tree of its parents is not empty. A novel own commit
+    is `closure` or a new scope. The changed-line patch id is only for rewritten-commit matching.
+    Content that arrives only through the base branch is trusted base movement. A rebase that
+    changes no blob and a merge of the base branch with no conflict still have to pass that test.
+    The base branch, like the ledger, must sit outside author write.
 
 `DEFAULT_POLICY` in `src/review/types.ts` holds the cap, the scope count, the always-block
 categories, the blocking severities and the trigger thresholds. The tools compare these values and
@@ -227,7 +230,8 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   later empty head cannot empty the delta. Carry also requires that every non-merge commit in
   `previous..head` excluding `base` is empty or matches a reviewed own-commit patch or the
   reviewed pull request patch. An octopus
-  merge is a large-rebase even when its tree equals the first parent. The base branch, like the
-  ledger, must sit outside author write.
+  merge is a large-rebase even when its tree equals the first parent. A head that shares no commit
+  with `--base` is refused, so an ours merge of unrelated histories does not carry. The base
+  branch, like the ledger, must sit outside author write.
 - The mutation check in `tests/review/mutation.test.ts` breaks each rule once and expects a red
   test. A rule added to the engine needs a mutant there.

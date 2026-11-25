@@ -305,7 +305,11 @@ function isolationArgs(project: string): string[] {
   ];
 }
 
-/** Isolated git argv: worker-owned config is ignored, including the commit graph. */
+/**
+ * Isolated git argv: worker-owned config is ignored. `-c core.commitGraph=false`
+ * here is defense in depth. The pin is `GIT_CONFIG_KEY_0=core.commitGraph` in
+ * `isolatedGitEnv`.
+ */
 export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
   return [...isolationArgs(project), ...args];
 }

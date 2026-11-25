@@ -12,13 +12,14 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
 import validProject from "../fixtures/delegation/valid.project.json" with { type: "json" };
 import validTicket from "../fixtures/delegation/valid.ticket.json" with { type: "json" };
 import { runCli } from "../../src/cli.ts";
 import { runReview } from "../../src/review/cli.ts";
 import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
+import * as snapshot from "../../src/runner/snapshot.ts";
 import { parseJson, type JsonValue } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
@@ -584,7 +585,9 @@ describe("ak review scope: later-round tree identity", () => {
     f.git("checkout", "pr");
     f.git("merge", "-s", "ours", "--no-ff", "-m", "ours hides dirty parent", dirty);
     const H = f.git("rev-parse", "HEAD");
-    expect(f.record(H)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    const scoped = f.record(H);
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false, changed_paths: ["src/evil.ts"] } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
     expect(f.decide(H).code).toBe(1);
   });
 
@@ -617,7 +620,9 @@ describe("ak review scope: later-round tree identity", () => {
     const tree = f.git("rev-parse", `${reviewed}^{tree}`);
     const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
     f.git("reset", "--hard", restored);
-    expect(f.record(restored)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    const scoped = f.record(restored);
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false, changed_paths: ["src/evil.ts"] } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
     expect(f.decide(restored).code).toBe(1);
   });
 
@@ -637,7 +642,9 @@ describe("ak review scope: later-round tree identity", () => {
     const tree = f.git("rev-parse", `${reviewed}^{tree}`);
     const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", side, "-m", "ours back to reviewed");
     f.git("reset", "--hard", restored);
-    expect(f.record(restored)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    const scoped = f.record(restored);
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false, changed_paths: ["src/evil.ts"] } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
     expect(f.decide(restored).code).toBe(1);
   });
 
@@ -665,8 +672,91 @@ describe("ak review scope: later-round tree identity", () => {
     const tree = f.git("rev-parse", `${reviewed}^{tree}`);
     const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
     f.git("reset", "--hard", restored);
-    expect(f.record(restored)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    const scoped = f.record(restored);
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false, changed_paths: ["src/empty.ts"] } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
     expect(f.decide(restored).code).toBe(1);
+  });
+
+  test("NATURAL-DIRTY-MERGE-THEN-OURS-BACK: a natural dirty merge then ours back does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.git("checkout", "-b", "evil", reviewed);
+    f.commit({ "src/evil.ts": "pwned\n" }, "dirty");
+    f.git("checkout", "pr");
+    f.git("merge", "--no-ff", "-m", "natural dirty merge", "evil");
+    const dirtyMerge = f.git("rev-parse", "HEAD");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false, changed_paths: ["src/evil.ts"] } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
+    expect(f.decide(restored).code).toBe(1);
+  });
+
+  test("RC-OURS-MERGE-EMPTY-FILE-ON-MAIN: ours merge after main adds an empty file lists the path", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "main");
+    f.commit({ "src/empty.ts": "" }, "empty on main");
+    f.git("checkout", "pr");
+    f.git("merge", "-s", "ours", "--no-ff", "-m", "ours main empty", "main");
+    const H = f.git("rev-parse", "HEAD");
+    expect(f.record(H)).toMatchObject({
+      outcome: "closure",
+      delta: { empty: false, added_lines: 1, changed_paths: ["src/empty.ts"] },
+    });
+    expect(f.decide(H).code).toBe(1);
+  });
+
+  test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
+    const f = fixture();
+    f.round(f.head);
+    const pin = f.git("rev-parse", "main");
+    f.write({
+      ".gitmodules": '[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = ./vendor/lib\n\tignore = all\n',
+    });
+    f.git("add", ".gitmodules");
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`);
+    f.git("commit", "-m", "add gitlink ignore=all");
+    const added = f.git("rev-parse", "HEAD");
+    const scoped = f.record(added);
+    const delta = member(scoped, "delta");
+    const paths = member(delta, "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("vendor/lib");
+    expect(scoped).toMatchObject({ outcome: "new-scope", delta: { empty: false } });
+  });
+
+  test("MERGE-TREE-SPAWN-FAIL: merge-tree code -1 refuses a merge-only dirty history, it does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/evil.ts": "pwned\n" });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty merge only");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
+    f.git("reset", "--hard", restored);
+    const real = snapshot.gitProcess;
+    const spy = spyOn(snapshot, "gitProcess").mockImplementation((context, project, args, ...rest) => {
+      if (args.includes("merge-tree")) {
+        return { code: -1, stdout: new Uint8Array(), text: "", stderr: "runner git timed out after 10 seconds" };
+      }
+      return real(context, project, args, ...rest);
+    });
+    try {
+      const run = f.scope(restored, "--previous", f.reviewed().path);
+      expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+      expect(run.err.join("\n")).toContain("merge-tree");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("MOVE-HUNK: moving the same lines inside a file is a non-empty closure with that path", () => {
@@ -682,7 +772,7 @@ describe("ak review scope: later-round tree identity", () => {
     });
   });
 
-  test("RC-COMMITGRAPH-ARGV: delta git argv disables the commit graph", () => {
+  test("RC-COMMITGRAPH-ARGV: argv also disables the commit graph as defense in depth of the env pin", () => {
     const f = fixture();
     const argv = isolatedGitArgv(f.root, ["-c", "core.quotePath=false", "rev-parse", "HEAD"]);
     expect(argv).toContain("core.commitGraph=false");
@@ -755,6 +845,19 @@ describe("ak review scope: what is not a trigger", () => {
       triggers: [],
       delta: { empty: true, conflict_paths: [] },
       event: { kind: "carry", head: merged },
+    });
+  });
+
+  test("an empty commit after review carries", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("commit", "--allow-empty", "-m", "empty");
+    const empty = f.git("rev-parse", "HEAD");
+    expect(f.record(empty)).toMatchObject({
+      outcome: "carry",
+      triggers: [],
+      delta: { empty: true, added_lines: 0, changed_paths: [] },
+      event: { kind: "carry", head: empty },
     });
   });
 
