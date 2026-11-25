@@ -1,16 +1,14 @@
 /**
- * Dated evidence files are pinned by sha256 of the raw bytes. Living-doc pins
- * are whole expected lines. After CRLF folds to LF, locatedLine counts
- * trimmed lines equal to expected and lines that contain the locator. Both
- * counts must be 1. A fenced, HTML-comment, or block-comment copy of the
- * expected line plus a changed live line that still contains the locator is
- * two locator lines, and that is red. A second mention of a locator in a
- * pinned file is forbidden. The fix for a new honest mention is to update
- * the pin. Rewrapping a pinned line is in scope and turns red. The lock is
- * YAML. One loader walks donors, rejects duplicate ids, coerces a Date
- * commit_date, and asserts the egm commit, commit_date, license, copyright,
- * license_file, path, url, and repo. Duplicate-id rejection lives in this
- * test, not in loadDonors. Free-text claims elsewhere are review's job.
+ * Provenance-only files are pinned by sha256 of the raw bytes. Mixed files wrap
+ * claims in begin/end markers that must appear once, outside any code fence;
+ * the test hashes the block after CRLF folds to LF. A fenced copy cannot
+ * satisfy a pin. A split rewrite of the live block changes the hash. Overlay
+ * copies must equal source bytes. The lock is YAML. One loader walks donors,
+ * rejects duplicate ids, coerces a Date commit_date, and asserts the egm
+ * commit, commit_date, license, copyright, license_file, path, url, and repo.
+ * Duplicate-id rejection lives in this test, not in loadDonors. Every egm
+ * adaptation source commit must equal the lock pin. Free-text claims
+ * elsewhere are review's job.
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
@@ -19,6 +17,7 @@ import { join, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse, stringify } from "yaml";
 
+import { loadCatalog } from "../src/catalog/load.ts";
 import { DENY_TERMS, matchTerms } from "../src/denylist.ts";
 import { loadAdaptationFragments, loadDonors, parseDonorSource } from "../src/validation/provenance.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -33,11 +32,6 @@ const EGM_URL = "https://github.com/google/elephant-goldfish-model";
 const EGM_PATH = ".donors/google_elephant-goldfish-model";
 const LOCK = "provenance/upstream.lock.yaml";
 const GAP_PROBE = "research/host-facts/2026-11-18/GAP-PROBE.md";
-const GAP_PROBE_SHA256 = "73f79b67e12b388b09b482959faaf83c4370f664d6476f4eec321cd830e322ca";
-const CLAUDE_ISOLATION_ROW =
-  "| `isolated-review-context` | `partial` | The host provides fresh-context subagents. It provides no attestation that a reviewer context never saw the author's narrative, so the package cannot verify the property it depends on. GS-004e live Claude Code and Codex arms did not run (GAP-PROBE, `research/host-facts/2026-11-18/GAP-PROBE.md`). That coverage limit is not a pass |";
-const CURSOR_ISOLATION_ROW =
-  "| `isolated-review-context` | `partial` | Docs only, not session-tested. Custom subagents have their own context window and start clean ([subagents](https://cursor.com/docs/subagents)). The parent includes whatever it puts in the task prompt. The host does not attest that a reviewer never saw the author's narrative. Upgrade when a Cloud Agent reviewer subagent whose prompt omitted the author's narrative cannot read the parent transcript |";
 const MIT_CATALOG_IDS = [
   "compound-engineering",
   "superpowers",
@@ -60,274 +54,81 @@ const CATALOG_PREFIXES = [
   "adapters/",
 ] as const;
 
-type LinePin = { file: string; locator: string; expected: string };
-
-const EVIDENCE_HASHES: Array<{ file: string; sha256: string }> = [{ file: GAP_PROBE, sha256: GAP_PROBE_SHA256 }];
-
-const LINE_PINS: LinePin[] = [
-  {
-    file: "adapters/claude-code/CONTRACT.md",
-    locator: "| `isolated-review-context` |",
-    expected: CLAUDE_ISOLATION_ROW,
-  },
-  {
-    file: ".cursor/references/shared/adapters/claude-code/CONTRACT.md",
-    locator: "| `isolated-review-context` |",
-    expected: CLAUDE_ISOLATION_ROW,
-  },
-  {
-    file: "adapters/cursor/CONTRACT.md",
-    locator: "| `isolated-review-context` |",
-    expected: CURSOR_ISOLATION_ROW,
-  },
-  {
-    file: "src/review-isolation-probe/hosts.ts",
-    locator: " * GAP-PROBE:",
-    expected: " * GAP-PROBE: the GS-004e Claude Code and Codex live probe arms did not run.",
-  },
-  {
-    file: "src/review-isolation-probe/hosts.ts",
-    locator: " * They need a host login nobody granted. Recorded, not a pass.",
-    expected: " * They need a host login nobody granted. Recorded, not a pass. Do not copy,",
-  },
-  {
-    file: "src/review-isolation-probe/hosts.ts",
-    locator: " * read, or use any credential.",
-    expected: " * read, or use any credential. See research/host-facts/2026-11-18/GAP-PROBE.md.",
-  },
-  {
-    file: "README.md",
-    locator: "`google/elephant-goldfish-model` (Apache-2.0",
-    expected:
-      "`google/elephant-goldfish-model` (Apache-2.0, Google LLC, pinned at its 2026-10-30 commit) is the second",
-  },
-  {
-    file: "README.md",
-    locator: "Apache-2.0 catalog donor. It feeds the comprehension seat",
-    expected: "Apache-2.0 catalog donor. It feeds the comprehension seat, the ticket cold read, and the",
-  },
-  {
-    file: "README.md",
-    locator: "review-isolation probe. It ships no NOTICE file.",
-    expected: "review-isolation probe. It ships no NOTICE file. The licence text is in `provenance/licenses/`,",
-  },
-  {
-    file: "README.md",
-    locator: "the root `NOTICE` carries an attribution entry",
-    expected: "the root `NOTICE` carries an attribution entry, and each adapted file records what was changed.",
-  },
-  {
-    file: "README.md",
-    locator: "See `research/dossiers/egm.md`.",
-    expected: "See `research/dossiers/egm.md`.",
-  },
+const FILE_HASHES: Array<{ file: string; sha256: string }> = [
+  { file: "NOTICE", sha256: "4e3959890e74c13743d11acd92fa4bf9fa2fcde378896d4f042e2e48a0f64f19" },
+  { file: GAP_PROBE, sha256: "73f79b67e12b388b09b482959faaf83c4370f664d6476f4eec321cd830e322ca" },
   {
     file: "research/dossiers/egm.md",
-    locator: "| Commit |",
-    expected: `| Commit | \`${EGM_COMMIT}\`, committed ${EGM_COMMIT_DATE} |`,
+    sha256: "77af72c4a42a0fd5867a30aa0d5aa7306c081fc5e692d2f9d5cad148fec69df9",
   },
   {
-    file: "research/dossiers/egm.md",
-    locator: "| License |",
-    expected: `| License | Apache-2.0. \`egm@${EGM_COMMIT}:LICENSE\`. Byte-identical to \`provenance/licenses/google_elephant-goldfish-model.LICENSE\`. Copyright 2026 Google LLC |`,
-  },
-  {
-    file: "research/dossiers/egm.md",
-    locator: "cold read. Count those files with the catalog donors",
-    expected: "cold read. Count those files with the catalog donors, not with the",
-  },
-  {
-    file: "research/dossiers/egm.md",
-    locator: "research-only pins (`tester-army-e2e`",
-    expected: "research-only pins (`tester-army-e2e`, `blocks`).",
-  },
-  {
-    file: "src/review-isolation-probe/children.ts",
-    locator: " * Adapted from EGM",
-    expected: " * Adapted from EGM tests/integration/test_claude.py and test_codex.py at",
-  },
-  {
-    file: "src/review-isolation-probe/children.ts",
-    locator: ` * elephant-goldfish-model@${EGM_COMMIT}.`,
-    expected: ` * elephant-goldfish-model@${EGM_COMMIT}.`,
-  },
-  {
-    file: "NOTICE",
-    locator: "The installable catalog adapts material from",
-    expected: "The installable catalog adapts material from twelve catalog donors: ten under",
-  },
-  {
-    file: "NOTICE",
-    locator: "the MIT License and two under the Apache License 2.0 (claude-mem and",
-    expected: "the MIT License and two under the Apache License 2.0 (claude-mem and",
-  },
-  {
-    file: "NOTICE",
-    locator: "google/elephant-goldfish-model). Each adapted",
-    expected: "google/elephant-goldfish-model). Each adapted",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/BayramAnnakov_claude-reflect.LICENSE",
-    expected: "provenance/licenses/BayramAnnakov_claude-reflect.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/BuilderIO_skills.LICENSE",
-    expected: "provenance/licenses/BuilderIO_skills.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE",
-    expected: "provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE",
-    expected: "provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE",
-    expected: "provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/addyosmani_agent-skills.LICENSE",
-    expected: "provenance/licenses/addyosmani_agent-skills.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/cursor_plugins.LICENSE",
-    expected: "provenance/licenses/cursor_plugins.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/google_elephant-goldfish-model.LICENSE",
-    expected: "provenance/licenses/google_elephant-goldfish-model.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/mattpocock_skills.LICENSE",
-    expected: "provenance/licenses/mattpocock_skills.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/mizchi_jev-lint.LICENSE",
-    expected: "provenance/licenses/mizchi_jev-lint.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/obra_superpowers.LICENSE",
-    expected: "provenance/licenses/obra_superpowers.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/thedotmack_claude-mem.LICENSE",
-    expected: "provenance/licenses/thedotmack_claude-mem.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/thedotmack_claude-mem.NOTICE",
-    expected: "provenance/licenses/thedotmack_claude-mem.NOTICE",
-  },
-  {
-    file: "NOTICE",
-    locator: "provenance/licenses/warpdotdev_common-skills.LICENSE",
-    expected: "provenance/licenses/warpdotdev_common-skills.LICENSE",
-  },
-  {
-    file: "NOTICE",
-    locator: "- elephant-goldfish-model —",
-    expected: "- elephant-goldfish-model — Copyright 2026 Google LLC — Apache License 2.0",
-  },
-  {
-    file: "NOTICE",
-    locator: "  https://github.com/google/elephant-goldfish-model @",
-    expected: `  https://github.com/google/elephant-goldfish-model @ ${EGM_COMMIT}`,
-  },
-  {
-    file: "NOTICE",
-    locator: "  The files adapted from elephant-goldfish-model were modified;",
-    expected: "  The files adapted from elephant-goldfish-model were modified;",
-  },
-  {
-    file: "NOTICE",
-    locator: "  provenance/adaptations.yaml states the change for each.",
-    expected: "  provenance/adaptations.yaml states the change for each. The license text is",
-  },
-  {
-    file: "NOTICE",
-    locator: "  provenance/licenses/google_elephant-goldfish-model.LICENSE. EGM ships no",
-    expected: "  provenance/licenses/google_elephant-goldfish-model.LICENSE. EGM ships no",
-  },
-  {
-    file: "NOTICE",
-    locator: "  NOTICE file, so nothing is quoted here.",
-    expected: "  NOTICE file, so nothing is quoted here.",
-  },
-  {
-    file: "AGENTS.md",
-    locator: "twelve donors —",
-    expected: "twelve donors — ten MIT, two Apache-2.0 (claude-mem, which feeds only the opt-in learning runtime,",
-  },
-  {
-    file: "AGENTS.md",
-    locator: "and google/elephant-goldfish-model",
-    expected:
-      "and google/elephant-goldfish-model (Google LLC), which feeds the comprehension seat, the ticket cold read, and",
-  },
-  {
-    file: "AGENTS.md",
-    locator: "the review-isolation probe) — into *one* lifecycle",
-    expected: "the review-isolation probe) — into *one* lifecycle rather than shipping four plugins that fight",
-  },
-  {
-    file: "AGENTS.md",
-    locator: "over activation descriptions.",
-    expected: "over activation descriptions.",
+    file: "provenance/adaptations.d/comprehension-seat.yaml",
+    sha256: "478be32d48f0c566370b3f8af8d6f196330e6811e3b615aa0c7abd1b8a1608f0",
   },
 ];
 
-function allLinePins(): LinePin[] {
-  const extra: LinePin[] = [];
-  for (const pin of LINE_PINS) {
-    if (pin.file === "NOTICE") {
-      extra.push({ file: ".cursor/licenses/NOTICE", locator: pin.locator, expected: pin.expected });
-    }
-  }
-  extra.push(
-    {
-      file: "README.md",
-      locator: "twelve donors (ten MIT-licensed, two Apache-2.0)",
-      expected:
-        "One engineering lifecycle, amalgamated from twelve donors (ten MIT-licensed, two Apache-2.0) into a single installable",
-    },
-    {
-      file: "catalog.yaml",
-      locator: "twelve donors: ten MIT, two Apache-2.0",
-      expected: '  description: "One engineering lifecycle, amalgamated from twelve donors: ten MIT, two Apache-2.0."',
-    },
-    {
-      file: ".cursor/catalog.yaml",
-      locator: "twelve donors: ten MIT, two Apache-2.0",
-      expected: '  description: "One engineering lifecycle, amalgamated from twelve donors: ten MIT, two Apache-2.0."',
-    },
-    {
-      file: "package.json",
-      locator: "twelve donors (ten MIT, two Apache-2.0)",
-      expected:
-        '  "description": "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.",',
-    },
-    {
-      file: ".claude-plugin/marketplace.json",
-      locator: "twelve donors (ten MIT, two Apache-2.0)",
-      expected:
-        '    "description": "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0), installable under /ak:."',
-    },
-  );
-  return [...LINE_PINS, ...extra];
-}
+const LOCK_ENTRY_SHA256 = "1f48385ba3ca27a065fa1448af81d6b8aa5cd05dc545d3d76ab605fbbd03da77";
+const FINGERPRINT_DESC_SHA256 = "7df2fe33f96517c13e3756bdb727912f1f9d7a1a8bc61fdcda8fdb7f737581ff";
+
+type BlockPin = { file: string; begin: string; end: string; sha256: string };
+
+const BLOCK_PINS: BlockPin[] = [
+  {
+    file: "README.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "088c4feef4d2b12e01ffdf6c0c528768ac4b3a549945f80009370527e2bc496d",
+  },
+  {
+    file: "adapters/claude-code/CONTRACT.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "0387535cb2bf969fa90bc7f41ce1f1921e3bd31d120342d27bc2fa956c54c0d8",
+  },
+  {
+    file: "src/review-isolation-probe/hosts.ts",
+    begin: " * ak-egm-begin",
+    end: " * ak-egm-end",
+    sha256: "08e49b8642e290b9c010414ad3bbaa068c8b34d97a9d83b984cae47f0a069d3c",
+  },
+  {
+    file: "roles/doc-review/comprehension/ROLE.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "0c78637607160ea80eee311aa7866905b2cbcc3bf7b955cdfd215cdc1ccd6fed",
+  },
+  {
+    file: "policies/resolved-conflicts.yaml",
+    begin: "# ak-egm-begin",
+    end: "# ak-egm-end",
+    sha256: "4e80885494d7da2683f47f94b4ff4451d71c3097205cddb19e897886d87f19d0",
+  },
+  {
+    file: ".cursor/references/shared/adapters/claude-code/CONTRACT.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "0387535cb2bf969fa90bc7f41ce1f1921e3bd31d120342d27bc2fa956c54c0d8",
+  },
+  {
+    file: ".cursor/references/shared/roles/doc-review/comprehension/ROLE.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "c5d858d91739c6c72bb1be77e055c23e3879295995d023d5db851eb8d4b2fafc",
+  },
+];
+
+const OVERLAY_COPIES: Array<{ src: string; dest: string }> = [
+  { src: "NOTICE", dest: ".cursor/licenses/NOTICE" },
+  {
+    src: "roles/doc-review/comprehension/ROLE.md",
+    dest: ".cursor/roles/doc-review/comprehension/ROLE.md",
+  },
+  { src: "schemas/finding.schema.json", dest: ".cursor/schemas/finding.schema.json" },
+  {
+    src: "schemas/finding.schema.json",
+    dest: ".cursor/references/shared/schemas/finding.schema.json",
+  },
+];
 
 function catalogDonorLicenses(root: string): Map<string, string> {
   const { donors } = loadDonors(root);
@@ -354,6 +155,14 @@ function expectTwelveCatalogDonors(catalog: Map<string, string>): void {
   expect(catalog.size).toBe(12);
   expect(mit.toSorted()).toEqual([...MIT_CATALOG_IDS].toSorted());
   expect(apache.toSorted()).toEqual(["claude-mem", "egm"]);
+}
+
+function countWord(n: number): string {
+  if (n === 2) return "two";
+  if (n === 10) return "ten";
+  if (n === 12) return "twelve";
+  expect(n, `count-word ${n}`).toBe(12);
+  return "twelve";
 }
 
 function escapeRegex(text: string): string {
@@ -399,6 +208,32 @@ const isLooseDonor = new Ajv2020({ strict: false }).compile<LooseDonor>({
   required: ["id"],
   properties: { id: { type: "string" } },
   additionalProperties: true,
+});
+
+const isPluginExample = new Ajv2020({ strict: false }).compile<{ description: string }>({
+  type: "object",
+  required: ["description"],
+  properties: { description: { type: "string" } },
+});
+
+const isFingerprintSchema = new Ajv2020({ strict: false }).compile<{
+  properties: { fingerprint: { description: string } };
+}>({
+  type: "object",
+  required: ["properties"],
+  properties: {
+    properties: {
+      type: "object",
+      required: ["fingerprint"],
+      properties: {
+        fingerprint: {
+          type: "object",
+          required: ["description"],
+          properties: { description: { type: "string" } },
+        },
+      },
+    },
+  },
 });
 
 const isLockDonor = new Ajv2020({ strict: false }).compile<LockDonor>({
@@ -454,18 +289,70 @@ function fileSha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function locatedLine(text: string, pin: LinePin): string {
-  const expected = pin.expected.trim();
-  const lines = text.replaceAll("\r\n", "\n").split("\n");
-  const exact = lines.filter((line) => line.trim() === expected);
-  expect(exact.length, `${pin.file} expected matches=${exact.length}`).toBe(1);
-  const withLocator = lines.filter((line) => {
-    if (line.trim() === expected) return true;
-    if (pin.locator === pin.expected) return false;
-    return line.includes(pin.locator);
-  });
-  expect(withLocator.length, `${pin.file} ${pin.locator} matches=${withLocator.length}`).toBe(1);
-  return pin.expected;
+function textSha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function maskFences(text: string): string {
+  const lines = text.split("\n");
+  let fence = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) {
+      fence = !fence;
+      out.push(" ".repeat(line.length));
+      continue;
+    }
+    out.push(fence ? " ".repeat(line.length) : line);
+  }
+  return out.join("\n");
+}
+
+function indicesOf(haystack: string, needle: string): number[] {
+  const hits: number[] = [];
+  let from = 0;
+  while (from <= haystack.length - needle.length) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) break;
+    hits.push(at);
+    from = at + needle.length;
+  }
+  return hits;
+}
+
+function extractPinnedBlock(text: string, pin: BlockPin): string {
+  const folded = text.replaceAll("\r\n", "\n");
+  const visible = maskFences(folded);
+  const begins = indicesOf(visible, pin.begin);
+  const ends = indicesOf(visible, pin.end);
+  expect(begins.length, `${pin.file} begin matches=${begins.length}`).toBe(1);
+  expect(ends.length, `${pin.file} end matches=${ends.length}`).toBe(1);
+  const start = (begins[0] ?? 0) + pin.begin.length;
+  const stop = ends[0] ?? 0;
+  expect(start <= stop, `${pin.file} inverted markers`).toBe(true);
+  return folded.slice(start, stop);
+}
+
+function lockEntry(text: string): string {
+  const startNeedle = "  # Catalog donor, no EGM plugin, probe plus comprehension and cold read.";
+  const start = text.indexOf(startNeedle);
+  expect(start, "lock egm entry").toBeGreaterThanOrEqual(0);
+  const end = text.indexOf("\n# ---------------------------------------------------------------------------", start);
+  expect(end, "lock egm entry end").toBeGreaterThan(start);
+  return text.slice(start, end);
+}
+
+function contractPluginDescription(text: string): string {
+  const folded = text.replaceAll("\r\n", "\n");
+  const start = folded.indexOf("```json\n");
+  expect(start, "plugin.json example fence").toBeGreaterThanOrEqual(0);
+  const body = start + "```json\n".length;
+  const end = folded.indexOf("\n```", body);
+  expect(end, "plugin.json example close").toBeGreaterThan(body);
+  const value: unknown = JSON.parse(folded.slice(body, end));
+  expect(isPluginExample(value), "plugin.json example").toBe(true);
+  if (!isPluginExample(value)) return "";
+  return value.description;
 }
 
 function sectionAfter(text: string, heading: string): string {
@@ -544,13 +431,46 @@ describe("EGM provenance (GS-004f)", () => {
     expectTwelveCatalogDonors(catalogDonorLicenses(scratch));
   });
 
-  test("hashed evidence and unique expected lines", () => {
-    for (const pin of EVIDENCE_HASHES) {
+  test("hashed provenance files and unique marker blocks", () => {
+    for (const pin of FILE_HASHES) {
       expect(fileSha256(join(REPO, pin.file)), pin.file).toBe(pin.sha256);
     }
-    for (const pin of allLinePins()) {
+    expect(textSha256(lockEntry(readFileSync(join(REPO, LOCK), "utf8"))), LOCK).toBe(LOCK_ENTRY_SHA256);
+    for (const pin of BLOCK_PINS) {
       const text = readFileSync(join(REPO, pin.file), "utf8");
-      expect(locatedLine(text, pin), pin.file).toBe(pin.expected);
+      expect(textSha256(extractPinnedBlock(text, pin)), pin.file).toBe(pin.sha256);
+    }
+    const schema: unknown = JSON.parse(readFileSync(join(REPO, "schemas/finding.schema.json"), "utf8"));
+    expect(isFingerprintSchema(schema), "fingerprint description").toBe(true);
+    if (!isFingerprintSchema(schema)) return;
+    expect(textSha256(schema.properties.fingerprint.description), "fingerprint").toBe(FINGERPRINT_DESC_SHA256);
+    for (const copy of OVERLAY_COPIES) {
+      expect(existsSync(join(REPO, copy.dest)), copy.dest).toBe(true);
+      expect(readFileSync(join(REPO, copy.dest)).equals(readFileSync(join(REPO, copy.src))), copy.dest).toBe(true);
+    }
+    const catalog = catalogDonorLicenses(REPO);
+    expectTwelveCatalogDonors(catalog);
+    const { catalog: loaded } = loadCatalog(REPO);
+    const description = loaded?.package.description ?? "";
+    expect(description.length, "catalog.yaml package.description").toBeGreaterThan(0);
+    expect(description).toContain(countWord(catalog.size));
+    expect(description).toContain(countWord([...catalog.values()].filter((license) => license === "MIT").length));
+    expect(description).toContain(
+      countWord([...catalog.values()].filter((license) => license === "Apache-2.0").length),
+    );
+    expect(contractPluginDescription(readFileSync(join(REPO, "adapters/claude-code/CONTRACT.md"), "utf8"))).toBe(
+      description,
+    );
+  });
+
+  test("every egm adaptation source commit matches the lock pin", () => {
+    const lockCommit = loadLockDonors(REPO).get("egm")?.commit;
+    expect(lockCommit).toBe(EGM_COMMIT);
+    const { rows } = loadAdaptationFragments(REPO);
+    const egm = rows.filter((row) => parseDonorSource(row.source)?.donor === "egm");
+    expect(egm.length).toBeGreaterThan(0);
+    for (const row of egm) {
+      expect(parseDonorSource(row.source)?.commit, row.file).toBe(lockCommit);
     }
   });
 

@@ -1433,6 +1433,7 @@ conflicts:
     source:
       plan: "§5.6, §6.2, §7.3, §8"
 
+  # ak-egm-begin
   - id: comprehension-seat-stays-naive
     tension: >-
       Continuity makes closure checks cheaper, but a reader who has seen the earlier gap cannot
@@ -1499,6 +1500,7 @@ conflicts:
       adjudication outcome that may not become rejected on the author's word.
     source:
       plan: "§6.5"
+  # ak-egm-end
 
   - id: review-depth-follows-delegation-class
     tension: >-

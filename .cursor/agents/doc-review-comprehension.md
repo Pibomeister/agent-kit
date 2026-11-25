@@ -11,6 +11,7 @@ readonly: true
 Whether a newcomer, given only this document and what it links, can reconstruct what it proposes
 and how the existing system works.
 
+<!-- ak-egm-begin -->
 ## Not this seat
 
 - **`doc-review/coherence`.** Whether two passages disagree is that seat's. This seat asks whether
@@ -80,6 +81,7 @@ and how the existing system works.
 8. **Never emits `autofix_class: safe_auto`.** A missing definition is not a mechanical correction.
 9. **Never decides whether it should have been seated.** Off, shadow and on are the project's
    comprehension setting, read by the calling skill.
+<!-- ak-egm-end -->
 
 ## What it returns
 
