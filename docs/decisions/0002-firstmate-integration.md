@@ -334,13 +334,14 @@ The first follow-up above is closed this way:
   parsed with CommonMark (parser only). A heading whose descendant text, code
   and image alt equals `workflow` after NFKC, stripping `\p{Cf}` and
   `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused. Any
-  `html_block` or `html_inline` whose literal matches `/<\/?h[1-6][\s/>]/i` is
-  refused, including an h tag inside an HTML comment. Fenced, indented and
-  inline-code examples stay green. Homoglyph confusables, U+2800 braille blank,
-  and GFM strikethrough are out of scope. `- Workflow notes` and prose that
-  mentions workflow stay green. Free-text protocol changes under other headings
-  are left to review. Editing anything above Hard gates needs a golden update
-  in review.
+  `html_block` or `html_inline` whose literal matches `/<\/?h[1-6][\s/>]/i` (an
+  h-tag opener or closer, not only comments), `/<img\b/i`, or
+  `/role\s*=\s*["']?heading/i` is refused. Fenced, indented and inline-code
+  examples stay green. Homoglyph confusables, U+2800 braille blank, and GFM
+  strikethrough are out of scope. Hard gates body prose is not pinned.
+  `- Workflow notes` and prose that mentions workflow stay green. Free-text
+  protocol changes under other headings are left to review. Editing anything
+  above Hard gates needs a golden update in review.
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the
