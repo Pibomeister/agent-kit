@@ -28,6 +28,7 @@ import { charterAllowsProtectedStart } from "../lifecycle/protected-start.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
 import { sharesLineage } from "./lineage.ts";
+import { relativeInsideRoot } from "./path.ts";
 import { vetoRefusal, type VetoRecord } from "../council/rule.ts";
 import { isVersionManifest } from "./wire.ts";
 import {
@@ -140,8 +141,7 @@ const ACTION_FOR = new Map([
 type DecisionDocument = { schema: string; id: string; checkpoint: string };
 
 function inside(path: string, root: string): boolean {
-  const rel = relative(root, path);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  return relativeInsideRoot(relative(root, path));
 }
 
 function canonicalFuturePath(path: string): string {
@@ -1063,6 +1063,7 @@ export class Runner {
     if (!REVISION.test(revision)) throw new Error("revision must be a full version-control object id");
     const run = this.load(id);
     if (STOPPED.has(run.run_state)) throw new Error("run is stopped; revision cannot advance");
+    if (run.verdict !== undefined) cleanCommittedTree(this.gitContext, this.workerRoot);
     const observed = this.observedSnapshot();
     if (observed !== null && observed.revision !== revision) throw new Error("revision differs from worker checkout");
     const diffHash = observed?.diff_hash ?? run.diff_hash;

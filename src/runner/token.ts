@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, isAbsolute, relative } from "node:path";
+import { dirname, relative } from "node:path";
 
+import { relativeInsideRoot } from "./path.ts";
 import { gitProcess, resolveRunnerGit } from "./snapshot.ts";
 
 /**
@@ -12,14 +13,12 @@ import { gitProcess, resolveRunnerGit } from "./snapshot.ts";
 export function readAdminToken(path: string, forbiddenRoot: string): string {
   const at = realpathSync(path);
   const root = realpathSync(forbiddenRoot);
-  const rel = relative(root, at);
-  const underRoot = rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   const probe = gitProcess(resolveRunnerGit(root), dirname(at), [
     "rev-parse",
     "--is-inside-work-tree",
     "--is-inside-git-dir",
   ]);
-  if (underRoot || (probe.code === 0 && probe.text.includes("true")))
+  if (relativeInsideRoot(relative(root, at)) || (probe.code === 0 && probe.text.includes("true")))
     throw new Error(
       "runner admin token file must live outside the Firstmate home, the worker root and any git checkout",
     );
