@@ -139,7 +139,7 @@ steers and verifies read-only.
 | Id | Project | Gate |
 |---|---|---|
 | G1 | Default | Checks green, or local tests at the exact head revision when the project has no checks. Plus two independent automated reviews posted on the forge at that exact head |
-| G2 | Firstmate, AgentKit, Goodword Factory | Merge at the agents' discretion once green and through the gates. Factory also needs AgentKit verify and review |
+| G2 | Firstmate, AgentKit, Goodword Factory | Merge is a human decision. An agent merges only under an explicit standing owner rule. Factory also needs AgentKit verify and review |
 | G3 | Abaco Risk Engine | The captain may self-merge, as admin if branch protection requires it, with checks green, two independent automated reviews at the exact head, and local tests |
 | G4 | Regulis | Only the merge-queue bot merges, when the change is approved, conflict-free, and holds the review bot's top score |
 | G5 | Casco | No new merge authority. Hermes records the gate as stated at that time, with its source and date |
@@ -147,6 +147,9 @@ steers and verifies read-only.
 | G7 | All | Hosted checks can be blocked by a billing limit. Lifting it is the owner's spend call |
 | G8 | AgentKit | No version cut or publish without the owner's named OK |
 | G9 | All | Manual dogfooding is separate evidence from automated tests |
+
+Planner B's critique: G2 and G8, and other AgentKit references in this baseline, are modelled on
+rules for a different runtime. They are analogies, not rules that already bind Hermes.
 
 **Hard rules**
 
@@ -414,7 +417,9 @@ also schedules an hourly check of status records against held backlog items. Tha
 4. Verification stops at the first decisive evidence. Hermes runs one evidence check per trigger. It
    never loops to build confidence.
 5. Send limiter. Hermes would send at most 3 times per captain per hour and 8 times across the
-   fleet per hour. Going over would move Hermes back to `dry-run` (section 5.3).
+   fleet per hour. Going over would be a halt. The acting supervisor would set mode to `off`, the
+   only value it may write. Hermes would stop sending at once. Returning to `live` would need the
+   owner (section 5.3).
 6. Budget step-down. Hermes steps down before the cap and never raises its own cap. The baseline
    share is ring-fenced, so a spent cap degrades Hermes to Grokmate's level and never below it. The
    step-down marks are open (section 6, entry 5).
@@ -586,20 +591,17 @@ A's daytime window: the ramp starts at a named time between 08:00 and 20:00.
 | L2 all in scope | Days 2 and 3 | Takes the remaining locks, one captain at a time, each with a confirmed pickup | Warm standby. Reads the send log. Steers nobody |
 | L3 steady | From day 4 | Normal duty | Stands down only when the owner says so |
 
-A stage advances only with zero misfires in the stage before it. The pre-Day-1 quoted yes for a
-pairing link authorizes holding it only, never sending. Until item 15, Hermes sends nothing, types
-into no pane, submits nothing, writes no inbox note and sets no live-send flag. Any of those
-aborts under section 5.1. Hermes may only read a pane through the held link, and that counts as
-observation. Record that a link was held, with the owner's quoted yes, and without the URL. Neither
-path practises a real send. Both paths are no-send shadows. Stages L0 and L1 exist to cover that
-gap on both paths. Go-live still waits on item 15.
+This section starts only after item 15. A stage advances only with zero misfires in the stage
+before it. The shadow never practised a real send. Stages L0 and L1 exist to cover that gap on both
+paths.
 
 After the owner's go-live yes, sends do not run in parallel. One send sequence runs at a time across
 the fleet. Hermes rediscovers the handle and re-reads the pane immediately before any send, so a
 stale parallel read never triggers one.
 
-Send limiter. At most 3 sends per captain per hour and 8 across the fleet per hour. Going over
-moves Hermes back to `dry-run`.
+Send limiter. At most 3 sends per captain per hour and 8 across the fleet per hour. Going over is a
+halt. The acting supervisor sets mode to `off`, the only value it may write. Hermes stops sending
+at once. Returning to `live` needs the owner.
 
 ### 5.4 Misfire, halt and rollback
 
@@ -628,7 +630,8 @@ misfire. Hermes itself, on detecting its own misfire or a failure to write its l
 2. Retry fence and link removal: any Orca backoff loop that is still running is killed, so it cannot
    deliver a late send. The Orca pairing on each Mac is removed or rotated, which ends Hermes'
    ability to send whatever Hermes does.
-3. A send-limiter trip moves Hermes to `dry-run` by itself. It keeps observing and stops sending.
+3. A send-limiter trip is a halt. The acting supervisor sets mode to `off`, the only value it may
+   write. Hermes stops sending at once. Returning to `live` needs the owner.
 
 Which layer comes first, and who can remove a link at night without a page, is open (section 6,
 entry 11).
@@ -832,7 +835,7 @@ not answer. The entry says so.
 - Sealed predictions before Hermes reads the action stream.
 - The rulebook beats the behaviour, the separate intervention rate, and the floor of 20
   interventions.
-- Optional calibration by Grokmate, reported and not gating.
+- Optional calibration by Grokmate, reported.
 - Rechecks at 2, 5 and 10 minutes after a steer, and a cheaper look at parked captains.
 - Four depth levels, with D2 limited to five decision points and D3 capped.
 - Budgets stated as multiples of A, the 1.0 A ring-fence, the shadow caps, and the hourly and
