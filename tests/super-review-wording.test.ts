@@ -5,9 +5,10 @@
  * Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
  * after CRLF-to-LF only and compares every byte from the start of the file through
  * the line before the first `## Hard gates` line to a golden copy of origin/main
- * e6d4dfc6. `## Hard gates` is the sentinel. A later Workflow heading is refused,
- * including a fenced one after Hard gates. Editing anything above Hard gates needs
- * a golden update in review.
+ * e6d4dfc6. `## Hard gates` is the sentinel. A later heading whose normalized text
+ * is exactly `workflow` is refused, including inside fences, block quotes and list
+ * items. Variant headings and free text after Hard gates are not detected and are
+ * left to review. Editing anything above Hard gates needs a golden update in review.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -37,6 +38,20 @@ function firstSentinelAt(raw: string): number {
   return -1;
 }
 
+function stripQuotePrefixes(line: string): string {
+  let current = line;
+  while (/^>[ \t]?/u.test(current)) {
+    current = current.replace(/^>[ \t]?/u, "");
+  }
+  return current;
+}
+
+function unwrapContainers(line: string): string {
+  const unquoted = stripQuotePrefixes(line);
+  const unlisted = unquoted.replace(/^([-*+]|\d{1,9}[.)]) /u, "");
+  return stripQuotePrefixes(unlisted);
+}
+
 function normalizeAtxText(content: string): string {
   return content
     .trim()
@@ -46,7 +61,7 @@ function normalizeAtxText(content: string): string {
 }
 
 function isAtxWorkflow(line: string): boolean {
-  const match = /^( {0,3})(#{1,6})(?:[ \t]+|$)(.*)$/u.exec(line);
+  const match = /^( {0,3})(#{1,6})(?:[ \t]+|$)(.*)$/u.exec(unwrapContainers(line));
   if (match === null) {
     return false;
   }
@@ -65,10 +80,15 @@ function laterWorkflowHeading(rest: string): boolean {
       return true;
     }
     const next = lines[n + 1];
-    if (next === undefined || line.trim() === "") {
+    if (next === undefined) {
       continue;
     }
-    if (isSetextUnderline(next) && line.trim().toLowerCase() === "workflow") {
+    const text = unwrapContainers(line);
+    const underline = unwrapContainers(next);
+    if (text.trim() === "") {
+      continue;
+    }
+    if (isSetextUnderline(underline) && text.trim().toLowerCase() === "workflow") {
       return true;
     }
   }
@@ -85,9 +105,10 @@ describe("super-review wording", () => {
     try {
       expect(raw.slice(0, hardAt)).toBe(PREFIX_GOLDEN);
     } catch (cause) {
-      throw new Error("issue #147: step 12 must tell reviewers to record a changes-requested full review", {
-        cause,
-      });
+      throw new Error(
+        "The prefix above `## Hard gates` drifted from origin/main e6d4dfc6. A golden update must be reviewed. Issue #147 is why the lock exists.",
+        { cause },
+      );
     }
     expect(laterWorkflowHeading(raw.slice(hardAt))).toBe(false);
   });
