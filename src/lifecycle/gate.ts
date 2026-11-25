@@ -225,8 +225,10 @@ export function unknownSelector(kind: string, input: string, candidates: readonl
  *
  * Snapshot git calls reuse `isolatedGitArgv`: fsmonitor, hooks and excludes are off, skip-worktree
  * and assume-unchanged bits are cleared on the index copy, and attr.tree is the empty tree so clean
- * and smudge filters do not run. Nested-submodule dirt hidden by submodule.ignore=all is outside
- * this snapshot, so ship-preflight does not see it.
+ * and smudge filters do not run. Ship-preflight then compares worktree bytes to HEAD blobs: eol
+ * conversion, ident expansion, a sparse-missing path and an executable-bit mismatch count as dirt.
+ * A byte-clean checkout is core.autocrlf=false, no ident, and a full checkout. Nested-submodule
+ * dirt hidden by submodule.ignore=all is outside this snapshot, so ship-preflight does not see it.
  */
 export interface Snapshot {
   repo: string;
@@ -345,7 +347,7 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       const staged = raw(["ls-files", "-s", "-z"]);
       if (staged.code !== 0) return `cannot list tracked files in ${project}: ${staged.stderr}`;
       const hidden = unfilteredTrackedDirt(workTree, staged.stdout);
-      if (hidden !== undefined) digest = hidden;
+      if (hidden !== undefined) digest = hidden.digest;
     }
 
     const remote = git(workTree, isolate(["config", "--get", "remote.origin.url"]), env);
@@ -357,6 +359,55 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+/** A path that may appear in a ship-preflight refusal: relative, no parent segments. */
+function shipDirtPath(path: string | undefined): string | undefined {
+  if (path === undefined || path === "" || isAbsolute(path)) return undefined;
+  if (path.split(/[/\\]/).includes("..")) return undefined;
+  return path;
+}
+
+/**
+ * Why ship-preflight refuses this tree. Names the first relative path whose worktree bytes differ
+ * from HEAD. Does not claim git porcelain saw the dirt: eol conversion, ident expansion and a
+ * sparse-missing path can leave porcelain clean. The way out is a byte-clean checkout
+ * (core.autocrlf=false, no ident, full checkout).
+ */
+function shipDirtReason(project: string): string {
+  const env = boundWorkTreeEnv(project);
+  const workTree = env.GIT_WORK_TREE ?? project;
+  const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
+  const untracked = git(workTree, isolate(["ls-files", "--others", "--exclude-standard", "-z"]), env);
+  const firstUntracked =
+    untracked.code === 0
+      ? new TextDecoder()
+          .decode(untracked.stdout)
+          .split("\0")
+          .map(shipDirtPath)
+          .find((path) => path !== undefined)
+      : undefined;
+  const tree = git(workTree, isolate(["ls-tree", "-r", "-z", "HEAD"]), env);
+  const vsHead = tree.code === 0 ? unfilteredTrackedDirt(workTree, lsTreeToStageZ(tree.stdout)) : undefined;
+  const at = firstUntracked ?? shipDirtPath(vsHead?.path) ?? "the working tree";
+  return `the worktree bytes differ from HEAD at ${at}, which the shipped revision would not carry; use a byte-clean checkout (core.autocrlf=false, no ident, full checkout), commit what should ship, remove or git-ignore the rest, then record the gates again`;
+}
+
+/** `ls-tree -r -z` rows as `ls-files -s -z`, so `unfilteredTrackedDirt` can compare worktree bytes to HEAD. */
+function lsTreeToStageZ(lsTreeZ: Uint8Array): Uint8Array {
+  const rows: string[] = [];
+  for (const row of new TextDecoder().decode(lsTreeZ).split("\0")) {
+    if (row === "") continue;
+    const tab = row.indexOf("\t");
+    if (tab < 0) continue;
+    const meta = row.slice(0, tab).split(" ");
+    const mode = meta[0];
+    const blob = meta[2];
+    const path = row.slice(tab + 1);
+    if (mode === undefined || blob === undefined || path === "") continue;
+    rows.push(`${mode} ${blob} 0\t${path}`);
+  }
+  return new TextEncoder().encode(rows.map((row) => `${row}\0`).join(""));
 }
 
 // ── gates and records ────────────────────────────────────────────────────────
@@ -3185,11 +3236,7 @@ function shipUnattended(
   if (attestationPath === undefined) {
     const live = takeSnapshot(project);
     if (!isSnapshot(live)) return deny(live, false);
-    if (live.diff_hash !== EMPTY_DIFF)
-      return deny(
-        "the working tree has uncommitted changes or untracked files that git does not ignore, which the shipped revision would not carry; commit what should ship, remove or git-ignore the rest, then record the gates again",
-        false,
-      );
+    if (live.diff_hash !== EMPTY_DIFF) return deny(shipDirtReason(project), false);
     const mismatch = supervisorMismatch({ dir, run, gates: UNATTENDED_PRE_SHIP_GATES, project }, live, supervisor);
     if (mismatch !== undefined) return deny(mismatch, true);
     const pre = checkGates({ dir, run, gates: UNATTENDED_PRE_SHIP_GATES, project });

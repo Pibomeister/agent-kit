@@ -20,6 +20,7 @@ import {
   readFileSync,
   realpathSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1653,6 +1654,16 @@ describe("binding at open and ship-preflight (AC-4)", () => {
   });
 
   const SHIP_TREE_RECOVERY = "commit what should ship, remove or git-ignore the rest, then record the gates again";
+  const SHIP_BYTES_DIFFER = "worktree bytes differ from HEAD";
+
+  function expectShipDirt(r: { code: number; err: string }, path: string, cwd: string) {
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(SHIP_BYTES_DIFFER);
+    expect(r.err).toContain(`at ${path}`);
+    expect(r.err).toContain(SHIP_TREE_RECOVERY);
+    expect(r.err).toContain("byte-clean checkout");
+    expect(r.err).not.toContain(cwd);
+  }
 
   test("ship-preflight refuses a tree with uncommitted changes, even when every gate was recorded at that tree", () => {
     const cwd = repo();
@@ -1662,9 +1673,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const run = fullRun(cwd);
     const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("uncommitted changes");
-    expect(r.err).toContain(SHIP_TREE_RECOVERY);
+    expectShipDirt(r, "src/a.js", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
@@ -1674,16 +1683,14 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
     const before = runState(cwd, run);
     const dirty = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(dirty.code).toBe(1);
-    expect(dirty.err).toContain("uncommitted changes");
+    expectShipDirt(dirty, "src/a.js", cwd);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     const clean = join(outsideDir(), "clean");
     git(cwd, "clone", "-q", cwd, clean);
     setEnv({ GIT_WORK_TREE: clean });
     try {
       const redirected = ak(cwd, "record", "--gate", "ship-preflight");
-      expect(redirected.code).toBe(1);
-      expect(redirected.err).toContain("uncommitted changes");
+      expectShipDirt(redirected, "src/a.js", cwd);
     } finally {
       setEnv({ GIT_WORK_TREE: undefined });
     }
@@ -1702,8 +1709,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
       git(cwd, "config", "core.worktree", clean);
       const before = runState(cwd, run);
       const r = ak(cwd, "record", "--gate", "ship-preflight");
-      expect(r.code).toBe(1);
-      expect(r.err).toContain("uncommitted changes");
+      expectShipDirt(r, "src/a.js", cwd);
       expect(runState(cwd, run)).toEqual(before);
       expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     },
@@ -1717,8 +1723,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
       expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
       const before = runState(cwd, run);
       const r = ak(cwd, "record", "--gate", "ship-preflight");
-      expect(r.code).toBe(1);
-      expect(r.err).toContain("uncommitted changes");
+      expectShipDirt(r, "src/a.js", cwd);
       expect(runState(cwd, run)).toEqual(before);
       expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     },
@@ -1736,14 +1741,12 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const { head, cover } = coverDirty(cwd);
     const before = runState(cwd, run);
     const dirty = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(dirty.code).toBe(1);
-    expect(dirty.err).toContain("uncommitted changes");
+    expectShipDirt(dirty, "src/a.js", cwd);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     git(cwd, "replace", head, cover);
     expect(Bun.spawnSync(["git", "diff", "--quiet", "HEAD"], { cwd }).exitCode).toBe(0);
     const replaced = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(replaced.code).toBe(1);
-    expect(replaced.err).toContain("uncommitted changes");
+    expectShipDirt(replaced, "src/a.js", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
@@ -1762,8 +1765,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
         }).exitCode,
       ).toBe(0);
       const redirected = ak(cwd, "record", "--gate", "ship-preflight");
-      expect(redirected.code).toBe(1);
-      expect(redirected.err).toContain("uncommitted changes");
+      expectShipDirt(redirected, "src/a.js", cwd);
     } finally {
       setEnv({ GIT_REPLACE_REF_BASE: undefined });
     }
@@ -1780,9 +1782,73 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const run = fullRun(cwd);
     const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(r.code).toBe(1);
-    expect(r.err).toContain("untracked files that git does not ignore");
-    expect(r.err).toContain(SHIP_TREE_RECOVERY);
+    expectShipDirt(r, ".lavish/plan.html", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a filemode-false chmod of a 100644 file, naming the path", () => {
+    const { cwd, run } = ready();
+    git(cwd, "config", "core.filemode", "false");
+    chmodSync(join(cwd, "src", "a.js"), 0o755);
+    expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "src/a.js", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses an autocrlf CRLF checkout whose porcelain is clean, naming the path", () => {
+    const { cwd, run } = ready();
+    git(cwd, "config", "core.autocrlf", "true");
+    unlinkSync(join(cwd, "src", "a.js"));
+    git(cwd, "checkout", "--", "src/a.js");
+    expect(readFileSync(join(cwd, "src", "a.js"), "utf8")).toContain("\r\n");
+    expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "src/a.js", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses ident expansion whose porcelain is clean, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, "src", "id.txt"), "$Id$\n");
+    writeFileSync(join(cwd, ".gitattributes"), "src/id.txt ident\n");
+    git(cwd, "add", "src/id.txt", ".gitattributes");
+    git(cwd, "commit", "-q", "-m", "ident");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    unlinkSync(join(cwd, "src", "id.txt"));
+    git(cwd, "checkout", "--", "src/id.txt");
+    expect(readFileSync(join(cwd, "src", "id.txt"), "utf8")).toContain("$Id:");
+    expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "src/id.txt", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a sparse cone whose skip-worktree path is missing, naming the path", () => {
+    const cwd = repo();
+    mkdirSync(join(cwd, "extra"));
+    writeFileSync(join(cwd, "extra", "b.js"), "export const b = 1;\n");
+    git(cwd, "add", "extra/b.js");
+    git(cwd, "commit", "-q", "-m", "extra");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    git(cwd, "sparse-checkout", "init", "--cone");
+    git(cwd, "sparse-checkout", "set", "src");
+    expect(existsSync(join(cwd, "extra", "b.js"))).toBe(false);
+    expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "extra/b.js", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });

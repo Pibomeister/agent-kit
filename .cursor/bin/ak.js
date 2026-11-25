@@ -38819,7 +38819,7 @@ var import__202015 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync7 } from "child_process";
 import { existsSync as existsSync43, readFileSync as readFileSync45, realpathSync as realpathSync21 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename24, isAbsolute as isAbsolute17, join as join56, relative as relative16 } from "path";
+import { basename as basename24, isAbsolute as isAbsolute18, join as join56, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -41841,14 +41841,14 @@ init_hash();
 import { timingSafeEqual } from "crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync41, readFileSync as readFileSync37, realpathSync as realpathSync18, unlinkSync as unlinkSync2 } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname25, isAbsolute as isAbsolute15, relative as relative14, resolve as resolve18 } from "path";
+import { dirname as dirname25, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve18 } from "path";
 
 // src/runner/core.ts
 init_dist();
 init_hash();
 import { createHash as createHash13 } from "crypto";
 import { existsSync as existsSync40, mkdirSync as mkdirSync25, readFileSync as readFileSync34, realpathSync as realpathSync14, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
-import { basename as basename21, dirname as dirname23, isAbsolute as isAbsolute14, join as join47, relative as relative12, resolve as resolve17 } from "path";
+import { basename as basename21, dirname as dirname23, isAbsolute as isAbsolute15, join as join47, relative as relative12, resolve as resolve17 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -42340,12 +42340,12 @@ import {
   realpathSync as realpathSync13,
   rmSync as rmSync14
 } from "fs";
-import { basename as basename20, delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute13, join as join46, relative as relative11, resolve as resolve16 } from "path";
+import { basename as basename20, delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative11, resolve as resolve16 } from "path";
 
 // src/lifecycle/git-isolation.ts
 import { createHash as createHash11 } from "crypto";
 import { existsSync as existsSync38, lstatSync as lstatSync6, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
-import { join as join45, resolve as resolve15 } from "path";
+import { isAbsolute as isAbsolute13, join as join45, resolve as resolve15 } from "path";
 function isolationArgs(project) {
   const directory = existsSync38(project) ? realpathSync12(project) : resolve15(project);
   return [
@@ -42384,7 +42384,7 @@ function parseGitFile(filePath) {
   const pointer = /^gitdir: (.+)$/.exec(readFileSync33(filePath, "utf8").trim())?.[1];
   if (pointer === undefined)
     return;
-  return isAbsolute13(pointer) ? pointer : resolve16(dirname22(filePath), pointer);
+  return isAbsolute14(pointer) ? pointer : resolve16(dirname22(filePath), pointer);
 }
 function boundedResolve(path) {
   let current = path;
@@ -42407,7 +42407,7 @@ function boundedResolve(path) {
       }
     }
     const next = readlinkSync4(current);
-    current = isAbsolute13(next) ? next : resolve16(dirname22(current), next);
+    current = isAbsolute14(next) ? next : resolve16(dirname22(current), next);
   }
   return;
 }
@@ -42417,7 +42417,7 @@ function workTreeOf(gitDir, foundAt, gitfile) {
   try {
     const pointed = readFileSync33(join46(gitDir, "gitdir"), "utf8").trim();
     if (pointed !== "") {
-      const marker = isAbsolute13(pointed) ? pointed : resolve16(gitDir, pointed);
+      const marker = isAbsolute14(pointed) ? pointed : resolve16(gitDir, pointed);
       return realpathSync13(dirname22(marker));
     }
   } catch {}
@@ -42497,7 +42497,7 @@ function repoCommonDir(gitDir) {
   try {
     const text5 = readFileSync33(join46(gitDir, "commondir"), "utf8").trim();
     if (text5 !== "")
-      return realpathSync13(isAbsolute13(text5) ? text5 : resolve16(gitDir, text5));
+      return realpathSync13(isAbsolute14(text5) ? text5 : resolve16(gitDir, text5));
   } catch {}
   return gitDir;
 }
@@ -42708,7 +42708,7 @@ function checkGitControls(context, project) {
     if (path === undefined)
       return failedGit(`runner cannot locate git ${name}`);
     try {
-      if (!lstatSync7(isAbsolute13(path) ? path : resolve16(project, path)).isFile())
+      if (!lstatSync7(isAbsolute14(path) ? path : resolve16(project, path)).isFile())
         return failedGit(`runner git ${name} must be a regular file`);
     } catch (cause) {
       if (name === "index" && cause instanceof Error && "code" in cause && cause.code === "ENOENT")
@@ -42804,7 +42804,7 @@ function mergeTreeClean(context, project, baseRef, head) {
     throw new Error(`cannot inspect merge tree: ${objects2.stderr || objects2.text}`);
   let objectDir;
   try {
-    objectDir = realpathSync13(isAbsolute13(objects2.text) ? objects2.text : resolve16(project, objects2.text));
+    objectDir = realpathSync13(isAbsolute14(objects2.text) ? objects2.text : resolve16(project, objects2.text));
   } catch {
     throw new Error("cannot inspect merge tree: cannot resolve object directory");
   }
@@ -42842,7 +42842,7 @@ function mergeTreeClean(context, project, baseRef, head) {
   }
 }
 function escapesWorktree(path, rel) {
-  return path === "" || isAbsolute13(path) || rel === "" || !relativeInsideRoot(rel);
+  return path === "" || isAbsolute14(path) || rel === "" || !relativeInsideRoot(rel);
 }
 function cleanCommittedTree(context, project) {
   assertPinnedLayout(context);
@@ -43138,7 +43138,7 @@ class Runner {
       throw new Error("runner state is worker-writable");
     const gitContext = resolveRunnerGit(this.workerRoot);
     const commonDir2 = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
-    this.sharedGitDir = commonDir2.code === 0 ? realpathSync14(isAbsolute14(commonDir2.text) ? commonDir2.text : join47(this.workerRoot, commonDir2.text)) : null;
+    this.sharedGitDir = commonDir2.code === 0 ? realpathSync14(isAbsolute15(commonDir2.text) ? commonDir2.text : join47(this.workerRoot, commonDir2.text)) : null;
     if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
       throw new Error("runner bundle cannot use the shared git common directory");
     if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
@@ -45161,7 +45161,7 @@ async function serve(argv, io) {
   const workerRoot = realpathSync18(worker);
   const socketPath = resolve18(socket);
   const relativeSocket = relative14(workerRoot, socketPath);
-  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute15(relativeSocket))
+  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
     throw new Error("runner socket is inside worker root");
   if (existsSync41(socketPath)) {
     const live = await new Promise((done, fail2) => {
@@ -45184,7 +45184,7 @@ async function serve(argv, io) {
   }
   const socketParent = realpathSync18(dirname25(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
-  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute15(relativeParent))
+  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
   const entry = process.argv[1];
   const kitRoot = kitRootFlag ?? (entry === undefined ? resolve18(import.meta.dir, "..", "..") : resolve18(realpathSync18(entry), "..", ".."));
@@ -47762,7 +47762,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 // src/semantic-lint/input.ts
 init_proc();
 import { lstatSync as lstatSync9, readFileSync as readFileSync43, realpathSync as realpathSync20 } from "fs";
-import { isAbsolute as isAbsolute16, join as join52, relative as relative15, resolve as resolve19 } from "path";
+import { isAbsolute as isAbsolute17, join as join52, relative as relative15, resolve as resolve19 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -47801,7 +47801,7 @@ function collectInput(cwd) {
       try {
         const stat = lstatSync9(absolute);
         const rel = relative15(root, realpathSync20(absolute));
-        if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute16(rel) || !stat.isFile())
+        if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
           reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
@@ -48417,7 +48417,7 @@ function checkLinearis(root, backend) {
 async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute17(root)) {
+    if (isAbsolute18(root)) {
       const value = parseJson3(readFileSync45(join56(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
@@ -48431,7 +48431,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
       return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return { value: null, failure: { reason: isAbsolute17(root) ? "missing" : "network" } };
+    return { value: null, failure: { reason: isAbsolute18(root) ? "missing" : "network" } };
   }
 }
 function checkSemanticLint(keyFile, flag3) {
@@ -48517,7 +48517,7 @@ async function maintenanceCommandNotice() {
     return null;
   try {
     const current2 = readFileSync45(path, "utf8");
-    const published = isAbsolute17(ROOT) ? readFileSync45(join56(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const published = isAbsolute18(ROOT) ? readFileSync45(join56(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });

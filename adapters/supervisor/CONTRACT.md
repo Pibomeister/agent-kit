@@ -114,10 +114,12 @@ the sentence shows.
 2. `unattended check --phase super-align`, `--phase super-bound` and `--phase super-ship` refuse without
    a valid declaration.
 3. `record --gate ship-preflight` compares the declaration in force with the stamp. A changed file, a
-   missing stamp, a gate recorded under another supervisor, or a working tree with uncommitted changes
-   refuses. Untracked files that git does not ignore count as uncommitted changes. The gate record is judged
-   at the tree it ran at, so those changes would ship in no revision: commit what should ship, remove or
-   git-ignore the rest, then record the gates again. A refusal for the file, the stamp or another supervisor
+   missing stamp, a gate recorded under another supervisor, or a working tree whose bytes differ from
+   HEAD refuses. Untracked files that git does not ignore, eol conversion, ident expansion, a
+   sparse-missing path and an executable-bit mismatch count as dirt. The way out is a byte-clean
+   checkout (core.autocrlf=false, no ident, full checkout), then commit what should ship, remove or
+   git-ignore the rest, then record the gates again. The gate record is judged at the tree it ran at,
+   so those changes would ship in no revision. A refusal for the file, the stamp or another supervisor
    ends with the same recovery: open a new run with `open --ticket` under the declaration in force, and
    record the gates again. On success it checks the pre-ship gates, records `ship-preflight` with a
    `supervisor` entry that names the declaration, closes the run and prints the disclosure.

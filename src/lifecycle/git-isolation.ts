@@ -1,7 +1,7 @@
 /** Isolated git `-c` flags: worker fsmonitor, hooks, filters and the commit graph cannot steer a snapshot. */
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 export function isolationArgs(project: string): string[] {
   const directory = existsSync(project) ? realpathSync(project) : resolve(project);
@@ -40,13 +40,24 @@ export function gitBlobId(bytes: Uint8Array, blob: string): string {
 }
 
 /**
- * Hex digest of tracked worktree bytes that do not match the index blob. Undefined when every
- * regular file and symlink matches. Nested gitlinks are skipped: submodule.ignore=all is outside
- * the ship-preflight gate.
+ * Hex digest of tracked worktree bytes that do not match the index blob, plus the first relative
+ * path. Undefined when every regular file and symlink matches, including the executable bit
+ * (`executable !== (mode === "100755")`, any of owner/group/other). Nested gitlinks are skipped:
+ * submodule.ignore=all is outside the ship-preflight gate.
  */
-export function unfilteredTrackedDirt(workTree: string, lsFilesStageZ: Uint8Array): string | undefined {
+export function unfilteredTrackedDirt(
+  workTree: string,
+  lsFilesStageZ: Uint8Array,
+): { digest: string; path: string } | undefined {
   const digest = createHash("sha256");
   let dirty = false;
+  let first: string | undefined;
+  const mark = (rel: string, extra?: Uint8Array) => {
+    if (first === undefined && rel !== "" && !isAbsolute(rel) && !rel.split(/[/\\]/).includes("..")) first = rel;
+    digest.update(rel);
+    if (extra !== undefined) digest.update(extra);
+    dirty = true;
+  };
   for (const row of new TextDecoder().decode(lsFilesStageZ).split("\0")) {
     if (row === "") continue;
     const tab = row.indexOf("\t");
@@ -61,28 +72,22 @@ export function unfilteredTrackedDirt(workTree: string, lsFilesStageZ: Uint8Arra
       let bytes: Uint8Array;
       if (mode === "120000") {
         if (!stat.isSymbolicLink()) {
-          digest.update(path);
-          dirty = true;
+          mark(path);
           continue;
         }
         bytes = Buffer.from(readlinkSync(at));
       } else if (mode === "100644" || mode === "100755") {
-        if (!stat.isFile()) {
-          digest.update(path);
-          dirty = true;
+        const executable = (stat.mode & 0o111) !== 0;
+        if (!stat.isFile() || executable !== (mode === "100755")) {
+          mark(path);
           continue;
         }
         bytes = readFileSync(at);
       } else continue;
-      if (gitBlobId(bytes, blob) !== blob) {
-        digest.update(path);
-        digest.update(bytes);
-        dirty = true;
-      }
+      if (gitBlobId(bytes, blob) !== blob) mark(path, bytes);
     } catch {
-      digest.update(path);
-      dirty = true;
+      mark(path);
     }
   }
-  return dirty ? digest.digest("hex") : undefined;
+  return dirty ? { digest: digest.digest("hex"), path: first ?? "the working tree" } : undefined;
 }
