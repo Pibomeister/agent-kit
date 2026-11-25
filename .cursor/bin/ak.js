@@ -46683,11 +46683,13 @@ var DIFF = [
   "--no-textconv",
   "--no-color",
   "--full-index",
+  "--ignore-submodules=none",
+  "--submodule=short",
   "--diff-algorithm=myers",
   "--src-prefix=a/",
   "--dst-prefix=b/"
 ];
-var RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index"];
+var RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index", "--ignore-submodules=none"];
 var RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
 function rawRows(repo, from, to) {
   const rows2 = [];

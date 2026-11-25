@@ -5,10 +5,10 @@
  *
  * Every diff here has no context lines, so a change beside the pull request's
  * lines on the base branch is not a change to the pull request. Renames are
- * not detected, user diff drivers do not run and the algorithm is fixed, so two
- * machines read the same patch from the same commits. Empty is the raw tree:
- * the same path, mode and blob at both heads. The changed-line patch id is
- * only for rewritten-commit matching.
+ * not detected, user diff drivers do not run, gitlinks are not ignored, and the
+ * algorithm is fixed, so two machines read the same patch from the same commits.
+ * Empty is the raw tree: the same path, mode and blob at both heads. The
+ * changed-line patch id is only for rewritten-commit matching.
  *
  * This file changes no work tree, index or ref. `git merge-tree` writes the
  * objects of each merge it repeats into the object store, as unreachable
@@ -26,12 +26,14 @@ const DIFF = [
   "--no-textconv",
   "--no-color",
   "--full-index",
+  "--ignore-submodules=none",
+  "--submodule=short",
   "--diff-algorithm=myers",
   "--src-prefix=a/",
   "--dst-prefix=b/",
 ];
 
-const RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index"] as const;
+const RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index", "--ignore-submodules=none"] as const;
 const RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
 
 interface TreeEntry {

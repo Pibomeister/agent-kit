@@ -217,6 +217,25 @@ describe("ak review scope: later-round tree identity", () => {
     });
   });
 
+  test("a gitlink bump still opens a new scope when diff.ignoreSubmodules is all", () => {
+    const f = fixture();
+    const pin = f.git("rev-parse", "main");
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`);
+    f.git("commit", "-m", "add gitlink");
+    const linked = f.git("rev-parse", "HEAD");
+    f.round(linked);
+    f.git("config", "diff.ignoreSubmodules", "all");
+    f.git("update-index", "--cacheinfo", `160000,${f.head},vendor/lib`);
+    f.git("commit", "-m", "bump gitlink");
+    const bumped = f.git("rev-parse", "HEAD");
+    expect(f.record(bumped)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["path-identity"],
+      delta: { empty: false, added_lines: 1 },
+      event: { kind: "scope-open", trigger: "path-identity", head: bumped },
+    });
+  });
+
   test("replacing a reviewed file with a gitlink opens a new scope", () => {
     const f = fixture();
     f.round(f.head);
