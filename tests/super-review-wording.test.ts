@@ -5,10 +5,12 @@
  * Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
  * after CRLF-to-LF only and compares every byte from the start of the file through
  * the line before the first `## Hard gates` line to a golden copy of origin/main
- * e6d4dfc6. `## Hard gates` is the sentinel. A later heading whose normalized text
- * is exactly `workflow` is refused, including inside fences, block quotes and list
- * items. Variant headings and free text after Hard gates are not detected and are
- * left to review. Editing anything above Hard gates needs a golden update in review.
+ * e6d4dfc6. `## Hard gates` is the sentinel. A later line whose normalized text is
+ * exactly `workflow` is refused, including inside fences, block quotes and list
+ * items, whether or not it renders as a heading. `- Workflow notes` and prose that
+ * mentions workflow stay green. Variant headings and other free text after Hard
+ * gates are not detected and are left to review. Editing anything above Hard gates
+ * needs a golden update in review.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,61 +40,22 @@ function firstSentinelAt(raw: string): number {
   return -1;
 }
 
-function stripQuotePrefixes(line: string): string {
-  let current = line;
-  while (/^>[ \t]?/u.test(current)) {
-    current = current.replace(/^>[ \t]?/u, "");
+function isWorkflowLine(line: string): boolean {
+  let text = line.replace(/^\s+/u, "");
+  for (;;) {
+    const next = text.replace(/^[>\s]+/u, "").replace(/^([-*+]|\d{1,9}[.)])\s+/u, "");
+    if (next === text) {
+      break;
+    }
+    text = next;
   }
-  return current;
-}
-
-function unwrapContainers(line: string): string {
-  const unquoted = stripQuotePrefixes(line);
-  const unlisted = unquoted.replace(/^([-*+]|\d{1,9}[.)]) /u, "");
-  return stripQuotePrefixes(unlisted);
-}
-
-function normalizeAtxText(content: string): string {
-  return content
-    .trim()
-    .replace(/[ \t]+#+[ \t]*$/u, "")
-    .trim()
-    .toLowerCase();
-}
-
-function isAtxWorkflow(line: string): boolean {
-  const match = /^( {0,3})(#{1,6})(?:[ \t]+|$)(.*)$/u.exec(unwrapContainers(line));
-  if (match === null) {
-    return false;
-  }
-  return normalizeAtxText(match[3] ?? "") === "workflow";
-}
-
-function isSetextUnderline(line: string): boolean {
-  return /^ {0,3}(?:=+|-+)[ \t]*$/u.test(line);
-}
-
-function laterWorkflowHeading(rest: string): boolean {
-  const lines = rest.split("\n");
-  for (let n = 0; n < lines.length; n++) {
-    const line = lines[n] ?? "";
-    if (isAtxWorkflow(line)) {
-      return true;
-    }
-    const next = lines[n + 1];
-    if (next === undefined) {
-      continue;
-    }
-    const text = unwrapContainers(line);
-    const underline = unwrapContainers(next);
-    if (text.trim() === "") {
-      continue;
-    }
-    if (isSetextUnderline(underline) && text.trim().toLowerCase() === "workflow") {
-      return true;
-    }
-  }
-  return false;
+  return (
+    text
+      .replace(/^#{1,6}\s*/u, "")
+      .replace(/[ \t]+#+\s*$/u, "")
+      .replace(/\s+$/u, "")
+      .toLowerCase() === "workflow"
+  );
 }
 
 describe("super-review wording", () => {
@@ -110,6 +73,6 @@ describe("super-review wording", () => {
         { cause },
       );
     }
-    expect(laterWorkflowHeading(raw.slice(hardAt))).toBe(false);
+    expect(raw.slice(hardAt).split("\n").some(isWorkflowLine)).toBe(false);
   });
 });
