@@ -1423,6 +1423,17 @@ describe("the start check (AC-3)", () => {
   });
 });
 
+/** A commit whose tree matches the dirty worktree. HEAD stays on the recorded revision. */
+function coverDirty(cwd: string) {
+  writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+  git(cwd, "add", "src/a.js");
+  const tree = git(cwd, "write-tree");
+  git(cwd, "reset", "-q", "HEAD");
+  const head = git(cwd, "rev-parse", "HEAD");
+  const cover = git(cwd, "commit-tree", tree, "-p", head, "-m", "cover dirty tree");
+  return { head, cover };
+}
+
 /** An unattended run with every gate recorded, ready for ship-preflight under the declaration `declare` wrote. */
 function ready(name = "firstmate") {
   const cwd = repo();
@@ -1654,6 +1665,46 @@ describe("binding at open and ship-preflight (AC-4)", () => {
       expect(redirected.err).toContain("uncommitted changes");
     } finally {
       setEnv({ GIT_WORK_TREE: undefined });
+    }
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a dirty tree when git replace covers HEAD with a matching tree", () => {
+    const { cwd, run } = ready();
+    const { head, cover } = coverDirty(cwd);
+    const before = runState(cwd, run);
+    const dirty = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(dirty.code).toBe(1);
+    expect(dirty.err).toContain("uncommitted changes");
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+    git(cwd, "replace", head, cover);
+    expect(Bun.spawnSync(["git", "diff", "--quiet", "HEAD"], { cwd }).exitCode).toBe(0);
+    const replaced = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(replaced.code).toBe(1);
+    expect(replaced.err).toContain("uncommitted changes");
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a dirty tree when GIT_REPLACE_REF_BASE names an alt replace prefix", () => {
+    const { cwd, run } = ready();
+    const { head, cover } = coverDirty(cwd);
+    const before = runState(cwd, run);
+    git(cwd, "update-ref", `refs/replace-alt/${head}`, cover);
+    setEnv({ GIT_REPLACE_REF_BASE: "refs/replace-alt/" });
+    try {
+      expect(
+        Bun.spawnSync(["git", "diff", "--quiet", "HEAD"], {
+          cwd,
+          env: { ...process.env, GIT_REPLACE_REF_BASE: "refs/replace-alt/" },
+        }).exitCode,
+      ).toBe(0);
+      const redirected = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(redirected.code).toBe(1);
+      expect(redirected.err).toContain("uncommitted changes");
+    } finally {
+      setEnv({ GIT_REPLACE_REF_BASE: undefined });
     }
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
@@ -1985,6 +2036,22 @@ describe("final ship (AC-5)", () => {
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
 
+  test("final ship missing-commit refusal does not carry GIT_TRACE2 paths", () => {
+    const s = shipped();
+    const missing = "c".repeat(40);
+    setEnv({ GIT_TRACE2: "1" });
+    try {
+      const r = finalShip(s.cwd, files(attestationOf(missing)).flags);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("is not in this repository");
+      expect(r.err).not.toContain(s.cwd);
+      expect(r.out).not.toContain(s.cwd);
+    } finally {
+      setEnv({ GIT_TRACE2: undefined });
+    }
+    expect(entriesOf(s)).toEqual(["supervisor"]);
+  });
+
   test("refuses a head that does not descend from the shipped revision", () => {
     const s = shipped();
     const older = git(s.cwd, "rev-parse", "HEAD~1");
@@ -2163,8 +2230,7 @@ describe("final ship (AC-5)", () => {
     Bun.spawnSync(["rm", "-f", marker]);
     const r = finalShip(s.cwd, files(attestationOf(ghost)).flags);
     expect(r.code).toBe(1);
-    expect(r.err).toContain(`cannot read commit ${ghost}`);
-    expect(r.err).not.toContain("is not in this repository");
+    expect(r.err).toContain("is not in this repository");
     expect(existsSync(marker)).toBe(false);
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });

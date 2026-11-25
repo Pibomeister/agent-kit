@@ -272,13 +272,16 @@ export function gitMustPrint(cwd: string, args: readonly string[], env?: NodeJS.
   return { ...result, code: -1, stderr: `git ${args.join(" ")} in ${cwd} exited 0 with no output` };
 }
 
+/** The same guard `FINAL_SHIP_GIT` uses: replace refs cannot rewrite the objects a snapshot reads. */
+const NO_REPLACE_OBJECTS = ["--no-replace-objects"] as const;
+
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
   const env = envWithoutRedirectingGit();
-  const head = gitMustPrint(project, ["rev-parse", "HEAD"], env);
+  const head = gitMustPrint(project, [...NO_REPLACE_OBJECTS, "rev-parse", "HEAD"], env);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
-  const indexPath = gitMustPrint(project, ["rev-parse", "--git-path", "index"], env);
+  const indexPath = gitMustPrint(project, [...NO_REPLACE_OBJECTS, "rev-parse", "--git-path", "index"], env);
   // An empty path joins back to the project directory, and copying that directory throws.
   if (indexPath.code !== 0 || indexPath.text === "")
     return indexPath.stderr === ""
@@ -295,7 +298,7 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       utimesSync(temp, atime, mtime);
     }
     env.GIT_INDEX_FILE = temp;
-    const untracked = git(project, ["ls-files", "--others", "--exclude-standard", "-z"], env);
+    const untracked = git(project, [...NO_REPLACE_OBJECTS, "ls-files", "--others", "--exclude-standard", "-z"], env);
     if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
     const paths = untracked.text
       .split("\0")
@@ -304,14 +307,14 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
           path !== "" && !(options.ignoreUntrackedDirs ?? []).some((dir) => path === dir || path.startsWith(`${dir}/`)),
       );
     if (paths.length > 0) {
-      const add = git(project, ["add", "--intent-to-add", "--", ...paths], env);
+      const add = git(project, [...NO_REPLACE_OBJECTS, "add", "--intent-to-add", "--", ...paths], env);
       if (add.code !== 0) return `cannot mark untracked files in ${project}: ${add.stderr}`;
     }
-    const diff = git(project, ["diff", "--no-ext-diff", "--binary", head.text], env);
+    const diff = git(project, [...NO_REPLACE_OBJECTS, "diff", "--no-ext-diff", "--binary", head.text], env);
     if (diff.code !== 0) return `cannot diff ${project} against ${head.text}: ${diff.stderr}`;
     const digest = createHash("sha256").update(diff.stdout).digest("hex");
 
-    const remote = git(project, ["config", "--get", "remote.origin.url"], env);
+    const remote = git(project, [...NO_REPLACE_OBJECTS, "config", "--get", "remote.origin.url"], env);
     return {
       repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
       revision: head.text,
@@ -2347,6 +2350,7 @@ const REDIRECTING_GIT_ENV = [
   "GIT_CEILING_DIRECTORIES",
   "GIT_GRAFT_FILE",
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_REPLACE_REF_BASE",
 ] as const;
 
 function envWithoutRedirectingGit(): NodeJS.ProcessEnv {
@@ -3047,11 +3051,15 @@ const RECOVERY =
  * `--no-lazy-fetch` is not on the argv. git 2.43 exits 129 for that option. Any other program-valued key git reads in
  * the worker's repository is outside this guarantee: only OS user separation closes it.
  */
-const FINAL_SHIP_GIT = ["--no-replace-objects", "-c", "log.showSignature=false"] as const;
+const FINAL_SHIP_GIT = [...NO_REPLACE_OBJECTS, "-c", "log.showSignature=false"] as const;
 
 function finalShipEnv(): NodeJS.ProcessEnv {
   const env = envWithoutRedirectingGit();
   env.GIT_NO_LAZY_FETCH = "1";
+  for (const name of Object.keys(env)) {
+    if (name === "GIT_TRACE" || name === "GIT_TRACE2" || name.startsWith("GIT_TRACE2_"))
+      Reflect.deleteProperty(env, name);
+  }
   return env;
 }
 
@@ -3183,14 +3191,8 @@ function shipUnattended(
   const authors = review.authors;
   if (authors.includes(reviewer))
     return deny(`reviewer ${reviewer} is among the authors; the review is not independent`, false);
-  const present = gitFinal(project, ["cat-file", "-e", `${head}^{commit}`]);
-  if (present.code !== 0)
-    return deny(
-      present.stderr === ""
-        ? `commit ${head} is not in this repository; fetch it, then record again`
-        : `cannot read commit ${head}: ${present.stderr}; fetch it, then record again`,
-      false,
-    );
+  if (gitFinal(project, ["cat-file", "-e", `${head}^{commit}`]).code !== 0)
+    return deny(`commit ${head} is not in this repository; fetch it, then record again`, false);
   const grafts = graftsRefusal(project);
   if (grafts !== undefined) return deny(grafts, false);
   const shippedRevision = shipped.snapshot.revision;

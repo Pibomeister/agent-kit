@@ -87,15 +87,15 @@ describe("a must-print git call that exits 0 silently", () => {
 
   test("takeSnapshot refuses a silent rev-parse HEAD, naming the command", () => {
     const dir = repo();
-    const text = refusal(withSilentGit(["rev-parse", "HEAD"], () => takeSnapshot(dir)));
-    expect(text).toContain("git rev-parse HEAD");
+    const text = refusal(withSilentGit(["--no-replace-objects", "rev-parse", "HEAD"], () => takeSnapshot(dir)));
+    expect(text).toContain("git --no-replace-objects rev-parse HEAD");
     expect(text).toContain("no output");
   });
 
   test("takeSnapshot refuses a silent rev-parse --git-path index, naming the command", () => {
     const dir = repo();
-    const text = refusal(withSilentGit(["rev-parse", "--git-path"], () => takeSnapshot(dir)));
-    expect(text).toContain("git rev-parse --git-path index");
+    const text = refusal(withSilentGit(["--no-replace-objects", "rev-parse", "--git-path"], () => takeSnapshot(dir)));
+    expect(text).toContain("git --no-replace-objects rev-parse --git-path index");
     expect(text).toContain("no output");
   });
 
