@@ -44992,7 +44992,7 @@ async function serve(argv, io) {
             io.err(`ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`);
           }
         }
-      } while (rescanEvents);
+      } while (rescanEvents && (outageWindow() === undefined || deliveryOutage === null));
       let remaining;
       try {
         remaining = runner.pendingEvents(runId);
@@ -45028,16 +45028,16 @@ async function serve(argv, io) {
     const windowMs = outageWindow();
     if (windowMs === undefined)
       return;
-    const t = now();
     if (deliveryOutage === null)
       deliveryOutage = startOutage();
-    const delay = outageRetryDelayMs(deliveryOutage.attempts, outageElapsedMs(deliveryOutage), windowMs);
+    const elapsed = outageElapsedMs(deliveryOutage);
+    const delay = outageRetryDelayMs(deliveryOutage.attempts, elapsed, windowMs);
     deliveryOutage.attempts += 1;
     if (delay <= 0)
       return;
     const attempts = deliveryOutage.attempts;
     const startedAt = deliveryOutage.startedAt;
-    deliveryOutage.retryAt = t + delay;
+    deliveryOutage.retryAt = startedAt + elapsed + delay;
     wait(delay).then(() => {
       if (!open || deliveryOutage === null || deliveryOutage.startedAt !== startedAt || deliveryOutage.attempts !== attempts)
         return;
@@ -45109,16 +45109,16 @@ async function serve(argv, io) {
     const windowMs = outageWindow();
     if (windowMs === undefined)
       return;
-    const t = now();
     if (auditOutage === null)
       auditOutage = startOutage();
-    const delay = outageRetryDelayMs(auditOutage.attempts, outageElapsedMs(auditOutage), windowMs);
+    const elapsed = outageElapsedMs(auditOutage);
+    const delay = outageRetryDelayMs(auditOutage.attempts, elapsed, windowMs);
     auditOutage.attempts += 1;
     if (delay <= 0)
       return;
     const attempts = auditOutage.attempts;
     const startedAt = auditOutage.startedAt;
-    auditOutage.retryAt = t + delay;
+    auditOutage.retryAt = startedAt + elapsed + delay;
     wait(delay).then(() => {
       if (!open || auditOutage === null || auditOutage.startedAt !== startedAt || auditOutage.attempts !== attempts)
         return;

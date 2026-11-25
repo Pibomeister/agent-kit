@@ -293,7 +293,7 @@ steps in the same tick stand. No failure approves a checkpoint. While a failed a
 retry tick, `decide` is refused with `audit retry in progress` until the next successful tick, and the
 supervisor retries `decide` after one cadence. This is a transient wait, not a guided handoff. When the charter
 sets `limits.delegate_replacements`, the next cadence tick retries and status stays autonomous
-while that cap is unspent and a delegate remains active. Status goes guided only when the cap is
+while that cap is unspent and a delegate remains active. Status goes guided when the cap is
 spent, and `autonomy.missing` names `delegate-replacements`. A cap of N allows N failed
 attempts, and the Nth one halts the audit, so a cap of 1 allows no retry. The count is not reset by a later
 success. Without `limits.outage_backoff_seconds`, a charter that omits the cap supplies no retry

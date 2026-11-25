@@ -758,7 +758,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
             );
           }
         }
-      } while (rescanEvents);
+      } while (rescanEvents && (outageWindow() === undefined || deliveryOutage === null));
       let remaining: { key: string; payload: string }[];
       try {
         remaining = runner.pendingEvents(runId);
@@ -792,14 +792,14 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const scheduleDeliveryBackoff = () => {
     const windowMs = outageWindow();
     if (windowMs === undefined) return;
-    const t = now();
     if (deliveryOutage === null) deliveryOutage = startOutage();
-    const delay = outageRetryDelayMs(deliveryOutage.attempts, outageElapsedMs(deliveryOutage), windowMs);
+    const elapsed = outageElapsedMs(deliveryOutage);
+    const delay = outageRetryDelayMs(deliveryOutage.attempts, elapsed, windowMs);
     deliveryOutage.attempts += 1;
     if (delay <= 0) return;
     const attempts = deliveryOutage.attempts;
     const startedAt = deliveryOutage.startedAt;
-    deliveryOutage.retryAt = t + delay;
+    deliveryOutage.retryAt = startedAt + elapsed + delay;
     void wait(delay).then(() => {
       if (
         !open ||
@@ -866,14 +866,14 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const scheduleAuditBackoff = () => {
     const windowMs = outageWindow();
     if (windowMs === undefined) return;
-    const t = now();
     if (auditOutage === null) auditOutage = startOutage();
-    const delay = outageRetryDelayMs(auditOutage.attempts, outageElapsedMs(auditOutage), windowMs);
+    const elapsed = outageElapsedMs(auditOutage);
+    const delay = outageRetryDelayMs(auditOutage.attempts, elapsed, windowMs);
     auditOutage.attempts += 1;
     if (delay <= 0) return;
     const attempts = auditOutage.attempts;
     const startedAt = auditOutage.startedAt;
-    auditOutage.retryAt = t + delay;
+    auditOutage.retryAt = startedAt + elapsed + delay;
     void wait(delay).then(() => {
       if (!open || auditOutage === null || auditOutage.startedAt !== startedAt || auditOutage.attempts !== attempts)
         return undefined;
