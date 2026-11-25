@@ -37,11 +37,13 @@ All times are America/Mexico_City.
 
 The shadow does not start until the owner settles these.
 
-1. **Observation method.** This is Planner B's captain call. Hermes holds no Orca pairing link during
-   the shadow, so it needs another way to observe. The no-send claim holds only while no pairing
-   link is held. A pairing link is a send path. It is not part of the shadow's no-send claim. It
-   needs the owner's quoted yes (checklist item 15) first. The choices are a read-only feed from
-   Grokmate's side, or early read-only pairing. Both planners recommend the feed.
+1. **Observation method.** This is Planner B's captain call. The default shadow observation method
+   is a feed from Grokmate's side. Both planners recommend the feed. The owner may instead choose a
+   pairing link. A pairing link is a send path. Holding one before go-live needs the owner's own
+   quoted yes for that link, given before Day 1. That yes is separate from checklist item 15. Item
+   15 is the only go-live trigger. When the owner chose the feed, Hermes holds no pairing link
+   during the shadow, so it needs the feed to observe. The no-send claim then holds. If the owner
+   chose a pairing link, the shadow is then not a no-send shadow.
 2. **Feed and probe tooling.** The feed and the 5-minute script probe need new scripts on Grokmate's
    side (section 1.1). They are outside this plan. They need their own go-ahead, a named builder and
    a time estimate. Neither draft names a builder.
@@ -64,9 +66,10 @@ both), which captain goes first in the go-live ramp, any extra shadow day, and t
 
 ### 1.1 What Hermes can see
 
-Hermes holds no Orca pairing link during the shadow. The no-send claim holds only while no pairing
-link is held. It cannot read or type into a captain's pane. It reads a feed instead. With no link,
-Hermes has no path that can send.
+When the owner chose the feed, Hermes holds no Orca pairing link during the shadow. It cannot read
+or type into a captain's pane. It reads a feed instead. With no link, Hermes has no path that can
+send. The no-send claim then holds. If the owner chose a pairing link, the shadow is then not a
+no-send shadow.
 
 | Id | Feed item | Exists today |
 |---|---|---|
@@ -517,9 +520,11 @@ Work the list in order. Each line is checked by someone other than Hermes.
 13. The staged ramp in section 5.3 is accepted as the go-live shape, or the owner has replaced it.
 14. **The Orca pairing URLs are in Hermes' hands**: one for each Mac in scope and none for M3. They
     are stored only in Hermes' secret store. They appear in no plan, log, pull request or handoff.
-    This step is owner-only. It is forbidden until item 15 is quoted.
+    This step is owner-only. Placing them for go-live is forbidden until item 15 is quoted. A
+    pairing link held during the shadow, if the owner chose one, rests on the quoted yes in owner
+    decision 1, not on this item and not on item 15.
 15. **The owner's explicit yes**, quoted with its date and time, naming the scope, the start time
-    and the cap. This yes is the only credential and the only go-live trigger.
+    and the cap. This yes is the only go-live trigger.
 
 Items 1 to 13 can be complete while 14 and 15 are open. It is still not live. Nobody describes it as
 ready without the checklist result beside it.
@@ -534,8 +539,9 @@ writes only inside its own shadow directory.
 
 These layers enforce the rule. None of them is Hermes' good behaviour.
 
-- Hermes holds no pairing link, so it has no path to a pane. The no-send claim holds only while no
-  pairing link is held.
+- When the owner chose the feed, Hermes holds no pairing link, so it has no path to a pane. The
+  no-send claim then holds. If the owner chose a pairing link, the shadow is then not a no-send
+  shadow.
 - Hermes holds no write credential for the supervisor's machine, the Macs, the forge or any inbox.
 - Every outbound action in Hermes' shadow runtime points at a stub that refuses, writes nothing
   outside, and fails on any live-send flag. Planner B accepted this second layer from Planner A's
@@ -556,10 +562,11 @@ point.
 One control file holds Hermes' mode: `off`, `observe`, `dry-run` or `live`. It sits outside anything
 Hermes can write. The owner controls it, and the acting supervisor may set it to `off`. Hermes reads
 it before every tick and before every send attempt, retries included. If the file is missing or
-unreadable, the mode is `off`. Only the owner's quoted yes moves it to `live`. Planner A conceded
-the mode file.
+unreadable, the mode is `off`. Only the owner's quoted go-live yes, checklist item 15, moves it to
+`live`. The quoted yes for a pairing link in owner decision 1 does not move it to `live`. Planner A
+conceded the mode file.
 
-### 5.3 Go-live ramp, after the owner's yes
+### 5.3 Go-live ramp, after the owner's go-live yes
 
 Planner A's draft had one cutover. Planner A conceded this staged ramp. Planner B adopted Planner
 A's daytime window: the ramp starts at a named time between 08:00 and 20:00.
@@ -571,12 +578,14 @@ A's daytime window: the ramp starts at a named time between 08:00 and 20:00.
 | L2 all in scope | Days 2 and 3 | Takes the remaining locks, one captain at a time, each with a confirmed pickup | Warm standby. Reads the send log. Steers nobody |
 | L3 steady | From day 4 | Normal duty | Stands down only when the owner says so |
 
-A stage advances only with zero misfires in the stage before it. With no pairing link in the shadow,
-Hermes cannot practise a real send. Stages L0 and L1 exist to cover that gap.
+A stage advances only with zero misfires in the stage before it. When the owner chose the feed,
+Hermes held no pairing link in the shadow, so it cannot practise a real send. Stages L0 and L1 exist
+to cover that gap. If the owner chose a pairing link, the shadow was not a no-send shadow. Go-live
+still waits on item 15.
 
-After the owner's yes, sends do not run in parallel. One send sequence runs at a time across the
-fleet. Hermes rediscovers the handle and re-reads the pane immediately before any send, so a stale
-parallel read never triggers one.
+After the owner's go-live yes, sends do not run in parallel. One send sequence runs at a time across
+the fleet. Hermes rediscovers the handle and re-reads the pane immediately before any send, so a
+stale parallel read never triggers one.
 
 Send limiter. At most 3 sends per captain per hour and 8 across the fleet per hour. Going over
 moves Hermes back to `dry-run`.
