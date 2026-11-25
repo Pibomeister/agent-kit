@@ -93,9 +93,13 @@ authority to apply a correction rides on the caller's authorization, recorded on
    scratch paths, or as `docker run --rm`, never inside a compound command or script. When the
    comprehension setting is `shadow` or `on`, store each lane's complete output as a run artifact
    and set `raw_output.hash` before synthesis reads it. Off, a missing setting, and an unknown
-   value leave this step as dispatch only. <!-- ak-egm-begin -->`doc-review/comprehension` is a new instance every
+   value leave this step as dispatch only.
+   <!-- ak-egm-begin -->
+   `doc-review/comprehension` is a new instance every
    round, with no prior-finding packet and no earlier paraphrase (ruling
-   `comprehension-seat-stays-naive`).<!-- ak-egm-end --> In `shadow` the lane is not required, so an unavailable run
+   `comprehension-seat-stays-naive`).
+   <!-- ak-egm-end -->
+   In `shadow` the lane is not required, so an unavailable run
    cannot block. A lane's suppressed sections come from that lane's own rules — a plan with a
    validated origin suppresses different sections in each seat, and they are not flattened into
    one shared rule.

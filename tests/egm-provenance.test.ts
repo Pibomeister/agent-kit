@@ -1,20 +1,18 @@
 /**
- * Provenance-only files are pinned by sha256 of the raw bytes: NOTICE,
- * GAP-PROBE.md, research/dossiers/egm.md (any dossier edit needs a re-pin),
- * comprehension-seat.yaml, and the EGM donor snapshot that uses the word EGM.
- * Mixed files wrap claims in begin/end markers that must appear once on both
- * the unmasked text and the fence-masked text; the test hashes the block after
- * CRLF folds to LF. Overlay copies must equal source bytes. The lock is YAML.
- * One loader walks donors, rejects duplicate ids, coerces a Date commit_date,
- * and asserts the egm commit, commit_date, license, copyright, license_file,
- * path, url, and repo. Duplicate-id rejection lives in this test, not in
- * loadDonors. Every egm adaptation source commit must equal the lock pin.
- * Identity strings (elephant-goldfish, 403d8881, GAP-PROBE, GAP-MASTRA, the
- * word EGM) may appear only in those hashed files, in a live marker block that
- * has a BLOCK_PINS row, in a byte-checked overlay copy, or in the allowlist:
- * this test, generated .cursor/bin/ak.js and .cursor/bin/ak-gate.mjs
- * (packaging inlines NOTICE), and generated provenance/adaptations.yaml
- * (checkAdaptationsSync). Catalog donor-count words come from catalog.yaml.
+ * FILE_HASHES pin provenance-only files by sha256 of the raw bytes (any
+ * dossier edit needs a re-pin). BLOCK_PINS hash mixed-file marker interiors
+ * after CRLF folds to LF; begin and end must appear once on unmasked and
+ * fence-masked text. LOCK_ENTRY_SHA256 is the lock egm entry, an
+ * identity-covered region. FINGERPRINT_DESC_SHA256 pins the fingerprint
+ * description. OVERLAY_COPIES must equal source bytes. IDENTITY_ALLOWLIST
+ * is the only other place identity tokens may appear. Tokens
+ * (elephant-goldfish, a ≥7-char prefix of the pin SHA, GAP-PROBE,
+ * GAP-MASTRA, the word EGM) match after NFKC, stripping format and
+ * Default_Ignorable characters, and case-fold. Small-caps ᴇɢᴍ does not
+ * NFKC-fold and is out of scope. A free-text claim with no identity token
+ * is review's job. Donor-count clauses in the README lede, package.json,
+ * and marketplace.json are parsed as digits or English count words and
+ * must equal the catalog.yaml totals.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -71,11 +69,31 @@ const FILE_HASHES: Array<{ file: string; sha256: string }> = [
   { file: GAP_PROBE, sha256: "73f79b67e12b388b09b482959faaf83c4370f664d6476f4eec321cd830e322ca" },
   {
     file: "research/dossiers/egm.md",
-    sha256: "77af72c4a42a0fd5867a30aa0d5aa7306c081fc5e692d2f9d5cad148fec69df9",
+    sha256: "e5ce066c6f656e2d34ebd4c13caa36eda2de7282fe65483253b33a62bfad833e",
   },
   {
     file: "provenance/adaptations.d/comprehension-seat.yaml",
     sha256: "478be32d48f0c566370b3f8af8d6f196330e6811e3b615aa0c7abd1b8a1608f0",
+  },
+  {
+    file: "provenance/donor-snapshots/egm@403d8881d620/agents/codebase_details.md",
+    sha256: "d80db07e449b57b3b3776d1401cca72a54b6b65a0ab218b86f9064ee4b8167bc",
+  },
+  {
+    file: "provenance/donor-snapshots/egm@403d8881d620/agents/comprehension.md",
+    sha256: "974f4972f717dc7b102a9b1407b3a625749149f2ae905727241e919f43cc3fa5",
+  },
+  {
+    file: "provenance/donor-snapshots/egm@403d8881d620/resources/document_standards/implementation-readiness-standard.md",
+    sha256: "ed0d2a085eac0fd9581d504a2ec0df2a92d6b2538636a22b16e0b1370fba6dbb",
+  },
+  {
+    file: "provenance/donor-snapshots/egm@403d8881d620/skills/egm-resolve/SKILL.md",
+    sha256: "6bb1909b42b815e074bd486c6244b56eef8d61669abb3302c764a16be05af472",
+  },
+  {
+    file: "provenance/donor-snapshots/egm@403d8881d620/tests/integration/test_claude.py",
+    sha256: "5af7ebd89b8fa7419b23ec006f291c02855bfc3b8e76df175cdec2105bfc37be",
   },
   {
     file: "provenance/donor-snapshots/egm@403d8881d620/tests/integration/test_codex.py",
@@ -96,9 +114,33 @@ const IDENTITY_ALLOWLIST: Array<{ file: string; reason: string }> = [
   },
 ];
 
-const IDENTITY_NEEDLES = ["elephant-goldfish", "403d8881", "GAP-PROBE", "GAP-MASTRA"] as const;
-const EGM_WORD = /(?:^|[^A-Za-z0-9_])EGM(?=[^A-Za-z0-9_]|$)/g;
-const CATALOG_COUNT_CLAIM = /\b(?:twelve|eleven|thirteen)\s+(?:catalog\s+)?donors\b/i;
+const FOLDED_NEEDLES = ["elephant-goldfish", "gap-probe", "gap-mastra"] as const;
+const COUNT_SURFACES = ["README.md", "package.json", ".claude-plugin/marketplace.json"] as const;
+const COUNT_TOKEN =
+  "\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty";
+const ENGLISH_COUNTS = new Map<string, number>([
+  ["zero", 0],
+  ["one", 1],
+  ["two", 2],
+  ["three", 3],
+  ["four", 4],
+  ["five", 5],
+  ["six", 6],
+  ["seven", 7],
+  ["eight", 8],
+  ["nine", 9],
+  ["ten", 10],
+  ["eleven", 11],
+  ["twelve", 12],
+  ["thirteen", 13],
+  ["fourteen", 14],
+  ["fifteen", 15],
+  ["sixteen", 16],
+  ["seventeen", 17],
+  ["eighteen", 18],
+  ["nineteen", 19],
+  ["twenty", 20],
+]);
 
 const LOCK_ENTRY_SHA256 = "1f48385ba3ca27a065fa1448af81d6b8aa5cd05dc545d3d76ab605fbbd03da77";
 const FINGERPRINT_DESC_SHA256 = "7df2fe33f96517c13e3756bdb727912f1f9d7a1a8bc61fdcda8fdb7f737581ff";
@@ -126,9 +168,9 @@ const BLOCK_PINS: BlockPin[] = [
   },
   {
     file: "roles/doc-review/comprehension/ROLE.md",
-    begin: "<!-- ak-egm-begin -->",
-    end: "<!-- ak-egm-end -->",
-    sha256: "0c78637607160ea80eee311aa7866905b2cbcc3bf7b955cdfd215cdc1ccd6fed",
+    begin: "<!-- ak-egm-naive-begin -->",
+    end: "<!-- ak-egm-naive-end -->",
+    sha256: "921984a62fe92132260413270795f7124105dc0426268305461aa95343fcdba6",
   },
   {
     file: "policies/resolved-conflicts.yaml",
@@ -144,15 +186,15 @@ const BLOCK_PINS: BlockPin[] = [
   },
   {
     file: ".cursor/references/shared/roles/doc-review/comprehension/ROLE.md",
-    begin: "<!-- ak-egm-begin -->",
-    end: "<!-- ak-egm-end -->",
-    sha256: "c5d858d91739c6c72bb1be77e055c23e3879295995d023d5db851eb8d4b2fafc",
+    begin: "<!-- ak-egm-naive-begin -->",
+    end: "<!-- ak-egm-naive-end -->",
+    sha256: "921984a62fe92132260413270795f7124105dc0426268305461aa95343fcdba6",
   },
   {
     file: "AGENTS.md",
     begin: "<!-- ak-egm-begin -->",
     end: "<!-- ak-egm-end -->",
-    sha256: "e90a630811147b1e366d62184298cbaab005c72a5c5f3dd39450503e5cec796d",
+    sha256: "35b5f6a2c01807115b147a8ce1e0a53a925830d9dd77aa51d269be23a6adc433",
   },
   {
     file: "src/review-isolation-probe/children.ts",
@@ -170,19 +212,19 @@ const BLOCK_PINS: BlockPin[] = [
     file: "skills/doc-review/SKILL.md",
     begin: "<!-- ak-egm-begin -->",
     end: "<!-- ak-egm-end -->",
-    sha256: "049efe6b95a2a9e229bbd982b6d0277e6ea6c78171b9b0010923d28b7c0d1cd7",
+    sha256: "696149bfb2ff403d89dab493f88243c4b65484cf557dbac3b6d7622e83b20147",
   },
   {
     file: ".cursor/skills/doc-review/SKILL.md",
     begin: "<!-- ak-egm-begin -->",
     end: "<!-- ak-egm-end -->",
-    sha256: "7cd5d10440b4fdcaf8ace61c1a44bdc2f060c234a57a43edc12ffd58f554e443",
+    sha256: "12da903a48f66a6cdb23f23f1b4d4c092ea7719a726e40ca30f12a2b3f4bfc88",
   },
   {
-    file: "tests/docrules.test.ts",
-    begin: "// ak-egm-begin",
-    end: "// ak-egm-end",
-    sha256: "5a76e328bf0e910041f3f6826461937229bf2e9f14127a3598ebec3343ad78c4",
+    file: ".cursor/agents/doc-review-comprehension.md",
+    begin: "<!-- ak-egm-naive-begin -->",
+    end: "<!-- ak-egm-naive-end -->",
+    sha256: "921984a62fe92132260413270795f7124105dc0426268305461aa95343fcdba6",
   },
   {
     file: "tests/egm-review-schemas.test.ts",
@@ -466,25 +508,67 @@ function extractPinnedBlock(text: string, pin: BlockPin): string {
   return folded.slice(start, stop);
 }
 
+function foldIdentity(text: string): string {
+  return text
+    .normalize("NFKC")
+    .replaceAll(/\p{Cf}|\p{Default_Ignorable_Code_Point}/gu, "")
+    .toLowerCase();
+}
+
+function readTracked(file: string): string {
+  const bytes = readFileSync(join(REPO, file));
+  if (bytes.includes(0)) return bytes.toString("latin1").replaceAll("\r\n", "\n");
+  return bytes.toString("utf8").replaceAll("\r\n", "\n");
+}
+
 function trackedTextFiles(): string[] {
   const listed = spawnSync("git", ["ls-files", "-z"], { cwd: REPO, encoding: "buffer" });
   expect(listed.status, "git ls-files").toBe(0);
   const files: string[] = [];
   for (const raw of listed.stdout.toString("utf8").split("\0")) {
     if (raw === "" || raw.includes("node_modules/")) continue;
-    const bytes = readFileSync(join(REPO, raw));
-    if (bytes.includes(0)) continue;
     files.push(raw);
   }
   return files;
 }
 
-function identityOffsets(text: string): number[] {
+function parseCountToken(raw: string): number | null {
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const mapped = ENGLISH_COUNTS.get(raw.toLowerCase());
+  return mapped === undefined ? null : mapped;
+}
+
+function donorCountClauses(text: string): Array<{ total: number; mit: number | null; apache: number | null }> {
+  const donorRe = new RegExp(`\\b(${COUNT_TOKEN})\\s+(?:catalog\\s+)?donors\\b`, "gi");
+  const clauses: Array<{ total: number; mit: number | null; apache: number | null }> = [];
+  for (const match of text.matchAll(donorRe)) {
+    const total = parseCountToken(match[1] ?? "");
+    if (total === null) continue;
+    const window = text.slice(match.index ?? 0, (match.index ?? 0) + 180);
+    const mitMatch = new RegExp(`\\b(${COUNT_TOKEN})\\s+MIT\\b`, "i").exec(window);
+    const apacheMatch = new RegExp(`\\b(${COUNT_TOKEN})\\s+Apache\\b`, "i").exec(window);
+    clauses.push({
+      total,
+      mit: mitMatch === null ? null : parseCountToken(mitMatch[1] ?? ""),
+      apache: apacheMatch === null ? null : parseCountToken(apacheMatch[1] ?? ""),
+    });
+  }
+  return clauses;
+}
+
+function identityOffsets(folded: string): number[] {
   const hits: number[] = [];
-  for (const needle of IDENTITY_NEEDLES) hits.push(...indicesOf(text, needle));
-  for (const match of text.matchAll(EGM_WORD)) {
+  for (const needle of FOLDED_NEEDLES) hits.push(...indicesOf(folded, needle));
+  const pin = EGM_COMMIT.toLowerCase();
+  for (const match of folded.matchAll(/[0-9a-f]{7,40}/g)) {
+    if (pin.startsWith(match[0])) hits.push(match.index ?? 0);
+  }
+  for (const match of folded.matchAll(/(?<![a-z0-9_])egm(?![a-z0-9_])/g)) {
     const at = match.index ?? 0;
-    hits.push(match[0].startsWith("E") ? at : at + 1);
+    const before = folded.slice(Math.max(0, at - 3), at);
+    const after = folded.slice(at + 3, at + 9);
+    if (before.endsWith("ak-") && after.startsWith("-")) continue;
+    hits.push(at);
   }
   return hits;
 }
@@ -494,19 +578,24 @@ function coveredRanges(file: string, folded: string): Array<[number, number]> {
   if (OVERLAY_COPIES.some((copy) => copy.dest === file)) return [[0, folded.length]];
   if (IDENTITY_ALLOWLIST.some((entry) => entry.file === file)) return [[0, folded.length]];
   if (file === LOCK) {
-    const entry = lockEntry(folded);
-    const start = folded.indexOf(entry);
-    return [[start, start + entry.length]];
+    const startNeedle = foldIdentity("  # Catalog donor, no EGM plugin, probe plus comprehension and cold read.");
+    const start = folded.indexOf(startNeedle);
+    const endNeedle = "\n# ---------------------------------------------------------------------------";
+    const end = folded.indexOf(endNeedle, start);
+    if (start < 0 || end < 0) return [];
+    return [[start, end]];
   }
   const ranges: Array<[number, number]> = [];
   for (const pin of BLOCK_PINS.filter((row) => row.file === file)) {
+    const begin = foldIdentity(pin.begin);
+    const end = foldIdentity(pin.end);
     const visible = maskFences(folded);
-    const begins = indicesOf(visible, pin.begin);
-    const ends = indicesOf(visible, pin.end);
+    const begins = indicesOf(visible, begin);
+    const ends = indicesOf(visible, end);
     const beginAt = begins[0];
     const endAt = ends[0];
     if (beginAt === undefined || endAt === undefined || begins.length !== 1 || ends.length !== 1) continue;
-    ranges.push([beginAt + pin.begin.length, endAt]);
+    ranges.push([beginAt + begin.length, endAt]);
   }
   return ranges;
 }
@@ -635,20 +724,24 @@ describe("EGM provenance (GS-004f)", () => {
     const { catalog: loaded } = loadCatalog(REPO);
     const description = loaded?.package.description ?? "";
     expect(description.length, "catalog.yaml package.description").toBeGreaterThan(0);
-    const total = countWord(catalog.size);
-    const mit = countWord([...catalog.values()].filter((license) => license === "MIT").length);
-    const apache = countWord([...catalog.values()].filter((license) => license === "Apache-2.0").length);
-    expect(description).toContain(total);
-    expect(description).toContain(mit);
-    expect(description).toContain(apache);
+    const mitCount = [...catalog.values()].filter((license) => license === "MIT").length;
+    const apacheCount = [...catalog.values()].filter((license) => license === "Apache-2.0").length;
+    expect(description).toContain(countWord(catalog.size));
+    expect(description).toContain(countWord(mitCount));
+    expect(description).toContain(countWord(apacheCount));
     expect(contractPluginDescription(readFileSync(join(REPO, "adapters/claude-code/CONTRACT.md"), "utf8"))).toBe(
       description,
     );
+    expect(readFileSync(join(REPO, ".cursor/catalog.yaml"), "utf8")).toContain(description);
     const countLies: string[] = [];
-    for (const file of trackedTextFiles()) {
-      const folded = readFileSync(join(REPO, file), "utf8").replaceAll("\r\n", "\n").toLowerCase();
-      if (!CATALOG_COUNT_CLAIM.test(folded)) continue;
-      if (!folded.includes(total) || !folded.includes(mit) || !folded.includes(apache)) countLies.push(file);
+    for (const file of COUNT_SURFACES) {
+      const clauses = donorCountClauses(readTracked(file));
+      if (clauses.length === 0) countLies.push(`${file}:missing-clause`);
+      for (const clause of clauses) {
+        if (clause.total !== catalog.size || clause.mit !== mitCount || clause.apache !== apacheCount) {
+          countLies.push(`${file}:${clause.total}/${clause.mit}/${clause.apache}`);
+        }
+      }
     }
     expect(countLies).toEqual([]);
   });
@@ -660,7 +753,7 @@ describe("EGM provenance (GS-004f)", () => {
     }
     const uncovered: string[] = [];
     for (const file of trackedTextFiles()) {
-      const folded = readFileSync(join(REPO, file), "utf8").replaceAll("\r\n", "\n");
+      const folded = foldIdentity(readTracked(file));
       const ranges = coveredRanges(file, folded);
       for (const offset of identityOffsets(folded)) {
         if (!offsetCovered(offset, ranges)) uncovered.push(`${file}:${folded.slice(0, offset).split("\n").length}`);
@@ -678,7 +771,9 @@ describe("EGM provenance (GS-004f)", () => {
 
   test("cursor CONTRACT isolation row is the docs-only row", () => {
     const text = readFileSync(join(REPO, "adapters/cursor/CONTRACT.md"), "utf8");
-    const row = text.split("\n").find((line) => line.startsWith("| `isolated-review-context` |"));
+    const rows = text.split("\n").filter((line) => line.startsWith("| `isolated-review-context` |"));
+    expect(rows.length, "isolation rows").toBe(1);
+    const row = rows[0];
     expect(row, "isolation row").toBeDefined();
     if (row === undefined) return;
     expect(row).toContain("Docs only, not session-tested");

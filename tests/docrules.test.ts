@@ -1717,10 +1717,6 @@ describe("verification rules", () => {
   });
 });
 
-// ak-egm-begin
-// ---------------------------------------------------------- EGM 1b review ---
-// ak-egm-end
-
 const HASH = `sha256:${"a".repeat(64)}`;
 const RULE_COLD_REF = "ticket.cold-read-ref-required-when-on";
 const RULE_PARAPHRASE = "review.comprehension-paraphrase-stored-by-hash";

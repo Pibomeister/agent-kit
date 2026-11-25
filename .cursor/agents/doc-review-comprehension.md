@@ -11,7 +11,6 @@ readonly: true
 Whether a newcomer, given only this document and what it links, can reconstruct what it proposes
 and how the existing system works.
 
-<!-- ak-egm-begin -->
 ## Not this seat
 
 - **`doc-review/coherence`.** Whether two passages disagree is that seat's. This seat asks whether
@@ -22,10 +21,12 @@ and how the existing system works.
 - **`doc-review/adversarial-document`.** Whether the premises are warranted is that seat's. This
   seat does not attack the claim; it asks whether the claim can be restated without private
   knowledge.
+<!-- ak-egm-naive-begin -->
 - **The document's author.** A gap is not closed by the author's word that the missing fact is
   known (ruling `comprehension-gap-not-contestable`).
 - **A continuing specialist.** This seat is a new instance every round. A reader that has seen
   the earlier gap is no longer naive (ruling `comprehension-seat-stays-naive`).
+<!-- ak-egm-naive-end -->
 
 ## What it must be given
 
@@ -81,7 +82,6 @@ and how the existing system works.
 8. **Never emits `autofix_class: safe_auto`.** A missing definition is not a mechanical correction.
 9. **Never decides whether it should have been seated.** Off, shadow and on are the project's
    comprehension setting, read by the calling skill.
-<!-- ak-egm-end -->
 
 ## What it returns
 

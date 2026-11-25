@@ -38,14 +38,11 @@ Lock comment: catalog donor, no EGM plugin, probe plus comprehension and
 cold read. Count those files with the catalog donors, not with the
 research-only pins (`tester-army-e2e`, `blocks`).
 
-The GS-004f provenance test pins provenance-only files by sha256 of the raw
-bytes: NOTICE, its overlay copy, this dossier, the comprehension-seat
-fragment, GAP-PROBE.md, and the lock's egm entry. Mixed files wrap the
-provenance claims in begin/end markers that must appear once, outside any
-code fence; the test hashes the block. Overlay copies must match source
-bytes. A fenced copy cannot satisfy a pin. Any byte change is red until the
-hash is updated in the same diff. Every egm adaptation `source` commit must
-equal the lock pin. Free-text claims elsewhere are review's job.
+The GS-004f provenance test (`tests/egm-provenance.test.ts`) pins this
+surface through FILE_HASHES, BLOCK_PINS, LOCK_ENTRY_SHA256,
+FINGERPRINT_DESC_SHA256, OVERLAY_COPIES, and IDENTITY_ALLOWLIST. The lock
+egm entry is an identity-covered region. A free-text claim with no identity
+token is review's job. Any edit to this dossier needs a re-pin.
 
 ---
 
