@@ -120,6 +120,11 @@ describe("charter rules", () => {
     expect(rulesOf(run(doc))).toContain("charter.hash-matches-content-and-location-is-not-worker-writable");
   });
 
+  test("a worker-writable scope matches with the shared glob matcher, so `*` after a dot is still a wildcard", () => {
+    const doc = charter({ repos: [{ repo: "app", base_branch: "main", paths: ["kb/charters/c1.*"] }] });
+    expect(rulesOf(run(doc))).toContain("charter.hash-matches-content-and-location-is-not-worker-writable");
+  });
+
   test("charter.sensitive-grant-requires-explicit-human-approval-bound-to-this-hash catches a foreign hash", () => {
     const doc = charter({
       sensitive_grants: [
