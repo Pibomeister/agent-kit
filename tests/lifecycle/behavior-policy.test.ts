@@ -1842,8 +1842,11 @@ describe("BV-T01 policy binding at open, resume and check", () => {
     const checked = ak(dir, "check", "--dir", started.evidence, "--run", child.run.run_id);
     expect(checked.code).toBe(1);
     expect(checked.err).toContain("no protected runner creation record");
+    expect(checked.err).toContain("evidence behavior-policy");
     const shipped = ak(dir, "record", "--dir", started.evidence, "--run", child.run.run_id, "--gate", "ship-preflight");
     expect(shipped.code).toBe(1);
+    expect(shipped.err).toContain("no protected runner creation record");
+    expect(shipped.err).toContain("evidence behavior-policy");
     for (const gate of PRE_SHIP_GATES) {
       expect(shipped.err).toContain(
         `ak lifecycle record: refused: gate ${gate} has no current evidence (no record for run ${child.run.run_id} in ${started.evidence})`,

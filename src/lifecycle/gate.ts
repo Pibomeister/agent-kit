@@ -266,7 +266,7 @@ export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEn
  * command, so the caller's own refusal carries the evidence. Commands that legitimately print
  * nothing (a clean diff, no untracked files, `--is-ancestor`) keep using `git`.
  */
-export function gitMustPrint(cwd: string, args: readonly string[], env?: Record<string, string>): GitResult {
+export function gitMustPrint(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): GitResult {
   const result = git(cwd, args, env);
   if (result.code !== 0 || result.text !== "") return result;
   return { ...result, code: -1, stderr: `git ${args.join(" ")} in ${cwd} exited 0 with no output` };
