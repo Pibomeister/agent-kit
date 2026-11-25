@@ -33,6 +33,7 @@ function facts(delta: Partial<DeltaFacts> = {}, rest: Partial<Omit<ScopeFacts, "
       rewritten_lines: 0,
       conflict_paths: [],
       path_identity: [],
+      changed_paths: [],
       ...delta,
     },
     class_rose: false,
@@ -222,6 +223,13 @@ describe("readPatch", () => {
   test("a mode-only pair with no hunk is one changed line", () => {
     const patch = readPatch("diff --git a/src/a.ts b/src/a.ts\nold mode 100644\nnew mode 100755\n");
     expect(patch.lines).toBe(1);
+  });
+
+  test("a hunkless new or deleted file is one changed line", () => {
+    const added = readPatch("diff --git a/empty b/empty\nnew file mode 100644\nindex 0000000..e69de29\n");
+    const deleted = readPatch("diff --git a/empty b/empty\ndeleted file mode 100644\nindex e69de29..0000000\n");
+    const executable = readPatch("diff --git a/empty b/empty\nnew file mode 100755\nindex 0000000..e69de29\n");
+    expect([added.lines, deleted.lines, executable.lines]).toEqual([1, 1, 1]);
   });
 
   test("a gitlink bump is one SHA line", () => {

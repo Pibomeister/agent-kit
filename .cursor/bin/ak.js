@@ -46638,10 +46638,14 @@ function readPatch(diff) {
   let gitlink = false;
   let oldMode = false;
   let newMode = false;
+  let created = false;
+  let deleted = false;
+  let counted = false;
   const changed = (text5) => {
     hash.update(`${text5}
 `);
     lines += 1;
+    counted = true;
     const key = `${file}
 ${text5}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -46652,10 +46656,18 @@ ${text5}`;
     oldMode = false;
     newMode = false;
   };
+  const flushFile = () => {
+    if ((created || deleted) && !counted)
+      changed("file");
+    created = false;
+    deleted = false;
+    counted = false;
+  };
   for (const line of diff.split(`
 `)) {
     if (line.startsWith("diff --git ")) {
       flushMode();
+      flushFile();
       file = line;
       blob = "";
       inHunk = false;
@@ -46695,9 +46707,14 @@ ${text5}`;
     } else if (MODE.test(line)) {
       hash.update(`${line}
 `);
+      if (line.startsWith("new file mode "))
+        created = true;
+      else if (line.startsWith("deleted file mode "))
+        deleted = true;
     }
   }
   flushMode();
+  flushFile();
   return { id: `sha256:${hash.digest("hex")}`, lines, counts };
 }
 function linesNotIn(patch, other) {
@@ -46836,7 +46853,7 @@ function pathIdentity(before, now) {
 }
 function git4(repo, args, statuses = [0]) {
   const context = resolveRunnerGit(repo);
-  const run3 = spawnSync6(context.binary, ["--no-replace-objects", "-C", repo, "-c", "core.quotePath=false", ...args], {
+  const run3 = spawnSync6(context.binary, ["--no-replace-objects", "-C", repo, ...isolatedGitArgv(repo, ["-c", "core.quotePath=false", ...args])], {
     cwd: repo,
     env: isolatedGitEnv(context.path, context.home),
     encoding: "utf8",
@@ -46915,11 +46932,12 @@ function linesRewritten(repo, base2, reviewed, now, head) {
   const atCut = cut === undefined ? readPatch("") : headPatch(repo, base2, cut).patch;
   return Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
 }
-function conflictPaths(repo, base2, previous, head) {
+function inspectMerges(repo, base2, previous, head) {
   const merges = git4(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base2}`]).out.split(`
 `);
   const conflicted = new Set;
   const pairs = [];
+  let novel_merge = false;
   for (const merge of merges) {
     if (merge === "")
       continue;
@@ -46941,22 +46959,27 @@ function conflictPaths(repo, base2, previous, head) {
     }
     if (parents.length !== 2 || ours === undefined || theirs === undefined)
       continue;
-    pairs.push([ours, theirs]);
+    pairs.push({ merge, ours, theirs });
   }
   if (pairs.length === 0)
-    return [...conflicted].toSorted();
+    return { conflict_paths: [...conflicted].toSorted(), novel_merge };
   const home = mkdtempSync5(join48(tmpdir4(), "ak-review-"));
   try {
     const context = { ...resolveRunnerGit(repo), home };
-    for (const [ours, theirs] of pairs) {
+    for (const { merge, ours, theirs } of pairs) {
       const run3 = withThrowawayObjectStore(context, repo, (extraEnv) => {
         const result2 = gitProcess(context, repo, ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs], 1e4, undefined, extraEnv);
         if (result2.code > 1)
           throw new Error(`git merge-tree failed: ${result2.stderr}`);
         return { code: result2.code, out: new TextDecoder().decode(result2.stdout) };
       });
-      if (run3.code === 0)
+      const resultTree = run3.out.split("\x00")[0]?.trim() ?? "";
+      if (run3.code === 0) {
+        const recorded = git4(repo, ["rev-parse", "--verify", "--end-of-options", `${merge}^{tree}`]).out.trim();
+        if (resultTree === "" || resultTree !== recorded)
+          novel_merge = true;
         continue;
+      }
       for (const path of run3.out.split("\x00").slice(1))
         if (path !== "")
           conflicted.add(path);
@@ -46964,7 +46987,10 @@ function conflictPaths(repo, base2, previous, head) {
   } finally {
     rmSync16(home, { recursive: true, force: true });
   }
-  return [...conflicted].toSorted();
+  return { conflict_paths: [...conflicted].toSorted(), novel_merge };
+}
+function changedPaths(repo, previous, head) {
+  return git4(repo, ["diff", "--name-only", "--no-renames", "-z", "--end-of-options", `${previous}..${head}`]).out.split("\x00").filter((path) => path.length > 0).toSorted();
 }
 function readDelta(repo, base2, previous, head) {
   if (previous !== base2 && mergeBase(repo, base2, previous) === previous)
@@ -46973,17 +46999,20 @@ function readDelta(repo, base2, previous, head) {
   const now = headPatch(repo, base2, head);
   const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));
   const nowTree = treeOf(rawRows(repo, now.reading.merge_base, head));
+  const identical = sameTree(beforeTree, nowTree);
+  const merges = inspectMerges(repo, base2, previous, head);
   return {
     now: now.reading,
     previous: before.reading,
     delta: {
-      empty: sameTree(beforeTree, nowTree) && !novelNonMerge(repo, base2, previous, head, before.reading.merge_base, before.patch.id),
+      empty: identical && !merges.novel_merge && !novelNonMerge(repo, base2, previous, head, before.reading.merge_base, before.patch.id),
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
       rewritten_lines: linesRewritten(repo, base2, before, now.reading, head),
-      conflict_paths: conflictPaths(repo, base2, previous, head),
-      path_identity: pathIdentity(beforeTree, nowTree)
+      conflict_paths: merges.conflict_paths,
+      path_identity: pathIdentity(beforeTree, nowTree),
+      changed_paths: identical ? [] : changedPaths(repo, previous, head)
     }
   };
 }

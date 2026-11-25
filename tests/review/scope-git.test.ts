@@ -18,6 +18,7 @@ import validProject from "../fixtures/delegation/valid.project.json" with { type
 import validTicket from "../fixtures/delegation/valid.ticket.json" with { type: "json" };
 import { runCli } from "../../src/cli.ts";
 import { runReview } from "../../src/review/cli.ts";
+import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
 import { parseJson, type JsonValue } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
@@ -601,6 +602,93 @@ describe("ak review scope: later-round tree identity", () => {
     f.git("reset", "--hard", mixed);
     expect(f.record(mixed)).toMatchObject({ outcome: "closure", delta: { empty: false } });
     expect(f.decide(mixed).code).toBe(1);
+  });
+
+  test("MERGE-ONLY-DIRTY-DISTINCT-OURS: a dirty tree only on a merge then ours back does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/evil.ts": "pwned\n" });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty merge only");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
+    f.git("reset", "--hard", restored);
+    expect(f.record(restored)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    expect(f.decide(restored).code).toBe(1);
+  });
+
+  test("MERGE-ONLY-DIRTY-EMPTY-SIDE-OURS: a dirty merge with an empty side parent does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    f.git("checkout", "-b", "side", reviewed);
+    f.git("commit", "--allow-empty", "-m", "empty side");
+    const side = f.git("rev-parse", "HEAD");
+    f.git("checkout", "pr");
+    f.write({ "src/evil.ts": "pwned\n" });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", side, "-m", "dirty merge empty side");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", side, "-m", "ours back to reviewed");
+    f.git("reset", "--hard", restored);
+    expect(f.record(restored)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    expect(f.decide(restored).code).toBe(1);
+  });
+
+  test("EMPTY-FILE-ADD: a hunkless new empty file is a one-line closure", () => {
+    const f = fixture();
+    f.round(f.head);
+    const added = f.commit({ "src/empty.ts": "" }, "empty file");
+    expect(f.record(added)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { empty: false, added_lines: 1, changed_paths: ["src/empty.ts"] },
+    });
+  });
+
+  test("MERGE-ONLY-EMPTY-FILE-DISTINCT: an empty file only on a merge then ours back does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    writeFileSync(join(f.root, "src/empty.ts"), "");
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "empty file on merge");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
+    f.git("reset", "--hard", restored);
+    expect(f.record(restored)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    expect(f.decide(restored).code).toBe(1);
+  });
+
+  test("MOVE-HUNK: moving the same lines inside a file is a non-empty closure with that path", () => {
+    const f = fixture();
+    f.round(f.head);
+    const moved = f.commit({ "src/a.ts": lines("first", 30) + lines("a", 10) }, "move first hunk above base lines");
+    const scoped = f.record(moved);
+    expect(member(member(scoped, "pull_request"), "patch_id")).toBe(member(member(scoped, "previous"), "patch_id"));
+    expect(scoped).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { empty: false, added_lines: 0, changed_paths: ["src/a.ts"] },
+    });
+  });
+
+  test("RC-COMMITGRAPH-ARGV: delta git argv disables the commit graph", () => {
+    const f = fixture();
+    const argv = isolatedGitArgv(f.root, ["-c", "core.quotePath=false", "rev-parse", "HEAD"]);
+    expect(argv).toContain("core.commitGraph=false");
+    expect(argv[argv.indexOf("core.commitGraph=false") - 1]).toBe("-c");
+    const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
+    expect(source).toContain("isolatedGitArgv(");
   });
 });
 

@@ -8,9 +8,10 @@
  * policy give the same triggers and the same outcome.
  *
  * - `readPatch` turns a zero-context diff into a patch id, a count of changed
- *   lines and the changed lines themselves. A mode-only pair and a gitlink each
- *   count as one changed line. The id is for rewritten-commit matching. Empty
- *   is blob identity plus no novel own commit in `delta.ts`.
+ *   lines and the changed lines themselves. A mode-only pair, a gitlink and a
+ *   hunkless new or deleted file each count as one changed line. The id is for
+ *   rewritten-commit matching. Empty is blob identity plus no novel own commit
+ *   in `delta.ts`.
  * - `scopeTriggers` says which triggers fire, which could not be evaluated and
  *   why.
  * - `scopeOutcome` turns the triggers and the ledger's scope into one of
@@ -39,8 +40,9 @@ const GITLINK_MODE = / 160000$/;
  * The id keeps whitespace, so an indentation change is a change. It drops hunk
  * headers, so a patch that only moved keeps its id. A binary file counts as
  * one changed line, identified by the blob it becomes. An old-mode/new-mode
- * pair counts as one changed line. A gitlink (mode 160000) counts as one SHA
- * line, not the Subproject commit hunk.
+ * pair counts as one changed line. A hunkless new or deleted file counts as
+ * one changed line, matching that pair. A gitlink (mode 160000) counts as one
+ * SHA line, not the Subproject commit hunk.
  */
 export function readPatch(diff: string): Patch {
   const hash = createHash("sha256");
@@ -52,9 +54,13 @@ export function readPatch(diff: string): Patch {
   let gitlink = false;
   let oldMode = false;
   let newMode = false;
+  let created = false;
+  let deleted = false;
+  let counted = false;
   const changed = (text: string): void => {
     hash.update(`${text}\n`);
     lines += 1;
+    counted = true;
     const key = `${file}\n${text}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   };
@@ -63,9 +69,16 @@ export function readPatch(diff: string): Patch {
     oldMode = false;
     newMode = false;
   };
+  const flushFile = (): void => {
+    if ((created || deleted) && !counted) changed("file");
+    created = false;
+    deleted = false;
+    counted = false;
+  };
   for (const line of diff.split("\n")) {
     if (line.startsWith("diff --git ")) {
       flushMode();
+      flushFile();
       file = line;
       blob = "";
       inHunk = false;
@@ -96,9 +109,12 @@ export function readPatch(diff: string): Patch {
       newMode = true;
     } else if (MODE.test(line)) {
       hash.update(`${line}\n`);
+      if (line.startsWith("new file mode ")) created = true;
+      else if (line.startsWith("deleted file mode ")) deleted = true;
     }
   }
   flushMode();
+  flushFile();
   return { id: `sha256:${hash.digest("hex")}`, lines, counts };
 }
 
@@ -140,6 +156,12 @@ export interface DeltaFacts {
    * add and delete. Either fires `path-identity`.
    */
   path_identity: readonly string[];
+  /**
+   * Paths `git diff --name-only previous..head` names when the result trees
+   * differ. A closure round reads this list. A move that keeps the patch id
+   * still has a path. Empty when the result trees match.
+   */
+  changed_paths: readonly string[];
 }
 
 /** One value at the last reviewed round and now. Null where the caller did not supply it. */
