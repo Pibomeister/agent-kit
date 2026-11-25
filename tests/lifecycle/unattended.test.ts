@@ -1787,6 +1787,22 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
+  test("ship-preflight refuses an untracked file named with a leading space next to a tracked foo", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, "foo"), "tracked\n");
+    git(cwd, "add", "foo");
+    git(cwd, "commit", "-q", "-m", "foo");
+    writeFileSync(join(cwd, " foo"), "untracked\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, " foo", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
   test("ship-preflight refuses a filemode-false chmod of a 100644 file, naming the path", () => {
     const { cwd, run } = ready();
     git(cwd, "config", "core.filemode", "false");

@@ -330,7 +330,8 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
     }
     const untracked = raw(["ls-files", "--others", "--exclude-standard", "-z"]);
     if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
-    const paths = untracked.text
+    const paths = new TextDecoder()
+      .decode(untracked.stdout)
       .split("\0")
       .filter(
         (path) =>
