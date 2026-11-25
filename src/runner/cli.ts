@@ -1018,7 +1018,9 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         const request = requestValue;
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
         const adaptersReady = eventCommand !== null && loopCommand !== null && !deliveryFailedVisible();
-        const auditRetryOpen = adaptersReady && auditBlock === "retry";
+        const auditRetryOpen =
+          adaptersReady &&
+          (auditBlock === "retry" || (auditBlock === "failed" && !auditFailedVisible() && !auditHalted));
         const result = await execute(
           runner,
           request,
@@ -1031,7 +1033,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           effectAdapters,
           decisions,
           activeChildren,
-          adaptersReady && (auditBlock === "ok" || (auditBlock === "failed" && !auditFailedVisible())),
+          adaptersReady && auditBlock === "ok",
           auditRetryOpen,
         );
         const missing = [

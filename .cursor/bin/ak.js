@@ -45708,8 +45708,8 @@ async function serve(argv, io) {
         const request = requestValue;
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
         const adaptersReady = eventCommand !== null && loopCommand !== null && !deliveryFailedVisible();
-        const auditRetryOpen = adaptersReady && auditBlock === "retry";
-        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && (auditBlock === "ok" || auditBlock === "failed" && !auditFailedVisible()), auditRetryOpen);
+        const auditRetryOpen = adaptersReady && (auditBlock === "retry" || auditBlock === "failed" && !auditFailedVisible() && !auditHalted);
+        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && auditBlock === "ok", auditRetryOpen);
         const missing2 = [
           eventCommand === null ? "event-adapter" : null,
           deliveryFailedVisible() ? "event-delivery-failed" : null,

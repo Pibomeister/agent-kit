@@ -4444,6 +4444,96 @@ describe("runner guards", () => {
     }
   });
 
+  test("decide refuses a hidden failed audit whether or not a replacement cap is set", async () => {
+    const rows: {
+      name: string;
+      cap: number | undefined;
+      backoff: number | undefined;
+      status: { mode: "autonomous" | "guided"; missing: string[] };
+      decide: string;
+    }[] = [
+      {
+        name: "no cap, backoff 300",
+        cap: undefined,
+        backoff: 300,
+        status: { mode: "autonomous", missing: [] },
+        decide: "audit retry in progress",
+      },
+      {
+        name: "no cap, backoff absent",
+        cap: undefined,
+        backoff: undefined,
+        status: { mode: "guided", missing: ["audit-failed"] },
+        decide: "guided mode",
+      },
+      {
+        name: "cap 30, backoff absent",
+        cap: 30,
+        backoff: undefined,
+        status: { mode: "autonomous", missing: [] },
+        decide: "audit retry in progress",
+      },
+    ];
+    for (const row of rows) {
+      const f = fixture();
+      withAuditCadence(f, row.cap, row.backoff);
+      f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+      const receipt = join(f.privateDir, "source.txt");
+      writeFileSync(receipt, "source evidence");
+      f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+      card(f, "audit-align");
+      f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+      const stamp = join(f.privateDir, "probe-refuse");
+      const clock = join(f.privateDir, "clock");
+      if (row.backoff !== undefined) writeFileSync(clock, "0\n");
+      const script = [
+        "const x=JSON.parse(await Bun.stdin.text());",
+        "const fs=await import('node:fs');",
+        "if(!fs.existsSync(process.argv[1])) fs.writeFileSync(process.argv[1],'failed');",
+        "console.log(JSON.stringify({ok:true,approved:true,probed:x.delegates,progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]}));",
+        "process.exit(1);",
+      ].join("");
+      const { socket, service, workerToken, request } = serveLoop(
+        f,
+        script,
+        stamp,
+        row.backoff !== undefined ? clock : undefined,
+      );
+      try {
+        await waitForPath(socket, service);
+        await waitUntil(`the failed adapter attempt for ${row.name}`, () => existsSync(stamp));
+        if (row.cap !== undefined) {
+          await waitUntil(
+            `the spent cap for ${row.name}`,
+            () => (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1,
+          );
+        } else if (row.backoff === undefined) {
+          writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+          await waitUntil(`status to name audit-failed for ${row.name}`, () =>
+            autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+          );
+        } else {
+          await Bun.sleep(250);
+        }
+        writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+        expect({ row: row.name, ...autonomyOf(callRunnerCli("status", request, socket, workerToken)) }).toEqual({
+          row: row.name,
+          ...row.status,
+        });
+        expect(f.runner.status("toy-run").next_permitted_action).toBe("align.run");
+        writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "audit-align" }));
+        const refused = callRunnerCli("decide", request, socket, workerToken);
+        expect({ row: row.name, exit: refused.exitCode }).toEqual({ row: row.name, exit: 1 });
+        expect(refused.stderr.toString()).toContain(row.decide);
+        expect(f.runner.status("toy-run").decisions).toEqual([]);
+        expect(f.runner.status("toy-run").next_permitted_action).toBe("align.run");
+      } finally {
+        service.kill("SIGTERM");
+        await service.exited;
+      }
+    }
+  });
+
   test("an identical-patch rebase reuses a current verdict", () => {
     const f = patchVerdictFixture();
     const verdict = f.runner.bindVerdict("toy-run");
