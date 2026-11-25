@@ -203,8 +203,8 @@
     },
     "bundle/claude-code:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 12575,
-      "tokens": 3143
+      "bytes": 12664,
+      "tokens": 3165
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1098,8 +1098,8 @@
     },
     "bundle/codex:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 12575,
-      "tokens": 3143
+      "bytes": 12664,
+      "tokens": 3165
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -1993,8 +1993,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 12647,
-      "tokens": 3161
+      "bytes": 12736,
+      "tokens": 3183
     },
     "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -2888,8 +2888,8 @@
     },
     "bundle/droid:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 12575,
-      "tokens": 3143
+      "bytes": 12664,
+      "tokens": 3165
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -3783,8 +3783,8 @@
     },
     "bundle/grok:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 12575,
-      "tokens": 3143
+      "bytes": 12664,
+      "tokens": 3165
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
@@ -4678,8 +4678,8 @@
     },
     "bundle/kimi:references/shared/references/unattended-lifecycle/REFERENCE.md": {
       "file": "references/unattended-lifecycle/REFERENCE.md",
-      "bytes": 12575,
-      "tokens": 3143
+      "bytes": 12664,
+      "tokens": 3165
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",

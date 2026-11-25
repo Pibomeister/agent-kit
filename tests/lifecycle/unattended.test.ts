@@ -1670,6 +1670,24 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
+  test.each(["unstaged", "staged"] as const)(
+    "ship-preflight refuses a dirty tree when core.worktree names a clean clone (%s)",
+    (kind) => {
+      const { cwd, run } = ready();
+      const clean = join(outsideDir(), "clean");
+      git(cwd, "clone", "-q", cwd, clean);
+      writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+      if (kind === "staged") git(cwd, "add", "src/a.js");
+      git(cwd, "config", "core.worktree", clean);
+      const before = runState(cwd, run);
+      const r = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("uncommitted changes");
+      expect(runState(cwd, run)).toEqual(before);
+      expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+    },
+  );
+
   test("ship-preflight refuses a dirty tree when git replace covers HEAD with a matching tree", () => {
     const { cwd, run } = ready();
     const { head, cover } = coverDirty(cwd);

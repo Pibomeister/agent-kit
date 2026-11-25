@@ -106,7 +106,7 @@ declaration cannot pass ship-preflight.
 `record --gate ship-preflight` checks the declaration in force against that stamp, runs the pre-ship
 check (all six earlier phases, current, passing), refuses with every unmet item and refuses a working tree with
 uncommitted changes, which include untracked files that git does not ignore (commit what should ship, remove or
-git-ignore the rest, then record the gates again), and on success closes
+git-ignore the rest, then record the gates again; nested-submodule dirt hidden by submodule.ignore=all is outside the ship-preflight gate), and on success closes
 the run and prints the disclosure and each gate's commands. Every refusal in the declaration steps ends
 with one recovery: open a new run with `open --ticket` under the declaration in force and record the
 gates again. Open the pull request text with the disclosure as its first paragraph, then a blank line.

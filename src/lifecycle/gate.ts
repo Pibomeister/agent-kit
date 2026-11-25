@@ -221,6 +221,8 @@ export function unknownSelector(kind: string, input: string, candidates: readonl
  * The copy keeps the index's mtime. Git trusts a file's cached stat only when the file is older than
  * the index; a copy stamped "now" would make a same-size edit made in the second of the last index
  * write look clean, and the snapshot would miss it.
+ *
+ * Nested-submodule dirt hidden by submodule.ignore=all is outside this snapshot, so ship-preflight does not see it.
  */
 export interface Snapshot {
   repo: string;
@@ -243,7 +245,7 @@ export interface GitResult {
 export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): GitResult {
   const proc = spawnSync("git", [...args], {
     cwd,
-    env: env ?? process.env,
+    env: env ?? envWithoutRedirectingGit(),
     maxBuffer: 1 << 30,
   });
   if (proc.error !== undefined) {
@@ -276,7 +278,7 @@ export function gitMustPrint(cwd: string, args: readonly string[], env?: NodeJS.
 const NO_REPLACE_OBJECTS = ["--no-replace-objects"] as const;
 
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
-  const env = envWithoutRedirectingGit();
+  const env = boundWorkTreeEnv(project);
   const head = gitMustPrint(project, [...NO_REPLACE_OBJECTS, "rev-parse", "HEAD"], env);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
@@ -455,7 +457,7 @@ const same = (a: Snapshot, b: Snapshot) => a.revision === b.revision && a.diff_h
  * repository finds them and none is ever committed.
  */
 export function defaultEvidenceDir(project: string): string {
-  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
+  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"], envWithoutRedirectingGit());
   if (common.code !== 0 || common.text === "") throw new Error(`${project} is not a git checkout: ${common.stderr}`);
   const dir = isAbsolute(common.text) ? common.text : join(project, common.text);
   return join(dir, "agent-kit", "evidence");
@@ -2351,11 +2353,19 @@ const REDIRECTING_GIT_ENV = [
   "GIT_GRAFT_FILE",
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_REPLACE_REF_BASE",
+  "GIT_NAMESPACE",
 ] as const;
 
 function envWithoutRedirectingGit(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of REDIRECTING_GIT_ENV) Reflect.deleteProperty(env, name);
+  return env;
+}
+
+/** After the strip, bind the work tree to the project so `core.worktree` cannot point git at another tree. */
+function boundWorkTreeEnv(project: string): NodeJS.ProcessEnv {
+  const env = envWithoutRedirectingGit();
+  env.GIT_WORK_TREE = existsSync(project) ? realpathSync(project) : resolve(project);
   return env;
 }
 
@@ -3053,8 +3063,8 @@ const RECOVERY =
  */
 const FINAL_SHIP_GIT = [...NO_REPLACE_OBJECTS, "-c", "log.showSignature=false"] as const;
 
-function finalShipEnv(): NodeJS.ProcessEnv {
-  const env = envWithoutRedirectingGit();
+function finalShipEnv(project: string): NodeJS.ProcessEnv {
+  const env = boundWorkTreeEnv(project);
   env.GIT_NO_LAZY_FETCH = "1";
   for (const name of Object.keys(env)) {
     if (name === "GIT_TRACE" || name === "GIT_TRACE2" || name.startsWith("GIT_TRACE2_"))
@@ -3064,7 +3074,7 @@ function finalShipEnv(): NodeJS.ProcessEnv {
 }
 
 function gitFinal(project: string, extra: readonly string[]): GitResult {
-  return git(project, [...FINAL_SHIP_GIT, ...extra], finalShipEnv());
+  return git(project, [...FINAL_SHIP_GIT, ...extra], finalShipEnv(project));
 }
 
 function graftsRefusal(project: string): string | undefined {
@@ -3439,7 +3449,7 @@ export function main(
   const resolved =
     sub === "bypass grant"
       ? { ok: true as const }
-      : resolvePolicy(project, process.env, finalShipGit, finalShipGit.length > 0 ? finalShipEnv() : undefined);
+      : resolvePolicy(project, process.env, finalShipGit, finalShipGit.length > 0 ? finalShipEnv(project) : undefined);
   if (!resolved.ok) {
     io.err(`ak lifecycle ${sub}: ${resolved.reason}`);
     return 2;
