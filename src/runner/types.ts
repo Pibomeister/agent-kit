@@ -1,4 +1,5 @@
 import type { VetoRecord } from "../council/rule.ts";
+import type { BehaviorBinding } from "../lifecycle/behavior-policy.ts";
 
 export interface Grant {
   charter_hash: string;
@@ -77,6 +78,8 @@ export interface Charter {
     fix_cycles: number;
     ci_repair_attempts: number;
     resource_units?: number;
+    /** Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided. */
+    delegate_replacements?: number;
   };
 }
 
@@ -169,9 +172,17 @@ export interface Run {
   procedure?: ProcedureIdentity;
   verified_base_revision?: string;
   verdict?: PatchVerdict;
+  priority_question?: {
+    id: string;
+    need: string;
+    started_at: string;
+    answer?: { text: string; source: string; ref: string };
+  };
   open_escalation: Escalation | null;
   cancellation?: { by: string; rationale: string; at: string };
   resume?: { run_state: string; next_permitted_action: string | null };
+  /** Frozen behavior policy; written at start from the KB/runner project binding. */
+  behavior?: BehaviorBinding;
 }
 
 export interface RunLedger {

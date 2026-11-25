@@ -44,6 +44,7 @@ names what is missing. A charter requesting unattended mode cannot use `decide` 
 | `event`, `charge` | Firstmate | `{"run":"r","key":"event-key","payload":"..."}` or `{"run":"r","limit":"fix_cycles","amount":1,"subject":"finding-id"}`; the event is persisted before its private consumer wakes |
 | `delegate`, `progress`, `finish` | Firstmate | `delegate`: `{"run":"r","id":"owner-1","amount":120,"parent":"optional-parent"}` where amount is expected seconds; `progress`: `{"run":"r","id":"owner-1","kind":"commit","source":"<observed-ref>"}`; `finish`: `{"run":"r","id":"owner-1"}` |
 | `verdict` | Firstmate | `{"run":"r"}` after full review and readiness; records full-change stable patch-id and head before merge preparation |
+| `question` | Worker | `{"run":"r","id":"question-1","source":"exact blocker text"}`; to answer, also supply `"rationale":"answer","kind":"code","evidence":"source.ts:42"`. See [prioritized questions](#prioritized-questions) for continuation and alarm rules. |
 | `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","retry"],"approve":"yes","evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}`; `no` and `retry` cannot be the approving option, and the runner reserves a slot for its human `no` |
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
 | `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A card that is not the next permitted action is an error and leaves the run unchanged; decide it once its phase arrives. A launcher that fails or answers outside the options refuses the card with its error |
@@ -88,13 +89,22 @@ the timeout; the runner guesses no cap. Its command receives
 `{"run":"r","key":"event-key","payload":"..."}` on stdin and returns a matching
 `{"run":"r","key":"event-key"}` only after handing the wake to the controller. It receives a
 run-scoped worker socket token, never the admin token. The private loop config has the same
-command and timeout shape. A timed-out consumer or loop command leaves status guided until a
-successful retry. On a charter cadence the loop receives a `probe` request listing every active delegate
+command and timeout shape. A timed-out event consumer leaves status guided until a successful
+retry. A timed-out or failed loop command stays autonomous and retries on the charter cadence
+while `limits.delegate_replacements` is unspent and a delegate remains active. Status goes guided
+when that cap is spent and names `delegate-replacements`. A cap of N allows N failed attempts,
+and the Nth one halts the audit, so a cap of 1 allows no retry. A charter that omits the cap supplies no
+retry budget, so the first loop failure goes guided and names `audit-failed` until a later tick
+succeeds. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
 whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
 effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
-`stood_down:true`, a replacement id and its expected runtime after read-back. Failure leaves the
-delegate active and status guided. Both config files must be outside the worker root and shared
+`stood_down:true`, a replacement id and its expected runtime after read-back. A failed probe
+records no progress, and a failed replacement records no replacement for its delegate, which stays
+active. Effects of earlier steps in the same tick stand. No failure approves a checkpoint. While a
+failed attempt waits for its retry tick, `decide` is refused with `audit retry in progress` until the
+next successful tick; the supervisor retries `decide` after one cadence. This is a transient wait, not a
+guided handoff. Both config files must be outside the worker root and shared
 Git directory. Restarting the service replays unacknowledged events and resumes the audit timer
 for active delegates.
 
@@ -129,3 +139,28 @@ path, proposed id and kind to Firstmate. The supervisor copies it into private r
 calls `collect` with the admin token. Firstmate returns the accepted id and hash through the task
 inbox. Only then does the worker name that evidence id on a prepared card. The file the worker
 wrote is a proposal, never the runner's trusted gate record.
+
+## Prioritized questions
+
+Register a question before investigating prioritized work. Its id must use lowercase letters,
+digits and hyphens, beginning with a letter or digit; `source` is nonempty exact blocker text.
+Reuse both while investigating: changing the text is refused, and only one unresolved question
+may be registered per run. Registration persists the question and starts its 600-second clock,
+including time spent investigating. Calls without an answer return `investigate` before the
+deadline and `blocked` at or after it.
+
+Check the order, code and authorized evidence already in hand. Submit an answer directly with
+all three answer fields: nonempty `rationale`, `kind` (`order`, `code` or `evidence`) and nonempty
+`evidence` source reference. Partial or unsupported answers are refused. An accepted answer
+returns `continue` with the answer and reference, clears the pending alarm and permits a new
+question id. Reusing an answered id without answer fields returns its recorded answer.
+Question handling preserves the run state and any approval stop; a worker's answer attests to a source and grants no
+checkpoint authority.
+
+The live service emits unresolved blocker text verbatim on stderr once when its deadline is
+reached, even without another worker call. Status requests, audit ticks and retries of the same
+unresolved question do not reprint it. Question deadline changes and run start, cancellation or
+completion rearm or clear the alarm; cancellation and completion suppress it. Restart restores
+the recorded deadline and prints immediately if it is overdue; emission is not recorded across
+service restarts. Firstmate displays this output; its outer-supervisor duties are in
+[SUPERVISOR.md](../firstmate/SUPERVISOR.md#per-task).

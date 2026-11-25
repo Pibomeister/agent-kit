@@ -324,6 +324,26 @@ checkpoints:
     escalation_shape: schemas/common.schema.json#/$defs/escalation
     stops: new writes and shipping
     may_continue: explicitly permitted read-only work, within budget
+    prioritized_work:
+      applies_when: the order or runner marks the blocked item P0 or otherwise prioritized
+      self_servable_stop: refused
+      answer_sources:
+        - the order and its work source
+        - the repository and code in scope
+        - evidence already in hand and authorized to read
+      on_answer_found: record the answer with its evidence and continue the prioritized item
+      true_blocker:
+        deadline_seconds: 600
+        clock_starts: when the question is first registered, including investigation
+        exact_text_from: schemas/common.schema.json#/$defs/escalation `need`
+        display_text: "{need}"
+        status_surface: the runner emits that text verbatim on stderr at the deadline
+      outer_loop: >-
+        The outer supervisor immediately assigns each P0 or prioritized order a dedicated end-to-end
+        owner, watches that owner every cycle, and keeps other lanes running in parallel. Agent Kit
+        handles checkpoint questions only; it starts no dispatcher or watcher and writes no supervisor state.
+      executable: .cursor/bin/ak runner call question
+      ruling: firstmate-outer-loop-agent-kit-inner
     forbidden:
       - adding a tie-breaking third supervisor
       - repeated internal debate between the two seats

@@ -2,6 +2,10 @@ import Ajv2020 from "ajv/dist/2020.js";
 import type { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
+import { asJsonObject } from "../lifecycle/behavior-policy.ts";
+import { behaviorContractIntentProblems, type IntentLookup } from "../validation/behavior-contract-intent.ts";
+
+import behaviorContractSchema from "../../schemas/behavior-contract.schema.json" with { type: "json" };
 import charterSchema from "../../schemas/charter.schema.json" with { type: "json" };
 import coldReadSchema from "../../schemas/cold-read.schema.json" with { type: "json" };
 import commonSchema from "../../schemas/common.schema.json" with { type: "json" };
@@ -41,6 +45,7 @@ export interface RunArtifact {
  * beside it; a test holds this list equal to that enum.
  */
 const ARTIFACT_SCHEMAS = {
+  "behavior-contract": behaviorContractSchema,
   charter: charterSchema,
   "cold-read": coldReadSchema,
   decision: decisionSchema,
@@ -69,7 +74,7 @@ type AjvInstance = InstanceType<typeof Ajv2020>;
 
 let compiled: AjvInstance | null = null;
 
-/** Built on first use: twenty schemas are not worth compiling for a `check`. */
+/** Built on first use: the artifact schemas are not worth compiling for a `check`. */
 function instance(): AjvInstance {
   if (compiled !== null) return compiled;
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
@@ -111,7 +116,7 @@ function describe(validate: ValidateFunction): string {
  * before any write, so an artifact failing its own schema never reaches the
  * knowledgebase (CONTRACT.md §2, `publishArtifact`).
  */
-export function checkRunArtifact(text: string): ArtifactCheck {
+export function checkRunArtifact(text: string, lookup?: IntentLookup): ArtifactCheck {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -136,6 +141,11 @@ export function checkRunArtifact(text: string): ArtifactCheck {
   }
   if (!validate(value)) {
     return { artifact: null, problem: `does not match schemas/${value.schema}.schema.json: ${describe(validate)}` };
+  }
+  if (value.schema === "behavior-contract") {
+    if (!asJsonObject(value)) return { artifact: null, problem: "behavior-contract is not an object" };
+    const problems = behaviorContractIntentProblems(value, lookup);
+    if (problems.length > 0) return { artifact: null, problem: problems.join("; ") };
   }
   return { artifact: value, problem: "" };
 }

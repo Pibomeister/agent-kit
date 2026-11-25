@@ -131,7 +131,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 38
+  catalog: 40
   expansions:
     - ids: [case]
       reason: >-
@@ -211,6 +211,18 @@ schemas:
         An independent ticket cold read needs a declared run-artifact shape so a project that
         turns review.cold_read on can cite the record from the implementation ticket.
       commits: [82646648]
+    - ids: [review-ledger]
+      reason: >-
+        The review convergence ledger is an append-only file a gate holds as evidence, so each
+        line needs a closed shape that the tool writes and the verdict engine reads.
+      commits: [1fec0cb8]
+      docs: [docs/decisions/0018-review-convergence.md]
+    - ids: [behavior-contract]
+      reason: >-
+        Behavior verification needs a declared run-artifact shape so accepted intent stays
+        distinct from proposed, unresolved and observed notes, and so Runner.start can
+        freeze complete required-check definitions.
+      commits: [ad45a95f1109b40e1fb8321a798fab3031c1ef16]
 
 profiles:
   baseline: 4

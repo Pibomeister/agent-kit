@@ -777,38 +777,41 @@ describe("isolation", () => {
       AK_TEST_OPTED_IN: "opted-in",
       AK_TEST_STRAY: "stray",
     };
-    withCallerEnv(planted, () => {
-      const claudeEnv = cleanEnv(claude.env);
-      expect(claudeEnv).toMatchObject({
-        ANTHROPIC_API_KEY: "anthropic-secret",
-        CLAUDE_CODE_OAUTH_TOKEN: "claude-token",
-        LC_TEST: "locale",
-      });
-      expect(claudeEnv).not.toHaveProperty("GH_TOKEN");
-      expect(claudeEnv).not.toHaveProperty("XAI_API_KEY");
-      expect(claudeEnv).not.toHaveProperty("OPENAI_API_KEY");
-
-      const codexEnv = cleanEnv(codex.env);
-      expect(codexEnv.CODEX_HOME).toBe("/caller/codex");
-      const grokEnv = cleanEnv(grok.env);
-      expect(grokEnv.GROK_HOME).toBe("/caller/grok");
-      for (const env of [codexEnv, grokEnv]) {
-        for (const secret of ["GH_TOKEN", "ANTHROPIC_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY"])
-          expect(env).not.toHaveProperty(secret);
-      }
-      for (const env of [claudeEnv, codexEnv, grokEnv]) {
-        expect(env).toMatchObject({
-          HTTPS_PROXY: "http://proxy.invalid:3128",
-          NODE_EXTRA_CA_CERTS: "/caller/ca.pem",
-          AK_TEST_OPTED_IN: "opted-in",
-        });
-        expect(env).not.toHaveProperty("AK_TEST_STRAY");
-        expect(env).not.toHaveProperty("AK_TEST_UNSET");
-        expect(env).not.toHaveProperty("AK_EVAL_PASS_ENV");
-        expect(env).not.toHaveProperty("CLAUDECODE");
-        expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT");
-      }
+    // Pass the planted caller env directly rather than mutating process.env: Bun keeps
+    // HTTPS_PROXY active in its process-wide proxy store after deletion and leaks it across workers.
+    const claudeEnv = cleanEnv(claude.env, planted);
+    expect(claudeEnv).toMatchObject({
+      ANTHROPIC_API_KEY: "anthropic-secret",
+      CLAUDE_CODE_OAUTH_TOKEN: "claude-token",
+      LC_TEST: "locale",
     });
+    expect(claudeEnv).not.toHaveProperty("GH_TOKEN");
+    expect(claudeEnv).not.toHaveProperty("XAI_API_KEY");
+    expect(claudeEnv).not.toHaveProperty("OPENAI_API_KEY");
+
+    const codexEnv = cleanEnv(codex.env, planted);
+    expect(codexEnv.CODEX_HOME).toBe("/caller/codex");
+    const grokEnv = cleanEnv(grok.env, planted);
+    expect(grokEnv.GROK_HOME).toBe("/caller/grok");
+    for (const env of [codexEnv, grokEnv]) {
+      for (const secret of ["GH_TOKEN", "ANTHROPIC_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY"])
+        expect(env).not.toHaveProperty(secret);
+    }
+    for (const env of [claudeEnv, codexEnv, grokEnv]) {
+      expect(env).toMatchObject({
+        HTTPS_PROXY: "http://proxy.invalid:3128",
+        NODE_EXTRA_CA_CERTS: "/caller/ca.pem",
+        AK_TEST_OPTED_IN: "opted-in",
+      });
+      expect(env).not.toHaveProperty("AK_TEST_STRAY");
+      expect(env).not.toHaveProperty("AK_TEST_UNSET");
+      expect(env).not.toHaveProperty("AK_EVAL_PASS_ENV");
+      expect(env).not.toHaveProperty("CLAUDECODE");
+      expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT");
+    }
+    const leaked = Bun.spawnSync(["sh", "-c", 'printf "%s" "$HTTPS_PROXY"']);
+    expect(leaked.exitCode).toBe(0);
+    expect(leaked.stdout.toString()).not.toBe("http://proxy.invalid:3128");
   });
 
   test("cloud provider variables reach a claude subject only under the matching provider flag, and no other host", () => {

@@ -1,8 +1,8 @@
 /**
  * Runtime configuration for `ak learn`, read from the environment once per run.
  *
- * No setting names a model. The judge is one configurable command, and which
- * model sits behind it is the runner's binding, not this package's (ruling
+ * No setting names a model. The judge commands are configurable, and which
+ * model sits behind each is the runner's binding, not this package's (ruling
  * `learning-judge-is-runner-bound`). The tool-call distiller is bound the same
  * way, one command per worker host, and has no default: a host the operator
  * binds nothing to is never sent anywhere.
@@ -10,6 +10,7 @@
 import { lstatSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import Ajv from "ajv";
 
 export interface LearnConfig {
   /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`. Ledgers live under `<configDir>/projects/`. */
@@ -18,6 +19,8 @@ export interface LearnConfig {
   runtimeDir: string;
   /** The judge command as argv. The prompt goes to stdin; JSON comes back on stdout. */
   judgeCommand: string[];
+  /** Ordered, operator-verified alternatives, with the same stdin/JSON contract as the primary. */
+  judgeFallbackCommands: string[][];
   judgeTimeoutMs: number;
   /**
    * The tool-call distiller per worker host, as argv: `AK_LEARN_DISTILL_<HOST>`, the host's name in
@@ -133,6 +136,20 @@ export function splitCommand(text: string): string[] {
   return out;
 }
 
+const validateJudgeFallbacks = new Ajv().compile<string[]>({ type: "array", items: { type: "string" } });
+
+function judgeFallbacks(text: string | undefined): string[][] {
+  if (text === undefined || text.trim() === "") return [];
+  const entries: unknown = JSON.parse(text);
+  if (!validateJudgeFallbacks(entries))
+    throw new Error("AK_LEARN_JUDGE_FALLBACKS must be a JSON array of command strings");
+  return entries.map((entry) => {
+    const command = splitCommand(entry);
+    if (!command[0]?.trim()) throw new Error("AK_LEARN_JUDGE_FALLBACKS commands must name an executable");
+    return command;
+  });
+}
+
 /** One distiller binding: a single-word host name, so the stage's other settings never read as a host. */
 const DISTILL_BINDING = /^AK_LEARN_DISTILL_([A-Z][A-Z0-9]*)$/;
 
@@ -242,6 +259,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
     configDir,
     runtimeDir,
     judgeCommand: judge,
+    judgeFallbackCommands: judgeFallbacks(env.AK_LEARN_JUDGE_FALLBACKS),
     judgeTimeoutMs: int(env, "AK_LEARN_JUDGE_TIMEOUT_S", 300) * 1000,
     distillCommands: distillCommands(env),
     distillTimeoutMs: int(env, "AK_LEARN_DISTILL_TIMEOUT_S", 120) * 1000,

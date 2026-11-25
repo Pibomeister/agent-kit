@@ -8,7 +8,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { main } from "../../src/lifecycle/gate.ts";
-import { defaultMarkersPath, loadMarkers, scanApplies, scanText } from "../../src/lifecycle/publish-scan.ts";
+import {
+  commitRecords,
+  defaultMarkersPath,
+  loadMarkers,
+  scanApplies,
+  scanText,
+} from "../../src/lifecycle/publish-scan.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const BRIEF = [
@@ -56,6 +62,13 @@ function fixture(messages: readonly string[], markers = MARKERS) {
   for (const [i, message] of messages.entries())
     git(repo, "commit", "-q", "--allow-empty", "-m", message, "-m", `n${i}`);
   return { root, repo, markers: join(root, "cfg/markers") };
+}
+
+/** The full commit id a revision names in a fixture repository. */
+function revision(repo: string, rev: string): string {
+  const p = Bun.spawnSync(["git", "rev-parse", rev], { cwd: repo });
+  if (p.exitCode !== 0) throw new Error(`git rev-parse ${rev}: ${p.stderr.toString()}`);
+  return p.stdout.toString().trim();
 }
 
 function run(argv: string[], cwd: string) {
@@ -224,6 +237,96 @@ describe("publish-scan", () => {
     const range = run(["--repo", "someone/tool", "--commits", "nope..main", "--markers", good.markers], good.repo);
     expect(body.code).toBe(1);
     expect(range.code).toBe(1);
+  });
+
+  test("a --title=value holding a second = is scanned whole", () => {
+    const f = fixture([]);
+    const marked = run(
+      ["--repo", "someone/tool", "--title=fix a=build.example.internal", "--markers", f.markers],
+      f.repo,
+    );
+    expect(marked.code).toBe(1);
+    expect(marked.err).toContain('title contains the internal marker "build.example.internal"');
+    const clean = run(["--repo=someone/tool", "--title=fix a=b", `--markers=${f.markers}`], f.repo);
+    expect(clean.code, clean.err).toBe(0);
+    expect(clean.out).toContain("ok: 1 text(s)");
+  });
+
+  test("a record-separator byte in a commit message does not hide the text after it", () => {
+    const f = fixture(["fix: visible\x1e then build.example.internal"]);
+    const r = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", f.markers], f.repo);
+    expect(r.code).toBe(1);
+    expect(r.err).toMatch(/commit [0-9a-f]{12} contains the internal marker "build.example.internal"/);
+    const g = fixture(["fix: visible\x1e then clean"]);
+    const clean = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", g.markers], g.repo);
+    expect(clean.code, clean.err).toBe(0);
+    expect(clean.out).toContain("ok: 1 text(s)");
+  });
+
+  test("an option-like --commits value refuses instead of reaching git as an option", () => {
+    const f = fixture(["fix: verified on build.example.internal", "fix: thing"]);
+    for (const argv of [
+      ["--commits", "-n0"],
+      ["--commits=-n0"],
+      ["--commits=--"],
+      ["--commits=--all"],
+      ["--commits="],
+    ]) {
+      const r = run(["--repo", "someone/tool", ...argv, "--markers", f.markers], f.repo);
+      expect(r.code, argv.join(" ")).toBe(1);
+      expect(r.err, argv.join(" ")).toContain("is not a revision range");
+      expect(r.out, argv.join(" ")).not.toContain("ok:");
+    }
+    const empty = run(["--repo", "someone/tool", "--commits", "main..main", "--markers", f.markers], f.repo);
+    expect(empty.code, empty.err).toBe(0);
+    expect(empty.out).toContain("ok: 0 text(s)");
+  });
+
+  test("a multi-commit range is scanned one text per commit and names the commit that hit", () => {
+    const f = fixture(["fix: first, verified on build.example.internal", "fix: second, clean"]);
+    const r = run(["--repo", "someone/tool", "--commits", "main~2..main", "--markers", f.markers], f.repo);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(`commit ${revision(f.repo, "main~1").slice(0, 12)} contains the internal marker`);
+    expect(r.err).toContain("1 hit(s)");
+    const g = fixture(["fix: first, clean", "fix: second, clean"]);
+    const clean = run(["--repo", "someone/tool", "--commits", "main~2..main", "--markers", g.markers], g.repo);
+    expect(clean.code, clean.err).toBe(0);
+    expect(clean.out).toContain("ok: 2 text(s)");
+  });
+
+  test.skipIf(Bun.which("ssh-keygen") === null)(
+    "a signed commit scans with log.showSignature set in the repository",
+    () => {
+      const f = fixture([]);
+      const key = join(f.root, "signing-key");
+      const keygen = Bun.spawnSync(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "test", "-f", key]);
+      if (keygen.exitCode !== 0) throw new Error(`ssh-keygen: ${keygen.stderr.toString()}`);
+      const signed = ["-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "-c", "commit.gpgsign=true"];
+      git(f.repo, ...signed, "commit", "-q", "--allow-empty", "-m", "fix: signed and clean");
+      git(f.repo, "config", "log.showSignature", "true");
+      const clean = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", f.markers], f.repo);
+      expect(clean.code, clean.err).toBe(0);
+      expect(clean.out).toContain("ok: 1 text(s)");
+      git(f.repo, ...signed, "commit", "-q", "--allow-empty", "-m", "fix: signed, on build.example.internal");
+      const marked = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", f.markers], f.repo);
+      expect(marked.code).toBe(1);
+      expect(marked.err).toContain(`commit ${revision(f.repo, "main").slice(0, 12)} contains the internal marker`);
+    },
+  );
+
+  test("git log records are split per commit, and a record without a commit id refuses", () => {
+    const a = "a".repeat(40);
+    const b = "b".repeat(40);
+    expect(commitRecords(`${a}\nfix: one\n\n\x00${b}\nfix: two\x1e still two\n\x00`, "r")).toEqual({
+      texts: [
+        { source: `commit ${a.slice(0, 12)}`, text: "fix: one" },
+        { source: `commit ${b.slice(0, 12)}`, text: "fix: two\x1e still two" },
+      ],
+    });
+    for (const stdout of [`No signature\n${a}\nfix: one\n\x00`, `${a}\nfix: one\n\x00stray text\x00`])
+      expect(commitRecords(stdout, "r")).toEqual({
+        error: "git log r printed a record that does not open with a commit id",
+      });
   });
 
   test("--repo is required and must be owner/name", () => {

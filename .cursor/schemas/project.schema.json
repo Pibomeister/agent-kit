@@ -177,7 +177,21 @@
                 "red": { "type": "number", "minimum": 0 }
               }
             },
-            "enforcement": { "const": "advisory" }
+            "enforcement": { "const": "advisory" },
+            "shared_surfaces": {
+              "description": "Paths many features depend on. Each path is a glob matched against the whole repository-relative path, so a directory is declared as `src/core/**`. Each declared path sets a floor the scorer adds when a record lists it; a floor at green is no floor, so green is not allowed.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "class", "reason"],
+                "properties": {
+                  "path": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                  "class": { "enum": ["yellow-agent", "yellow-owner", "red"] },
+                  "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+                }
+              }
+            }
           }
         },
         "exceptions": {
@@ -407,7 +421,7 @@
       }
     },
     "review": {
-      "description": "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+      "description": "Per-project settings for the comprehension seat, the independent ticket cold read, and behavior-verification. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is off, except as review.behavior states. Shadow records output without changing a verdict, delegation class, or the current evidence gate. On is the form that can block. Runner.start freezes review.behavior onto an enabled task run; a later missing or moved project record cannot turn that run off. These settings are not yet backed by live probe evidence (phase 1b, GS-004g; GS-017).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -417,7 +431,12 @@
           "default": "off"
         },
         "cold_read": {
-          "description": "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable and a non-empty envelope run_id. The id is not yet checked against a run ledger, so a non-empty forged id is a known residue. An unavailable read still satisfies the status requirement. A draft or missing status does not. When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening). A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "description": "Whether super-bound dispatches an independent cold read of an implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable, except when every declared write glob (`allowed_changes.files`, `write_ownership.paths` and `write_ownership.generated_artifacts`) is documentation markdown under `docs/` (`docs/**/*.md`), or exactly `README.md`, `CHANGELOG.md`, `NOTICE` or `LICENSE`, `allowed_changes.symbols` is empty, `work_source.ref.id` is present, and no other indexed ticket shares that id. `docs/**` is refused; a glob containing `{` is refused; a markdown last segment is required. A literal glob that resolves through a symlink is refused when the checkout is present. Wildcard globs over a symlinked tree are not checked. The exemption is declaration-only: the write guard lifts tests protection and does not deny a write outside those globs (GS-004j). On mode requires a non-empty envelope run_id. The id is not yet checked against a run ledger, so a non-empty forged id is a known residue. An unavailable read still satisfies that requirement. A draft or missing status does not. When on, an unavailable read raises a green class to yellow-agent by the captain's Q1 decision (GS-004k), unless a live named-human lowering is in force. Only a named human may lower the class, with the reason recorded (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not raise (phase 1b, GS-004k). The setting is read from the checkout's own indexed project record, not from the ticket's project field. A checkout with no indexed project record is off. On requires exactly one indexed project record. Several indexed records fail closed. The validator does not yet check the raise; that check and a revert path are follow-ups (GS-004l hardening). Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "enum": ["off", "shadow", "on"],
+          "default": "off"
+        },
+        "behavior": {
+          "description": "Whether a task-bound run records a behavior-verification policy. off: no behavior workflow; existing gate semantics stay intact. shadow: applicable behavior work may be retained as ordinary run artifacts and cannot change the current gate or satisfy a missing required check. on: named mandatory behavior checks use the Runner.start freeze; open refuses. Default off. A missing review object or missing key is off for a new open that has no ticket-level behavior obligation. An enabled open that cannot resolve this setting is incomplete, not off. Modes cannot cancel a ticket that already names a mandatory behavior check.",
           "enum": ["off", "shadow", "on"],
           "default": "off"
         }

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer, type AddressInfo } from "node:net";
+
+/** `address()` is a pipe path or a TCP address. A pipe is a string; a TCP port is on the object. */
+function isTcpAddress(address: string | AddressInfo | null): address is AddressInfo {
+  return address !== null && Object(address) === address;
+}
 import { join } from "node:path";
 import Ajv from "ajv";
 
@@ -75,6 +81,20 @@ const councilAlone = spawnSync(process.execPath, [maintenanceCli, "council"], {
   env: maintenanceEnv,
   encoding: "utf8",
 });
+const reviewAlone = spawnSync(process.execPath, [maintenanceCli, "review"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
+const reviewShow = spawnSync(
+  process.execPath,
+  [maintenanceCli, "review", "ledger", "show", "--ledger", "absent.jsonl"],
+  {
+    cwd: maintenanceRoot,
+    env: maintenanceEnv,
+    encoding: "utf8",
+  },
+);
 
 function runLinkedWorktreeFixture() {
   const root = realpathSync(project());
@@ -280,16 +300,29 @@ describe("ak doctor checks", () => {
       const result = await fetchManifest("claude-code", `http://127.0.0.1:${missing.port}`, 500);
       expect(result.failure).toEqual({ reason: "missing", status: 404 });
     } finally {
-      void missing.stop(true);
+      await missing.stop(true);
     }
-    const stalled = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
+    // A handler that never resolves can still be answered by the server under load. A peer that
+    // accepts and writes nothing cannot produce an HTTP status, so only the fetch timeout finishes it.
+    const stalled = createServer((socket) => {
+      socket.on("error", () => {
+        // The client aborts when the timeout fires, and the socket then resets.
+      });
+    });
     try {
+      await new Promise<void>((resolve, reject) => {
+        stalled.once("error", reject);
+        stalled.listen(0, "127.0.0.1", () => resolve());
+      });
+      const address = stalled.address();
+      if (!isTcpAddress(address)) throw new Error("stall server has no port");
+      const port = address.port;
       const start = Date.now();
-      const result = await fetchManifest("codex", `http://127.0.0.1:${stalled.port}`, 100);
-      expect(result.failure?.reason).toBe("network");
+      const result = await fetchManifest("codex", `http://127.0.0.1:${port}`, 100);
+      expect(result.failure?.reason, JSON.stringify(result.failure)).toBe("network");
       expect(Date.now() - start).toBeLessThan(2000);
     } finally {
-      void stalled.stop(true);
+      await new Promise<void>((resolve) => stalled.close(() => resolve()));
     }
   });
 
@@ -344,6 +377,13 @@ describe("ak doctor checks", () => {
     expect(councilRun.stderr).toContain("usage: ak council run --card <card.json> --council-config");
     expect(councilAlone.status).toBe(2);
     expect(councilAlone.stderr).toContain("usage: ak council run --card <card.json> --council-config");
+  });
+
+  test("the packaged CLI dispatches ak review instead of the generic usage", () => {
+    expect(reviewAlone.status).toBe(2);
+    expect(reviewAlone.stderr).toContain("usage: ak review ledger add --ledger <ledger.jsonl> --event <file|->");
+    expect(reviewShow.status).toBe(0);
+    expect(reviewShow.stdout).toContain('"schema": "review-ledger-state"');
   });
 
   test("doctor ignores foreign GIT_DIR and GIT_WORK_TREE", () => {

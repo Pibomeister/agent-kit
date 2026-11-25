@@ -58,13 +58,15 @@ const projectScratches: string[] = [];
 const projectScratchBase =
   process.platform === "darwin"
     ? run(["getconf", "DARWIN_USER_TEMP_DIR"]).stdout.trim()
-    : join(import.meta.dir, "..", "..", ".work");
+    : process.platform === "linux"
+      ? "/dev/shm"
+      : join(import.meta.dir, "..", "..", ".work");
 
 /**
  * A fixture project that discovery must find. On macOS use the native user
  * temporary directory, outside managed gate paths even when TMPDIR is /tmp.
- * Elsewhere use `.work/`: discovery skips Linux's /tmp. Remove with
- * `removeProjectScratch`.
+ * On Linux use shared-memory scratch: discovery skips /tmp and managed
+ * worktrees. Other platforms use `.work/`. Remove with `removeProjectScratch`.
  */
 export function projectScratch(): string {
   const base = projectScratchBase;

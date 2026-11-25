@@ -8,7 +8,9 @@ and retains the deprecated patched binding interface for existing users (ruling
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
 dispatcher, no watcher and no merge path, and it never writes Firstmate's state files. The runner
 and run ledger live in `src/runner/`; this binding adapter does not start that service or dispatch
-its supervisor seats. Firstmate may operate it separately through `ak runner` as described in
+its supervisor seats. Firstmate immediately assigns P0 and prioritized orders dedicated end-to-end
+owners, watches each every cycle, keeps other lanes running, and displays runner blocker output.
+Firstmate may operate it separately through `ak runner` as described in
 `adapters/runner-contract/CONTRACT.md` §9.
 
 ## Stock Firstmate path
@@ -178,7 +180,9 @@ one recorded after it. That history is bounded
 by ancestry alone. The fork-point bound applies only to a standalone run named after its branch (no
 `--run` and no opened run): there, a record whose snapshot is already on the default branch
 (`origin/HEAD`, else `main`, else `master`) does not count unless it is at the head's own revision,
-so a reused branch does not inherit an old run's records. An opened run's id is unique per run and
+so a reused branch does not inherit an old run's records. An absent ref, including a dangling
+`origin/HEAD`, allows the next candidate. A spawn error, a Git fatal, or exit 0 without required
+output refuses the check with the failed call's diagnostic. An opened run's id is unique per run and
 the audit names it explicitly, so the audit keeps counting a run's records after the supervisor merges
 it, and `--run` opts a standalone check out of the bound the same way. The bound's known limit on a
 reused branch, and the task-bound run `ak lifecycle open` mints, are described in the header of

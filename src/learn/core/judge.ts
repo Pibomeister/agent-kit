@@ -1,7 +1,7 @@
 /**
  * The one judgement call the learning runtime makes: a prompt in, a JSON object out.
  *
- * The command is configuration (`AK_LEARN_JUDGE`), so which model answers is
+ * The commands are configuration (`AK_LEARN_JUDGE` and `AK_LEARN_JUDGE_FALLBACKS`), so which model answers is
  * the runner's binding and never this package's (ruling
  * `learning-judge-is-runner-bound`). Whatever comes back is checked by
  * deterministic gates before it touches a ledger; the judge never sets counts,
@@ -181,6 +181,10 @@ export interface JudgeTraceRow {
   prompt_sha256: string;
   prompt_chars: number;
   attempt: number;
+  /** Zero for the primary; subsequent indices follow the configured fallback order. */
+  judge_index: number;
+  /** Identifies the configured argv without storing arguments that may contain credentials. */
+  judge_command_sha256: string;
   outcome: JudgeOutcome;
   exit_code: number;
   timed_out: boolean;
@@ -385,6 +389,7 @@ function traceAttempt(
   startedAt: number,
   result: ReturnType<typeof run>,
   outcome: JudgeOutcome,
+  binding: { index: number; command: readonly string[] },
 ): void {
   try {
     const envelope = hostEnvelope(result.stdout);
@@ -411,6 +416,8 @@ function traceAttempt(
       prompt_sha256: createHash("sha256").update(prompt).digest("hex"),
       prompt_chars: prompt.length,
       attempt,
+      judge_index: binding.index,
+      judge_command_sha256: createHash("sha256").update(JSON.stringify(binding.command)).digest("hex"),
       outcome,
       exit_code: result.code,
       timed_out: result.timedOut,
@@ -510,56 +517,91 @@ export function declaredUnavailable(reply: Record<string, unknown> | null): stri
 }
 
 function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn>): JudgeOutcome {
-  if (result.timedOut || result.code !== 0) return "error";
+  if (result.timedOut || result.code !== 0 || hostEnvelope(result.stdout).is_error === true) return "error";
   if (result.stdout.trim() === "") return "empty";
   if (parsed === null) return "unparseable";
   return declaredUnavailable(parsed) === null ? "ok" : "unavailable";
 }
 
 /**
- * A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced.
- * The command runs from the runtime directory, so it discovers no project instructions from its working directory.
+ * Only process failures can advance the binding. A role's unavailable reply and malformed JSON
+ * say nothing about service availability. Each alternative's wrapper must check its current capacity.
+ */
+function serviceUnavailable(result: ReturnType<typeof run>, outcome: JudgeOutcome): boolean {
+  const message = `${result.stderr}\n${result.stdout}`.replaceAll("_", " ");
+  return (
+    outcome === "error" &&
+    (result.timedOut ||
+      /\b(?:quota|resource exhausted|rate[ -]?limit(?:ed)?|usage[ -]?limit|(?:hit|reached|exceeded) (?:your |the )?limit|overload(?:ed)?|service unavailable|temporarily unavailable|429|502|503|504|529|ENOENT|ECONNREFUSED|ECONNRESET|ENETUNREACH|EAI AGAIN|ETIMEDOUT)\b/i.test(
+        message,
+      ))
+  );
+}
+
+/**
+ * One retry on ordinary failures. A quota or service availability failure advances to the
+ * next configured binding without retrying the binding that failed. When no fallback is
+ * configured, that failure keeps the one retry a single command had before fallbacks
+ * existed. A timeout still returns at once in that case. The command runs from the runtime
+ * directory, so it discovers no project instructions from its working directory.
  */
 export function commandJudge(config: LearnConfig, options: CommandJudgeOptions = {}): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
     mkdirSync(config.runtimeDir, { recursive: true });
-    const command =
-      options.subscriptionOnly === true
-        ? subscriptionCommand(config.judgeCommand, config.configDir, config.runtimeDir)
-        : config.judgeCommand;
-    if (command === null)
-      return {
-        unavailable: `a subscription-only judge must be the claude command, not ${config.judgeCommand[0] ?? "nothing"}`,
-      };
     const env: NodeJS.ProcessEnv = {};
     const parent = options.subscriptionOnly === true ? subscriptionEnv(process.env) : process.env;
     for (const [key, value] of Object.entries(parent)) {
       if (!NESTED_SESSION_VARS.includes(key) && !TRACE_CONTEXT_VARS.includes(key)) env[key] = value;
     }
     const traceId = context.traceId ?? randomBytes(16).toString("hex");
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const carrier = { traceId, spanId: randomBytes(8).toString("hex") };
-      const startedAt = Date.now();
-      const result = run(command, {
-        cwd: config.runtimeDir,
-        input: prompt,
-        env: { ...env, TRACEPARENT: carrierOf(carrier) },
-        timeoutMs: config.judgeTimeoutMs,
-      });
-      const parsed = result.timedOut || result.code !== 0 ? null : extractJson(result.stdout);
-      const outcome = judgeOutcome(result, parsed);
-      const failure = result.timedOut
-        ? "timeout"
-        : result.code !== 0 &&
-            /\b(?:401|403|unauthorized|unauthenticated|authentication|invalid api key|not logged in)\b/i.test(
-              `${result.stderr}\n${result.stdout}`,
-            )
-          ? "auth"
-          : null;
-      context.onProcessResult?.(failure);
-      traceAttempt(config, prompt, context, carrier, attempt + 1, startedAt, result, outcome);
-      if (result.timedOut || outcome === "unavailable") return null;
-      if (outcome === "ok") return parsed;
+    let attempt = 0;
+    for (const [index, configured] of [config.judgeCommand, ...config.judgeFallbackCommands].entries()) {
+      const command =
+        options.subscriptionOnly === true
+          ? subscriptionCommand(configured, config.configDir, config.runtimeDir)
+          : configured;
+      if (command === null)
+        return {
+          unavailable: `a subscription-only judge must be the claude command, not ${configured[0] ?? "nothing"}`,
+        };
+      let advance = false;
+      for (let retry = 0; retry < 2; retry += 1) {
+        const carrier = { traceId, spanId: randomBytes(8).toString("hex") };
+        const startedAt = Date.now();
+        const result = run(command, {
+          cwd: config.runtimeDir,
+          input: prompt,
+          env: { ...env, TRACEPARENT: carrierOf(carrier) },
+          timeoutMs: config.judgeTimeoutMs,
+        });
+        const parsed = result.timedOut || result.code !== 0 ? null : extractJson(result.stdout);
+        const outcome = judgeOutcome(result, parsed);
+        const failure = result.timedOut
+          ? "timeout"
+          : outcome === "error" &&
+              /\b(?:401|403|unauthorized|unauthenticated|authentication|invalid api key|not logged in)\b/i.test(
+                `${result.stderr}\n${result.stdout}`,
+              )
+            ? "auth"
+            : null;
+        context.onProcessResult?.(failure);
+        attempt += 1;
+        traceAttempt(config, prompt, context, carrier, attempt, startedAt, result, outcome, {
+          index,
+          command: configured,
+        });
+        if (outcome === "unavailable") return null;
+        if (outcome === "ok") return parsed;
+        if (serviceUnavailable(result, outcome)) {
+          if (config.judgeFallbackCommands.length > 0) {
+            advance = true;
+            break;
+          }
+          // A timeout has no second try when no fallback is configured. Other availability failures do.
+          if (result.timedOut) return null;
+        }
+      }
+      if (!advance) return null;
     }
     return null;
   };

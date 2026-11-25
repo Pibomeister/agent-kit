@@ -300,6 +300,55 @@ describe("bind", () => {
     expect(second.binding?.skill_bundle.hash).not.toBe(first.binding?.skill_bundle.hash);
   });
 
+  test("a pinned in-flight binding still grants after the global bundle is upgraded", () => {
+    const { home, project, opts } = env();
+    const worktree = makeProject();
+    const bindingOut = join(home, "data/T-pin/binding.json");
+    const first = bind(
+      {
+        fmHome: home,
+        taskId: "T-pin",
+        project,
+        mode: "agent-kit",
+        host: "claude-code",
+        bindingOut,
+        evidence: { store: "mock", location: makeDir() },
+      },
+      opts,
+    );
+    expect(first.ok).toBe(true);
+    const binding = first.binding;
+    if (binding === undefined) throw new Error("bind wrote no binding");
+    const pinPath = binding.skill_bundle.path;
+    const pinHash = binding.skill_bundle.hash;
+    const pinnedShip = readFileSync(join(pinPath, "skills/super-ship/SKILL.md"), "utf8");
+    const grant = (bindingPath: string) => {
+      const err: string[] = [];
+      const code = runFirstmate(
+        ["grant", "--binding", bindingPath, "--operation", "review.full", "--cwd", worktree],
+        { out: () => {}, err: (line) => err.push(line) },
+        opts.ledgerDir,
+      );
+      return { code, err: err.join("\n") };
+    };
+    expect(grant(bindingOut).code).toBe(0);
+
+    writeFileSync(join(opts.bundleDir, "skills/super-ship/SKILL.md"), "---\nname: super-ship\n---\nupgraded\n");
+    fs.mkdirSync(join(opts.bundleDir, ".claude-plugin"));
+    writeFileSync(join(opts.bundleDir, ".claude-plugin/plugin.json"), JSON.stringify({ version: "9.9.9" }));
+    fs.rmSync(join(opts.bundleDir, "skills/super-scout"), { recursive: true, force: true });
+
+    expect(readFileSync(join(pinPath, "skills/super-ship/SKILL.md"), "utf8")).toBe(pinnedShip);
+    expect(existsSync(join(pinPath, "skills/super-scout/SKILL.md"))).toBe(true);
+    expect(existsSync(join(pinPath, ".claude-plugin/plugin.json"))).toBe(false);
+    const afterUpgrade = grant(bindingOut);
+    expect(afterUpgrade.code).toBe(0);
+    expect(afterUpgrade.err).not.toContain("pinned bundle");
+    expect(JSON.parse(readFileSync(bindingOut, "utf8"))).toMatchObject({
+      skill_bundle: { hash: pinHash, path: pinPath },
+    });
+  });
+
   test("refuses a bundle built without the lifecycle gate, and writes no binding", () => {
     const { home, project, opts } = env();
     fs.rmSync(join(opts.bundleDir, "bin"), { recursive: true });

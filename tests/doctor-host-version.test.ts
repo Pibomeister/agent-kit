@@ -325,7 +325,9 @@ printf '%s\\n' '[]'
     );
     expect(mismatch.stdout).not.toContain("NOTE ");
     expect(mismatch.stdout).not.toContain("mastracode isolation probe");
-    const missing = runDoctor(root, "/usr/bin:/bin");
+    const emptyBin = join(root, "empty-bin");
+    mkdirSync(emptyBin);
+    const missing = runDoctor(root, emptyBin);
     expect(missing.stdout).not.toContain("isolation probe");
     expect(missing.status).not.toBe(2);
   });

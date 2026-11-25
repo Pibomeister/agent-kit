@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess, type SpawnSyncReturns } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -17,6 +17,13 @@ const SERVICE = join(REPO, "tests/fixtures/tp-life/service/server.mjs");
 const ORACLE_TIMEOUT = 25_000;
 
 const children: ChildProcess[] = [];
+/** What a fixture printed and how it ended, for oracle failure messages. */
+interface FixtureLog {
+  output: string;
+  ended: string | undefined;
+}
+/** The fixtures of the running test. */
+const fixtureLogs = new Map<ChildProcess, FixtureLog>();
 
 function stopFixture(child: ChildProcess): void {
   if (child.exitCode !== null || child.signalCode !== null) return;
@@ -50,6 +57,7 @@ async function stopRunChildren(): Promise<void> {
   for (const child of children) stopFixture(child);
   for (const child of children) await waitGone(child);
   children.length = 0;
+  fixtureLogs.clear();
 }
 
 afterEach(stopRunChildren);
@@ -100,17 +108,21 @@ function startFixture(broken?: string): Promise<string> {
     stdio: ["ignore", "pipe", "pipe"],
   });
   children.push(child);
+  const log: FixtureLog = { output: "", ended: undefined };
+  fixtureLogs.set(child, log);
+  child.once("exit", (code, signal) => {
+    log.ended = code === null ? `ended by ${String(signal)}` : `exited ${String(code)}`;
+  });
   return new Promise((ready, reject) => {
     const timer = setTimeout(() => reject(new Error("fixture did not listen")), 8_000);
-    let buf = "";
     const onExit = (code: number | null): void => {
       clearTimeout(timer);
-      reject(new Error(`fixture exited ${String(code)}: ${buf}`));
+      reject(new Error(`fixture exited ${String(code)}: ${log.output}`));
     };
     child.once("exit", onExit);
     child.stdout?.on("data", (chunk: Buffer) => {
-      buf += chunk.toString("utf8");
-      const match = /listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(buf);
+      log.output += chunk.toString("utf8");
+      const match = /listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(log.output);
       const base = match?.[1];
       if (base !== undefined) {
         clearTimeout(timer);
@@ -119,19 +131,83 @@ function startFixture(broken?: string): Promise<string> {
       }
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      buf += chunk.toString("utf8");
+      log.output += chunk.toString("utf8");
     });
   });
 }
 
-function evidenceAt(receiptsDir: string) {
-  return runScript(["evidence", "--receipts-dir", receiptsDir]);
+/**
+ * The oracle's output and the state of every fixture of the running test. A fixture that dies
+ * after it listens fails every case with a refused connection, which the exit status alone does
+ * not tell apart from an oracle defect.
+ */
+async function oracleFailure(run: SpawnSyncReturns<string>): Promise<string> {
+  // spawnSync holds the event loop, so a fixture's exit event is delivered only after a turn of it.
+  await new Promise((settle) => setTimeout(settle, 100));
+  const lines = [
+    `oracle exit ${String(run.status)}, signal ${String(run.signal)}`,
+    `oracle stdout: ${run.stdout}`,
+    `oracle stderr: ${run.stderr}`,
+  ];
+  for (const [child, log] of fixtureLogs) {
+    lines.push(`fixture ${String(child.pid)} ${log.ended ?? "still running"}; output: ${log.output.trim()}`);
+  }
+  return lines.join("\n");
+}
+
+/** Asserts an oracle run's exit status; a mismatch carries the oracle output and fixture states. */
+async function expectOracle(run: SpawnSyncReturns<string>, want: number): Promise<void> {
+  const note = run.status === want ? "" : await oracleFailure(run);
+  expect(run.status, note).toBe(want);
+}
+
+function evidenceAt(receiptsDir: string, repo = REPO) {
+  return runScript(["evidence", "--cwd", repo, "--receipts-dir", receiptsDir]);
 }
 
 interface WrittenOracle {
+  run: SpawnSyncReturns<string>;
   oracle: string;
   receipt: string;
-  status: number;
+  repo: string;
+}
+
+/** Git env for a fixture repo: cwd is the repo, and the crowded per-user temp dir is not used. */
+function isolatedGitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    TMPDIR: "/tmp",
+  };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_CEILING_DIRECTORIES;
+  return env;
+}
+
+/**
+ * A private one-commit checkout with this repo's schemas, package.json and evidence template.
+ * Receipt binding snapshots whatever `--cwd` names. The suite's other files run git in the
+ * working tree at the same time, and a snapshot that fails operationally exits 1, which is
+ * the code a diff_hash refusal is not. Binding against this checkout keeps that snapshot
+ * off the shared work tree.
+ */
+function boundRepo(): string {
+  const work = processScratch("ak-tp-life-bound-");
+  cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
+  copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
+  mkdirSync(join(work, "research/tp-life"), { recursive: true });
+  copyFileSync(join(REPO, TEMPLATE_REL), join(work, TEMPLATE_REL));
+  const env = isolatedGitEnv();
+  const git = (args: string[]): void => {
+    const result = spawnSync("git", ["-C", work, ...args], { env, encoding: "utf8" });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+  };
+  git(["init", "-q"]);
+  git(["add", "-A"]);
+  git(["-c", "user.email=td@example.invalid", "-c", "user.name=td", "commit", "-qm", "bound"]);
+  return work;
 }
 
 function allCases(failId?: string): CaseResult[] {
@@ -191,14 +267,14 @@ function isConnRefused(err: Error): boolean {
   return false;
 }
 
-function writeOracle(base: string, dir: string, name: string): WrittenOracle {
+function writeOracle(base: string, dir: string, name: string, repo = boundRepo()): WrittenOracle {
   const oracleJson = join(dir, `${name}.oracle.json`);
   const receiptPath = join(dir, `${name}.json`);
   const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
-  const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", receiptPath]);
-  expect(written.status).toBe(0);
+  const written = runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", receiptPath]);
+  expect(written.status, written.stderr).toBe(0);
   expect(written.stderr.includes("will stale")).toBe(false);
-  return { oracle: oracleJson, receipt: receiptPath, status: oracle.status ?? 1 };
+  return { run: oracle, oracle: oracleJson, receipt: receiptPath, repo };
 }
 
 describe("independence", () => {
@@ -219,7 +295,7 @@ describe("fixture and oracle", () => {
     const base = await startFixture();
     const out = join(processScratch("ak-tp-life-"), "oracle.json");
     const run = runScript(["oracle", "--base-url", base, "--out", out]);
-    expect(run.status).toBe(0);
+    await expectOracle(run, 0);
     const report = parseOracleReport(readFileSync(out, "utf8"));
     expect(report).not.toBeNull();
     expect(report?.passed).toBe(CASE_IDS.length);
@@ -231,23 +307,38 @@ describe("fixture and oracle", () => {
     expect(page.includes('fetch("/jobs/"')).toBe(true);
   });
 
+  test("a fixture that dies after it listens is named in the oracle failure", async () => {
+    const base = await startFixture();
+    const child = children[children.length - 1];
+    expect(child === undefined).toBe(false);
+    if (child === undefined) return;
+    child.kill("SIGKILL");
+    await waitGone(child);
+    const run = runScript(["oracle", "--base-url", base]);
+    expect(run.status).toBe(1);
+    const note = await oracleFailure(run);
+    expect(note).toContain(`fixture ${String(child.pid)} ended by SIGKILL`);
+    expect(note).toContain("tp-life fixture listening on");
+    expect(note).toContain('"verdict": "fail"');
+  });
+
   test("two back-to-back clean runs against one fixture both pass", async () => {
     const base = await startFixture();
     const first = runScript(["oracle", "--base-url", base]);
-    expect(first.status).toBe(0);
+    await expectOracle(first, 0);
     const second = runScript(["oracle", "--base-url", base]);
-    expect(second.status).toBe(0);
+    await expectOracle(second, 0);
   });
 
   for (const id of CASE_IDS) {
     test(`broken ${id}: only that case fails`, async () => {
       const base = await startFixture(id);
       const run = runScript(["oracle", "--base-url", base]);
-      expect(run.status).toBe(1);
+      await expectOracle(run, 1);
       const report = parseOracleReport(run.stdout);
       expect(report).not.toBeNull();
       if (report === null) return;
-      expect(report.failed).toBe(1);
+      expect(report.failed, report.failed === 1 ? "" : await oracleFailure(run)).toBe(1);
       expect(report.passed).toBe(CASE_IDS.length - 1);
       for (const row of report.cases) {
         expect(row.verdict).toBe(row.id === id ? "fail" : "pass");
@@ -283,10 +374,10 @@ describe("bound receipts", () => {
     const base = await startFixture();
     const dir = processScratch("ak-tp-life-r-");
     const written = writeOracle(base, dir, "receipt");
-    expect(written.status).toBe(0);
-    const check = runScript(["receipt", "check", written.receipt]);
-    expect(check.status).toBe(0);
-    const cwdFirst = runScript(["receipt", "check", "--cwd", REPO, written.receipt]);
+    await expectOracle(written.run, 0);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, written.receipt]);
+    expect(check.status, check.stderr).toBe(0);
+    const cwdFirst = runScript(["receipt", "check", "--cwd", written.repo, written.receipt]);
     expect(cwdFirst.status).toBe(0);
     const schemas = compileSchemas(REPO);
     const validate = schemas.validatorFor("verification");
@@ -307,7 +398,7 @@ describe("bound receipts", () => {
     const work = processScratch("ak-tp-life-rel-");
     const oracleJson = join(work, "report.oracle.json");
     const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
-    expect(oracle.status).toBe(0);
+    await expectOracle(oracle, 0);
     cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
     copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
     writeFileSync(join(work, ".gitignore"), "rel.json\n");
@@ -336,7 +427,7 @@ describe("bound receipts", () => {
     const work = join(dir, "repo");
     mkdirSync(work);
     const oracleJson = join(dir, "report.oracle.json");
-    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    await expectOracle(runScript(["oracle", "--base-url", base, "--out", oracleJson]), 0);
     cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
     copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
@@ -382,17 +473,18 @@ describe("bound receipts", () => {
     const base = await startFixture();
     const dir = processScratch("ak-tp-life-login-");
     const oracleJson = join(dir, "report.oracle.json");
-    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    await expectOracle(runScript(["oracle", "--base-url", base, "--out", oracleJson]), 0);
     const parsed = parseOracleReport(readFileSync(oracleJson, "utf8"));
     expect(parsed === null).toBe(false);
     if (parsed === null) return;
     parsed.base_url = "http://x:tok_d42@127.0.0.1:9";
     writeFileSync(oracleJson, `${JSON.stringify(parsed, null, 2)}\n`);
+    const repo = boundRepo();
     const prev = process.env.AK_TP_LIFE_HOST_LOGIN;
     process.env.AK_TP_LIFE_HOST_LOGIN = "not-a-host";
     try {
       const out = join(dir, "receipt.json");
-      const written = runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", out]);
+      const written = runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", out]);
       expect(written.status).toBe(0);
       const raw = readFileSync(out, "utf8");
       expect(raw.includes("tok_d42")).toBe(false);
@@ -400,7 +492,9 @@ describe("bound receipts", () => {
       expect(raw.includes('\\"host_login\\":\\"unrecorded\\"')).toBe(true);
       process.env.AK_TP_LIFE_HOST_LOGIN = "claude";
       const allowed = join(dir, "receipt-claude.json");
-      expect(runScript(["receipt", "write", "--oracle-json", oracleJson, "--out", allowed]).status).toBe(0);
+      expect(runScript(["receipt", "write", "--cwd", repo, "--oracle-json", oracleJson, "--out", allowed]).status).toBe(
+        0,
+      );
       expect(readFileSync(allowed, "utf8").includes('\\"host_login\\":\\"claude\\"')).toBe(true);
     } finally {
       if (prev === undefined) delete process.env.AK_TP_LIFE_HOST_LOGIN;
@@ -412,7 +506,7 @@ describe("bound receipts", () => {
     const base = await startFixture();
     const work = processScratch("ak-tp-life-stale-");
     const oracleJson = join(work, "report.oracle.json");
-    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    await expectOracle(runScript(["oracle", "--base-url", base, "--out", oracleJson]), 0);
     cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
     copyFileSync(join(REPO, "package.json"), join(work, "package.json"));
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
@@ -441,7 +535,7 @@ describe("bound receipts", () => {
     const base = await startFixture();
     const work = processScratch("ak-tp-life-nopkg-");
     const oracleJson = join(work, "report.oracle.json");
-    expect(runScript(["oracle", "--base-url", base, "--out", oracleJson]).status).toBe(0);
+    await expectOracle(runScript(["oracle", "--base-url", base, "--out", oracleJson]), 0);
     cpSync(join(REPO, "schemas"), join(work, "schemas"), { recursive: true });
     const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
     expect(spawnSync("git", ["-C", work, "init", "-q"], { env: gitEnv }).status).toBe(0);
@@ -480,7 +574,7 @@ describe("bound receipts", () => {
     const dir = processScratch("ak-tp-life-null-");
     const path = join(dir, "null.json");
     writeFileSync(path, "null\n");
-    const check = runScript(["receipt", "check", path]);
+    const check = runScript(["receipt", "check", "--cwd", boundRepo(), path]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("receipt is not an object")).toBe(true);
   });
@@ -489,7 +583,7 @@ describe("bound receipts", () => {
     const dir = processScratch("ak-tp-life-arr-");
     const path = join(dir, "array.json");
     writeFileSync(path, "[]\n");
-    const check = runScript(["receipt", "check", path]);
+    const check = runScript(["receipt", "check", "--cwd", boundRepo(), path]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("receipt is not an object")).toBe(true);
   });
@@ -499,6 +593,8 @@ describe("bound receipts", () => {
     const run = runScript([
       "receipt",
       "write",
+      "--cwd",
+      boundRepo(),
       "--oracle-json",
       join(dir, "missing-oracle.json"),
       "--out",
@@ -511,7 +607,7 @@ describe("bound receipts", () => {
 
   test("a missing receipt prints one line and exits non-zero", () => {
     const dir = processScratch("ak-tp-life-miss-receipt-");
-    const run = runScript(["receipt", "check", join(dir, "missing-receipt.json")]);
+    const run = runScript(["receipt", "check", "--cwd", boundRepo(), join(dir, "missing-receipt.json")]);
     expect(run.status).toBe(1);
     expect(run.stderr.includes("cannot read")).toBe(true);
     expect(run.stderr.includes("\n    at ")).toBe(false);
@@ -522,10 +618,12 @@ describe("bound receipts", () => {
     const dir = processScratch("ak-tp-life-miss-outdir-");
     const oracleJson = join(dir, "report.oracle.json");
     const oracle = runScript(["oracle", "--base-url", base, "--out", oracleJson]);
-    expect(oracle.status).toBe(0);
+    await expectOracle(oracle, 0);
     const run = runScript([
       "receipt",
       "write",
+      "--cwd",
+      boundRepo(),
       "--oracle-json",
       oracleJson,
       "--out",
@@ -546,7 +644,7 @@ describe("bound receipts", () => {
       '"revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("refused")).toBe(true);
   });
@@ -558,7 +656,7 @@ describe("bound receipts", () => {
     const missingPath = join(dir, "missing-hash.json");
     const missing = readFileSync(written.receipt, "utf8").replace(/,\s*"diff_hash": "sha256:[0-9a-f]+"/, "");
     writeFileSync(missingPath, missing);
-    const check = runScript(["receipt", "check", missingPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, missingPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("diff_hash is missing")).toBe(true);
     expect(check.stderr.includes("is invalid")).toBe(false);
@@ -574,7 +672,7 @@ describe("bound receipts", () => {
       '"diff_hash": "not-a-hash"',
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("diff_hash is invalid")).toBe(true);
     expect(check.stderr.includes("is missing")).toBe(false);
@@ -590,7 +688,7 @@ describe("bound receipts", () => {
       `"revision": "${"z".repeat(40)}"`,
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("revision is invalid")).toBe(true);
   });
@@ -605,8 +703,8 @@ describe("bound receipts", () => {
       `"diff_hash": "sha256:${"b".repeat(64)}"`,
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
-    expect(check.status).toBe(2);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
+    expect(check.status, check.stderr).toBe(2);
     expect(check.stderr.includes("different working tree")).toBe(true);
   });
 
@@ -616,11 +714,11 @@ describe("bound receipts", () => {
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
     const written = writeOracle(base, dir, "receipt");
-    expect(written.status).toBe(0);
+    await expectOracle(written.run, 0);
     copyFileSync(written.receipt, join(receiptsDir, "passed.json"));
-    const check = runScript(["receipt", "check", join(receiptsDir, "passed.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "passed.json")]);
     expect(check.status).toBe(0);
-    const evidence = evidenceAt(receiptsDir);
+    const evidence = evidenceAt(receiptsDir, written.repo);
     expect(evidence.status).toBe(0);
     const printed = parseEvidenceRecord(evidence.stdout);
     expect(printed === null).toBe(false);
@@ -669,9 +767,9 @@ describe("G4 evidence", () => {
     const written = writeOracle(base, dir, "receipt");
     const forged = readFileSync(written.receipt, "utf8").replace(/"id": "tp-life-oracle"/, '"id": "forged-receipt"');
     writeFileSync(join(receiptsDir, "forged.json"), forged);
-    const check = runScript(["receipt", "check", join(receiptsDir, "forged.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "forged.json")]);
     expect(check.status).toBe(0);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, written.repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -685,11 +783,11 @@ describe("G4 evidence", () => {
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
     const written = writeOracle(base, dir, "failed");
-    expect(written.status).toBe(1);
+    await expectOracle(written.run, 1);
     copyFileSync(written.receipt, join(receiptsDir, "failed.json"));
-    const check = runScript(["receipt", "check", join(receiptsDir, "failed.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "failed.json")]);
     expect(check.status).toBe(0);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, written.repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -703,14 +801,15 @@ describe("G4 evidence", () => {
     const dir = processScratch("ak-tp-life-pair-");
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
-    const failed = writeOracle(failedBase, dir, "failed");
-    expect(failed.status).toBe(1);
-    const passed = writeOracle(passedBase, dir, "passed");
-    expect(passed.status).toBe(0);
+    const repo = boundRepo();
+    const failed = writeOracle(failedBase, dir, "failed", repo);
+    await expectOracle(failed.run, 1);
+    const passed = writeOracle(passedBase, dir, "passed", repo);
+    await expectOracle(passed.run, 0);
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed-copy.json"));
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -732,13 +831,14 @@ describe("G4 evidence", () => {
     const dir = processScratch("ak-tp-life-success-pair-");
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
-    const failed = writeOracle(failedBase, dir, "failed");
-    expect(failed.status).toBe(1);
-    const passed = writeOracle(passedBase, dir, "passed");
-    expect(passed.status).toBe(0);
+    const repo = boundRepo();
+    const failed = writeOracle(failedBase, dir, "failed", repo);
+    await expectOracle(failed.run, 1);
+    const passed = writeOracle(passedBase, dir, "passed", repo);
+    await expectOracle(passed.run, 0);
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     copyFileSync(passed.receipt, join(receiptsDir, "passed.json"));
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.verdict).toBe("not-run");
@@ -751,17 +851,18 @@ describe("G4 evidence", () => {
     const receiptsDir = join(dir, "receipts");
     mkdirSync(receiptsDir);
     const failedBase = await startFixture("duplicate");
-    const failed = writeOracle(failedBase, dir, "failed");
-    expect(failed.status).toBe(1);
-    const passed = writeOracle(base, dir, "passed");
-    expect(passed.status).toBe(0);
+    const repo = boundRepo();
+    const failed = writeOracle(failedBase, dir, "failed", repo);
+    await expectOracle(failed.run, 1);
+    const passed = writeOracle(base, dir, "passed", repo);
+    await expectOracle(passed.run, 0);
     const mutated = readFileSync(passed.receipt, "utf8").replace(
       '\\"id\\":\\"success\\",\\"verdict\\":\\"pass\\"',
       '\\"id\\":\\"success\\",\\"verdict\\":\\"fail\\"',
     );
     copyFileSync(failed.receipt, join(receiptsDir, "failed.json"));
     writeFileSync(join(receiptsDir, "passed.json"), mutated);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.oracle_sub_verdict).toBe("incomplete");
@@ -867,9 +968,9 @@ describe("G4 evidence", () => {
       '"kind": "probe",\n  "probe": { "name": "tp-life", "target": "jobs" }',
     );
     writeFileSync(join(receiptsDir, "probe.json"), mutated);
-    const check = runScript(["receipt", "check", join(receiptsDir, "probe.json")]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, join(receiptsDir, "probe.json")]);
     expect(check.status).toBe(0);
-    const run = evidenceAt(receiptsDir);
+    const run = evidenceAt(receiptsDir, written.repo);
     expect(run.status).toBe(0);
     const printed = parseEvidenceRecord(run.stdout);
     expect(printed?.oracle_sub_verdict).toBe("incomplete");
@@ -886,7 +987,7 @@ describe("G4 evidence", () => {
       "$1https://example.invalid/other$3",
     );
     writeFileSync(mutatedPath, mutated);
-    const check = runScript(["receipt", "check", mutatedPath]);
+    const check = runScript(["receipt", "check", "--cwd", written.repo, mutatedPath]);
     expect(check.status).toBe(2);
     expect(check.stderr.includes("different repo")).toBe(true);
   });
@@ -928,7 +1029,7 @@ describe("G4 evidence", () => {
       expect(second).not.toBe(first);
       const dir = processScratch("ak-tp-life-env-");
       const oracle = runScript(["oracle", "--base-url", second, "--out", join(dir, "o.json")]);
-      expect(oracle.status).toBe(0);
+      await expectOracle(oracle, 0);
     } finally {
       if (prevPort === undefined) delete process.env.PORT;
       else process.env.PORT = prevPort;

@@ -29,6 +29,14 @@
  * unstated visibility is treated as public. With no markers file the scan has nothing to check and
  * says so; a markers file that cannot be read refuses, because unknown is not clean.
  *
+ * Both matches are heuristics, and a clean scan is not proof that nothing internal remains. A marker
+ * is a plain substring, so a split, re-spelled or encoded form passes. Instruction text is caught only
+ * as INSTRUCTION_WORDS or more consecutive words, so a paraphrase or a shorter copy passes, and the
+ * exempt trailers, footer and `allow` text are not matched against it at all. Only the title, the
+ * body and the commit messages are scanned; branch names, changed files and later comments are not.
+ * A commit message is read only up to a NUL byte, which only a commit built by hand with plumbing
+ * can hold, so text after one is not scanned.
+ *
  * This file ships inside `bin/ak-gate.mjs`, so it imports only `node:` built-ins.
  */
 import { spawnSync } from "node:child_process";
@@ -165,19 +173,38 @@ export function scanText(markers: PublishMarkers, texts: readonly PublishText[])
   return hits;
 }
 
-/** The commit messages in a range, newest first, or the reason git could not list them. */
+/**
+ * The commit messages in a range, newest first, or the reason git could not list them.
+ *
+ * A range that is empty or starts with `-` refuses before git runs, and `--end-of-options` keeps any
+ * other value from being read as a git option. `--no-show-signature` keeps a `log.showSignature`
+ * setting from printing signature lines ahead of a record.
+ */
 export function commitMessages(project: string, range: string): { texts: PublishText[] } | { error: string } {
-  const proc = spawnSync("git", ["log", "--format=%H%x00%B%x1e", range, "--"], { cwd: project, encoding: "utf8" });
+  if (range === "" || range.startsWith("-"))
+    return { error: `--commits ${JSON.stringify(range)} is not a revision range` };
+  const proc = spawnSync(
+    "git",
+    ["log", "-z", "--no-show-signature", "--format=%H%n%B", "--end-of-options", range, "--"],
+    { cwd: project, encoding: "utf8" },
+  );
   if (proc.error !== undefined) return { error: `cannot run git in ${project}: ${proc.error.message}` };
   if (proc.status !== 0) return { error: `git log ${range} failed: ${proc.stderr.trim()}` };
-  const texts = proc.stdout
-    .split("\x1e")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== "")
-    .map((entry) => {
-      const [sha = "", message = ""] = entry.split("\x00");
-      return { source: `commit ${sha.slice(0, 12)}`, text: message };
-    });
+  return commitRecords(proc.stdout, range);
+}
+
+/**
+ * Splits `git log -z --format=%H%n%B` output into one text per commit. Each NUL-terminated record
+ * must open with its commit id; a record that does not refuses rather than being dropped.
+ */
+export function commitRecords(stdout: string, range: string): { texts: PublishText[] } | { error: string } {
+  const texts: PublishText[] = [];
+  for (const record of stdout.split("\x00")) {
+    if (record === "") continue;
+    const head = /^[0-9a-f]{40,64}\n/.exec(record);
+    if (head === null) return { error: `git log ${range} printed a record that does not open with a commit id` };
+    texts.push({ source: `commit ${record.slice(0, 12)}`, text: record.slice(head[0].length).trimEnd() });
+  }
   return { texts };
 }
 

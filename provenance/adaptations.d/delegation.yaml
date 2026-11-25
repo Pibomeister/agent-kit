@@ -1,33 +1,4 @@
 adaptations:
-  - path: references/delegation/REFERENCE.md
-    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
-    rationale: Sensitive surfaces and their overriding effect became the never-lowered delegation floor without importing the report's sample thresholds.
-  - path: references/delegation/REFERENCE.md
-    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-219
-    rationale: The evidenced factors, four classes and authorship meanings became the shared class vocabulary while project weights and cut points remain advisory.
-  - path: references/delegation/REFERENCE.md
-    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
-    rationale: Ticket-time and merge-time assessment, raise-only recomputation and named-human lowering became the two-snapshot lifecycle.
-  - path: references/delegation/REFERENCE.md
-    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L82-98
-    rationale: Transparent size, diffusion, hotspot and prior-fix inputs became optional complexity evidence rather than a learned or package-wide gate.
-  - path: references/delegation/REFERENCE.md
-    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
-    rationale: The six readiness criteria, vague-term pass and assumption resolution became per-ticket evidence and frontier questions.
-  - path: references/delegation/REFERENCE.md
-    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
-    rationale: The vertical-slice rule and the wide-refactor carve-out moved here from the super-bound body, where they now sit beside the ordered stack that the reports supply.
-  - path: references/delegation/REFERENCE.md
-    source: egm@403d8881d62022490637d740657b33f01e321ea8:resources/document_standards/implementation-readiness-standard.md
-    rationale: >-
-      The zero-decision rule and rewrite cap for listed decisions live here so super-bound step
-      13 can stay a pointer. Off and shadow do not change class or scorer inputs (phase 1b,
-      GS-004i).
-  - path: references/delegation/REFERENCE.md
-    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/codebase_details.md
-    rationale: >-
-      Proposed files are not findings. exists versus proposed labelling, and the rule that
-      proposed-absent is not a defect, are stated here for the cold reader (phase 1b, GS-004i).
   - path: policies/authority-defaults.yaml
     source: local:mission-brief-risk-tiering-and-slop-avoidance@sha256:90abd48e019f09ea3d58c11028148fc971dbefe145c70c0822364f15b1729b38#L150-159
     rationale: The captain's class-to-checkpoint table became the authoritative policy map while merge and deploy remain sensitive for every class.
@@ -186,6 +157,15 @@ adaptations:
   - path: src/lifecycle/gate.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
     rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
+  - path: schemas/project.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: review.behavior is the project policy Runner.start freezes onto an enabled run.
+  - path: schemas/ticket.schema.json
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Ticket verification.behavior names the frozen checks, property ids and property types.
+  - path: src/lifecycle/gate.ts
+    source: local:gs017-behavior-verification-prd@sha256:9c843c69257eda35eb52066b1a4c7a2b6f6f5d3cd37390c85c580948339fdcc3#L345-351
+    rationale: Open binds a snapshot for ordinary tickets and refuses enabled mandatory checks that only Runner.start may freeze.
   - path: tests/lifecycle/check.test.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
     rationale: Lifecycle tests exercise prose-only green claims, self-verification, stale recipes, missing kinds, unattested seats and artifact tampering.

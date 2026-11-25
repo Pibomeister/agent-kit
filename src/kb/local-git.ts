@@ -3,11 +3,13 @@ import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+import { asJsonObject, type Json, type JsonObject } from "../lifecycle/behavior-policy.ts";
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
+import type { IntentLookup } from "../validation/behavior-contract-intent.ts";
 import type { ResolvedKb } from "./binding.ts";
-import { git } from "./git.ts";
+import { git, type GitFn } from "./git.ts";
 import { markTrailAttempt } from "./trail-publish.ts";
 
 /**
@@ -267,17 +269,30 @@ function approvalsOf(artifact: RunArtifact): string[] {
   return Array.isArray(approvals) ? [...new Set(approvals.map((approval) => canonicalJson(approval)))].toSorted() : [];
 }
 
+function commitAt(root: string, rev: string, run: GitFn): string | null {
+  const found = run(root, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]);
+  return found.status === 0 ? found.stdout.trim() : null;
+}
+
 function headCommit(root: string): string | null {
-  const head = git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-  return head.status === 0 ? head.stdout.trim() : null;
+  return commitAt(root, "HEAD", git);
 }
 
 /** The committed bytes at `path`, absent when not listed, or a failure when git cannot read them. */
-function committed(root: string, path: string): CommittedContent {
-  const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
+function committed(root: string, path: string, at?: { revision?: string; git?: GitFn }): CommittedContent {
+  const rev = at?.revision !== undefined && at.revision !== "" ? at.revision : "HEAD";
+  if (rev !== "HEAD" && at?.git === undefined) throw new Error("an explicit revision requires a git function");
+  const run = at?.git ?? git;
+  if (commitAt(root, rev, run) === null) {
+    return failed(
+      "kb.unreadable",
+      rev === "HEAD" ? "the knowledgebase has no commits" : `revision ${rev} cannot be resolved`,
+    );
+  }
+  const listed = run(root, ["ls-tree", "-z", rev, "--", path]);
   if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
   if (listed.stdout === "") return { status: "absent" };
-  const shown = git(root, ["show", `HEAD:${path}`]);
+  const shown = run(root, ["show", `${rev}:${path}`]);
   return shown.status === 0
     ? { status: "found", text: shown.stdout }
     : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
@@ -340,6 +355,23 @@ export function committedScopes(kb: ResolvedKb): string[] {
 }
 
 /**
+ * Names in `dir` at HEAD. An absent tree lists nothing, and that empty result is
+ * the scope having no pages. A tree that exists must list its names: a status-0
+ * empty listing of a tree that is there is a lost read, and is retried.
+ */
+function listedNames(root: string, dir: string): ReturnType<typeof git> {
+  const args = ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`] as const;
+  let listed = git(root, args);
+  for (let attempt = 1; listed.status === 0 && listed.stdout === "" && attempt < 3; attempt++) {
+    const tree = git(root, ["rev-parse", "--verify", "--quiet", `HEAD:${dir}`]);
+    if (tree.status !== 0 || tree.stdout.trim() === "") return listed;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    listed = git(root, args);
+  }
+  return listed;
+}
+
+/**
  * `readContext`: the committed pages of the given kinds at `scope` and at each
  * scope above it, most specific first. A project with no pages returns an
  * empty list, which is a fact and not an error.
@@ -367,7 +399,7 @@ export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: str
   for (const at of scopes) {
     for (const kind of kinds) {
       const dir = ["projects", project, "documents", ...at, kind].join("/");
-      const listed = git(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
+      const listed = listedNames(kb.root, dir);
       if (listed.status !== 0) return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\0").filter((name) => name.endsWith(".md"))) {
         const content = committed(kb.root, path);
@@ -713,6 +745,19 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
   return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
 
+/** Committed artifact this run-artifact publish cites, pinned to its source hash. */
+function committedIntentLookup(kb: ResolvedKb): IntentLookup {
+  return (id, match) => {
+    const looked = lookupCommittedArtifact(kb, id, match);
+    if (looked.status !== "found") return undefined;
+    const doc = looked.artifact;
+    const schema = isText(doc.schema) ? doc.schema : undefined;
+    const artifactId = isText(doc.id) ? doc.id : undefined;
+    if (schema === undefined || artifactId === undefined) return undefined;
+    return { schema, id: artifactId, doc };
+  };
+}
+
 /**
  * `publishArtifact` with a `run-artifact` placement: one schema-bound record,
  * appended as one line to the project's artifacts file and linked from the
@@ -728,7 +773,7 @@ export function publishRunArtifact(
   trailAttempts?: string,
 ): PublishOutcome | KbRefusal {
   if (!ARTIFACT_ID.test(run)) return refused("kb.run-invalid", `'${run}' is not a run id.`);
-  const checked = checkRunArtifact(text);
+  const checked = checkRunArtifact(text, committedIntentLookup(kb));
   if (checked.artifact === null) {
     return refused("kb.artifact-invalid", `The artifact is refused before any write: ${checked.problem}.`);
   }
@@ -797,4 +842,107 @@ export function publishRunArtifact(
     return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
   }
   return commitRecord(kb, store, identity);
+}
+
+function isText(value: Json | undefined): value is string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function projectIdentityId(artifact: JsonObject): string | undefined {
+  if (!asJsonObject(artifact.identity)) return undefined;
+  const id = artifact.identity.id;
+  return isText(id) && id !== "" ? id : undefined;
+}
+
+export type ArtifactLookup =
+  | { status: "found"; artifact: JsonObject }
+  | { status: "absent" }
+  | { status: "unavailable"; reason: string };
+
+type ArtifactsFile =
+  | { status: "found"; text: string }
+  | { status: "absent" }
+  | { status: "unavailable"; reason: string };
+
+export interface ArtifactRead {
+  revision?: string;
+  git?: GitFn;
+}
+
+function lookupRevision(kb: ResolvedKb, at?: ArtifactRead): ArtifactRead | undefined {
+  if (at === undefined) return undefined;
+  if (kb.inRepo === undefined) return at.git === undefined ? undefined : { git: at.git };
+  return at;
+}
+
+function lookupArtifactsFile(kb: ResolvedKb, at?: ArtifactRead): ArtifactsFile {
+  const content = committed(kb.root, artifactsPath(kb.binding.project), lookupRevision(kb, at));
+  if ("message" in content) return { status: "unavailable", reason: content.message };
+  if (content.status === "absent") return { status: "absent" };
+  return { status: "found", text: content.text };
+}
+
+/**
+ * The latest committed project record whose identity.id is `projectId`.
+ * Distinguishes a confirmed miss from a failed git read. An in-repo binding
+ * with an explicit revision is read at that revision, not worker HEAD.
+ */
+export function lookupPublishedProject(
+  kb: ResolvedKb,
+  projectId: string,
+  at?: ArtifactRead,
+): { status: "found"; project: JsonObject } | { status: "absent" } | { status: "unavailable"; reason: string } {
+  const file = lookupArtifactsFile(kb, at);
+  if (file.status !== "found") return file;
+  let found: JsonObject | undefined;
+  for (const line of file.text.split("\n")) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.schema !== "project") continue;
+    if (!asJsonObject(stored.artifact) || projectIdentityId(stored.artifact) !== projectId) continue;
+    found = stored.artifact;
+  }
+  if (found === undefined) return { status: "absent" };
+  return { status: "found", project: found };
+}
+
+function humanApprovedAt(artifact: JsonObject, hash: string): boolean {
+  const approvals = artifact.approvals;
+  if (!Array.isArray(approvals)) return false;
+  for (const row of approvals) {
+    if (!asJsonObject(row)) continue;
+    const who = isText(row.role) ? row.role : isText(row.by) ? row.by : undefined;
+    if (who === "human" && isText(row.artifact_hash) && row.artifact_hash === hash) return true;
+  }
+  return false;
+}
+
+/**
+ * Latest committed run artifact whose envelope id is `id`, optionally pinned to
+ * schema and hash. A pinned hash prefers a human-approved copy of that digest.
+ */
+export function lookupCommittedArtifact(
+  kb: ResolvedKb,
+  id: string,
+  match?: { schema?: string; hash?: string } & ArtifactRead,
+): ArtifactLookup {
+  const file = lookupArtifactsFile(kb, match);
+  if (file.status !== "found") return file;
+  let found: JsonObject | undefined;
+  let accepted: JsonObject | undefined;
+  for (const line of file.text.split("\n")) {
+    const stored = parseStored(line);
+    if (stored === null || stored.artifact.id !== id) continue;
+    if (!asJsonObject(stored.artifact)) continue;
+    if (match?.schema !== undefined && stored.artifact.schema !== match.schema) continue;
+    if (match?.hash !== undefined && artifactHash(stored.artifact) !== match.hash) continue;
+    found = stored.artifact;
+    if (match?.hash !== undefined && humanApprovedAt(stored.artifact, match.hash)) accepted = stored.artifact;
+  }
+  if (found === undefined) return { status: "absent" };
+  return { status: "found", artifact: accepted ?? found };
+}
+
+export function readCommittedArtifact(kb: ResolvedKb, id: string): JsonObject | undefined {
+  const looked = lookupCommittedArtifact(kb, id);
+  return looked.status === "found" ? looked.artifact : undefined;
 }

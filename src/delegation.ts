@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -9,6 +10,7 @@ import projectSchema from "../schemas/project.schema.json" with { type: "json" }
 import ticketSchema from "../schemas/ticket.schema.json" with { type: "json" };
 import verificationRecipeSchema from "../schemas/verification-recipe.schema.json" with { type: "json" };
 import type { DelegationClass } from "./lifecycle/gate.ts";
+import { globToRegExp } from "./util/glob.ts";
 
 export type DelegationFactorName = "reversibility" | "size" | "complexity" | "spec" | "verification";
 
@@ -20,9 +22,16 @@ export interface DelegationFactor {
 export interface DelegationRecord {
   class: DelegationClass;
   stage: "ticket" | "merge";
-  floor: { packs: string[]; sensitive_actions: string[] };
+  floor: { packs: string[]; sensitive_actions: string[]; shared_surfaces?: string[] };
   factors: Record<DelegationFactorName, DelegationFactor>;
   lowered_by: null | { human: string; reason: string; at: string; from: DelegationClass; superseded?: true };
+}
+
+/** Merge-stage evidence: any of these keys may replace the ticket's, and the floor only grows. */
+export interface DelegationEvidence {
+  factors?: DelegationRecord["factors"];
+  floor?: Partial<DelegationRecord["floor"]>;
+  lowered_by?: DelegationRecord["lowered_by"];
 }
 
 export interface DelegationTicket {
@@ -35,6 +44,7 @@ export interface DelegationProject {
       weights: Record<DelegationFactorName, number>;
       cut_points: { yellow_agent: number; yellow_owner: number; red: number };
       enforcement: "advisory";
+      shared_surfaces?: { path: string; class: DelegationClass; reason: string }[];
     };
   };
 }
@@ -69,10 +79,23 @@ function highest(...classes: DelegationClass[]): DelegationClass {
   return classes.reduce((left, right) => (CLASS_RANK[right] > CLASS_RANK[left] ? right : left), "green");
 }
 
-function floorClass(floor: DelegationRecord["floor"]): DelegationClass {
+type SharedSurface = { path: string; class: DelegationClass; reason: string };
+
+function floorClass(floor: DelegationRecord["floor"], declared?: SharedSurface[]): DelegationClass {
+  // A path declared twice keeps the higher class, whichever declaration comes first.
+  const surfaces = new Map<string, DelegationClass>();
+  for (const surface of declared ?? [])
+    surfaces.set(surface.path, highest(surfaces.get(surface.path) ?? "green", surface.class));
+  const shared = (floor.shared_surfaces ?? []).map((path) => {
+    const declaredClass = surfaces.get(path);
+    if (declaredClass === undefined)
+      throw new Error(`ticket names a shared surface the project record does not declare: ${path}`);
+    return declaredClass;
+  });
   return highest(
     ...floor.packs.map((pack) => PACK_FLOORS.get(pack) ?? "green"),
     ...floor.sensitive_actions.map((action) => ACTION_FLOORS.get(action) ?? "yellow-owner"),
+    ...shared,
   );
 }
 
@@ -101,7 +124,7 @@ export function scoreDelegation(ticket: DelegationTicket, project: DelegationPro
     ) / 1e9;
   const scored: DelegationClass =
     total >= red ? "red" : total >= yellowOwner ? "yellow-owner" : total >= yellowAgent ? "yellow-agent" : "green";
-  const floor = floorClass(source.floor);
+  const floor = floorClass(source.floor, guidance.shared_surfaces);
   const fresh = highest(scored, floor);
   const lowering = source.lowered_by;
   if (lowering === null) return { ...source, class: highest(source.class, fresh) };
@@ -111,17 +134,96 @@ export function scoreDelegation(ticket: DelegationTicket, project: DelegationPro
   return { ...source, class: highest(source.class, floor) };
 }
 
+function schemaDetail(errors: readonly { instancePath: string; message?: string }[] | null | undefined): string {
+  return (errors ?? [])
+    .slice(0, 4)
+    .map((error) => `${error.instancePath || "(root)"} ${error.message ?? "is invalid"}`)
+    .join("; ");
+}
+
 function readDocument<T>(path: string, validate: ValidateFunction<T>, label: string): T {
   const text = readFileSync(path, "utf8");
   const parsed: unknown = JSON.parse(text);
-  if (!validate(parsed)) {
-    const detail = (validate.errors ?? [])
-      .slice(0, 4)
-      .map((error) => `${error.instancePath || "(root)"} ${error.message ?? "is invalid"}`)
-      .join("; ");
-    throw new Error(`${label} does not match its schema: ${detail}`);
-  }
+  if (!validate(parsed)) throw new Error(`${label} does not match its schema: ${schemaDetail(validate.errors)}`);
   return parsed;
+}
+
+function makeValidation(): Ajv2020 {
+  const validation = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
+  addFormats(validation);
+  validation.addSchema(commonSchema);
+  validation.addSchema(verificationRecipeSchema);
+  return validation;
+}
+
+let blockValidator: ValidateFunction<DelegationRecord> | null = null;
+
+/** The one validation path for a delegation block, shared by both stages. */
+function validateDelegationBlock(block: DelegationRecord): void {
+  if (blockValidator === null) {
+    // SAFETY: ticketSchema is the shipped ticket.schema.json; its delegation property together
+    // with its $defs is the schema for one delegation block, rebased on the schema's own $id so
+    // its relative references resolve the way the full-document compile resolves them.
+    const schema = { $id: ticketSchema.$id, ...ticketSchema.properties.delegation, $defs: ticketSchema.$defs };
+    blockValidator = makeValidation().compile<DelegationRecord>(schema);
+  }
+  if (!blockValidator(block))
+    throw new Error(`ticket delegation does not match its schema: ${schemaDetail(blockValidator.errors)}`);
+}
+
+function union(first: readonly string[], second: readonly string[]): string[] {
+  return [...new Set([...first, ...second])];
+}
+
+/**
+ * Build the merge-stage record from the approved ticket, the project and the changed paths, then
+ * score it. The seed is the ticket block's persisted class; evidence never sets it.
+ */
+export function scoreMergeStage(
+  ticket: DelegationTicket,
+  project: DelegationProject,
+  changedPaths: readonly string[],
+  evidence?: DelegationEvidence,
+): DelegationRecord {
+  const guidance = project.guidance.delegation;
+  if (guidance === undefined) throw new Error("project has no guidance.delegation block (weights and cut points)");
+  const source = ticket.delegation;
+  if (source === undefined) throw new Error("ticket has no delegation block to score");
+  const declared = guidance.shared_surfaces ?? [];
+  const matched = declared
+    .filter((surface) => changedPaths.some((path) => globToRegExp(surface.path).test(path)))
+    .map((surface) => surface.path);
+  const sharedSurfaces = union(
+    union(source.floor.shared_surfaces ?? [], evidence?.floor?.shared_surfaces ?? []),
+    matched,
+  );
+  const hasSurfaces =
+    source.floor.shared_surfaces !== undefined || evidence?.floor?.shared_surfaces !== undefined || matched.length > 0;
+  const floor: DelegationRecord["floor"] = {
+    packs: union(source.floor.packs, evidence?.floor?.packs ?? []),
+    sensitive_actions: union(source.floor.sensitive_actions, evidence?.floor?.sensitive_actions ?? []),
+  };
+  if (hasSurfaces) floor.shared_surfaces = sharedSurfaces;
+  const candidate: DelegationRecord = {
+    class: source.class,
+    stage: "merge",
+    floor,
+    factors: evidence?.factors ?? source.factors,
+    lowered_by: evidence !== undefined && "lowered_by" in evidence ? (evidence.lowered_by ?? null) : source.lowered_by,
+  };
+  validateDelegationBlock(candidate);
+  return scoreDelegation({ delegation: candidate }, project);
+}
+
+function loadDocuments(ticketInput: string, projectInput: string, cwd: string) {
+  const ticketPath = resolve(cwd, ticketInput);
+  const projectPath = resolve(cwd, projectInput);
+  if (!existsSync(ticketPath)) throw new Error(`ticket does not exist: ${ticketInput}`);
+  if (!existsSync(projectPath)) throw new Error(`project record does not exist: ${projectInput}`);
+  const validation = makeValidation();
+  const ticket = readDocument(ticketPath, validation.compile<DelegationTicket>(ticketSchema), "ticket");
+  const project = readDocument(projectPath, validation.compile<DelegationProject>(projectSchema), "project");
+  return { ticket, project };
 }
 
 export function scoreDelegationFiles(
@@ -129,15 +231,103 @@ export function scoreDelegationFiles(
   projectInput: string,
   cwd: string = process.cwd(),
 ): DelegationRecord {
-  const ticketPath = resolve(cwd, ticketInput);
-  const projectPath = resolve(cwd, projectInput);
-  if (!existsSync(ticketPath)) throw new Error(`ticket does not exist: ${ticketInput}`);
-  if (!existsSync(projectPath)) throw new Error(`project record does not exist: ${projectInput}`);
-  const validation = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
-  addFormats(validation);
-  validation.addSchema(commonSchema);
-  validation.addSchema(verificationRecipeSchema);
-  const ticket = readDocument(ticketPath, validation.compile<DelegationTicket>(ticketSchema), "ticket");
-  const project = readDocument(projectPath, validation.compile<DelegationProject>(projectSchema), "project");
+  const { ticket, project } = loadDocuments(ticketInput, projectInput, cwd);
   return scoreDelegation(ticket, project);
+}
+
+let evidenceValidator: ValidateFunction<DelegationEvidence> | null = null;
+
+export function scoreMergeDelegationFiles(
+  ticketInput: string,
+  projectInput: string,
+  changedPaths: readonly string[],
+  evidenceInput?: string,
+  cwd: string = process.cwd(),
+): DelegationRecord {
+  const { ticket, project } = loadDocuments(ticketInput, projectInput, cwd);
+  let evidence: DelegationEvidence | undefined;
+  if (evidenceInput !== undefined) {
+    const evidencePath = resolve(cwd, evidenceInput);
+    if (!existsSync(evidencePath)) throw new Error(`evidence does not exist: ${evidenceInput}`);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(evidencePath, "utf8"));
+    } catch (cause) {
+      throw new Error(
+        `evidence ${evidenceInput} does not match its schema: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
+      );
+    }
+    if (evidenceValidator === null) {
+      // SAFETY: the evidence object is the ticket's delegation block with its class and stage left out and
+      // its floor partial. Each member keeps the ticket schema's own definition and its closed-object rule,
+      // so a typo or a wrong type is refused here, before anything is unioned into the record.
+      const block = ticketSchema.properties.delegation;
+      const { required: _floorRequired, ...partialFloor } = block.properties.floor;
+      const schema = {
+        $id: ticketSchema.$id,
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          factors: block.properties.factors,
+          floor: partialFloor,
+          lowered_by: block.properties.lowered_by,
+        },
+        $defs: ticketSchema.$defs,
+      };
+      evidenceValidator = makeValidation().compile<DelegationEvidence>(schema);
+    }
+    if (!evidenceValidator(parsed))
+      throw new Error(`evidence ${evidenceInput} does not match its schema: ${schemaDetail(evidenceValidator.errors)}`);
+    // The candidate built from this object is validated against the delegation schema again in
+    // scoreMergeStage before it is scored.
+    evidence = parsed;
+  }
+  try {
+    return scoreMergeStage(ticket, project, changedPaths, evidence);
+  } catch (cause) {
+    if (evidenceInput !== undefined && cause instanceof Error && cause.message.includes("does not match its schema"))
+      throw new Error(`evidence ${evidenceInput} does not match its schema: ${cause.message}`, { cause });
+    throw cause;
+  }
+}
+
+/** The merge-stage paths: the three-dot range from the base, with renames split so a move out of a surface counts. */
+export function gitChangedPaths(cwd: string, base: string, head: string): string[] {
+  for (const revision of [base, head]) {
+    const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+    if (check.status !== 0) throw new Error(`cannot resolve revision ${revision}`);
+  }
+  const range = `${base}...${head}`;
+  const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
+  if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
+  return (diff.stdout ?? "").split("\0").filter((path) => path.length > 0);
+}
+
+export interface DelegationRun {
+  ticket: string;
+  project: string;
+  stage?: string;
+  base?: string;
+  head?: string;
+  evidence?: string;
+}
+
+/** The refusal for a flag combination, or null. The repository CLI and the bundled `ak` share it. */
+export function delegationRunProblem(run: DelegationRun): string | null {
+  if (run.stage !== undefined && run.stage !== "ticket" && run.stage !== "merge")
+    return "ak delegation: --stage must be ticket or merge";
+  if (run.stage !== "merge" && (run.base !== undefined || run.head !== undefined || run.evidence !== undefined))
+    return "ak delegation: --base, --head and --evidence require --stage merge";
+  if (run.stage === "merge" && run.base === undefined) return "ak delegation: --stage merge requires --base <rev>";
+  return null;
+}
+
+/** Score one run: the ticket stage reads the ticket alone, the merge stage adds the diff and any evidence. */
+export function scoreDelegationRun(run: DelegationRun, cwd: string): DelegationRecord {
+  if (run.stage === "merge" && run.base !== undefined) {
+    const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
+    return scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+  }
+  return scoreDelegationFiles(run.ticket, run.project, cwd);
 }

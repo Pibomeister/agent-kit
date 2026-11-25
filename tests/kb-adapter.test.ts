@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   closeSync,
   constants,
@@ -33,6 +33,7 @@ import {
   resolveKnowledgebase,
 } from "../src/kb/binding.ts";
 import { EXIT_UNAVAILABLE, runKb } from "../src/kb/cli.ts";
+import { git as kbGit } from "../src/kb/git.ts";
 import { KB_KINDS } from "../src/kb/local-git.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -61,7 +62,23 @@ const PAGE = "# Queue the exports\n\nExports run on a queue, because a request c
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env, maxBuffer: Infinity });
+  const run = spawnSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...args], {
+    encoding: "utf8",
+    env,
+    maxBuffer: Infinity,
+  });
+  if (run.error !== undefined || run.status !== 0) {
+    throw new Error(`Command failed: git -C ${dir} ${args.join(" ")}\n${run.stderr ?? run.error?.message ?? ""}`);
+  }
+  return run.stdout ?? "";
+}
+
+function lsTreeFailsForSrc(root: string, args: readonly string[], input?: string) {
+  if (args[0] === "ls-tree") {
+    const path = args[args.length - 1] ?? "";
+    if (path.includes("src/")) return { status: 1, stdout: "", stderr: "fixture nested ls-tree failure" };
+  }
+  return kbGit(root, args, input);
 }
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
@@ -354,6 +371,88 @@ describe("no knowledgebase configured", () => {
     expect(read.code).toBe(EXIT_UNAVAILABLE);
     expect(refusal(read).status).toBe("unavailable");
     expect(refusal(publishPage(fx, fx.project, page(fx))).status).toBe("refused");
+  });
+});
+
+describe("ak kb check reads the working binding", () => {
+  test("ak kb check reads an uncommitted ak.kb.yaml edit", () => {
+    const fx = registered();
+    writeFileSync(
+      join(fx.project, BINDING_FILE),
+      "backend: local-git\nproject: edited-project\nlocator:\n  knowledgebase: fixture-kb\n",
+    );
+    const loaded = loadKbBinding(fx.project);
+    expect(loaded.binding?.project).toBe("edited-project");
+    const check = kb(fx, fx.project, "check");
+    expect(check.code).toBe(0);
+    expect(check.out).toContain("project 'edited-project'");
+  });
+});
+
+describe("an explicit revision never falls back to the working binding", () => {
+  test("a missing committed binding remains unbound", () => {
+    const fx = fixture(null);
+    writeFileSync(join(fx.project, BINDING_FILE), BINDING);
+    const loaded = loadKbBinding(fx.project, "HEAD", kbGit, false);
+    expect(loaded.binding).toBeNull();
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.unbound"]);
+  });
+
+  test("an unreadable nested binding is found and never falls back to the working file", () => {
+    const fx = fixture();
+    const nested = join(fx.project, "app");
+    mkdirSync(nested);
+    writeFileSync(join(nested, BINDING_FILE), BINDING.replace("example-project", "nested-project"));
+    git(fx.project, "add", "app/ak.kb.yaml");
+    git(fx.project, "commit", "-qm", "nested binding");
+    expect(loadKbBinding(nested, "HEAD", kbGit).binding?.project).toBe("nested-project");
+    const oid = git(fx.project, "rev-parse", "HEAD:app/ak.kb.yaml").trim();
+    rmSync(join(fx.project, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+    const deeper = join(nested, "src");
+    mkdirSync(deeper);
+    expect(findKbProjectRoot(deeper, "HEAD", kbGit)).toBe(nested);
+    for (const workingFile of [false, true]) {
+      const loaded = loadKbBinding(nested, "HEAD", kbGit, workingFile);
+      expect(loaded.binding).toBeNull();
+      expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+    }
+  });
+
+  for (const command of ["ls-tree", "rev-parse"])
+    test(`a failed binding ${command} read is an error`, () => {
+      const fx = fixture();
+      const loaded = loadKbBinding(fx.project, "HEAD", (root, args, input) => {
+        if (args[0] === command && !args.includes("--verify"))
+          return { status: 1, stdout: "", stderr: "fixture read failure" };
+        return kbGit(root, args, input);
+      });
+      expect(loaded.binding).toBeNull();
+      expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+    });
+
+  test("a failed nested ls-tree is unreadable, not a binding hit", () => {
+    const fx = fixture();
+    const nested = join(fx.project, "src", "deep");
+    mkdirSync(nested, { recursive: true });
+    expect(() => findKbProjectRoot(nested, "HEAD", lsTreeFailsForSrc)).toThrow(
+      "cannot locate committed knowledgebase binding",
+    );
+    const loaded = loadKbBinding(nested, "HEAD", lsTreeFailsForSrc);
+    expect(loaded.binding).toBeNull();
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.binding-unreadable"]);
+  });
+
+  test("an explicit revision that cannot be resolved is an error, not a working-file fallback", () => {
+    const fx = fixture();
+    writeFileSync(join(fx.project, BINDING_FILE), "backend: wiki\nproject: example-project\nlocator:\n  space: eng\n");
+    const loaded = loadKbBinding(fx.project, "not-a-commit", kbGit);
+    expect(loaded.binding).toBe(null);
+    expect(loaded.issues.map((issue) => issue.rule)).toEqual(["kb.revision-unresolved"]);
+  });
+
+  test("an explicit revision requires a git function", () => {
+    const fx = fixture();
+    expect(() => loadKbBinding(fx.project, "HEAD")).toThrow("an explicit revision requires a git function");
   });
 });
 
@@ -685,7 +784,8 @@ describe("readContext", () => {
 
   test("reads what is committed, never an uncommitted file in the checkout", () => {
     const fx = registered();
-    publishPage(fx, fx.project, page(fx));
+    const publishedPage = publishPage(fx, fx.project, page(fx));
+    expect(publishedPage.code, `${publishedPage.out}\n${publishedPage.err}`).toBe(0);
     const dir = join(fx.kb, "projects", "example-project", "documents", "billing", "exports", "adr");
     writeFileSync(join(dir, "draft.md"), "---\nref: doc:x\n---\n\nnot committed\n");
     const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));

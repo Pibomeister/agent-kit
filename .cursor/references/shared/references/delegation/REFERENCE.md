@@ -41,7 +41,8 @@ lives in `goal` and `non_goals`. Naming a human owner alone is not that boundary
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A
 never-dropped pack or required sensitive action sets a floor that no factor or lowering may cross;
 re-evaluate that floor from the actual diff before closure (ruling
-`sensitive-surface-sets-the-floor`).
+`sensitive-surface-sets-the-floor`). A path the project declares as a shared surface is the third
+floor source, beside the never-dropped packs and the required sensitive actions.
 
 ## Two snapshots and lowering
 
@@ -51,7 +52,11 @@ verification. It decides how the work may be staffed before implementation.
 
 The merge-time snapshot carries `stage: merge`. It uses the actual diff and verification evidence.
 It may raise the class automatically. It does not inherit a lower ticket-time result when the diff
-requires a higher one (ruling `delegation-class-is-authority-not-finding`).
+requires a higher one (ruling `delegation-class-is-authority-not-finding`). Obtain it with the
+merge-stage command below: its seed is the approved ticket's persisted class, and its floor is the
+union of the ticket-stage floor and what the diff shows. That record selects the review depth
+(ruling `review-depth-follows-delegation-class`); see `pass_1.depth` in
+[`policies/review.yaml`](../../policies/review.yaml).
 
 `lowered_by` is normally `null`. A lowering records:
 
@@ -82,6 +87,23 @@ hand-derived class. Then run:
 ```text
 .cursor/bin/ak delegation <ticket> --project <project-record>
 ```
+
+For the merge-stage record, run instead:
+
+```text
+.cursor/bin/ak delegation <ticket> --project <project-record> --stage merge --base <rev> [--head <rev>] [--evidence <file>]
+```
+
+Run in the implementation repository. `--head` defaults to `HEAD`; both revisions must resolve to
+commits. The diff is `<base>...<head>`, excluding uncommitted changes. The optional evidence file
+is a JSON object accepting only `factors`, `floor` and `lowered_by`, using the corresponding
+[`ticket delegation schema`](../../schemas/ticket.schema.json) definitions, except that `floor`
+may omit members. Supplied `factors` replaces all five factors; omitted factors and lowering retain
+the ticket's values. Explicit `lowered_by: null` clears the lowering. Evidence floor members add to
+the ticket floor; they never remove it. `class` and `stage` are not accepted in evidence. Malformed
+evidence is refused before scoring. Without evidence, the command retains the ticket's factors;
+it does not derive new factor scores or discover packs and sensitive actions from the diff. Supply
+the re-evidenced factors and additional packs and actions when they differ at merge time.
 
 Persist the command's complete JSON output as the ticket's `delegation` block. Cite the ticket and
 project artifact references used for the run wherever another artifact consumes the result. A body
@@ -124,6 +146,17 @@ ticket with no tests scores 0.
 | `complexity` | Concurrency, caching, distributed state, known hotspots and prior fixes. | Complexity delta, churn, prior-fix evidence and new stateful constructs. |
 | `spec` | The six readiness criteria, vague terms and unresolved assumptions below. | Decisions exposed by the diff that the approved ticket did not settle. |
 | `verification` | Existing tests, the planned oracle and named verification path. | Receipts for tests, fail-before evidence, static checks and integration coverage. |
+
+A project declares shared surfaces in `guidance.delegation.shared_surfaces`; each entry has
+`path`, `class` and `reason` as defined by the
+[`project schema`](../../schemas/project.schema.json). Where none are declared, the absence is
+recorded and no measurement is invented. Each `path` matches the whole repository-relative path:
+`*` stays within one segment, `?` matches one non-slash character, `**` spans directories and
+`**/` may match no directory. Other pattern characters are literal. Declare a directory as
+`src/core/**`, not `src/core`. The ticket's `floor.shared_surfaces` lists declared patterns, not
+individual changed paths; undeclared entries are refused. Repeated declarations keep the highest
+class, regardless of order. Merge scoring adds matching patterns automatically from the branch's
+diff against the merge base, with renames split into the deleted source and added destination.
 
 Hotspot overlap and prior-fix density are transparent evidence when a project can supply them. Their
 absence is recorded; a body does not invent either measurement.
@@ -220,7 +253,10 @@ role, protocol, test and tooling surfaces stay excluded, and the exclusions alwa
 prose cannot amend a rule by calling itself clarification, and a disputed or uncertain restatement
 takes the normal path. Extension alone and a green class alone never establish eligibility, and
 doubt takes the normal path. A restated rule needs the exact pinned settled-source quote with its
-context and a no-looser comparison.
+context and a no-looser comparison. The cold-read skip is narrower than this route: step 13 skips
+only when the validator's exemption detector would exempt the ticket. Explanatory `skills/` or
+`references/` prose may still take this route and still dispatches a cold read when
+`review.cold_read` is on.
 
 **The claim.** The claim is written before review, in existing ticket, specification, readiness
 and verification fields only: the per-path semantic explanations, the integration owner named in
@@ -245,8 +281,8 @@ review's `inputs` as provenance of the frozen second hash; it is not presented t
 recorded context, and no seat is promised ticket text that is not in the specification. Both exact
 specification and ticket hashes are frozen at the snapshot; steps 10 to 13 then only check the
 already-prepared content, any semantic change they would need takes the normal fallback, and any
-later ticket edit invalidates eligibility normally. Step 13 skips the independent cold read on
-this route.
+later ticket edit invalidates eligibility normally. Step 13 skips the independent cold read only
+when the validator's exemption detector would exempt the ticket.
 
 **Exits.** The route is left on any verdict other than approved, any non-empty Proposed fixes or
 Decisions bucket, any unavailable required lane, any reported finding in any bucket including FYI,
@@ -277,14 +313,24 @@ raises. A series that raises uncertainty takes the normal path with no new count
 Load this section at super-bound step 13. The scorer formula does not change. Not yet backed by
 live probe evidence (phase 1b, GS-004i).
 
-**Mode.** Read `review.cold_read` from the one indexed project record for this ticket. A missing
-review object, a missing key, an unknown value, a missing project, or an unindexed project is
-off. Off dispatches nothing, stores nothing, and leaves the author's type-check as the
-zero-context gate.
+**Mode.** Read `review.cold_read` from the checkout's own indexed project record, not from the
+ticket's project field. A missing review object, a missing key, an unknown value, or a checkout
+with no indexed project record is off. On requires exactly one indexed project record. Several
+indexed records fail closed. Off dispatches nothing, stores nothing, and leaves the author's
+type-check as the zero-context gate.
 
-**Skip.** A ticket on the text-only single-slice light route above skips this dispatch. When the
-mode is on, the validator still requires a cited read, so do not publish that implementation
-ticket on this route.
+**Skip.** Dispatch is skipped only when the validator's exemption detector would exempt the ticket.
+A ticket is exempt from `cold_read_ref` only when every declared write
+glob (`allowed_changes.files`, `write_ownership.paths` and `write_ownership.generated_artifacts`) is
+documentation markdown under `docs/` (`docs/**/*.md`), or exactly `README.md`, `CHANGELOG.md`,
+`NOTICE` or `LICENSE`, `allowed_changes.symbols` is empty, `work_source.ref.id` is present, and no
+other indexed ticket shares that id. `docs/**` is refused; a glob containing `{` is refused; a
+markdown last segment is required. A literal glob that resolves through a symlink is refused when
+the checkout is present. Wildcard
+globs over a symlinked tree are not checked. A note or approval does not exempt. The exemption is
+declaration-only: the write guard lifts tests protection and does not deny a write outside those
+globs. A light-route ticket that touches `skills/` or `references/` still dispatches when on. Any
+other implementation ticket still requires a cited read.
 
 **Dispatch.** In shadow and on, dispatch one cold reader per remaining implementation ticket, in
 parallel, each in its own context. Give the reader the ticket and a read-only checkout at the
