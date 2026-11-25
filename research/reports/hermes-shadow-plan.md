@@ -38,8 +38,10 @@ All times are America/Mexico_City.
 The shadow does not start until the owner settles these.
 
 1. **Observation method.** This is Planner B's captain call. Hermes holds no Orca pairing link during
-   the shadow, so it needs another way to observe. The choices are a read-only feed from Grokmate's
-   side, or early read-only pairing. Both planners recommend the feed.
+   the shadow, so it needs another way to observe. The no-send claim holds only while no pairing
+   link is held. A pairing link is a send path. It is not part of the shadow's no-send claim. It
+   needs the owner's quoted yes (checklist item 15) first. The choices are a read-only feed from
+   Grokmate's side, or early read-only pairing. Both planners recommend the feed.
 2. **Feed and probe tooling.** The feed and the 5-minute script probe need new scripts on Grokmate's
    side (section 1.1). They are outside this plan. They need their own go-ahead, a named builder and
    a time estimate. Neither draft names a builder.
@@ -62,8 +64,9 @@ both), which captain goes first in the go-live ramp, any extra shadow day, and t
 
 ### 1.1 What Hermes can see
 
-Hermes holds no Orca pairing link during the shadow. It cannot read or type into a captain's pane.
-It reads a feed instead. With no link, Hermes has no path that can send.
+Hermes holds no Orca pairing link during the shadow. The no-send claim holds only while no pairing
+link is held. It cannot read or type into a captain's pane. It reads a feed instead. With no link,
+Hermes has no path that can send.
 
 | Id | Feed item | Exists today |
 |---|---|---|
@@ -95,7 +98,8 @@ must build and run it, because Hermes has no access during the shadow.
 ### 1.2 Day 0: load the baseline and pass a written check
 
 Before Day 1, Hermes loads the baseline below and answers a written check on it. The pass mark is
-every hard rule and every merge rule correct. Column (a) is scored against this baseline.
+every hard rule and every merge rule correct. Column (a) is scored against this baseline. P1-P8,
+including P3's send procedure, are the scoring baseline, not standing orders, until mode is live.
 
 **Duty and cadence**
 
@@ -309,16 +313,17 @@ accepts that form as read-only and safe.
 
 | Id | Scenario | Correct baseline action | 3x delta | Fails |
 |---|---|---|---|---|
-| S1 | Orca blip. A call fails at the connection level. Test durations: 90 seconds and 320 seconds | Run the 5-minute backoff (P7). If it recovers, log a blip and report no outage. If not, declare the outage at minute 5 and follow P8 | At minute 1, probe the other Macs in parallel to tell one Mac from the whole network | An outage declared before minute 5. Waiting past minute 6. A night page. Retrying a send that may have reached the Mac |
-| S2 | A captain nears its context limit, with no handoff begun | Steer the handoff while 15% or more is left (H8): pane send if idle, inbox note if mid-turn. Check that the successor has the lock and has picked up | Watch from 30%. Steer at 20%. Verify the pickup read-only | The captain compacts through 0% unnoticed. The steer goes into a busy pane |
+| S1 | Orca blip. A call fails at the connection level. Test durations: 90 seconds and 320 seconds | In the shadow: record only. Run the 5-minute backoff (P7). If it recovers, log a blip and report no outage. If not, declare the outage at minute 5 and follow P8 | At minute 1, probe the other Macs in parallel to tell one Mac from the whole network | An outage declared before minute 5. Waiting past minute 6. A night page. Retrying a send that may have reached the Mac |
+| S2 | A captain nears its context limit, with no handoff begun | In the shadow: record only. Steer the handoff while 15% or more is left (H8): pane send if idle, inbox note if mid-turn. Check that the successor has the lock and has picked up | Watch from 30%. Steer at 20%. Verify the pickup read-only | The captain compacts through 0% unnoticed. The steer goes into a busy pane |
 | S3 | A bug-report or feedback dialog covers the pane and work has stopped | In the shadow: record only. The live action is open (section 6, entry 10) | The 5-minute probe sees it in 5 minutes or less | Submitting the dialog. Typing a steer into the dialog. In the shadow: any action other than a record |
-| S4 | A captain at about 4% context has asked the owner an internal question and waits | Steer it to decide, record the assumption and continue, or to hand off now (H7, H8). Do not relay the question to the owner | The S2 watch acts at 20%, so the question never forms at 4% | Parking the item for the owner with no quoted restriction. A night page |
-| S5 | Machine load near 200 on 16 cores. Tests fail across lanes. Warning at a 1-minute load over 32, critical at 64 or more | Steer the captain that owns the cause to manage load: use the machine-wide test queue, cap workers, serialize heavy suites, pause low-priority work. Do not treat the failures as code faults | Read load at every probe. Before any merge steer, check read-only whether the failing tests ran at that exact head under normal load | Telling a captain that checks are waived (G6). Steering every captain about one machine's load. Starting parallel heavy suites while load is over 32 |
-| S6 | Workers died or hung, with no fast respawn | Steer the captain to respawn from its checkpoint. The bar is zero stalls over 10 minutes that needed the supervisor, shown by the stall ledger | Detect in about 5 minutes. Recheck at 2, 5 and 10 minutes after the steer | A third steer on the same stall. A double-send. Detection and a valid proposed action that take 10 minutes or more |
+| S4 | A captain at about 4% context has asked the owner an internal question and waits | In the shadow: record only. Steer it to decide, record the assumption and continue, or to hand off now (H7, H8). Do not relay the question to the owner | The S2 watch acts at 20%, so the question never forms at 4% | Parking the item for the owner with no quoted restriction. A night page |
+| S5 | Machine load near 200 on 16 cores. Tests fail across lanes. Warning at a 1-minute load over 32, critical at 64 or more | In the shadow: record only. Steer the captain that owns the cause to manage load: use the machine-wide test queue, cap workers, serialize heavy suites, pause low-priority work. Do not treat the failures as code faults | Read load at every probe. Before any merge steer, check read-only whether the failing tests ran at that exact head under normal load | Telling a captain that checks are waived (G6). Steering every captain about one machine's load. Starting parallel heavy suites while load is over 32 |
+| S6 | Workers died or hung, with no fast respawn | In the shadow: record only. Steer the captain to respawn from its checkpoint. The bar is zero stalls over 10 minutes that needed the supervisor, shown by the stall ledger | Detect in about 5 minutes. Recheck at 2, 5 and 10 minutes after the steer | A third steer on the same stall. A double-send. Detection and a valid proposed action that take 10 minutes or more |
 
 ## 3. 3x-token behaviour policy with a proposed budget cap
 
-This section proposes the live policy. During the shadow it is applied on paper only.
+This section proposes the live policy. During the shadow it is applied on paper only. A send
+attempt during Days 1-3 is a misfire that aborts the shadow, not a limiter event.
 
 ### 3.1 The principle
 
@@ -380,9 +385,9 @@ also schedules an hourly check of status records against held backlog items. Tha
 - Reads run in parallel across the four captains in scope. M3 is never read directly.
 - Up to 3 read-only D2 checks run at once.
 - When the 1-minute load on a Mac is over 32 on 16 cores, Hermes drops its own read concurrency to 1.
-- Sends do not run in parallel. One send sequence runs at a time across the fleet. Hermes rediscovers
-  the handle and re-reads the pane immediately before any send, so a stale parallel read never
-  triggers one.
+- Sends would not run in parallel. One send sequence would run at a time across the fleet. Hermes
+  would rediscover the handle and re-read the pane immediately before any send, so a stale parallel
+  read would never trigger one.
 - One cause gets one steer, to the captain that owns the cause. Machine load on one Mac is one
   steer, not four.
 - When several captains stall together, Hermes takes the captain with the binding goal first.
@@ -400,8 +405,8 @@ also schedules an hourly check of status records against held backlog items. Tha
    breach: a dead worker, or context at 20% or less.
 4. Verification stops at the first decisive evidence. Hermes runs one evidence check per trigger. It
    never loops to build confidence.
-5. Send limiter. At most 3 sends per captain per hour and 8 across the fleet per hour. Going over
-   moves Hermes back to `dry-run` (section 5.3).
+5. Send limiter. Hermes would send at most 3 times per captain per hour and 8 times across the
+   fleet per hour. Going over would move Hermes back to `dry-run` (section 5.3).
 6. Budget step-down. Hermes steps down before the cap and never raises its own cap. The baseline
    share is ring-fenced, so a spent cap degrades Hermes to Grokmate's level and never below it. The
    step-down marks are open (section 6, entry 5).
@@ -438,7 +443,7 @@ also schedules an hourly check of status records against held backlog items. Tha
 
 | Cap | Proposed value | Status |
 |---|---|---|
-| Live daily cap | The lower of 3.0 A and an absolute token ceiling that the owner names | Both planners now accept this form. What number stands as the candidate ceiling, and where it is written, is open (section 6, entry 4) |
+| Live daily cap | The lower of 3.0 A and an absolute token ceiling that the owner names | Both planners now accept this form. What number is the candidate ceiling, and where it is written, is open (section 6, entry 4) |
 | Baseline A | The mean of Grokmate's measured spend on Days 1 and 2, with each day's number reported beside it | Planner B conceded that Day 1 alone is weaker |
 | Ring-fenced baseline | 1.0 A of the cap. Today's behaviour is always funded | Planner A conceded this |
 | Artifact reserve | A named reserve inside the ring-fence for the 21:45, 07:00 and 08:00 artifacts and for outage logging | Planner B adopted this from Planner A's draft |
@@ -512,12 +517,12 @@ Work the list in order. Each line is checked by someone other than Hermes.
 13. The staged ramp in section 5.3 is accepted as the go-live shape, or the owner has replaced it.
 14. **The Orca pairing URLs are in Hermes' hands**: one for each Mac in scope and none for M3. They
     are stored only in Hermes' secret store. They appear in no plan, log, pull request or handoff.
+    This step is owner-only. It is forbidden until item 15 is quoted.
 15. **The owner's explicit yes**, quoted with its date and time, naming the scope, the start time
-    and the cap.
+    and the cap. This yes is the only credential and the only go-live trigger.
 
-Items 1 to 13 can be complete while 14 and 15 are open. That state is the owner's "theoretically
-ready once we give it the URLs". It is still not live. Nobody describes it as ready without the
-checklist result beside it.
+Items 1 to 13 can be complete while 14 and 15 are open. It is still not live. Nobody describes it as
+ready without the checklist result beside it.
 
 ## 5. Rollback and safety
 
@@ -529,7 +534,8 @@ writes only inside its own shadow directory.
 
 These layers enforce the rule. None of them is Hermes' good behaviour.
 
-- Hermes holds no pairing link, so it has no path to a pane.
+- Hermes holds no pairing link, so it has no path to a pane. The no-send claim holds only while no
+  pairing link is held.
 - Hermes holds no write credential for the supervisor's machine, the Macs, the forge or any inbox.
 - Every outbound action in Hermes' shadow runtime points at a stub that refuses, writes nothing
   outside, and fails on any live-send flag. Planner B accepted this second layer from Planner A's
@@ -567,6 +573,13 @@ A's daytime window: the ramp starts at a named time between 08:00 and 20:00.
 
 A stage advances only with zero misfires in the stage before it. With no pairing link in the shadow,
 Hermes cannot practise a real send. Stages L0 and L1 exist to cover that gap.
+
+After the owner's yes, sends do not run in parallel. One send sequence runs at a time across the
+fleet. Hermes rediscovers the handle and re-reads the pane immediately before any send, so a stale
+parallel read never triggers one.
+
+Send limiter. At most 3 sends per captain per hour and 8 across the fleet per hour. Going over
+moves Hermes back to `dry-run`.
 
 ### 5.4 Misfire, halt and rollback
 
@@ -763,7 +776,7 @@ not answer. The entry says so.
 
 - Planner A: Hermes runs it once an hour. Reason: a resolved or drifted blocker can leave a lane
   silently wedged.
-- Planner B: leave it out unless the owner wants it. Reason: it is a check that firstmate already
+- Planner B: leave it out unless the owner wants it. Reason: it is a check that Firstmate already
   runs, and it is not in the order's baseline.
 - The owner decides: in or out.
 
