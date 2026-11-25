@@ -102,7 +102,9 @@ that enum:
 
 | Feature | Status | Detail |
 |---|---|---|
-| `isolated-review-context` | `partial` | <!-- ak-egm-begin -->Docs only, not session-tested. Custom subagents have their own context window and start clean ([subagents](https://cursor.com/docs/subagents)). The parent includes whatever it puts in the task prompt. The host does not attest that a reviewer never saw the author's narrative. Upgrade when a Cloud Agent reviewer subagent whose prompt omitted the author's narrative cannot read the parent transcript<!-- ak-egm-end --> |
+<!-- ak-egm-begin -->
+| `isolated-review-context` | `partial` | Docs only, not session-tested. Custom subagents have their own context window and start clean ([subagents](https://cursor.com/docs/subagents)). The parent includes whatever it puts in the task prompt. The host does not attest that a reviewer never saw the author's narrative. Upgrade when a Cloud Agent reviewer subagent whose prompt omitted the author's narrative cannot read the parent transcript |
+<!-- ak-egm-end -->
 | `independent-context` | `not-provided` | Same as claude-code §3: no excluded-lineage attestation. Host-only verifier receipts are `host-unattested` |
 | Subagent dispatch | `partial` | Docs only, not session-tested. Project subagents are `.cursor/agents/*.md` with `name`, `description`, optional `readonly` ([subagents](https://cursor.com/docs/subagents)). Cloud Agents can use subagents. Cloud subagents on isolated VMs exist (`/in-cloud`); this bundle does not require that path. Upgrade when a Cloud Agent session dispatches one of those files, starts with a clean context, and `readonly: true` is observed to block writes |
 | Hooks / guard | `partial` | Docs only. `.cursor/hooks.json` is supported in IDE and Cloud Agents, including `preToolUse`, `subagentStart` / `subagentStop`, `stop` ([hooks](https://cursor.com/docs/hooks), [cloud agents](https://cursor.com/docs/cloud-agent)). This bundle ships none. A missing hook fails open. User-level `~/.cursor/hooks.json` is not available on Cloud Agent VMs. Upgrade when a shipped hook is session-tested on Cloud Agents |

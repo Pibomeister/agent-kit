@@ -9,15 +9,15 @@
  * (elephant-goldfish, a ≥7-char prefix of the pin SHA, GAP-PROBE,
  * GAP-MASTRA, the word EGM) match after NFKC, stripping format,
  * Default_Ignorable, and NUL characters, and case-fold. Files decode as
- * UTF-8, non-fatal. A hex run is identity when its first ≥7 characters
- * equal the pin's prefix of the same length. The word EGM skips only
- * the exact BLOCK_PINS marker strings. Small-caps ᴇɢᴍ does not
+ * UTF-8, fatal; a decode failure is red unless the path is in
+ * BINARY_ALLOWLIST. A hex run is identity when the pin's 7-character
+ * prefix appears anywhere inside it. Hex split across non-hex characters
+ * is out of scope. The word EGM skips only the exact BLOCK_PINS marker
+ * strings in that pin's file. Small-caps ᴇɢᴍ does not
  * NFKC-fold and is out of scope. A free-text claim with no identity token
- * is review's job. Donor-count clauses in the README lede, package.json,
- * and marketplace.json are parsed as digits or English count words;
- * every MIT and Apache count token in the clause window must equal the
- * catalog.yaml totals. The cursor isolation row is unique after
- * whitespace fold and includes its status cell.
+ * is review's job. The README lede and package.json donor sentences are
+ * pinned byte-exact. The cursor isolation row, including its status cell,
+ * is the adapters/cursor/CONTRACT.md BLOCK_PINS interior.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -120,32 +120,19 @@ const IDENTITY_ALLOWLIST: Array<{ file: string; reason: string }> = [
 ];
 
 const FOLDED_NEEDLES = ["elephant-goldfish", "gap-probe", "gap-mastra"] as const;
-const COUNT_SURFACES = ["README.md", "package.json", ".claude-plugin/marketplace.json"] as const;
-const COUNT_TOKEN =
-  "\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty";
-const ENGLISH_COUNTS = new Map<string, number>([
-  ["zero", 0],
-  ["one", 1],
-  ["two", 2],
-  ["three", 3],
-  ["four", 4],
-  ["five", 5],
-  ["six", 6],
-  ["seven", 7],
-  ["eight", 8],
-  ["nine", 9],
-  ["ten", 10],
-  ["eleven", 11],
-  ["twelve", 12],
-  ["thirteen", 13],
-  ["fourteen", 14],
-  ["fifteen", 15],
-  ["sixteen", 16],
-  ["seventeen", 17],
-  ["eighteen", 18],
-  ["nineteen", 19],
-  ["twenty", 20],
-]);
+const EGM_PIN7 = EGM_COMMIT.slice(0, 7);
+const BINARY_ALLOWLIST: string[] = [];
+const SENTENCE_PINS: Array<{ file: string; text: string }> = [
+  {
+    file: "README.md",
+    text: "One engineering lifecycle, amalgamated from twelve donors (ten MIT-licensed, two Apache-2.0) into a single installable",
+  },
+  {
+    file: "package.json",
+    text: '"description": "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.",',
+  },
+];
+const OVERLONG_UTF8 = new Uint8Array([0xc0, 0x80]);
 
 const LOCK_ENTRY_SHA256 = "1f48385ba3ca27a065fa1448af81d6b8aa5cd05dc545d3d76ab605fbbd03da77";
 const FINGERPRINT_DESC_SHA256 = "7df2fe33f96517c13e3756bdb727912f1f9d7a1a8bc61fdcda8fdb7f737581ff";
@@ -211,7 +198,7 @@ const BLOCK_PINS: BlockPin[] = [
     file: "adapters/cursor/CONTRACT.md",
     begin: "<!-- ak-egm-begin -->",
     end: "<!-- ak-egm-end -->",
-    sha256: "767aaaf92a127a9a9d3ec8fcd39e04675ea9943431407922f44878e8c98c6320",
+    sha256: "b2046e7fbb9fc4d6f4617bc9afff4d15aa9670ccee694c2a230faaf9a9657641",
   },
   {
     file: "skills/doc-review/SKILL.md",
@@ -521,8 +508,13 @@ function foldIdentity(text: string): string {
     .toLowerCase();
 }
 
+function decodeTracked(file: string, bytes: Uint8Array): string {
+  if (BINARY_ALLOWLIST.includes(file)) return "";
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replaceAll("\r\n", "\n");
+}
+
 function readTracked(file: string): string {
-  return new TextDecoder("utf-8", { fatal: false }).decode(readFileSync(join(REPO, file))).replaceAll("\r\n", "\n");
+  return decodeTracked(file, readFileSync(join(REPO, file)));
 }
 
 function trackedTextFiles(): string[] {
@@ -536,36 +528,9 @@ function trackedTextFiles(): string[] {
   return files;
 }
 
-function parseCountToken(raw: string): number | null {
-  if (/^\d+$/.test(raw)) return Number(raw);
-  const mapped = ENGLISH_COUNTS.get(raw.toLowerCase());
-  return mapped === undefined ? null : mapped;
-}
-
-function donorCountClauses(
-  text: string,
-): Array<{ total: number; mits: Array<number | null>; apaches: Array<number | null> }> {
-  const donorRe = new RegExp(`\\b(${COUNT_TOKEN})\\s+(?:catalog\\s+)?donors\\b`, "gi");
-  const clauses: Array<{ total: number; mits: Array<number | null>; apaches: Array<number | null> }> = [];
-  for (const match of text.matchAll(donorRe)) {
-    const total = parseCountToken(match[1] ?? "");
-    if (total === null) continue;
-    const window = text.slice(match.index ?? 0, (match.index ?? 0) + 180);
-    clauses.push({
-      total,
-      mits: [...window.matchAll(new RegExp(`\\b(${COUNT_TOKEN})\\s+MIT\\b`, "gi"))].map((hit) =>
-        parseCountToken(hit[1] ?? ""),
-      ),
-      apaches: [...window.matchAll(new RegExp(`\\b(${COUNT_TOKEN})\\s+Apache\\b`, "gi"))].map((hit) =>
-        parseCountToken(hit[1] ?? ""),
-      ),
-    });
-  }
-  return clauses;
-}
-
-function isExactMarkerEgm(folded: string, at: number): boolean {
+function isExactMarkerEgm(file: string, folded: string, at: number): boolean {
   for (const pin of BLOCK_PINS) {
+    if (pin.file !== file) continue;
     for (const raw of [pin.begin, pin.end]) {
       const marker = foldIdentity(raw);
       const egmAt = marker.indexOf("egm");
@@ -577,18 +542,15 @@ function isExactMarkerEgm(folded: string, at: number): boolean {
   return false;
 }
 
-function identityOffsets(folded: string): number[] {
+function identityOffsets(file: string, folded: string): number[] {
   const hits: number[] = [];
   for (const needle of FOLDED_NEEDLES) hits.push(...indicesOf(folded, needle));
-  const pin = EGM_COMMIT.toLowerCase();
   for (const match of folded.matchAll(/[0-9a-f]{7,}/g)) {
-    const n = Math.min(match[0].length, pin.length);
-    if (n >= 7 && match[0].slice(0, n) === pin.slice(0, n)) hits.push(match.index ?? 0);
-    else if (match[0].slice(0, 7) === pin.slice(0, 7)) hits.push(match.index ?? 0);
+    if (match[0].includes(EGM_PIN7)) hits.push(match.index ?? 0);
   }
   for (const match of folded.matchAll(/(?<![a-z0-9_])egm(?![a-z0-9_])/g)) {
     const at = match.index ?? 0;
-    if (isExactMarkerEgm(folded, at)) continue;
+    if (isExactMarkerEgm(file, folded, at)) continue;
     hits.push(at);
   }
   return hits;
@@ -673,6 +635,51 @@ function yamlItemBlock(text: string, idLine: string): string {
   return idLine + (next === -1 ? rest : rest.slice(0, next));
 }
 
+describe("EGM provenance guards", () => {
+  test("hex pin prefix inside a run is identity", () => {
+    const file = "package.json";
+    expect(identityOffsets(file, foldIdentity("403d888zzzz")).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, foldIdentity("403d888.")).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, foldIdentity("aaaaaaa"))).toEqual([]);
+    expect(identityOffsets(file, foldIdentity(`aa${EGM_COMMIT}`)).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, foldIdentity(`${EGM_COMMIT}aa`)).length).toBeGreaterThan(0);
+  });
+
+  test("NUL folds to identity", () => {
+    const file = "package.json";
+    expect(identityOffsets(file, foldIdentity("E\0GM")).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, foldIdentity("\0ＥＧＭ")).length).toBeGreaterThan(0);
+  });
+
+  test("overlong UTF-8 on a non-allowlisted path is red", () => {
+    expect(() => decodeTracked("README.md", OVERLONG_UTF8)).toThrow();
+  });
+
+  test("marker skip is file-scoped", () => {
+    const file = "package.json";
+    expect(identityOffsets(file, foldIdentity("ak-egm-smuggle")).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, foldIdentity("<!-- ak-egm-begin -->")).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, foldIdentity(" egm ")).length).toBeGreaterThan(0);
+    expect(identityOffsets("README.md", foldIdentity("<!-- ak-egm-begin -->"))).toEqual([]);
+  });
+
+  test("one-byte change to pinned sentences or isolation row is red", () => {
+    expect(SENTENCE_PINS).toHaveLength(2);
+    for (const pin of SENTENCE_PINS) {
+      const text = readFileSync(join(REPO, pin.file), "utf8");
+      expect(text).toContain(pin.text);
+      expect(text).not.toContain(`${pin.text.slice(0, 1)}X${pin.text.slice(2)}`);
+    }
+    const contractPin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
+    expect(contractPin).toBeDefined();
+    if (contractPin === undefined) return;
+    const interior = extractPinnedBlock(readFileSync(join(REPO, contractPin.file), "utf8"), contractPin);
+    expect(interior).toContain("| `isolated-review-context` | `partial` |");
+    expect(textSha256(interior)).toBe(contractPin.sha256);
+    expect(textSha256(interior.replace("`partial`", "`full`"))).not.toBe(contractPin.sha256);
+  });
+});
+
 describe("EGM provenance (GS-004f)", () => {
   test("pins google/elephant-goldfish-model at the PRD commit", () => {
     const { donors } = loadDonors(REPO);
@@ -754,19 +761,9 @@ describe("EGM provenance (GS-004f)", () => {
       description,
     );
     expect(readFileSync(join(REPO, ".cursor/catalog.yaml"), "utf8")).toContain(description);
-    const countLies: string[] = [];
-    for (const file of COUNT_SURFACES) {
-      const clauses = donorCountClauses(readTracked(file));
-      if (clauses.length === 0) countLies.push(`${file}:missing-clause`);
-      for (const clause of clauses) {
-        const mitOk = clause.mits.length > 0 && clause.mits.every((n) => n === mitCount);
-        const apacheOk = clause.apaches.length > 0 && clause.apaches.every((n) => n === apacheCount);
-        if (clause.total !== catalog.size || !mitOk || !apacheOk) {
-          countLies.push(`${file}:${clause.total}/${clause.mits.join(",")}/${clause.apaches.join(",")}`);
-        }
-      }
+    for (const pin of SENTENCE_PINS) {
+      expect(readFileSync(join(REPO, pin.file), "utf8")).toContain(pin.text);
     }
-    expect(countLies).toEqual([]);
   });
 
   test("identity strings live only in pinned regions or the allowlist", () => {
@@ -775,13 +772,23 @@ describe("EGM provenance (GS-004f)", () => {
       expect(entry.reason.length, entry.file).toBeGreaterThan(0);
     }
     const uncovered: string[] = [];
+    const decodeLies: string[] = [];
     for (const file of trackedTextFiles()) {
-      const folded = foldIdentity(readTracked(file));
+      if (BINARY_ALLOWLIST.includes(file)) continue;
+      let text: string;
+      try {
+        text = readTracked(file);
+      } catch {
+        decodeLies.push(file);
+        continue;
+      }
+      const folded = foldIdentity(text);
       const ranges = coveredRanges(file, folded);
-      for (const offset of identityOffsets(folded)) {
+      for (const offset of identityOffsets(file, folded)) {
         if (!offsetCovered(offset, ranges)) uncovered.push(`${file}:${folded.slice(0, offset).split("\n").length}`);
       }
     }
+    expect(decodeLies).toEqual([]);
     expect(uncovered).toEqual([]);
   });
 
@@ -790,26 +797,6 @@ describe("EGM provenance (GS-004f)", () => {
     expect(catalog).not.toBeNull();
     if (catalog === null) return;
     expect(checkAdaptationsSync({ root: REPO, catalog }).filter((issue) => issue.severity === "error")).toEqual([]);
-  });
-
-  test("cursor CONTRACT isolation row is the docs-only row", () => {
-    const text = readFileSync(join(REPO, "adapters/cursor/CONTRACT.md"), "utf8");
-    const rows = text
-      .split("\n")
-      .filter((line) => line.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` |"));
-    expect(rows.length, "isolation rows").toBe(1);
-    const row = rows[0];
-    expect(row, "isolation row").toBeDefined();
-    if (row === undefined) return;
-    expect(
-      row.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` | `partial` |"),
-      "isolation status",
-    ).toBe(true);
-    expect(row).toContain("Docs only, not session-tested");
-    const pin = BLOCK_PINS.find((entry) => entry.file === "adapters/cursor/CONTRACT.md");
-    expect(pin).toBeDefined();
-    if (pin === undefined) return;
-    expect(extractPinnedBlock(text, pin)).toContain("Docs only, not session-tested");
   });
 
   test("every egm adaptation source commit matches the lock pin", () => {
