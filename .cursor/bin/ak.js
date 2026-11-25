@@ -42336,8 +42336,22 @@ import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute1
 import { createHash as createHash11 } from "crypto";
 import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync6, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
 import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, resolve as resolve15 } from "path";
+var TRUSTED_GIT_PATH = `/usr/bin${delimiter5}/bin`;
+function gitEnv2(context) {
+  return {
+    PATH: context.path,
+    HOME: context.home,
+    XDG_CONFIG_HOME: context.home,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
+    LC_ALL: "C"
+  };
+}
 function resolveTrustedGit(workerRoot) {
-  const path = workerFreePath(process.env["PATH"], workerRoot);
+  const path = TRUSTED_GIT_PATH;
   for (const directory of path.split(delimiter5)) {
     const candidate = join45(directory, "git");
     try {
@@ -42593,19 +42607,6 @@ function resolveRunnerGit(workerRoot) {
 }
 function failedGit(stderr) {
   return { code: -1, stdout: new Uint8Array, text: "", stderr };
-}
-function gitEnv2(context) {
-  return {
-    PATH: context.path,
-    HOME: context.home,
-    XDG_CONFIG_HOME: context.home,
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_OPTIONAL_LOCKS: "0",
-    GIT_NO_REPLACE_OBJECTS: "1",
-    GIT_GRAFT_FILE: "/dev/null",
-    LC_ALL: "C"
-  };
 }
 var emptyTrees = new Map;
 function emptyTreeId(context, project, timeoutMs) {

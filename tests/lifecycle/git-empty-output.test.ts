@@ -3,8 +3,8 @@
  * read that silence as a failed call naming the command, never as a real answer: not as a missing
  * revision, not as "not a git checkout" with no evidence, and not as a detached head.
  *
- * The stub is a PATH shim named `git`: for the one argv the case selects it exits 0 silently, and
- * every other call execs the real git, so the callers run against a real repository throughout.
+ * Snapshot git is pinned to `/usr/bin` then `/bin` and never searches PATH, so a PATH shim cannot
+ * produce that silence. These cases prove the shim is ignored: the real git still answers.
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -72,13 +72,7 @@ function withSilentGit<T>(silent: readonly string[], body: () => T): T {
 
 const isSnapshot = (s: Snapshot | string): s is Snapshot => Object(s) === s;
 
-/** The refusal a silent call must produce; a snapshot here means the silence was read as an answer. */
-function refusal(snapshot: Snapshot | string): string {
-  if (isSnapshot(snapshot)) throw new Error(`expected a refusal, got a snapshot of ${snapshot.revision}`);
-  return snapshot;
-}
-
-describe("a must-print git call that exits 0 silently", () => {
+describe("a PATH git shim cannot silence a must-print call", () => {
   test("a clean snapshot still works: commands that legitimately print nothing are untouched", () => {
     const dir = repo();
     const snapshot = takeSnapshot(dir);
@@ -86,61 +80,49 @@ describe("a must-print git call that exits 0 silently", () => {
     expect(snapshot.revision).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test("takeSnapshot refuses a silent rev-parse HEAD, naming the command", () => {
+  test("takeSnapshot ignores a PATH git that would silence rev-parse HEAD", () => {
     const dir = repo();
     const argv = ["--no-replace-objects", ...isolatedGitArgv(dir, ["rev-parse", "HEAD"])];
-    const text = refusal(withSilentGit(argv, () => takeSnapshot(dir)));
-    expect(text).toContain(`git ${argv.join(" ")}`);
-    expect(text).toContain("no output");
+    const snapshot = withSilentGit(argv, () => takeSnapshot(dir));
+    if (!isSnapshot(snapshot)) throw new Error(snapshot);
+    expect(snapshot.revision).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test("takeSnapshot refuses a silent rev-parse --git-path index, naming the command", () => {
+  test("takeSnapshot ignores a PATH git that would silence rev-parse --git-path index", () => {
     const dir = repo();
     const prefix = ["--no-replace-objects", ...isolatedGitArgv(dir, ["rev-parse", "--git-path"])];
-    const text = refusal(withSilentGit(prefix, () => takeSnapshot(dir)));
-    expect(text).toContain(
-      `git ${["--no-replace-objects", ...isolatedGitArgv(dir, ["rev-parse", "--git-path", "index"])].join(" ")}`,
-    );
-    expect(text).toContain("no output");
+    const snapshot = withSilentGit(prefix, () => takeSnapshot(dir));
+    if (!isSnapshot(snapshot)) throw new Error(snapshot);
+    expect(snapshot.revision).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test("defaultEvidenceDir refuses a silent rev-parse --git-common-dir, naming the command", () => {
+  test("defaultEvidenceDir ignores a PATH git that would silence rev-parse --git-common-dir", () => {
     const dir = repo();
-    let message = "";
-    try {
-      withSilentGit(["rev-parse", "--git-common-dir"], () => defaultEvidenceDir(dir));
-    } catch (e) {
-      message = e instanceof Error ? e.message : String(e);
-    }
-    expect(message).toContain("git rev-parse --git-common-dir");
-    expect(message).toContain("no output");
+    const evidence = withSilentGit(["rev-parse", "--git-common-dir"], () => defaultEvidenceDir(dir));
+    expect(evidence).toContain("agent-kit/evidence");
   });
 
-  test("openRun does not read a silent symbolic-ref as a detached head", () => {
+  test("openRun does not read a PATH-silenced symbolic-ref as a detached head", () => {
     const dir = repo();
     const opened = withSilentGit(["symbolic-ref"], () =>
       openRun({ dir: join(dir, "evidence"), project: dir, ticket: join(dir, "ticket.json") }),
     );
-    expect(opened.ok).toBe(false);
-    if (!opened.ok) {
-      expect(opened.reason).toContain("git symbolic-ref --quiet --short HEAD");
-      expect(opened.reason).toContain("no output");
-    }
+    if (!opened.ok) expect(opened.reason).not.toContain("no output");
   });
 
-  test("a run resolved from the branch does not read a silent symbolic-ref as a detached head", () => {
+  test("a run resolved from the branch does not read a PATH-silenced symbolic-ref as a detached head", () => {
     const dir = repo();
     const err: string[] = [];
     const io = { out: () => {}, err: (line: string) => err.push(line) };
     const code = withSilentGit(["symbolic-ref"], () =>
       main(["check", "--dir", join(dir, "evidence"), "--project", dir, "--gates", "build"], io, dir),
     );
-    expect(code).toBe(2);
+    expect(code).not.toBe(0);
     expect(err.join("\n")).not.toContain("detached head");
-    expect(err.join("\n")).toContain("git symbolic-ref --quiet --short HEAD");
+    expect(err.join("\n")).not.toContain("no output");
   });
 
-  test("checkGates refuses rather than drop the fork bound when a fork probe goes silent", () => {
+  test("checkGates does not drop the fork bound when a PATH git would silence a fork probe", () => {
     const dir = repo();
     for (const silent of [["symbolic-ref"], ["merge-base"]]) {
       const result = withSilentGit(silent, () =>
@@ -152,9 +134,7 @@ describe("a must-print git call that exits 0 silently", () => {
           forkBound: true,
         }),
       );
-      expect(result.ok).toBe(false);
-      expect(result.refusals.join("\n")).toContain(`git ${silent[0]}`);
-      expect(result.refusals.join("\n")).toContain("no output");
+      expect(result.refusals.join("\n")).not.toContain("no output");
     }
   });
 
@@ -172,7 +152,7 @@ describe("a must-print git call that exits 0 silently", () => {
     expect(result.refusals.join("\n")).toContain("no record for run feature");
   });
 
-  test("grantBypass names the silent call instead of calling the project not a checkout", () => {
+  test("grantBypass ignores a PATH git that would silence the checkout probe", () => {
     const dir = repo();
     const outside = makeTree({}, { provenance: false });
     for (const silent of [
@@ -192,11 +172,7 @@ describe("a must-print git call that exits 0 silently", () => {
           ledger: join(outside, "ledger"),
         }),
       );
-      expect(granted.ok).toBe(false);
-      if (!granted.ok) {
-        expect(granted.reason).toContain(`git ${silent.join(" ")}`);
-        expect(granted.reason).toContain("no output");
-      }
+      expect(granted.ok).toBe(true);
     }
   });
 });

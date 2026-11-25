@@ -64,7 +64,14 @@ import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { artifactHash } from "../util/hash.ts";
-import { isolatedGitArgv, lsTreeToStageZ, resolveTrustedGit, unfilteredTrackedDirt } from "./git-isolation.ts";
+import {
+  gitEnv,
+  isolatedGitArgv,
+  lsTreeToStageZ,
+  resolveTrustedGit,
+  TRUSTED_GIT_PATH,
+  unfilteredTrackedDirt,
+} from "./git-isolation.ts";
 import { defaultMarkersPath, runPublishScan } from "./publish-scan.ts";
 import {
   type Json,
@@ -253,7 +260,10 @@ export interface GitResult {
 /** Pinned git binary for the current snapshot/reason walk, so scratch inits cannot re-resolve PATH. */
 let sessionGit: { binary: string; path: string } | undefined;
 
-export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv, input?: Uint8Array): GitResult {
+/** Overlay keys a snapshot spawn may take from its `env` argument. Never process.env. */
+const SNAPSHOT_GIT_EXTRAS = ["GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_NO_LAZY_FETCH"] as const;
+
+export function git(cwd: string, args: readonly string[], extra?: NodeJS.ProcessEnv, input?: Uint8Array): GitResult {
   let pinned = sessionGit;
   if (pinned === undefined) {
     try {
@@ -263,9 +273,16 @@ export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEn
       return { code: -1, stdout: new Uint8Array(), text: "", stderr: `cannot run git in ${cwd}: ${message}` };
     }
   }
+  const env: NodeJS.ProcessEnv = gitEnv({ path: pinned.path, home: "/dev/null" });
+  if (extra !== undefined) {
+    for (const key of SNAPSHOT_GIT_EXTRAS) {
+      const value = extra[key];
+      if (value !== undefined) env[key] = value;
+    }
+  }
   const proc = spawnSync(pinned.binary, [...args], {
     cwd,
-    env: { ...(env ?? envWithoutRedirectingGit()), PATH: pinned.path },
+    env,
     input,
     maxBuffer: 1 << 30,
   });
@@ -322,10 +339,7 @@ function gitignoresExcludedByCommittedRules(
   if (committed.length === 0) return dropped;
   const scratch = mkdtempSync(join(tmpdir(), "ak-cgi-"));
   try {
-    const initEnv = envWithoutRedirectingGit();
-    initEnv.GIT_CONFIG_NOSYSTEM = "1";
-    initEnv.GIT_CONFIG_GLOBAL = "/dev/null";
-    if (git(scratch, ["init", "-q", "-b", "main", "--template="], initEnv).code !== 0) return dropped;
+    if (git(scratch, ["init", "-q", "-b", "main", "--template="]).code !== 0) return dropped;
     mkdirSync(join(scratch, ".git", "info"), { recursive: true });
     writeFileSync(join(scratch, ".git", "info", "exclude"), "");
     for (const rel of committed) {
@@ -381,11 +395,8 @@ function untrackedWorktreePaths(
 
 function nestedGitWalker() {
   return {
-    git: (cwd: string, args: readonly string[]) => {
-      const env = envWithoutRedirectingGit();
-      env.GIT_WORK_TREE = cwd;
-      return git(cwd, [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(cwd, args)], env);
-    },
+    git: (cwd: string, args: readonly string[]) =>
+      git(cwd, [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(cwd, args)], { GIT_WORK_TREE: cwd }),
   };
 }
 
@@ -667,7 +678,7 @@ const same = (a: Snapshot, b: Snapshot) => a.revision === b.revision && a.diff_h
  * repository finds them and none is ever committed.
  */
 export function defaultEvidenceDir(project: string): string {
-  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"], envWithoutRedirectingGit());
+  const common = gitMustPrint(project, ["rev-parse", "--git-common-dir"]);
   if (common.code !== 0 || common.text === "") throw new Error(`${project} is not a git checkout: ${common.stderr}`);
   const dir = isAbsolute(common.text) ? common.text : join(project, common.text);
   return join(dir, "agent-kit", "evidence");
@@ -2552,32 +2563,6 @@ function repoOf(project: string): { common: string; writable: string[] } | { err
 // The supervisor files' containment has its own helpers. `within`, `realOr` and `repoOf` above also serve the
 // bypass grant, which stays as it is (ticket non-goal); the three defects they carry for these files are fixed here.
 
-/** Variables that redirect which repository git reads, rewrite the objects and history it sees, or inject config that can hide dirt. A worker controls its environment, so none is trusted. */
-const REDIRECTING_GIT_ENV = [
-  "GIT_DIR",
-  "GIT_COMMON_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_CEILING_DIRECTORIES",
-  "GIT_GRAFT_FILE",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_REPLACE_REF_BASE",
-  "GIT_NAMESPACE",
-  "GIT_CONFIG_PARAMETERS",
-  "GIT_CONFIG_COUNT",
-  "GIT_ATTR_SOURCE",
-] as const;
-
-function envWithoutRedirectingGit(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of REDIRECTING_GIT_ENV) Reflect.deleteProperty(env, name);
-  for (const name of Object.keys(env)) {
-    if (name.startsWith("GIT_CONFIG_KEY_") || name.startsWith("GIT_CONFIG_VALUE_")) Reflect.deleteProperty(env, name);
-  }
-  return env;
-}
-
 /** Walk up from `start` to the directory that holds a `.git` entry. Does not ask git, so `core.worktree` cannot redirect it. */
 function workTreeHoldingGit(start: string): string {
   let dir = existsSync(start) ? realpathSync(start) : resolve(start);
@@ -2593,22 +2578,15 @@ function workTreeHoldingGit(start: string): string {
   }
 }
 
-/** After the strip, bind the work tree to the directory that holds `.git`, so `core.worktree` cannot point git at another tree. */
+/** Bind the work tree to the directory that holds `.git`, so `core.worktree` cannot point git at another tree. */
 function boundWorkTreeEnv(project: string): NodeJS.ProcessEnv {
-  const env = envWithoutRedirectingGit();
-  env.GIT_WORK_TREE = workTreeHoldingGit(project);
-  return env;
+  return { GIT_WORK_TREE: workTreeHoldingGit(project) };
 }
 
-/** Git's stdout for `args` in `dir` with every redirecting variable removed, or undefined when git refuses. */
+/** Git's stdout for `args` in `dir` under the trusted git whitelist, or undefined when git refuses. */
 function placeGit(dir: string, args: readonly string[]): string | undefined {
-  const run = spawnSync("git", [...args], {
-    cwd: dir,
-    env: envWithoutRedirectingGit(),
-    encoding: "utf8",
-    maxBuffer: 1 << 26,
-  });
-  return run.error === undefined && run.status === 0 ? run.stdout.trim() : undefined;
+  const run = git(dir, args);
+  return run.code === 0 ? run.text : undefined;
 }
 
 /** The real path in the on-disk letter case, which Node's JavaScript `realpathSync` does not return on a case-insensitive volume. */
@@ -3288,20 +3266,18 @@ const RECOVERY =
 /**
  * How final ship reads objects in the worker's repository, which the worker can write, here and in the policy read:
  * GIT_NO_LAZY_FETCH=1, so a missing object runs no promisor remote's program; no replace refs; and no signature display, so
- * no `gpg.program` runs in the supervisor's process. The call drops the same redirecting variables placeGit does.
+ * no `gpg.program` runs in the supervisor's process. The call uses the same trusted-git whitelist `git()` uses.
  * `--no-lazy-fetch` is not on the argv. git 2.43 exits 129 for that option. Any other program-valued key git reads in
  * the worker's repository is outside this guarantee: only OS user separation closes it.
  */
 const FINAL_SHIP_GIT = [...NO_REPLACE_OBJECTS, "-c", "log.showSignature=false"] as const;
 
 function finalShipEnv(project: string): NodeJS.ProcessEnv {
-  const env = boundWorkTreeEnv(project);
-  env.GIT_NO_LAZY_FETCH = "1";
-  for (const name of Object.keys(env)) {
-    if (name === "GIT_TRACE" || name === "GIT_TRACE2" || name.startsWith("GIT_TRACE2_"))
-      Reflect.deleteProperty(env, name);
-  }
-  return env;
+  return {
+    ...gitEnv({ path: TRUSTED_GIT_PATH, home: "/dev/null" }),
+    ...boundWorkTreeEnv(project),
+    GIT_NO_LAZY_FETCH: "1",
+  };
 }
 
 function gitFinal(project: string, extra: readonly string[]): GitResult {
@@ -3309,11 +3285,12 @@ function gitFinal(project: string, extra: readonly string[]): GitResult {
 }
 
 function graftsRefusal(project: string): string | undefined {
-  const located = gitFinal(project, ["rev-parse", "--git-path", "info/grafts"]);
-  if (located.code !== 0 || located.text === "")
+  const common = gitFinal(project, ["rev-parse", "--git-common-dir"]);
+  if (common.code !== 0 || common.text === "")
     return "cannot locate info/grafts, so descent from the shipped revision cannot be read";
+  const grafts = join(isAbsolute(common.text) ? common.text : join(project, common.text), "info", "grafts");
   try {
-    const info = statSync(resolve(project, located.text), { throwIfNoEntry: false });
+    const info = statSync(grafts, { throwIfNoEntry: false });
     if (info === undefined || (info.isFile() && info.size === 0)) return undefined;
   } catch {
     return "cannot read info/grafts, so descent from the shipped revision cannot be read";

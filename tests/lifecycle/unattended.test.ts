@@ -1459,6 +1459,18 @@ function hideTrackedEdit(cwd: string, kind: "skip-worktree" | "assume-unchanged"
   if (kind === "assume-unchanged") git(cwd, "update-index", "--assume-unchanged", "src/a.js");
 }
 
+function hideLsFilesAndDiff(dir: string): string {
+  const realGit = Bun.which("git");
+  if (realGit === null) throw new Error("git is not on PATH");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "git"),
+    `#!/bin/sh\nfor a in "$@"; do\n  case "$a" in ls-files|diff) exit 0;; esac\ndone\nexec ${JSON.stringify(realGit)} "$@"\n`,
+  );
+  chmodSync(join(dir, "git"), 0o755);
+  return dir;
+}
+
 /** An unattended run with every gate recorded, ready for ship-preflight under the declaration `declare` wrote. */
 function ready(name = "firstmate") {
   const cwd = repo();
@@ -1925,27 +1937,59 @@ describe("binding at open and ship-preflight (AC-4)", () => {
 
   test("ship-preflight refuses dirt when a PATH git shim inside the worktree hides ls-files and diff", () => {
     const cwd = repo();
-    writeFileSync(join(cwd, "secret.txt"), "secret\n");
-    writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
-    const realGit = Bun.which("git");
-    if (realGit === null) throw new Error("git is not on PATH");
-    const bin = join(cwd, "bin");
-    mkdirSync(bin);
-    writeFileSync(
-      join(bin, "git"),
-      `#!/bin/sh\nfor a in "$@"; do\n  case "$a" in ls-files|diff) exit 0;; esac\ndone\nexec ${JSON.stringify(realGit)} "$@"\n`,
-    );
-    chmodSync(join(bin, "git"), 0o755);
+    writeFileSync(join(cwd, ".gitignore"), "bin/\n");
+    git(cwd, "add", ".gitignore");
+    git(cwd, "commit", "-q", "-m", "ignore bin");
     declareSupervisor();
     setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const run = fullRun(cwd);
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+    const bin = hideLsFilesAndDiff(join(cwd, "bin"));
     setEnv({ PATH: `${bin}:${process.env.PATH ?? ""}` });
     const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
-    expect(r.code).toBe(1);
-    expect(r.err).toContain(SHIP_BYTES_DIFFER);
+    expectShipDirt(r, "secret.txt", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses dirt when a PATH git shim outside the worktree hides ls-files and diff", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+    const bin = hideLsFilesAndDiff(outsideDir());
+    setEnv({ PATH: `${bin}:${process.env.PATH ?? ""}` });
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "secret.txt", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight passes an honest tree when PATH is an outside dir without git", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    setEnv({ PATH: outsideDir() });
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
+  });
+
+  test("ship-preflight does not pass GIT_TRACE from the worker env to git", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const trace = join(outsideDir(), "git-trace");
+    setEnv({ GIT_TRACE: trace });
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(existsSync(trace)).toBe(false);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
   });
 
   test("ship-preflight refuses nested assume-unchanged dirt, naming the path", () => {
@@ -1992,21 +2036,25 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
-  test("ship-preflight refuses a self-hiding .gitignore when git init would inherit a hostile template", () => {
+  test("ship-preflight refuses a self-hiding extra .gitignore when git init would inherit a hostile template", () => {
     const cwd = repo();
+    writeFileSync(join(cwd, ".gitignore"), "dist/\n");
+    git(cwd, "add", ".gitignore");
+    git(cwd, "commit", "-q", "-m", "committed gitignore");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
     const template = join(outsideDir(), "tmpl");
     mkdirSync(join(template, "info"), { recursive: true });
     writeFileSync(join(template, "info", "exclude"), "*\n");
     const globalConfig = join(outsideDir(), "gitconfig");
     writeFileSync(globalConfig, `[init]\n\ttemplateDir = ${template}\n`);
-    writeFileSync(join(cwd, ".gitignore"), ".gitignore\nsecret.txt\n");
-    writeFileSync(join(cwd, "secret.txt"), "secret\n");
-    declareSupervisor();
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended", GIT_CONFIG_GLOBAL: globalConfig });
-    const run = fullRun(cwd);
+    writeFileSync(join(cwd, "src", ".gitignore"), ".gitignore\nsecret.txt\n");
+    writeFileSync(join(cwd, "src", "secret.txt"), "secret\n");
+    setEnv({ GIT_CONFIG_GLOBAL: globalConfig });
     const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
-    expectShipDirt(r, ".gitignore", cwd);
+    expectShipDirt(r, "src/.gitignore", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });

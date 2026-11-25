@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
 
-import { workerControlledPath, workerFreePath } from "../runner/path.ts";
+import { workerControlledPath } from "../runner/path.ts";
 
 /** A git call used to walk a nested gitlink. Same shape as `GitResult` without importing the gate. */
 export type NestedGit = (
@@ -11,9 +11,33 @@ export type NestedGit = (
   args: readonly string[],
 ) => { code: number; stdout: Uint8Array; text: string; stderr: string };
 
-/** Absolute git binary whose real path is outside `workerRoot`, plus a PATH with that root stripped. */
+/** Fixed PATH used to spawn git. Never the caller's PATH. */
+export const TRUSTED_GIT_PATH = `/usr/bin${delimiter}/bin`;
+
+/**
+ * Whitelist env for a trusted git spawn. No worker variables. A partial or
+ * blobless clone may still promisor-fetch through repository config; no refusal.
+ */
+export function gitEnv(context: { path: string; home: string }) {
+  return {
+    PATH: context.path,
+    HOME: context.home,
+    XDG_CONFIG_HOME: context.home,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
+    LC_ALL: "C",
+  };
+}
+
+/**
+ * Absolute git binary from `/usr/bin` then `/bin` whose real path is outside `workerRoot`.
+ * Caller PATH is never searched.
+ */
 export function resolveTrustedGit(workerRoot: string) {
-  const path = workerFreePath(process.env["PATH"], workerRoot);
+  const path = TRUSTED_GIT_PATH;
   for (const directory of path.split(delimiter)) {
     const candidate = join(directory, "git");
     try {
@@ -21,7 +45,7 @@ export function resolveTrustedGit(workerRoot: string) {
       const binary = realpathSync(candidate);
       if (!workerControlledPath(binary, workerRoot)) return { binary, path };
     } catch {
-      // Try the next supervisor-owned PATH entry.
+      // Try the next fixed location.
     }
   }
   throw new Error("runner cannot find a trusted git executable outside the worker root");

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { gitBlobId, isolationArgs, isolatedGitArgv, resolveTrustedGit } from "../lifecycle/git-isolation.ts";
+import { gitBlobId, gitEnv, isolationArgs, isolatedGitArgv, resolveTrustedGit } from "../lifecycle/git-isolation.ts";
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
 import { relativeInsideRoot } from "./path.ts";
 
@@ -232,22 +232,6 @@ export function resolveRunnerGit(workerRoot: string): RunnerGitContext {
 
 function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
-}
-
-function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
-  // Residue: a partial or blobless clone may still promisor-fetch through worker
-  // core.sshCommand / credential.helper in the repository config. No refusal.
-  return {
-    PATH: context.path,
-    HOME: context.home,
-    XDG_CONFIG_HOME: context.home,
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_OPTIONAL_LOCKS: "0",
-    GIT_NO_REPLACE_OBJECTS: "1",
-    GIT_GRAFT_FILE: "/dev/null",
-    LC_ALL: "C",
-  };
 }
 
 const emptyTrees = new Map<string, string>();
