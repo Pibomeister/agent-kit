@@ -712,6 +712,75 @@ describe("ak review scope: later-round tree identity", () => {
     expect(f.decide(H).code).toBe(1);
   });
 
+  test("R7-HIDE-UNDER-VISIBLE: a dirty merge then a visible drop-and-add still lists the hidden path", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/evil.ts": "pwned\n" });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty merge only");
+    f.git("reset", "--hard", dirtyMerge);
+    unlinkSync(join(f.root, "src/evil.ts"));
+    const next = f.commit({ "src/note.ts": "note\n" }, "drop evil add note");
+    const scoped = f.record(next);
+    expect(scoped).toMatchObject({
+      outcome: "closure",
+      delta: { empty: false, changed_paths: ["src/evil.ts", "src/note.ts"] },
+    });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(2);
+    expect(f.decide(next).code).toBe(1);
+  });
+
+  test("UNRELATED-OURS-MERGE: an ours merge of unrelated histories is refused", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "--orphan", "orphan");
+    f.git("commit", "--allow-empty", "-m", "orphan");
+    const orphan = f.git("rev-parse", "HEAD");
+    f.git("checkout", "pr");
+    const merged = f.tryGit(
+      "merge",
+      "-s",
+      "ours",
+      "--no-ff",
+      "--allow-unrelated-histories",
+      "-m",
+      "ours unrelated",
+      orphan,
+    );
+    if (merged.status !== 0) throw new Error(`git merge: ${merged.stderr}`);
+    const H = f.git("rev-parse", "HEAD");
+    const run = f.scope(H, "--previous", f.reviewed().path);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("refusing to merge unrelated histories");
+  });
+
+  test("UNRELATED-BASE: --base that shares no commit with --head is refused", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "--orphan", "orphan");
+    f.git("commit", "--allow-empty", "-m", "orphan");
+    const orphan = f.git("rev-parse", "HEAD");
+    const run = review([
+      "scope",
+      "--ledger",
+      f.ledger,
+      "--repo",
+      f.root,
+      "--base",
+      orphan,
+      "--head",
+      f.head,
+      "--previous",
+      f.reviewed().path,
+    ]);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("refusing to merge unrelated histories");
+  });
+
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
     const f = fixture();
     f.round(f.head);
@@ -779,6 +848,16 @@ describe("ak review scope: later-round tree identity", () => {
     expect(argv[argv.indexOf("core.commitGraph=false") - 1]).toBe("-c");
     const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
     expect(source).toContain("isolatedGitArgv(");
+  });
+
+  test("throwawayDiff keeps --ignore-submodules=none even if changedPaths also has it", () => {
+    const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
+    const start = source.indexOf("function throwawayDiff");
+    const end = source.indexOf("function inspectMerges");
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(source.slice(start, end)).toContain("--ignore-submodules=none");
+    expect(source).not.toContain("--allow-unrelated-histories");
   });
 });
 

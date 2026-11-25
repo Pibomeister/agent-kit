@@ -159,11 +159,11 @@ export interface DeltaFacts {
    */
   path_identity: readonly string[];
   /**
-   * Paths `git diff --name-only previous..head` names when the result trees
-   * differ. When they match and empty is false only because of a novel merge
-   * or a novel non-merge, the paths of those commits: merge versus its
-   * isolated merge-tree, commit versus parent. A closure round reads this
-   * list. A move that keeps the patch id still has a path.
+   * Paths `git diff --name-only previous..head` names, unioned with novel
+   * merge and novel non-merge paths when empty is false. Novel-merge paths
+   * are merge versus its isolated merge-tree; novel non-merge paths are
+   * commit versus parent. A closure round reads this list. A move that keeps
+   * the patch id still has a path.
    */
   changed_paths: readonly string[];
 }

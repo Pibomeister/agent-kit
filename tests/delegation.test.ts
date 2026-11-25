@@ -474,6 +474,45 @@ test("ak delegation --stage merge counts a file renamed out of a shared surface"
   expect(JSON.parse(merge(base))).toMatchObject({ class: "red", floor: { shared_surfaces: ["src/shared/**"] } });
 });
 
+test("ak delegation --stage merge lists a gitlink path when .gitmodules ignore=all", () => {
+  const root = makeTree({});
+  const git = (args: string[]) => gitIn(root, args);
+  git(["init", "-b", "main", "."]);
+  git(["config", "user.email", "t@example.invalid"]);
+  git(["config", "user.name", "T"]);
+  const project = {
+    ...validProject,
+    guidance: {
+      ...validProject.guidance,
+      delegation: {
+        ...validProject.guidance.delegation,
+        shared_surfaces: [{ path: "vendor/lib", class: "red", reason: "Vendored gitlink." }],
+      },
+    },
+  };
+  writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
+  writeFileSync(join(root, "project.json"), JSON.stringify(project));
+  git(["add", "."]);
+  git(["commit", "-m", "base"]);
+  const base = git(["rev-parse", "HEAD"]);
+  const pin = git(["rev-parse", "HEAD"]);
+  writeFileSync(
+    join(root, ".gitmodules"),
+    '[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = ./vendor/lib\n\tignore = all\n',
+  );
+  git(["add", ".gitmodules"]);
+  git(["update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`]);
+  git(["commit", "-m", "add gitlink ignore=all"]);
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runCli(["delegation", "ticket.json", "--project", "project.json", "--stage", "merge", "--base", base], {
+    cwd: root,
+    io: { out: (line) => out.push(line), err: (line) => err.push(line) },
+  });
+  expect({ code, err }).toEqual({ code: 0, err: [] });
+  expect(JSON.parse(out.join("\n"))).toMatchObject({ floor: { shared_surfaces: ["vendor/lib"] } });
+});
+
 test("ak delegation --stage merge ignores shared-surface changes made only on the base branch", () => {
   const { root, git, merge } = sharedSurfaceRepo();
   git(["checkout", "-b", "feature"]);

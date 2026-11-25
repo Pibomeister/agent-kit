@@ -158,7 +158,7 @@ export function resolveCommit(repo: string, revision: string, role: string): str
 function mergeBase(repo: string, base: string, head: string): string {
   const run = git(repo, ["merge-base", base, head], [0, 1]);
   const id = run.out.trim().split("\n")[0] ?? "";
-  if (run.status !== 0 || id === "") throw new Error(`${base} and ${head} share no commit`);
+  if (run.status !== 0 || id === "") throw new Error("refusing to merge unrelated histories");
   return id;
 }
 
@@ -287,16 +287,25 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
  * conflicted even when its tree equals the first parent. A two-parent merge
  * whose tree is not merge-tree's is novel: the dirty tree is only on the merge.
  */
+interface PathLines {
+  path: string;
+  lines: number;
+}
+
 interface MergeInspection {
   conflict_paths: string[];
   novel_merge: boolean;
   novel_paths: string[];
-  novel_lines: number;
+  novel_path_lines: PathLines[];
 }
 
 interface ThrowawayDiff {
   paths: string[];
-  lines: number;
+  path_lines: PathLines[];
+}
+
+function decode(stdout: Uint8Array): string {
+  return new TextDecoder().decode(stdout);
 }
 
 /** Paths and changed lines of `from` versus `to` inside the throwaway object store. */
@@ -316,24 +325,32 @@ function throwawayDiff(
     extraEnv,
   );
   if (names.code !== 0 && names.code !== 1) throw new Error(`git diff failed: ${names.stderr}`);
-  const patch = gitProcess(context, repo, ["diff", ...DIFF, "--end-of-options", from, to], 10_000, undefined, extraEnv);
-  if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
-  return {
-    paths: new TextDecoder()
-      .decode(names.stdout)
-      .split("\0")
-      .filter((path) => path.length > 0),
-    lines: readPatch(new TextDecoder().decode(patch.stdout)).lines,
-  };
+  const paths = decode(names.stdout)
+    .split("\0")
+    .filter((path) => path.length > 0);
+  const path_lines: PathLines[] = [];
+  for (const path of paths) {
+    const patch = gitProcess(
+      context,
+      repo,
+      ["diff", ...DIFF, "--end-of-options", from, to, "--", path],
+      10_000,
+      undefined,
+      extraEnv,
+    );
+    if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
+    path_lines.push({ path, lines: readPatch(decode(patch.stdout)).lines });
+  }
+  return { paths, path_lines };
 }
 
 function inspectMerges(repo: string, base: string, previous: string, head: string): MergeInspection {
   const merges = git(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base}`]).out.split("\n");
   const conflicted = new Set<string>();
   const novelPaths = new Set<string>();
+  const novelLineByPath = new Map<string, number>();
   const pairs: { merge: string; ours: string; theirs: string }[] = [];
   let novel_merge = false;
-  let novel_lines = 0;
   for (const merge of merges) {
     if (merge === "") continue;
     const parents = git(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
@@ -366,9 +383,9 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
             extraEnv,
           );
           if (result.code !== 0 && result.code !== 1) throw new Error(`git merge-tree failed: ${result.stderr}`);
-          const out = new TextDecoder().decode(result.stdout);
+          const out = decode(result.stdout);
           const resultTree = out.split("\0")[0]?.trim() ?? "";
-          let extra: ThrowawayDiff = { paths: [], lines: 0 };
+          let extra: ThrowawayDiff = { paths: [], path_lines: [] };
           let novel = false;
           if (result.code === 0) {
             const recordedRun = gitProcess(
@@ -392,7 +409,8 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
         if (run.novel) {
           novel_merge = true;
           for (const path of run.extra.paths) novelPaths.add(path);
-          novel_lines += run.extra.lines;
+          for (const { path, lines } of run.extra.path_lines)
+            novelLineByPath.set(path, (novelLineByPath.get(path) ?? 0) + lines);
         }
         if (run.code === 0) continue;
         // The first field is the tree. The rest are the conflicted paths.
@@ -402,11 +420,12 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
       rmSync(home, { recursive: true, force: true });
     }
   }
+  const novel_paths = [...novelPaths].toSorted();
   return {
     conflict_paths: [...conflicted].toSorted(),
     novel_merge,
-    novel_paths: [...novelPaths].toSorted(),
-    novel_lines,
+    novel_paths,
+    novel_path_lines: novel_paths.map((path) => ({ path, lines: novelLineByPath.get(path) ?? 0 })),
   };
 }
 
@@ -450,18 +469,21 @@ export function readDelta(repo: string, base: string, previous: string, head: st
   const nonMerges = novelNonMerge(repo, base, previous, head, before.reading.merge_base, before.patch.id);
   const empty = identical && !merges.novel_merge && !nonMerges.novel;
   const novelPaths = [...new Set([...merges.novel_paths, ...nonMerges.paths])].toSorted();
+  const visiblePaths = identical ? [] : changedPaths(repo, previous, head);
+  let hiddenMergeLines = 0;
+  for (const { path, lines } of merges.novel_path_lines) if (!nowTree.has(path)) hiddenMergeLines += lines;
   return {
     now: now.reading,
     previous: before.reading,
     delta: {
       empty,
       pr_lines: before.patch.lines,
-      added_lines: identical && !empty ? merges.novel_lines + nonMerges.lines : linesNotIn(now.patch, before.patch),
+      added_lines: identical ? (empty ? 0 : hiddenMergeLines) : linesNotIn(now.patch, before.patch) + hiddenMergeLines,
       removed_lines: linesNotIn(before.patch, now.patch),
       rewritten_lines: linesRewritten(repo, base, before, now.reading, head),
       conflict_paths: merges.conflict_paths,
       path_identity: pathIdentity(beforeTree, nowTree),
-      changed_paths: identical ? (empty ? [] : novelPaths) : changedPaths(repo, previous, head),
+      changed_paths: empty ? [] : [...new Set([...visiblePaths, ...novelPaths])].toSorted(),
     },
   };
 }

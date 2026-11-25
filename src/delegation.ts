@@ -380,7 +380,15 @@ export function resolveRevision(cwd: string, revision: string): string {
 export function gitChangedPaths(cwd: string, base: string, head: string): string[] {
   for (const revision of [base, head]) resolveRevision(cwd, revision);
   const range = `${base}...${head}`;
-  const diff = isolatedGit(cwd, ["diff", "--name-only", "--no-renames", "-z", "--end-of-options", range]);
+  const diff = isolatedGit(cwd, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "--ignore-submodules=none",
+    "-z",
+    "--end-of-options",
+    range,
+  ]);
   if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
   return (diff.stdout ?? "").split("\0").filter((path) => path.length > 0);
 }
