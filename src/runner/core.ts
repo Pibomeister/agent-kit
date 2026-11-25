@@ -311,6 +311,7 @@ export class Runner {
           required: ["started_at", "real_started_at"],
           properties: { started_at: { type: "number" }, real_started_at: { type: "number" } },
         },
+        audit_tick_halted: { type: "boolean" },
       },
     });
     const policySchema = schemas.ajv.compile<InvocationPolicy>({
@@ -1902,10 +1903,19 @@ export class Runner {
     return { cap, spent, exhausted: spent >= cap };
   }
 
+  recordAuditTickHalt(id: string): void {
+    const run = this.load(id);
+    if (run.charter.limits.outage_backoff_seconds === undefined) return;
+    if (run.audit_tick_halted === true) return;
+    run.audit_tick_halted = true;
+    this.save(run);
+  }
+
   clearAuditAdapterFailure(id: string): void {
     const run = this.load(id);
-    if (run.audit_adapter_failure === undefined) return;
+    if (run.audit_adapter_failure === undefined && run.audit_tick_halted === undefined) return;
     delete run.audit_adapter_failure;
+    delete run.audit_tick_halted;
     this.save(run);
   }
 

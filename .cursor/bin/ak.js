@@ -43217,7 +43217,8 @@ class Runner {
           type: "object",
           required: ["started_at", "real_started_at"],
           properties: { started_at: { type: "number" }, real_started_at: { type: "number" } }
-        }
+        },
+        audit_tick_halted: { type: "boolean" }
       }
     });
     const policySchema = schemas.ajv.compile({
@@ -44532,11 +44533,21 @@ class Runner {
     this.save(run2);
     return { cap, spent, exhausted: spent >= cap };
   }
+  recordAuditTickHalt(id) {
+    const run2 = this.load(id);
+    if (run2.charter.limits.outage_backoff_seconds === undefined)
+      return;
+    if (run2.audit_tick_halted === true)
+      return;
+    run2.audit_tick_halted = true;
+    this.save(run2);
+  }
   clearAuditAdapterFailure(id) {
     const run2 = this.load(id);
-    if (run2.audit_adapter_failure === undefined)
+    if (run2.audit_adapter_failure === undefined && run2.audit_tick_halted === undefined)
       return;
     delete run2.audit_adapter_failure;
+    delete run2.audit_tick_halted;
     this.save(run2);
   }
   finishDelegate(id, delegateId) {
@@ -45636,6 +45647,11 @@ async function serve(argv, io) {
     if (auditTimer !== null)
       clearInterval(auditTimer);
     auditTimer = null;
+    if (block === "failed" && outageWindow() !== undefined) {
+      try {
+        runner.recordAuditTickHalt(runId);
+      } catch {}
+    }
   };
   const haltAuditWithoutRecord = (cause) => {
     if (outageWindow() === undefined)
@@ -45809,7 +45825,7 @@ async function serve(argv, io) {
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
         const adaptersPresent = eventCommand !== null && loopCommand !== null;
         const adaptersReady = adaptersPresent && !deliveryFailedVisible();
-        const deliveryRetryOpen = adaptersPresent && outageWindow() !== undefined && (delivering || !deliveryHealthy) && !deliveryFailedVisible();
+        const deliveryRetryOpen = adaptersPresent && outageWindow() !== undefined && (delivering || !deliveryHealthy) && !deliveryFailedVisible() && !auditFailedVisible();
         const auditRetryOpen = adaptersReady && !auditFailedVisible() && (auditBlock === "retry" || auditBlock === "failed" && !auditHalted);
         const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && !deliveryRetryOpen && auditBlock === "ok", auditRetryOpen, deliveryRetryOpen);
         const missing2 = [
@@ -45860,7 +45876,12 @@ async function serve(argv, io) {
     if (outageWindow() === undefined)
       return;
     try {
-      if (runner.status(runId).audit_adapter_failure === undefined)
+      const run2 = runner.status(runId);
+      if (run2.audit_tick_halted === true) {
+        haltAudit("failed");
+        return;
+      }
+      if (run2.audit_adapter_failure === undefined)
         return;
     } catch {
       return;

@@ -4100,6 +4100,62 @@ describe("runner guards", () => {
     }
   });
 
+  test("a restarted serve refuses decide as guided after a refused auditTick", async () => {
+    const f = procedureKit();
+    withAuditCadence(f, 30, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    card(f, "audit-align");
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "loop-stamp");
+    const mutate = join(f.privateDir, "mutate-kit");
+    writeFileSync(mutate, "1");
+    const clock = join(f.privateDir, "clock");
+    writeFileSync(clock, "0\n");
+    const skill = join(f.kit, "skills/autopilot/SKILL.md");
+    const script = [
+      "const fs=await import('node:fs');",
+      "const stamp=process.argv[1];",
+      "const skill=process.argv[2];",
+      "const mutate=stamp.replace('loop-stamp','mutate-kit');",
+      "fs.appendFileSync(stamp,'x');",
+      "if(fs.existsSync(mutate)){ fs.writeFileSync(skill, '# drifted\\n'); fs.unlinkSync(mutate); }",
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
+    ].join("");
+    let { socket, service, workerToken, request } = serveLoop(f, script, stamp, clock, f.kit, [skill]);
+    try {
+      await waitForPath(socket, service);
+      await waitUntil(
+        "the drifting probe to return",
+        () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1 && !existsSync(mutate),
+      );
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      await waitUntil(
+        "status to name audit-failed before the next cadence tick",
+        () => autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+        800,
+      );
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBe(0);
+      service.kill("SIGTERM");
+      await service.exited;
+      ({ socket, service, workerToken, request } = serveLoop(f, script, stamp, clock, f.kit, [skill]));
+      await waitForPath(socket, service);
+      writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "audit-align" }));
+      const refused = callRunnerCli("decide", request, socket, workerToken);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr.toString()).toContain("guided mode");
+      expect(refused.stderr.toString()).not.toContain("audit retry in progress");
+      expect(f.runner.status("toy-run").decisions).toEqual([]);
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBe(0);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
   test("bundle drift after a successful probe spends the cap and stays autonomous when outage backoff is absent", async () => {
     const f = procedureKit();
     withAuditCadence(f, 30);
@@ -4460,6 +4516,61 @@ describe("runner guards", () => {
       const refused = callRunnerCli("decide", request, socket, workerToken);
       expect(refused.exitCode).toBe(1);
       expect(refused.stderr.toString()).toContain("event delivery retry in progress");
+      expect(f.runner.status("toy-run").decisions).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("decide is guided when audit-failed is visible and event delivery is still hidden", async () => {
+    const f = fixture();
+    withAuditCadence(f, undefined, 300);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    card(f, "audit-align");
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const clock = join(f.privateDir, "clock");
+    const stamp = join(f.privateDir, "probe-fail");
+    const started = join(f.privateDir, "consumer-started");
+    writeFileSync(clock, "0\n");
+    const { socket, service, adminToken, workerToken, request } = serveEvents(
+      f,
+      clock,
+      [
+        process.execPath,
+        "-e",
+        "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); await Bun.sleep(60_000);",
+        started,
+      ],
+      100,
+      [
+        process.execPath,
+        "-e",
+        "const fs=await import('node:fs'); fs.appendFileSync(process.argv[1],'x'); console.log(JSON.stringify({probed:[],progress:[{delegate:'owner-1',kind:'store-report',ref:'forged'}]})); process.exit(1);",
+        stamp,
+      ],
+    );
+    try {
+      await waitForPath(socket, service);
+      await waitUntil("the failed probe to run", () => existsSync(stamp));
+      await Bun.sleep(300);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      writeFileSync(clock, "300000\n");
+      await waitUntil("status to name audit-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      );
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitUntil("the event consumer to start", () => existsSync(started));
+      await Bun.sleep(250);
+      writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "audit-align" }));
+      const refused = callRunnerCli("decide", request, socket, workerToken);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr.toString()).toContain("guided mode");
+      expect(refused.stderr.toString()).not.toContain("event delivery retry in progress");
       expect(f.runner.status("toy-run").decisions).toEqual([]);
     } finally {
       service.kill("SIGTERM");

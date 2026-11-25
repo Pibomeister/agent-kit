@@ -306,12 +306,12 @@ monotonic clock, so a clock step back cannot un-name a visible failure.
 at least that many seconds from the first failure in the streak, even while
 `limits.delegate_replacements` is unspent and the audit is still retrying. Cap exhaustion can still
 halt earlier. A later success clears the streak. The naming window is in memory; a serve restart
-starts a new one. While `limits.outage_backoff_seconds` is set, the last audit-adapter failure is
-persisted on the run, restored before listen, and cleared only after a successful tick, so `decide`
-stays refused across restart until that tick. When that field is set, `decide` is refused with
+starts a new one. While `limits.outage_backoff_seconds` is set, the last audit-adapter failure and a halted refused
+`auditTick` are persisted on the run, restored before listen, and cleared only after a successful
+tick, so `decide` stays refused across restart. When that field is set, `decide` is refused with
 `event delivery retry in progress` while a delivery is in flight or not healthy and
 `event-delivery-failed` is not yet named, until the next successful ack. Once `audit-failed` is named, `decide` is the guided-mode refusal,
-not `audit retry in progress`. Auth failures, bundle drift, and a refused `auditTick` still go guided on the first
+not `audit retry in progress` and not `event delivery retry in progress`. Auth failures, bundle drift, and a refused `auditTick` still go guided on the first
 failure. A charter that omits the field keeps the first-failure behavior above. The timer drains only when no active
 delegate remains, and it stops when `limits.delegate_replacements` is spent. The adapter owns the actual process stop
 and replacement; the runner owns the policy and durable record. Neither an event nor a probe

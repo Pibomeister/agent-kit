@@ -881,6 +881,13 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     auditHalted = true;
     if (auditTimer !== null) clearInterval(auditTimer);
     auditTimer = null;
+    if (block === "failed" && outageWindow() !== undefined) {
+      try {
+        runner.recordAuditTickHalt(runId);
+      } catch {
+        // The run may have been cancelled while the tick was in flight.
+      }
+    }
   };
   const haltAuditWithoutRecord = (cause: unknown): boolean => {
     if (outageWindow() === undefined) return false;
@@ -1059,7 +1066,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           adaptersPresent &&
           outageWindow() !== undefined &&
           (delivering || !deliveryHealthy) &&
-          !deliveryFailedVisible();
+          !deliveryFailedVisible() &&
+          !auditFailedVisible();
         const auditRetryOpen =
           adaptersReady &&
           !auditFailedVisible() &&
@@ -1132,7 +1140,12 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     if (auditHalted) return;
     if (outageWindow() === undefined) return;
     try {
-      if (runner.status(runId).audit_adapter_failure === undefined) return;
+      const run = runner.status(runId);
+      if (run.audit_tick_halted === true) {
+        haltAudit("failed");
+        return;
+      }
+      if (run.audit_adapter_failure === undefined) return;
     } catch {
       return;
     }
