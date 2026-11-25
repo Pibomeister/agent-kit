@@ -13,8 +13,8 @@
     },
     "bundle/claude-code:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21386,
-      "tokens": 5343
+      "bytes": 21579,
+      "tokens": 5391
     },
     "bundle/claude-code:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
@@ -908,8 +908,8 @@
     },
     "bundle/codex:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21386,
-      "tokens": 5343
+      "bytes": 21579,
+      "tokens": 5391
     },
     "bundle/codex:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
@@ -1803,8 +1803,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21446,
-      "tokens": 5358
+      "bytes": 21639,
+      "tokens": 5406
     },
     "bundle/cursor:.cursor/references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
@@ -2698,8 +2698,8 @@
     },
     "bundle/droid:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21386,
-      "tokens": 5343
+      "bytes": 21579,
+      "tokens": 5391
     },
     "bundle/droid:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
@@ -3593,8 +3593,8 @@
     },
     "bundle/grok:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21386,
-      "tokens": 5343
+      "bytes": 21579,
+      "tokens": 5391
     },
     "bundle/grok:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
@@ -4488,8 +4488,8 @@
     },
     "bundle/kimi:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 21386,
-      "tokens": 5343
+      "bytes": 21579,
+      "tokens": 5391
     },
     "bundle/kimi:references/shared/adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",

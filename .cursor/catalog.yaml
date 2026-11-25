@@ -1188,6 +1188,13 @@ schemas:
       One registered constitution article: source span, tier, exceptions, related articles, triggers
       and the checks that cover it, each naming the exact predicate it verifies. Registries live in an
       overlay; this package holds only the shape and invented fixtures.
+  - id: review-ledger
+    batch: 18
+    status: authored
+    summary: >-
+      One line of a review convergence ledger: the append-only JSONL file `ak review ledger add`
+      writes for one pull request and `ak review decide` reads the verdict from (ADR-0018). A status
+      change is a new line for the same finding id, and the state is a fold over the lines.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.

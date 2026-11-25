@@ -215,7 +215,8 @@
               "learn-state",
               "learn-span",
               "guard-policy",
-              "constitution-article"
+              "constitution-article",
+              "review-ledger"
             ]
           },
           "batch": { "$ref": "#/$defs/batch" },
