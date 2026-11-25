@@ -337,7 +337,9 @@ The first follow-up above is closed this way:
   is refused. A heading whose text, or any softbreak or linebreak-separated
   segment, equals `workflow` after NFKC, stripping `\p{Cf}` and
   `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused.
-  Homoglyph confusables, U+2800 braille blank, and GFM strikethrough
+  A heading whose text contains a bidi control (U+200E, U+200F, U+202A-U+202E,
+  U+2066-U+2069) is refused.
+  Homoglyph confusables, U+2800 braille blank, GFM strikethrough, and tables
   are out of scope. Otherwise Hard gates body prose is not pinned.
   `- Workflow notes` and prose that mentions workflow stay green. Fenced,
   indented and inline-code examples stay green. Editing anything above Hard

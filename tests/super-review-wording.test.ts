@@ -12,7 +12,9 @@
  * is refused. A heading whose text, or any softbreak or linebreak-separated
  * segment, equals `workflow` after NFKC, stripping `\p{Cf}` and
  * `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused.
- * Homoglyph confusables, U+2800 braille blank, and GFM strikethrough
+ * A heading whose text contains a bidi control (U+200E, U+200F, U+202A-U+202E,
+ * U+2066-U+2069) is refused.
+ * Homoglyph confusables, U+2800 braille blank, GFM strikethrough, and tables
  * are out of scope. Otherwise Hard gates body prose is not pinned.
  * `- Workflow notes` and prose that mentions workflow stay green. Fenced,
  * indented and inline-code examples stay green. Editing anything above Hard
@@ -49,6 +51,7 @@ function firstSentinelAt(raw: string): number {
 
 const parser = new Parser();
 const HEADING_OK = new Set(["heading", "text", "code", "emph", "strong", "softbreak", "linebreak"]);
+const BIDI = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
 
 function fold(text: string): string {
   return text
@@ -67,8 +70,7 @@ function isPlainComment(literal: string): boolean {
 }
 
 function headingForbidden(node: Node): boolean {
-  let text = "";
-  let segment = "";
+  const segments: string[] = [""];
   const walker = node.walker();
   let event = walker.next();
   while (event) {
@@ -77,19 +79,26 @@ function headingForbidden(node: Node): boolean {
         return true;
       }
       if (event.node.type === "softbreak" || event.node.type === "linebreak") {
-        if (fold(segment) === "workflow") {
-          return true;
-        }
-        segment = "";
+        segments.push("");
       } else if (event.node.type === "text" || event.node.type === "code") {
-        const bit = event.node.literal ?? "";
-        text += bit;
-        segment += bit;
+        segments[segments.length - 1] += event.node.literal ?? "";
       }
     }
     event = walker.next();
   }
-  return fold(text) === "workflow" || fold(segment) === "workflow";
+  const text = segments.join("");
+  if (BIDI.test(text)) {
+    return true;
+  }
+  if (fold(text) === "workflow") {
+    return true;
+  }
+  for (const part of segments) {
+    if (fold(part) === "workflow") {
+      return true;
+    }
+  }
+  return false;
 }
 
 function hasForbiddenWorkflowMarkup(suffix: string): boolean {
@@ -183,6 +192,9 @@ const RED_FIXTURES: string[] = [
   '<div data-role="heading">x</div>',
   "The runner did not supply a cap.\nWorkflow\n--------",
   "Work\nflow\n--------",
+  "Workflow\nTail\n--------",
+  "foo\nWorkflow\nbar\n--------",
+  "## \u202EwolfkroW",
 ];
 
 const GREEN_FIXTURES: string[] = [
@@ -212,6 +224,7 @@ const GREEN_FIXTURES: string[] = [
   "<!-->",
   "<!--->",
   "Budget\nnotes\n--------",
+  "## Limits",
 ];
 
 describe("super-review wording", () => {
