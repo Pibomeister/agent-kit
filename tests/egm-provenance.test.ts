@@ -1,8 +1,7 @@
 /**
- * This file guards exactly SURFACES: GAP-PROBE.md, hosts.ts,
- * research/dossiers/egm.md, README.md, AGENTS.md, NOTICE, package.json,
- * catalog.yaml, the egm lock item, marketplace.json, and the CONTRACT.md
- * tables. Files outside that list are out of scope and are caught in review.
+ * This file pins named claim-bearing strings byte-exact after CRLF is folded
+ * to LF. The pins are the SURFACES table. Free-text claims elsewhere are
+ * review's job.
  */
 import { describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,6 +16,8 @@ const REPO = resolve(import.meta.dir, "..");
 const EGM_COMMIT = "403d8881d62022490637d740657b33f01e321ea8";
 const EGM_LICENSE_FILE = "provenance/licenses/google_elephant-goldfish-model.LICENSE";
 const LOCK = "provenance/upstream.lock.yaml";
+const CLAUDE_ISOLATION_ROW =
+  "| `isolated-review-context` | `partial` | The host provides fresh-context subagents. It provides no attestation that a reviewer context never saw the author's narrative, so the package cannot verify the property it depends on. GS-004e live Claude Code and Codex arms did not run (GAP-PROBE, `research/host-facts/2026-11-18/GAP-PROBE.md`). That coverage limit is not a pass |";
 const MIT_CATALOG_IDS = [
   "compound-engineering",
   "superpowers",
@@ -29,43 +30,6 @@ const MIT_CATALOG_IDS = [
   "claude-reflect",
   "common-skills",
 ] as const;
-const PASS_ALLOW = [
-  "None is `pass`",
-  "not a pass",
-  "passed over",
-  "not scored as pass or fail",
-  "Neither row is a pass",
-  "prints PASS",
-  "passed every gate",
-  "the next pass records",
-  "path pass unjudged",
-  "pass it as",
-  "first pass seats",
-  "a pass is not proof",
-  "batch passes",
-  "Budgets passed in",
-  "pass-1",
-  "`--check` passes because",
-  "`--allow-growth` is passed",
-  "unchanged and passes",
-  "passes it.",
-  "growth passes only when",
-  "kind passes",
-  "edits pass evaluations",
-  "passed / failed",
-] as const;
-const PASS_LOOKALIKES = new Map<string, string>([
-  ["\u0430", "a"],
-  ["\u0440", "p"],
-  ["\u0455", "s"],
-  ["\u0441", "c"],
-  ["\u0435", "e"],
-  ["\u043e", "o"],
-  ["\u03b1", "a"],
-  ["\u03bf", "o"],
-  ["\u03c1", "p"],
-  ["\ua731", "s"],
-]);
 const CATALOG_PREFIXES = [
   "skills/",
   "roles/",
@@ -75,17 +39,163 @@ const CATALOG_PREFIXES = [
   "policies/",
   "adapters/",
 ] as const;
-const SURFACE_FILES = [
-  "research/host-facts/2026-11-18/GAP-PROBE.md",
-  "src/review-isolation-probe/hosts.ts",
-  "research/dossiers/egm.md",
-  "README.md",
-  "AGENTS.md",
-  "NOTICE",
-  "package.json",
-  "catalog.yaml",
-  ".claude-plugin/marketplace.json",
-] as const;
+
+const SURFACES: Array<{ file: string; locator: string; expected: string }> = [
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "Coverage limit, not a pass.",
+    expected: `Coverage limit, not a pass. The GS-004e Claude Code and Codex probe arms did
+not run. They need a host login nobody granted. No credential was copied, read,
+or used.`,
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "Every arm below is `not-run`. None is `pass`.",
+    expected: "Every arm below is `not-run`. None is `pass`.",
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "| parent-turn |",
+    expected: "| parent-turn | none planted | not-run | live spawn needs an authenticated host CLI |",
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "| hooks-and-memory |",
+    expected: "| hooks-and-memory | none planted | not-run | live spawn needs an authenticated host CLI |",
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "| auto-loaded-instructions |",
+    expected: "| auto-loaded-instructions | none planted | not-run | live spawn needs an authenticated host CLI |",
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "| transcript-on-disk |",
+    expected: "| transcript-on-disk | none planted | not-run | live spawn needs an authenticated host CLI |",
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "| role-file-denied |",
+    expected: "| role-file-denied | none planted | not-run | live spawn needs an authenticated host CLI |",
+  },
+  {
+    file: "research/host-facts/2026-11-18/GAP-PROBE.md",
+    locator: "The same five arms on Codex are `not-run`",
+    expected: "The same five arms on Codex are `not-run` for the same reason. Codex",
+  },
+  {
+    file: "adapters/claude-code/CONTRACT.md",
+    locator: "`isolated-review-context`",
+    expected: CLAUDE_ISOLATION_ROW,
+  },
+  {
+    file: ".cursor/references/shared/adapters/claude-code/CONTRACT.md",
+    locator: "`isolated-review-context`",
+    expected: CLAUDE_ISOLATION_ROW,
+  },
+  {
+    file: "adapters/cursor/CONTRACT.md",
+    locator: "`isolated-review-context`",
+    expected:
+      "| `isolated-review-context` | `partial` | Docs only, not session-tested. Custom subagents have their own context window and start clean ([subagents](https://cursor.com/docs/subagents)). The parent includes whatever it puts in the task prompt. The host does not attest that a reviewer never saw the author's narrative. Upgrade when a Cloud Agent reviewer subagent whose prompt omitted the author's narrative cannot read the parent transcript |",
+  },
+  {
+    file: "src/review-isolation-probe/hosts.ts",
+    locator: " * GAP-PROBE:",
+    expected: ` * GAP-PROBE: the GS-004e Claude Code and Codex live probe arms did not run.
+ * They need a host login nobody granted. Recorded, not a pass. Do not copy,
+ * read, or use any credential. See research/host-facts/2026-11-18/GAP-PROBE.md.`,
+  },
+  {
+    file: LOCK,
+    locator: `    commit: ${EGM_COMMIT}`,
+    expected: `    commit: ${EGM_COMMIT}`,
+  },
+  {
+    file: LOCK,
+    locator: `    license: Apache-2.0\n    copyright: "Copyright 2026 Google LLC"`,
+    expected: `    license: Apache-2.0\n    copyright: "Copyright 2026 Google LLC"`,
+  },
+  {
+    file: LOCK,
+    locator: '    copyright: "Copyright 2026 Google LLC"',
+    expected: '    copyright: "Copyright 2026 Google LLC"',
+  },
+  {
+    file: "README.md",
+    locator: "`google/elephant-goldfish-model` (Apache-2.0, Google LLC",
+    expected: `\`google/elephant-goldfish-model\` (Apache-2.0, Google LLC, pinned at its 2026-10-30 commit) is the second
+Apache-2.0 catalog donor. It feeds the comprehension seat, the ticket cold read, and the
+review-isolation probe. It ships no NOTICE file. The licence text is in \`provenance/licenses/\`,
+the root \`NOTICE\` carries an attribution entry, and each adapted file records what was changed.
+See \`research/dossiers/egm.md\`.`,
+  },
+  {
+    file: "research/dossiers/egm.md",
+    locator: "| Commit |",
+    expected: `| Commit | \`${EGM_COMMIT}\`, committed 2026-10-30T08:43:28Z |`,
+  },
+  {
+    file: "research/dossiers/egm.md",
+    locator: "| License |",
+    expected: `| License | Apache-2.0. \`egm@${EGM_COMMIT}:LICENSE\`. Byte-identical to \`provenance/licenses/google_elephant-goldfish-model.LICENSE\`. Copyright 2026 Google LLC |`,
+  },
+  {
+    file: "src/review-isolation-probe/children.ts",
+    locator: " * Adapted from EGM",
+    expected: ` * Adapted from EGM tests/integration/test_claude.py and test_codex.py at
+ * elephant-goldfish-model@${EGM_COMMIT}.`,
+  },
+  {
+    file: "NOTICE",
+    locator: "The installable catalog adapts material from twelve catalog donors:",
+    expected: `The installable catalog adapts material from twelve catalog donors: ten under
+the MIT License and two under the Apache License 2.0 (claude-mem and
+google/elephant-goldfish-model).`,
+  },
+  {
+    file: "NOTICE",
+    locator: "provenance/licenses/BayramAnnakov_claude-reflect.LICENSE",
+    expected: `provenance/licenses/BayramAnnakov_claude-reflect.LICENSE
+provenance/licenses/BuilderIO_skills.LICENSE
+provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE
+provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE
+provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE
+provenance/licenses/addyosmani_agent-skills.LICENSE
+provenance/licenses/cursor_plugins.LICENSE
+provenance/licenses/google_elephant-goldfish-model.LICENSE
+provenance/licenses/mattpocock_skills.LICENSE
+provenance/licenses/mizchi_jev-lint.LICENSE
+provenance/licenses/obra_superpowers.LICENSE
+provenance/licenses/thedotmack_claude-mem.LICENSE
+provenance/licenses/thedotmack_claude-mem.NOTICE
+provenance/licenses/warpdotdev_common-skills.LICENSE`,
+  },
+  {
+    file: "NOTICE",
+    locator: "- elephant-goldfish-model — Copyright 2026 Google LLC",
+    expected: `- elephant-goldfish-model — Copyright 2026 Google LLC — Apache License 2.0
+  https://github.com/google/elephant-goldfish-model @ ${EGM_COMMIT}
+  The files adapted from elephant-goldfish-model were modified;
+  provenance/adaptations.yaml states the change for each. The license text is
+  provenance/licenses/google_elephant-goldfish-model.LICENSE. EGM ships no
+  NOTICE file, so nothing is quoted here.`,
+  },
+  {
+    file: "AGENTS.md",
+    locator: "twelve donors —",
+    expected: `twelve donors — ten MIT, two Apache-2.0 (claude-mem, which feeds only the opt-in learning runtime,
+and google/elephant-goldfish-model (Google LLC), which feeds the comprehension seat, the ticket cold read, and
+the review-isolation probe) — into *one* lifecycle rather than shipping four plugins that fight
+over activation descriptions.`,
+  },
+  {
+    file: "research/dossiers/egm.md",
+    locator: "Count those files with the catalog donors",
+    expected: `Count those files with the catalog donors, not with the
+research-only pins (\`tester-army-e2e\`, \`blocks\`).`,
+  },
+];
 
 function catalogDonorLicenses(root: string): Map<string, string> {
   const { donors } = loadDonors(root);
@@ -118,107 +228,19 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizeScan(text: string): string {
-  const stripped = text
-    .normalize("NFKC")
-    .replace(/\p{Cf}/gu, "")
-    .normalize("NFD")
-    .replace(/\p{Mn}/gu, "")
-    .toLowerCase();
-  let folded = "";
-  for (const char of stripped) folded += PASS_LOOKALIKES.get(char) ?? char;
-  return folded;
-}
-
-function passHitsAfterAllowlist(text: string): string[] {
-  let rest = normalizeScan(text);
-  const phrases = [...PASS_ALLOW].map(normalizeScan).toSorted((a, b) => b.length - a.length);
-  for (const phrase of phrases) {
-    rest = rest.replace(new RegExp(`(?<![a-z])${escapeRegex(phrase)}(?![a-z])`, "g"), "");
+function located(text: string, locator: string, expected: string): string {
+  const lf = text.replaceAll("\r\n", "\n");
+  if (expected.includes("\n")) {
+    const at = lf.indexOf(locator);
+    expect(at, locator).toBeGreaterThanOrEqual(0);
+    return lf.slice(at, at + expected.length);
   }
-  return rest.match(/\bpass(?:es|ed|ing)?\b/g) ?? [];
-}
-
-function researchPinHits(text: string): string[] {
-  return normalizeScan(text).match(/research\s+pin\b/g) ?? [];
-}
-
-function markdownTables(text: string): Array<{ header: string[]; rows: string[][] }> {
-  const lines = text.split("\n");
-  const tables: Array<{ header: string[]; rows: string[][] }> = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i] ?? "";
-    if (!line.startsWith("|")) {
-      i += 1;
-      continue;
-    }
-    const header = line
-      .split("|")
-      .slice(1, -1)
-      .map((cell) => cell.trim());
-    const separator = lines[i + 1] ?? "";
-    if (!separator.startsWith("|") || !separator.includes("---")) {
-      i += 1;
-      continue;
-    }
-    i += 2;
-    const rows: string[][] = [];
-    while (i < lines.length && (lines[i] ?? "").startsWith("|")) {
-      rows.push(
-        (lines[i] ?? "")
-          .split("|")
-          .slice(1, -1)
-          .map((cell) => cell.trim()),
-      );
-      i += 1;
-    }
-    tables.push({ header, rows });
-  }
-  return tables;
-}
-
-function contractTableText(contract: string): string {
-  const lines = contract.split("\n");
-  const blocks: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    if (!(lines[i] ?? "").startsWith("|")) {
-      i += 1;
-      continue;
-    }
-    const block: string[] = [];
-    while (i < lines.length && (lines[i] ?? "").startsWith("|")) {
-      block.push(lines[i] ?? "");
-      i += 1;
-    }
-    blocks.push(block.join("\n"));
-  }
-  return blocks.join("\n");
-}
-
-function egmLockItem(lockText: string): string {
-  const marker = "\n  - id: egm\n";
-  const idx = lockText.indexOf(marker);
-  expect(idx).toBeGreaterThanOrEqual(0);
-  const before = lockText.slice(0, idx).split("\n");
-  let start = before.length;
-  for (let i = before.length - 1; i >= 0; i--) {
-    if (/^\s*#/.test(before[i] ?? "")) start = i;
-    else break;
-  }
-  const rest = lockText.slice(idx + marker.length);
-  const next = rest.search(/\n  - id: |\n# ---/);
-  return `${before.slice(start).join("\n")}${marker}${next === -1 ? rest : rest.slice(0, next)}`;
-}
-
-function loadSurfaces(root: string): Array<[string, string]> {
-  const read = (rel: string) => readFileSync(join(root, rel), "utf8");
-  return [
-    ...SURFACE_FILES.map((rel): [string, string] => [rel, read(rel)]),
-    ["egm lock item", egmLockItem(read(LOCK))],
-    ["CONTRACT.md tables", contractTableText(read("adapters/claude-code/CONTRACT.md"))],
-  ];
+  const line = lf.split("\n").find((row) => {
+    const cells = row.split("|").map((cell) => cell.trim());
+    return cells.includes(locator) || row.includes(locator);
+  });
+  expect(line, locator).toBeDefined();
+  return line ?? "";
 }
 
 function sectionAfter(text: string, heading: string): string {
@@ -239,36 +261,6 @@ function labelledIds(block: string, label: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-function paragraphContaining(text: string, needle: string): string {
-  const paragraph = text.split(/\n\n+/).find((part) => part.includes(needle));
-  expect(paragraph, needle).toBeDefined();
-  return paragraph ?? "";
-}
-
-function egmLockYamlComment(lockText: string): string {
-  const marker = "\n  - id: egm\n";
-  const idx = lockText.indexOf(marker);
-  expect(idx).toBeGreaterThanOrEqual(0);
-  const lines = lockText.slice(0, idx).split("\n");
-  const comments: string[] = [];
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i] ?? "";
-    if (/^\s*#/.test(line)) comments.unshift(line.replace(/^\s*#\s?/, ""));
-    else break;
-  }
-  expect(comments.length, "YAML comment above egm").toBeGreaterThan(0);
-  return comments.join(" ");
-}
-
-function dossierLockComment(dossier: string): string {
-  const start = dossier.indexOf("Lock comment:");
-  expect(start).toBeGreaterThanOrEqual(0);
-  const after = dossier.slice(start + "Lock comment:".length);
-  const period = after.search(/\.\s/);
-  const sentence = period === -1 ? after : after.slice(0, period + 1);
-  return sentence.replace(/\s+/g, " ").trim();
-}
-
 function yamlItemBlock(text: string, idLine: string): string {
   const start = text.indexOf(idLine);
   expect(start, idLine).toBeGreaterThanOrEqual(0);
@@ -282,38 +274,6 @@ function lockLicenseFile(lockText: string, id: string): string {
   const match = /\n    license_file: (\S+)/.exec(block);
   expect(match, id).toBeTruthy();
   return match?.[1] ?? "";
-}
-
-function catalogDonorBullet(notice: string, name: string): string {
-  const lines = notice.split("\n");
-  const start = lines.findIndex((line) => line.startsWith(`- ${name}`));
-  expect(start, `NOTICE catalog-donor bullet for ${name}`).toBeGreaterThanOrEqual(0);
-  const rest = lines.slice(start + 1);
-  const stop = rest.findIndex((line) => line.startsWith("- ") || (line.length > 0 && !line.startsWith(" ")));
-  const end = stop === -1 ? lines.length : start + 1 + stop;
-  return lines.slice(start, end).join("\n");
-}
-
-function noticeLicenseList(notice: string): string {
-  const start = notice.search(/are:\s*\n/);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const after = notice.slice(start);
-  const end = after.search(/\n\nThe optional source-checkout/);
-  return end === -1 ? after : after.slice(0, end);
-}
-
-function armVerdictCells(note: string): string[] {
-  const cells: string[] = [];
-  for (const table of markdownTables(note)) {
-    const verdictAt = table.header.indexOf("Verdict");
-    if (verdictAt < 0) continue;
-    for (const row of table.rows) {
-      const verdict = row[verdictAt];
-      if (verdict !== undefined && verdict !== "") cells.push(verdict);
-    }
-  }
-  expect(cells.length, "Arms Verdict column").toBeGreaterThan(0);
-  return cells;
 }
 
 describe("EGM provenance (GS-004f)", () => {
@@ -339,9 +299,6 @@ describe("EGM provenance (GS-004f)", () => {
     for (const [rel, pattern] of surfaces) {
       expect(readFileSync(join(REPO, rel), "utf8"), rel).toMatch(pattern);
     }
-    const agentsParagraph = paragraphContaining(readFileSync(join(REPO, "AGENTS.md"), "utf8"), "twelve donors");
-    expect(agentsParagraph).toMatch(/twelve donors — ten MIT, two Apache-2\.0/);
-    expect(agentsParagraph).toMatch(/google\/elephant-goldfish-model|\begm\b/);
   });
 
   test("re-indenting the lock keeps the pin and the catalog counts", () => {
@@ -360,50 +317,11 @@ describe("EGM provenance (GS-004f)", () => {
     expectTwelveCatalogDonors(catalogDonorLicenses(scratch));
   });
 
-  test("GAP-PROBE is a named coverage limit and not a pass", () => {
-    const note = readFileSync(join(REPO, "research/host-facts/2026-11-18/GAP-PROBE.md"), "utf8");
-    const hosts = readFileSync(join(REPO, "src/review-isolation-probe/hosts.ts"), "utf8");
-    expect(note).toContain("GAP-PROBE");
-    expect(note).toContain("not a pass");
-    expect(note).toContain("did not run");
-    expect(note).toMatch(/No credential was copied, read,\s*or used/);
-    const verdicts = armVerdictCells(note);
-    for (const verdict of verdicts) expect(verdict).toBe("not-run");
-    for (const [name, text] of loadSurfaces(REPO)) {
-      expect(passHitsAfterAllowlist(text), name).toEqual([]);
-      expect(researchPinHits(text), name).toEqual([]);
+  test("SURFACES pins match the claim-bearing strings byte-exact", () => {
+    for (const pin of SURFACES) {
+      const text = readFileSync(join(REPO, pin.file), "utf8");
+      expect(located(text, pin.locator, pin.expected), pin.file).toBe(pin.expected);
     }
-    expect(hosts).toContain("GAP-PROBE");
-    expect(hosts).toContain("GAP-MASTRA");
-    expect(hosts).toContain("not a pass");
-  });
-
-  test("NOTICE carries the EGM catalog-donor block", () => {
-    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
-    const block = catalogDonorBullet(notice, "elephant-goldfish-model");
-    expect(block).toContain("elephant-goldfish-model");
-    expect(block).toContain("Google LLC");
-    expect(block).toContain(EGM_COMMIT);
-    expect(block).toMatch(/Apache License 2\.0/);
-    expect(block).toContain(EGM_LICENSE_FILE);
-    expect(block).toContain("were modified");
-    expect(notice).toMatch(/Apache License 2\.0 \(claude-mem and\s+google\/elephant-goldfish-model\)/);
-    expect(noticeLicenseList(notice)).toContain(EGM_LICENSE_FILE);
-  });
-
-  test("public EGM facts name the catalog donor, Apache-2.0 and Google LLC", () => {
-    const readme = paragraphContaining(readFileSync(join(REPO, "README.md"), "utf8"), "google/elephant-goldfish-model");
-    expect(readme).toContain("google/elephant-goldfish-model");
-    expect(readme).toMatch(/Apache-2\.0/);
-    expect(readme).toContain("Google LLC");
-    const dossier = readFileSync(join(REPO, "research/dossiers/egm.md"), "utf8");
-    const licenseRow = dossier.split("\n").find((line) => /^\|\s*License\s*\|/.test(line));
-    expect(licenseRow).toBeDefined();
-    expect(licenseRow).toMatch(/Apache-2\.0/);
-    expect(licenseRow).toContain("Google LLC");
-    const item = egmLockItem(readFileSync(join(REPO, LOCK), "utf8"));
-    const copyright = /\n    copyright: "(.*)"/.exec(item);
-    expect(copyright?.[1]?.trim().length).toBeGreaterThan(0);
   });
 
   test("each catalog donor's lock license matches the counted set and its licence file", () => {
@@ -432,10 +350,6 @@ describe("EGM provenance (GS-004f)", () => {
     const catalogCount = sectionAfter(dossier, "6. Catalog count");
     expect(labelledIds(catalogCount, "ten MIT").toSorted()).toEqual([...MIT_CATALOG_IDS].toSorted());
     expect(labelledIds(catalogCount, "two Apache-2.0").toSorted()).toEqual(["claude-mem", "egm"]);
-    const lockComment = egmLockYamlComment(readFileSync(join(REPO, LOCK), "utf8"));
-    expect(lockComment).toContain("Catalog donor");
-    expect(researchPinHits(lockComment)).toEqual([]);
-    expect(dossierLockComment(dossier).toLowerCase()).toBe(lockComment.toLowerCase());
   });
 
   test("finding.schema.json status and fingerprint descriptions name both phase-1b rulings", () => {

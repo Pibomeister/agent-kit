@@ -38,6 +38,9 @@ Lock comment: catalog donor, no EGM plugin, probe plus comprehension and
 cold read. Count those files with the catalog donors, not with the
 research-only pins (`tester-army-e2e`, `blocks`).
 
+The GS-004f provenance test pins named claim-bearing strings byte-exact
+(CRLF folded to LF). Free-text claims elsewhere are review's job.
+
 ---
 
 ## 2. What is taken

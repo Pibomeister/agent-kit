@@ -2,7 +2,7 @@
 
 This repository is a **catalog of engineering instructions**, not an application. It amalgamates
 twelve donors — ten MIT, two Apache-2.0 (claude-mem, which feeds only the opt-in learning runtime,
-and google/elephant-goldfish-model, which feeds the comprehension seat, the ticket cold read, and
+and google/elephant-goldfish-model (Google LLC), which feeds the comprehension seat, the ticket cold read, and
 the review-isolation probe) — into *one* lifecycle rather than shipping four plugins that fight
 over activation descriptions.
 Read this file before changing anything under `skills/`, `packs/`, `protocols/`, `roles/` or
