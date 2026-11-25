@@ -1,3 +1,9 @@
+/**
+ * This file guards exactly SURFACES: GAP-PROBE.md, hosts.ts,
+ * research/dossiers/egm.md, README.md, AGENTS.md, NOTICE, package.json,
+ * catalog.yaml, the egm lock item, marketplace.json, and the CONTRACT.md
+ * tables. Files outside that list are out of scope and are caught in review.
+ */
 import { describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -23,7 +29,31 @@ const MIT_CATALOG_IDS = [
   "claude-reflect",
   "common-skills",
 ] as const;
-const PASS_ALLOW = ["None is `pass`", "not a pass", "passed over", "not scored as pass or fail"] as const;
+const PASS_ALLOW = [
+  "None is `pass`",
+  "not a pass",
+  "passed over",
+  "not scored as pass or fail",
+  "Neither row is a pass",
+  "prints PASS",
+  "passed every gate",
+  "the next pass records",
+  "path pass unjudged",
+  "pass it as",
+  "first pass seats",
+  "a pass is not proof",
+  "batch passes",
+  "Budgets passed in",
+  "pass-1",
+  "`--check` passes because",
+  "`--allow-growth` is passed",
+  "unchanged and passes",
+  "passes it.",
+  "growth passes only when",
+  "kind passes",
+  "edits pass evaluations",
+  "passed / failed",
+] as const;
 const PASS_LOOKALIKES = new Map<string, string>([
   ["\u0430", "a"],
   ["\u0440", "p"],
@@ -44,6 +74,17 @@ const CATALOG_PREFIXES = [
   "references/",
   "policies/",
   "adapters/",
+] as const;
+const SURFACE_FILES = [
+  "research/host-facts/2026-11-18/GAP-PROBE.md",
+  "src/review-isolation-probe/hosts.ts",
+  "research/dossiers/egm.md",
+  "README.md",
+  "AGENTS.md",
+  "NOTICE",
+  "package.json",
+  "catalog.yaml",
+  ".claude-plugin/marketplace.json",
 ] as const;
 
 function catalogDonorLicenses(root: string): Map<string, string> {
@@ -77,19 +118,29 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizePassScan(text: string): string {
-  const nfkc = text.normalize("NFKC").replace(/\p{Cf}/gu, "");
+function normalizeScan(text: string): string {
+  const stripped = text
+    .normalize("NFKC")
+    .replace(/\p{Cf}/gu, "")
+    .normalize("NFD")
+    .replace(/\p{Mn}/gu, "")
+    .toLowerCase();
   let folded = "";
-  for (const char of nfkc) folded += PASS_LOOKALIKES.get(char) ?? char;
+  for (const char of stripped) folded += PASS_LOOKALIKES.get(char) ?? char;
   return folded;
 }
 
 function passHitsAfterAllowlist(text: string): string[] {
-  let rest = normalizePassScan(text);
-  for (const phrase of PASS_ALLOW) {
-    rest = rest.replace(new RegExp(`(?<![A-Za-z])${escapeRegex(phrase)}(?![A-Za-z])`, "gi"), "");
+  let rest = normalizeScan(text);
+  const phrases = [...PASS_ALLOW].map(normalizeScan).toSorted((a, b) => b.length - a.length);
+  for (const phrase of phrases) {
+    rest = rest.replace(new RegExp(`(?<![a-z])${escapeRegex(phrase)}(?![a-z])`, "g"), "");
   }
-  return rest.match(/\bpass(?:es|ed|ing)?\b/gi) ?? [];
+  return rest.match(/\bpass(?:es|ed|ing)?\b/g) ?? [];
+}
+
+function researchPinHits(text: string): string[] {
+  return normalizeScan(text).match(/research\s+pin\b/g) ?? [];
 }
 
 function markdownTables(text: string): Array<{ header: string[]; rows: string[][] }> {
@@ -127,6 +178,49 @@ function markdownTables(text: string): Array<{ header: string[]; rows: string[][
   return tables;
 }
 
+function contractTableText(contract: string): string {
+  const lines = contract.split("\n");
+  const blocks: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (!(lines[i] ?? "").startsWith("|")) {
+      i += 1;
+      continue;
+    }
+    const block: string[] = [];
+    while (i < lines.length && (lines[i] ?? "").startsWith("|")) {
+      block.push(lines[i] ?? "");
+      i += 1;
+    }
+    blocks.push(block.join("\n"));
+  }
+  return blocks.join("\n");
+}
+
+function egmLockItem(lockText: string): string {
+  const marker = "\n  - id: egm\n";
+  const idx = lockText.indexOf(marker);
+  expect(idx).toBeGreaterThanOrEqual(0);
+  const before = lockText.slice(0, idx).split("\n");
+  let start = before.length;
+  for (let i = before.length - 1; i >= 0; i--) {
+    if (/^\s*#/.test(before[i] ?? "")) start = i;
+    else break;
+  }
+  const rest = lockText.slice(idx + marker.length);
+  const next = rest.search(/\n  - id: |\n# ---/);
+  return `${before.slice(start).join("\n")}${marker}${next === -1 ? rest : rest.slice(0, next)}`;
+}
+
+function loadSurfaces(root: string): Array<[string, string]> {
+  const read = (rel: string) => readFileSync(join(root, rel), "utf8");
+  return [
+    ...SURFACE_FILES.map((rel): [string, string] => [rel, read(rel)]),
+    ["egm lock item", egmLockItem(read(LOCK))],
+    ["CONTRACT.md tables", contractTableText(read("adapters/claude-code/CONTRACT.md"))],
+  ];
+}
+
 function sectionAfter(text: string, heading: string): string {
   const needle = `## ${heading}`;
   const start = text.indexOf(needle);
@@ -145,25 +239,9 @@ function labelledIds(block: string, label: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-function gapProbeFromComment(hosts: string): string {
-  const start = hosts.indexOf("GAP-PROBE:");
-  expect(start).toBeGreaterThanOrEqual(0);
-  return hosts.slice(start);
-}
-
-function isolatedReviewContextCell(contract: string): string {
-  const row = contract.split("\n").find((line) => line.includes("`isolated-review-context`"));
-  expect(row).toBeDefined();
-  const cells = (row ?? "")
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  return cells[2] ?? "";
-}
-
-function agentsDonorParagraph(agents: string): string {
-  const paragraph = agents.split(/\n\n+/).find((part) => part.includes("twelve donors"));
-  expect(paragraph, "twelve donors paragraph").toBeDefined();
+function paragraphContaining(text: string, needle: string): string {
+  const paragraph = text.split(/\n\n+/).find((part) => part.includes(needle));
+  expect(paragraph, needle).toBeDefined();
   return paragraph ?? "";
 }
 
@@ -216,6 +294,14 @@ function catalogDonorBullet(notice: string, name: string): string {
   return lines.slice(start, end).join("\n");
 }
 
+function noticeLicenseList(notice: string): string {
+  const start = notice.search(/are:\s*\n/);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const after = notice.slice(start);
+  const end = after.search(/\n\nThe optional source-checkout/);
+  return end === -1 ? after : after.slice(0, end);
+}
+
 function armVerdictCells(note: string): string[] {
   const cells: string[] = [];
   for (const table of markdownTables(note)) {
@@ -253,7 +339,7 @@ describe("EGM provenance (GS-004f)", () => {
     for (const [rel, pattern] of surfaces) {
       expect(readFileSync(join(REPO, rel), "utf8"), rel).toMatch(pattern);
     }
-    const agentsParagraph = agentsDonorParagraph(readFileSync(join(REPO, "AGENTS.md"), "utf8"));
+    const agentsParagraph = paragraphContaining(readFileSync(join(REPO, "AGENTS.md"), "utf8"), "twelve donors");
     expect(agentsParagraph).toMatch(/twelve donors — ten MIT, two Apache-2\.0/);
     expect(agentsParagraph).toMatch(/google\/elephant-goldfish-model|\begm\b/);
   });
@@ -277,16 +363,16 @@ describe("EGM provenance (GS-004f)", () => {
   test("GAP-PROBE is a named coverage limit and not a pass", () => {
     const note = readFileSync(join(REPO, "research/host-facts/2026-11-18/GAP-PROBE.md"), "utf8");
     const hosts = readFileSync(join(REPO, "src/review-isolation-probe/hosts.ts"), "utf8");
-    const contract = readFileSync(join(REPO, "adapters/claude-code/CONTRACT.md"), "utf8");
     expect(note).toContain("GAP-PROBE");
     expect(note).toContain("not a pass");
     expect(note).toContain("did not run");
     expect(note).toMatch(/No credential was copied, read,\s*or used/);
     const verdicts = armVerdictCells(note);
     for (const verdict of verdicts) expect(verdict).toBe("not-run");
-    expect(passHitsAfterAllowlist(note), "GAP-PROBE.md").toEqual([]);
-    expect(passHitsAfterAllowlist(gapProbeFromComment(hosts)), "hosts.ts GAP-PROBE").toEqual([]);
-    expect(passHitsAfterAllowlist(isolatedReviewContextCell(contract)), "isolated-review-context").toEqual([]);
+    for (const [name, text] of loadSurfaces(REPO)) {
+      expect(passHitsAfterAllowlist(text), name).toEqual([]);
+      expect(researchPinHits(text), name).toEqual([]);
+    }
     expect(hosts).toContain("GAP-PROBE");
     expect(hosts).toContain("GAP-MASTRA");
     expect(hosts).toContain("not a pass");
@@ -301,6 +387,23 @@ describe("EGM provenance (GS-004f)", () => {
     expect(block).toMatch(/Apache License 2\.0/);
     expect(block).toContain(EGM_LICENSE_FILE);
     expect(block).toContain("were modified");
+    expect(notice).toMatch(/Apache License 2\.0 \(claude-mem and\s+google\/elephant-goldfish-model\)/);
+    expect(noticeLicenseList(notice)).toContain(EGM_LICENSE_FILE);
+  });
+
+  test("public EGM facts name the catalog donor, Apache-2.0 and Google LLC", () => {
+    const readme = paragraphContaining(readFileSync(join(REPO, "README.md"), "utf8"), "google/elephant-goldfish-model");
+    expect(readme).toContain("google/elephant-goldfish-model");
+    expect(readme).toMatch(/Apache-2\.0/);
+    expect(readme).toContain("Google LLC");
+    const dossier = readFileSync(join(REPO, "research/dossiers/egm.md"), "utf8");
+    const licenseRow = dossier.split("\n").find((line) => /^\|\s*License\s*\|/.test(line));
+    expect(licenseRow).toBeDefined();
+    expect(licenseRow).toMatch(/Apache-2\.0/);
+    expect(licenseRow).toContain("Google LLC");
+    const item = egmLockItem(readFileSync(join(REPO, LOCK), "utf8"));
+    const copyright = /\n    copyright: "(.*)"/.exec(item);
+    expect(copyright?.[1]?.trim().length).toBeGreaterThan(0);
   });
 
   test("each catalog donor's lock license matches the counted set and its licence file", () => {
@@ -331,7 +434,7 @@ describe("EGM provenance (GS-004f)", () => {
     expect(labelledIds(catalogCount, "two Apache-2.0").toSorted()).toEqual(["claude-mem", "egm"]);
     const lockComment = egmLockYamlComment(readFileSync(join(REPO, LOCK), "utf8"));
     expect(lockComment).toContain("Catalog donor");
-    expect(lockComment.includes("Research pin")).toBe(false);
+    expect(researchPinHits(lockComment)).toEqual([]);
     expect(dossierLockComment(dossier).toLowerCase()).toBe(lockComment.toLowerCase());
   });
 

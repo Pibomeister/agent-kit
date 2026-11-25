@@ -414,7 +414,7 @@ Three more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect` (MIT
 is used, by `ak learn doctor`) and `thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
 `provenance/licenses/`, the root `NOTICE` carries its NOTICE, and each file adapted from it records
 what was changed.
-`google/elephant-goldfish-model` (Apache-2.0, pinned at its 2026-10-30 commit) is the second
+`google/elephant-goldfish-model` (Apache-2.0, Google LLC, pinned at its 2026-10-30 commit) is the second
 Apache-2.0 catalog donor. It feeds the comprehension seat, the ticket cold read, and the
 review-isolation probe. It ships no NOTICE file. The licence text is in `provenance/licenses/`,
 the root `NOTICE` carries an attribution entry, and each adapted file records what was changed.
