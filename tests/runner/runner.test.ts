@@ -223,7 +223,12 @@ afterAll(() => {
 });
 
 function git(cwd: string, ...args: string[]) {
-  expect(gitProc(cwd, args).exitCode).toBe(0);
+  const result = gitProc(cwd, args);
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `git ${args.join(" ")} exited ${result.exitCode}\nstdout:\n${result.stdout.toString()}\nstderr:\n${result.stderr.toString()}`,
+    );
+  }
 }
 
 function gitProc(cwd: string, args: readonly string[], stdin?: string) {
@@ -3572,7 +3577,7 @@ describe("runner guards", () => {
     expect(Bun.spawnSync(["git", "-C", f.worker, "config", "diff.submodule", "log"]).exitCode).toBe(0);
     writeFileSync(join(f.worker, "vendor", "lib.ts"), "export const v = 2;\n");
     git(join(f.worker, "vendor"), "commit", "-qam", "bump nested");
-    git(f.worker, "add", "vendor");
+    git(f.worker, "add", "--force", "vendor");
     git(f.worker, "commit", "-qm", "bump gitlink");
     const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
     const context = resolveRunnerGit(f.worker);
@@ -3624,7 +3629,7 @@ describe("runner guards", () => {
     git(f.worker, "checkout", "main");
     writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: b\n");
     git(join(f.worker, ".github", "workflows"), "commit", "-qam", "ci b");
-    git(f.worker, "add", ".github/workflows");
+    git(f.worker, "add", "--force", ".github/workflows");
     git(f.worker, "commit", "-qm", "bump workflows gitlink");
     git(f.worker, "checkout", "feature");
     git(f.worker, "rebase", "main");
@@ -3657,7 +3662,7 @@ describe("runner guards", () => {
     git(f.worker, "checkout", "main");
     writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: b\n");
     git(join(f.worker, ".github"), "commit", "-qam", "ci b");
-    git(f.worker, "add", ".github");
+    git(f.worker, "add", "--force", ".github");
     git(f.worker, "commit", "-qm", "bump github gitlink");
     git(f.worker, "checkout", "feature");
     git(f.worker, "rebase", "main");
