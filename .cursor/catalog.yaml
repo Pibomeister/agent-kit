@@ -955,7 +955,7 @@ references:
       supervisor ship rests on and the operator setup it needs.
 
 # ---------------------------------------------------------------------------
-# Schemas — 41. `common` holds shared $defs and validates no document itself.
+# Schemas — 42. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common

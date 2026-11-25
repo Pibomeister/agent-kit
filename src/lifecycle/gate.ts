@@ -64,7 +64,7 @@ import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { artifactHash } from "../util/hash.ts";
-import { isolatedGitArgv, unfilteredTrackedDirt } from "./git-isolation.ts";
+import { isolatedGitArgv, lsTreeToStageZ, resolveTrustedGit, unfilteredTrackedDirt } from "./git-isolation.ts";
 import { defaultMarkersPath, runPublishScan } from "./publish-scan.ts";
 import {
   type Json,
@@ -229,7 +229,8 @@ export function unknownSelector(kind: string, input: string, candidates: readonl
  * conversion, ident expansion, a sparse-missing path and an executable-bit mismatch count as dirt.
  * A byte-clean checkout is core.autocrlf=false, no ident, and a full checkout. Snapshot diffs pass
  * `--ignore-submodules=none --submodule=short` so `diff.ignoreSubmodules=all` cannot hide a gitlink
- * bump, a -dirty submodule, or an untracked nested repo.
+ * bump, a -dirty submodule, or an untracked nested repo. Gitlink worktrees are walked against nested
+ * HEAD bytes; ignored untracked files inside a gitlink stay out of scope (ADV-006).
  */
 export interface Snapshot {
   repo: string;
@@ -249,10 +250,22 @@ export interface GitResult {
   stderr: string;
 }
 
+/** Pinned git binary for the current snapshot/reason walk, so scratch inits cannot re-resolve PATH. */
+let sessionGit: { binary: string; path: string } | undefined;
+
 export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv, input?: Uint8Array): GitResult {
-  const proc = spawnSync("git", [...args], {
+  let pinned = sessionGit;
+  if (pinned === undefined) {
+    try {
+      pinned = resolveTrustedGit(existsSync(join(cwd, ".git")) ? cwd : workTreeHoldingGit(cwd));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return { code: -1, stdout: new Uint8Array(), text: "", stderr: `cannot run git in ${cwd}: ${message}` };
+    }
+  }
+  const proc = spawnSync(pinned.binary, [...args], {
     cwd,
-    env: env ?? envWithoutRedirectingGit(),
+    env: { ...(env ?? envWithoutRedirectingGit()), PATH: pinned.path },
     input,
     maxBuffer: 1 << 30,
   });
@@ -309,7 +322,12 @@ function gitignoresExcludedByCommittedRules(
   if (committed.length === 0) return dropped;
   const scratch = mkdtempSync(join(tmpdir(), "ak-cgi-"));
   try {
-    if (git(scratch, ["init", "-q", "-b", "main"]).code !== 0) return dropped;
+    const initEnv = envWithoutRedirectingGit();
+    initEnv.GIT_CONFIG_NOSYSTEM = "1";
+    initEnv.GIT_CONFIG_GLOBAL = "/dev/null";
+    if (git(scratch, ["init", "-q", "-b", "main", "--template="], initEnv).code !== 0) return dropped;
+    mkdirSync(join(scratch, ".git", "info"), { recursive: true });
+    writeFileSync(join(scratch, ".git", "info", "exclude"), "");
     for (const rel of committed) {
       const shown = list(["show", `HEAD:${rel}`]);
       if (shown.code !== 0) continue;
@@ -361,10 +379,40 @@ function untrackedWorktreePaths(
   return { ok: true, paths };
 }
 
+function nestedGitWalker() {
+  return {
+    git: (cwd: string, args: readonly string[]) => {
+      const env = envWithoutRedirectingGit();
+      env.GIT_WORK_TREE = cwd;
+      return git(cwd, [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(cwd, args)], env);
+    },
+  };
+}
+
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
   const env = boundWorkTreeEnv(project);
   const workTree = env.GIT_WORK_TREE ?? project;
   const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
+  const previousGit = sessionGit;
+  try {
+    sessionGit = resolveTrustedGit(workTree);
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause);
+  }
+  try {
+    return snapshotWithPinnedGit(project, workTree, env, isolate, options);
+  } finally {
+    sessionGit = previousGit;
+  }
+}
+
+function snapshotWithPinnedGit(
+  project: string,
+  workTree: string,
+  env: NodeJS.ProcessEnv,
+  isolate: (args: readonly string[]) => string[],
+  options: SnapshotOptions,
+): Snapshot | string {
   const head = gitMustPrint(workTree, isolate(["rev-parse", "HEAD"]), env);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
@@ -427,7 +475,7 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
     if (diff.stdout.length === 0) {
       const staged = raw(["ls-files", "-s", "-z"]);
       if (staged.code !== 0) return `cannot list tracked files in ${project}: ${staged.stderr}`;
-      const hidden = unfilteredTrackedDirt(workTree, staged.stdout);
+      const hidden = unfilteredTrackedDirt(workTree, staged.stdout, nestedGitWalker());
       if (hidden !== undefined) digest = hidden.digest;
     }
 
@@ -459,40 +507,34 @@ function shipDirtReason(project: string): string {
   const env = boundWorkTreeEnv(project);
   const workTree = env.GIT_WORK_TREE ?? project;
   const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
-  const listed = untrackedWorktreePaths((args) => git(workTree, isolate(args), env));
-  const firstUntracked = listed.ok ? listed.paths.map(shipDirtPath).find((path) => path !== undefined) : undefined;
-  const named = git(
-    workTree,
-    isolate(["diff", "--name-only", "-z", "--ignore-submodules=none", "--submodule=short", "HEAD"]),
-    env,
-  );
-  const firstDiff =
-    named.code === 0
-      ? nulPaths(named.stdout)
-          .map(shipDirtPath)
-          .find((path) => path !== undefined)
-      : undefined;
-  const tree = git(workTree, isolate(["ls-tree", "-r", "-z", "HEAD"]), env);
-  const vsHead = tree.code === 0 ? unfilteredTrackedDirt(workTree, lsTreeToStageZ(tree.stdout)) : undefined;
-  const at = firstUntracked ?? firstDiff ?? shipDirtPath(vsHead?.path) ?? "the working tree";
-  return `the worktree bytes differ from HEAD at ${at}, which the shipped revision would not carry; use a byte-clean checkout (core.autocrlf=false, no ident, full checkout), commit what should ship, remove or git-ignore the rest, then record the gates again`;
-}
-
-/** `ls-tree -r -z` rows as `ls-files -s -z`, so `unfilteredTrackedDirt` can compare worktree bytes to HEAD. */
-function lsTreeToStageZ(lsTreeZ: Uint8Array): Uint8Array {
-  const rows: string[] = [];
-  for (const row of new TextDecoder().decode(lsTreeZ).split("\0")) {
-    if (row === "") continue;
-    const tab = row.indexOf("\t");
-    if (tab < 0) continue;
-    const meta = row.slice(0, tab).split(" ");
-    const mode = meta[0];
-    const blob = meta[2];
-    const path = row.slice(tab + 1);
-    if (mode === undefined || blob === undefined || path === "") continue;
-    rows.push(`${mode} ${blob} 0\t${path}`);
+  const previousGit = sessionGit;
+  try {
+    sessionGit = resolveTrustedGit(workTree);
+  } catch {
+    sessionGit = previousGit;
   }
-  return new TextEncoder().encode(rows.map((row) => `${row}\0`).join(""));
+  try {
+    const listed = untrackedWorktreePaths((args) => git(workTree, isolate(args), env));
+    const firstUntracked = listed.ok ? listed.paths.map(shipDirtPath).find((path) => path !== undefined) : undefined;
+    const named = git(
+      workTree,
+      isolate(["diff", "--name-only", "-z", "--ignore-submodules=none", "--submodule=short", "HEAD"]),
+      env,
+    );
+    const firstDiff =
+      named.code === 0
+        ? nulPaths(named.stdout)
+            .map(shipDirtPath)
+            .find((path) => path !== undefined)
+        : undefined;
+    const tree = git(workTree, isolate(["ls-tree", "-r", "-z", "HEAD"]), env);
+    const vsHead =
+      tree.code === 0 ? unfilteredTrackedDirt(workTree, lsTreeToStageZ(tree.stdout), nestedGitWalker()) : undefined;
+    const at = firstUntracked ?? firstDiff ?? shipDirtPath(vsHead?.path) ?? "the working tree";
+    return `the worktree bytes differ from HEAD at ${at}, which the shipped revision would not carry; use a byte-clean checkout (core.autocrlf=false, no ident, full checkout), commit what should ship, remove or git-ignore the rest, then record the gates again`;
+  } finally {
+    sessionGit = previousGit;
+  }
 }
 
 // ── gates and records ────────────────────────────────────────────────────────
@@ -2524,6 +2566,7 @@ const REDIRECTING_GIT_ENV = [
   "GIT_NAMESPACE",
   "GIT_CONFIG_PARAMETERS",
   "GIT_CONFIG_COUNT",
+  "GIT_ATTR_SOURCE",
 ] as const;
 
 function envWithoutRedirectingGit(): NodeJS.ProcessEnv {

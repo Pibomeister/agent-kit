@@ -108,8 +108,7 @@ check (all six earlier phases, current, passing), refuses with every unmet item 
 whose bytes differ from HEAD, including untracked files that git does not ignore, eol conversion, ident
 expansion, a sparse-missing path and an executable-bit mismatch (use a byte-clean checkout:
 core.autocrlf=false, no ident, a full checkout; commit what should ship, remove or git-ignore the rest,
-then record the gates again; a gitlink bump, -dirty submodule or nested repo is dirt under
-diff.ignoreSubmodules=all), and on success closes
+then record the gates again; takeSnapshot in src/lifecycle/gate.ts is the dirt check), and on success closes
 the run and prints the disclosure and each gate's commands. Every refusal in the declaration steps ends
 with one recovery: open a new run with `open --ticket` under the declaration in force and record the
 gates again. Open the pull request text with the disclosure as its first paragraph, then a blank line.

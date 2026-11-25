@@ -1,22 +1,12 @@
 /** Raw runner snapshots avoid worker-configured Git hooks, filters and text conversion. */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  accessSync,
-  constants,
-  existsSync,
-  lstatSync,
-  mkdtempSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  rmSync,
-} from "node:fs";
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { gitBlobId, isolationArgs, isolatedGitArgv } from "../lifecycle/git-isolation.ts";
+import { gitBlobId, isolationArgs, isolatedGitArgv, resolveTrustedGit } from "../lifecycle/git-isolation.ts";
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
-import { relativeInsideRoot, workerControlledPath, workerFreePath } from "./path.ts";
+import { relativeInsideRoot } from "./path.ts";
 
 export { isolatedGitArgv };
 
@@ -227,28 +217,17 @@ function assertPinnedLayout(context: RunnerGitContext): void {
 }
 
 export function resolveRunnerGit(workerRoot: string): RunnerGitContext {
-  const path = workerFreePath(process.env["PATH"], workerRoot);
+  const trusted = resolveTrustedGit(workerRoot);
   const layout = resolveLayout(workerRoot);
-  for (const directory of path.split(delimiter)) {
-    const candidate = join(directory, "git");
-    try {
-      accessSync(candidate, constants.X_OK);
-      const binary = realpathSync(candidate);
-      if (!workerControlledPath(binary, workerRoot))
-        return {
-          binary,
-          path,
-          workerRoot,
-          home: "/dev/null",
-          gitDir: layout?.gitDir,
-          workTree: layout?.workTree,
-          pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree),
-        };
-    } catch {
-      // Try the next supervisor-owned PATH entry.
-    }
-  }
-  throw new Error("runner cannot find a trusted git executable outside the worker root");
+  return {
+    binary: trusted.binary,
+    path: trusted.path,
+    workerRoot,
+    home: "/dev/null",
+    gitDir: layout?.gitDir,
+    workTree: layout?.workTree,
+    pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree),
+  };
 }
 
 function failedGit(stderr: string): GitResult {

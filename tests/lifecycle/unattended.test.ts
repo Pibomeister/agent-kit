@@ -19,6 +19,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -30,12 +31,14 @@ import { loadCatalog } from "../../src/catalog/load.ts";
 import { runCli } from "../../src/cli.ts";
 import {
   defaultEvidenceDir,
+  git as lifecycleGit,
   loadDeclaration,
   readRecords,
   takeSnapshot,
   type Gate,
   type Snapshot,
 } from "../../src/lifecycle/gate.ts";
+import { unfilteredTrackedDirt } from "../../src/lifecycle/git-isolation.ts";
 import * as unattended from "../../src/lifecycle/unattended.ts";
 import {
   bodyCarriesDisclosure,
@@ -1918,6 +1921,130 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expectShipDirt(r, "vendor", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses dirt when a PATH git shim inside the worktree hides ls-files and diff", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+    const realGit = Bun.which("git");
+    if (realGit === null) throw new Error("git is not on PATH");
+    const bin = join(cwd, "bin");
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\nfor a in "$@"; do\n  case "$a" in ls-files|diff) exit 0;; esac\ndone\nexec ${JSON.stringify(realGit)} "$@"\n`,
+    );
+    chmodSync(join(bin, "git"), 0o755);
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    setEnv({ PATH: `${bin}:${process.env.PATH ?? ""}` });
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(SHIP_BYTES_DIFFER);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses nested assume-unchanged dirt, naming the path", () => {
+    const cwd = repo();
+    const vendor = join(cwd, "vendor");
+    mkdirSync(vendor);
+    git(vendor, "init", "-q", "-b", "main");
+    writeFileSync(join(vendor, "mod.js"), "export const m = 1;\n");
+    git(vendor, "add", "mod.js");
+    git(vendor, "commit", "-q", "-m", "vendor");
+    git(cwd, "add", "vendor");
+    git(cwd, "commit", "-q", "-m", "gitlink");
+    git(vendor, "update-index", "--assume-unchanged", "mod.js");
+    writeFileSync(join(vendor, "mod.js"), "dirty\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "vendor/mod.js", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses nested skip-worktree dirt, naming the path", () => {
+    const cwd = repo();
+    const vendor = join(cwd, "vendor");
+    mkdirSync(vendor);
+    git(vendor, "init", "-q", "-b", "main");
+    writeFileSync(join(vendor, "mod.js"), "export const m = 1;\n");
+    git(vendor, "add", "mod.js");
+    git(vendor, "commit", "-q", "-m", "vendor");
+    git(cwd, "add", "vendor");
+    git(cwd, "commit", "-q", "-m", "gitlink");
+    git(vendor, "update-index", "--skip-worktree", "mod.js");
+    writeFileSync(join(vendor, "mod.js"), "dirty\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "vendor/mod.js", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a self-hiding .gitignore when git init would inherit a hostile template", () => {
+    const cwd = repo();
+    const template = join(outsideDir(), "tmpl");
+    mkdirSync(join(template, "info"), { recursive: true });
+    writeFileSync(join(template, "info", "exclude"), "*\n");
+    const globalConfig = join(outsideDir(), "gitconfig");
+    writeFileSync(globalConfig, `[init]\n\ttemplateDir = ${template}\n`);
+    writeFileSync(join(cwd, ".gitignore"), ".gitignore\nsecret.txt\n");
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", GIT_CONFIG_GLOBAL: globalConfig });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, ".gitignore", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight passes an honest tree when GIT_ATTR_SOURCE is set", () => {
+    const cwd = repo();
+    declareSupervisor();
+    setEnv({
+      AK_LIFECYCLE_POLICY: "unattended",
+      GIT_ATTR_SOURCE: join(outsideDir(), "missing.attr"),
+    });
+    const run = fullRun(cwd);
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
+  });
+
+  test("git() does not observe GIT_CONFIG_COUNT injected keys", () => {
+    const cwd = repo();
+    setEnv({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "ak.strip", GIT_CONFIG_VALUE_0: "yes" });
+    const r = lifecycleGit(cwd, ["config", "--get", "ak.strip"]);
+    expect(r.code).not.toBe(0);
+  });
+
+  test("unfilteredTrackedDirt reports a gitlink that is not a directory", () => {
+    const cwd = repo();
+    const vendor = join(cwd, "vendor");
+    mkdirSync(vendor);
+    git(vendor, "init", "-q", "-b", "main");
+    writeFileSync(join(vendor, "mod.js"), "export const m = 1;\n");
+    git(vendor, "add", "mod.js");
+    git(vendor, "commit", "-q", "-m", "vendor");
+    git(cwd, "add", "vendor");
+    git(cwd, "commit", "-q", "-m", "gitlink");
+    rmSync(vendor, { recursive: true, force: true });
+    writeFileSync(vendor, "not a repo\n");
+    const staged = spawnSync("git", ["-C", cwd, "ls-files", "-s", "-z"]);
+    expect(staged.status).toBe(0);
+    expect(unfilteredTrackedDirt(cwd, staged.stdout ?? new Uint8Array())?.path).toBe("vendor");
   });
 
   test("ship-preflight refuses an untracked self-hiding nested .gitignore, naming the path", () => {

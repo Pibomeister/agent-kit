@@ -1,7 +1,31 @@
 /** Isolated git `-c` flags: worker fsmonitor, hooks, filters and the commit graph cannot steer a snapshot. */
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { accessSync, constants, existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
+
+import { workerControlledPath, workerFreePath } from "../runner/path.ts";
+
+/** A git call used to walk a nested gitlink. Same shape as `GitResult` without importing the gate. */
+export type NestedGit = (
+  cwd: string,
+  args: readonly string[],
+) => { code: number; stdout: Uint8Array; text: string; stderr: string };
+
+/** Absolute git binary whose real path is outside `workerRoot`, plus a PATH with that root stripped. */
+export function resolveTrustedGit(workerRoot: string) {
+  const path = workerFreePath(process.env["PATH"], workerRoot);
+  for (const directory of path.split(delimiter)) {
+    const candidate = join(directory, "git");
+    try {
+      accessSync(candidate, constants.X_OK);
+      const binary = realpathSync(candidate);
+      if (!workerControlledPath(binary, workerRoot)) return { binary, path };
+    } catch {
+      // Try the next supervisor-owned PATH entry.
+    }
+  }
+  throw new Error("runner cannot find a trusted git executable outside the worker root");
+}
 
 export function isolationArgs(project: string): string[] {
   const directory = existsSync(project) ? realpathSync(project) : resolve(project);
@@ -45,13 +69,16 @@ export function gitBlobId(bytes: Uint8Array, blob: string): string {
  * Hex digest of tracked worktree bytes that do not match the index blob, plus the first relative
  * path. Undefined when every regular file and symlink matches, including the executable bit
  * (`executable !== (mode === "100755")`, any of owner/group/other). A gitlink that is not a
- * directory is dirt; gitlink contents are never walked (ADV-006). Callers pass
+ * directory is dirt. A gitlink directory is recursed with a clean env against nested HEAD bytes
+ * so assume-unchanged and skip-worktree cannot hide nested dirt; ignored untracked files inside
+ * a gitlink stay out of scope (ADV-006, matching git `-dirty` and the runner). Callers pass
  * `--ignore-submodules=none --submodule=short` on the snapshot diff so `diff.ignoreSubmodules=all`
  * cannot hide a gitlink bump, a -dirty submodule, or an untracked nested repo.
  */
 export function unfilteredTrackedDirt(
   workTree: string,
   lsFilesStageZ: Uint8Array,
+  nested?: { git: NestedGit; seen?: Set<string> },
 ): { digest: string; path: string } | undefined {
   const digest = createHash("sha256");
   let dirty = false;
@@ -75,6 +102,7 @@ export function unfilteredTrackedDirt(
       const stat = lstatSync(at);
       if (mode === "160000") {
         if (!stat.isDirectory()) mark(path);
+        else if (nested !== undefined) gitlinkDirt(at, path, blob, nested, mark);
         continue;
       }
       let bytes: Uint8Array;
@@ -98,4 +126,62 @@ export function unfilteredTrackedDirt(
     }
   }
   return dirty ? { digest: digest.digest("hex"), path: first ?? "the working tree" } : undefined;
+}
+
+function gitlinkDirt(
+  at: string,
+  path: string,
+  blob: string,
+  nested: { git: NestedGit; seen?: Set<string> },
+  mark: (rel: string, extra?: Uint8Array) => void,
+): void {
+  let root: string;
+  try {
+    root = realpathSync(at);
+  } catch {
+    mark(path);
+    return;
+  }
+  const seen = nested.seen ?? new Set<string>();
+  if (seen.has(root)) return;
+  seen.add(root);
+  const head = nested.git(at, ["rev-parse", "--verify", "HEAD"]);
+  if (head.code !== 0 || head.text !== blob) {
+    mark(path);
+    return;
+  }
+  const untracked = nested.git(at, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (untracked.code !== 0) {
+    mark(path);
+    return;
+  }
+  for (const entry of new TextDecoder().decode(untracked.stdout).split("\0")) {
+    if (entry === "") continue;
+    mark(`${path}/${entry}`);
+    return;
+  }
+  const tree = nested.git(at, ["ls-tree", "-r", "-z", "HEAD"]);
+  if (tree.code !== 0) {
+    mark(path);
+    return;
+  }
+  const inner = unfilteredTrackedDirt(at, lsTreeToStageZ(tree.stdout), { git: nested.git, seen });
+  if (inner !== undefined) mark(inner.path === "the working tree" ? path : `${path}/${inner.path}`);
+}
+
+/** `ls-tree -r -z` rows as `ls-files -s -z`, so `unfilteredTrackedDirt` can compare worktree bytes to HEAD. */
+export function lsTreeToStageZ(lsTreeZ: Uint8Array): Uint8Array {
+  const rows: string[] = [];
+  for (const row of new TextDecoder().decode(lsTreeZ).split("\0")) {
+    if (row === "") continue;
+    const tab = row.indexOf("\t");
+    if (tab < 0) continue;
+    const meta = row.slice(0, tab).split(" ");
+    const mode = meta[0];
+    const blob = meta[2];
+    const path = row.slice(tab + 1);
+    if (mode === undefined || blob === undefined || path === "") continue;
+    rows.push(`${mode} ${blob} 0\t${path}`);
+  }
+  return new TextEncoder().encode(rows.map((row) => `${row}\0`).join(""));
 }

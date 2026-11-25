@@ -42329,23 +42329,26 @@ var isEffectConfig = ajv6.compile({
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync5 } from "child_process";
 import { createHash as createHash12 } from "crypto";
-import {
-  accessSync,
-  constants,
-  existsSync as existsSync39,
-  lstatSync as lstatSync7,
-  mkdtempSync as mkdtempSync3,
-  readFileSync as readFileSync33,
-  readlinkSync as readlinkSync4,
-  realpathSync as realpathSync13,
-  rmSync as rmSync14
-} from "fs";
-import { basename as basename20, delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative11, resolve as resolve16 } from "path";
+import { existsSync as existsSync39, lstatSync as lstatSync7, mkdtempSync as mkdtempSync3, readFileSync as readFileSync33, readlinkSync as readlinkSync4, realpathSync as realpathSync13, rmSync as rmSync14 } from "fs";
+import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative11, resolve as resolve16 } from "path";
 
 // src/lifecycle/git-isolation.ts
 import { createHash as createHash11 } from "crypto";
-import { existsSync as existsSync38, lstatSync as lstatSync6, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
-import { isAbsolute as isAbsolute13, join as join45, resolve as resolve15 } from "path";
+import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync6, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
+import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, resolve as resolve15 } from "path";
+function resolveTrustedGit(workerRoot) {
+  const path = workerFreePath(process.env["PATH"], workerRoot);
+  for (const directory of path.split(delimiter5)) {
+    const candidate = join45(directory, "git");
+    try {
+      accessSync(candidate, constants.X_OK);
+      const binary = realpathSync12(candidate);
+      if (!workerControlledPath(binary, workerRoot))
+        return { binary, path };
+    } catch {}
+  }
+  throw new Error("runner cannot find a trusted git executable outside the worker root");
+}
 function isolationArgs(project) {
   const directory = existsSync38(project) ? realpathSync12(project) : resolve15(project);
   return [
@@ -42576,26 +42579,17 @@ function assertPinnedLayout(context) {
   }
 }
 function resolveRunnerGit(workerRoot) {
-  const path = workerFreePath(process.env["PATH"], workerRoot);
+  const trusted = resolveTrustedGit(workerRoot);
   const layout = resolveLayout(workerRoot);
-  for (const directory of path.split(delimiter5)) {
-    const candidate = join46(directory, "git");
-    try {
-      accessSync(candidate, constants.X_OK);
-      const binary = realpathSync13(candidate);
-      if (!workerControlledPath(binary, workerRoot))
-        return {
-          binary,
-          path,
-          workerRoot,
-          home: "/dev/null",
-          gitDir: layout?.gitDir,
-          workTree: layout?.workTree,
-          pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree)
-        };
-    } catch {}
-  }
-  throw new Error("runner cannot find a trusted git executable outside the worker root");
+  return {
+    binary: trusted.binary,
+    path: trusted.path,
+    workerRoot,
+    home: "/dev/null",
+    gitDir: layout?.gitDir,
+    workTree: layout?.workTree,
+    pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree)
+  };
 }
 function failedGit(stderr) {
   return { code: -1, stdout: new Uint8Array, text: "", stderr };
