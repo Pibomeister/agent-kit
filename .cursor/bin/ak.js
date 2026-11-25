@@ -44805,65 +44805,9 @@ function parseFinalVerdict(text5, allowed) {
 function parseAdversarialVerdict(text5) {
   return parseFinalVerdict(text5, ADVERSARIAL_VERDICTS);
 }
-var FORBIDDEN_REMAINDER_ASCII = new Set(["{", "}", "[", "]", "<", ">", "`", "~", "\\"]);
-var HTML_ENTITY = /&#?[a-z0-9]+;/i;
-var PERCENT_ESCAPE = /%[0-9a-f]{2}/i;
-function remainderAfterFinalVerdictLine(text5) {
-  const lines = text5.split(/\r\n|\r|\n/);
-  let last = lines.length - 1;
-  while (last >= 0 && (lines[last] ?? "").trim() === "")
-    last -= 1;
-  if (last < 0)
-    return;
-  if (!(lines[last] ?? "").startsWith(FIELD_PREFIX))
-    return;
-  return lines.slice(0, last).join(`
-`);
-}
-function decodePrintableAscii(stdout) {
-  for (const byte of stdout) {
-    if (byte === 9 || byte === 10 || byte === 13)
-      continue;
-    if (byte < 32 || byte > 126)
-      return null;
-  }
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(stdout);
-  } catch {
-    return null;
-  }
-}
-function remainderHasForbiddenAscii(remainder) {
-  for (const ch of remainder)
-    if (FORBIDDEN_REMAINDER_ASCII.has(ch))
-      return true;
-  return false;
-}
-function remainderParsesAsJson(remainder) {
-  try {
-    JSON.parse(remainder.trim());
-    return true;
-  } catch {
-    return false;
-  }
-}
-function adversarialChoiceFromTranscript(stdout, options) {
-  const text5 = decodePrintableAscii(stdout);
-  if (text5 === null)
-    return null;
-  const remainder = remainderAfterFinalVerdictLine(text5);
-  if (remainder === undefined)
-    return null;
-  if (remainderHasForbiddenAscii(remainder))
-    return null;
-  if (HTML_ENTITY.test(text5) || PERCENT_ESCAPE.test(text5))
-    return null;
-  if (remainderParsesAsJson(remainder))
-    return null;
+function failClosedAdversarialVerdict(text5) {
   const parsed = parseAdversarialVerdict(text5);
-  if (!parsed.ok || !options.includes(parsed.verdict))
-    return null;
-  return parsed.verdict;
+  return parsed.ok ? parsed.verdict : "REJECT";
 }
 
 // src/council/seat.ts
@@ -44919,12 +44863,12 @@ async function launchSeat(seat2, payload, options, spawn2) {
         return { ok: true, launcher: launcher2, answer: value, attempts };
       } catch (cause) {
         if (cause instanceof SyntaxError) {
-          const choice = adversarialChoiceFromTranscript(child.stdout, options);
-          if (choice !== null)
+          const verdict = failClosedAdversarialVerdict(text5);
+          if (verdict === "REJECT" && parseAdversarialVerdict(text5).ok && options.includes(verdict))
             return {
               ok: true,
               launcher: launcher2,
-              answer: { choice, rationale: "structured final verdict field" },
+              answer: { choice: verdict, rationale: "structured final verdict field" },
               attempts
             };
         }

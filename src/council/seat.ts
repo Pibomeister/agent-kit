@@ -6,7 +6,7 @@
  * the card; the first valid answer ends it.
  */
 
-import { adversarialChoiceFromTranscript } from "../verdict.ts";
+import { failClosedAdversarialVerdict, parseAdversarialVerdict } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
 export interface ChildOutput {
@@ -110,12 +110,12 @@ export async function launchSeat(
         return { ok: true, launcher, answer: value, attempts };
       } catch (cause) {
         if (cause instanceof SyntaxError) {
-          const choice = adversarialChoiceFromTranscript(child.stdout, options);
-          if (choice !== null)
+          const verdict = failClosedAdversarialVerdict(text);
+          if (verdict === "REJECT" && parseAdversarialVerdict(text).ok && options.includes(verdict))
             return {
               ok: true,
               launcher,
-              answer: { choice, rationale: "structured final verdict field" },
+              answer: { choice: verdict, rationale: "structured final verdict field" },
               attempts,
             };
         }

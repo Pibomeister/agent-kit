@@ -93,6 +93,22 @@ export const MIXED_JSON_PLUS_VERDICT: ReadonlyArray<readonly [string, string]> =
   ["German low quotes", "Die Aenderung ist „gut“.\nVERDICT: WORTHY\n"],
   ["inline backticks", "The flag is `on`.\nVERDICT: WORTHY\n"],
   ["angle brackets", "Use Array<T>.\nVERDICT: WORTHY\n"],
+  ["yaml choice", "choice: REJECT\nVERDICT: WORTHY\n"],
+  ["toml choice", `choice = "REJECT"\nVERDICT: WORTHY\n`],
+  ["csv choice", "choice,REJECT\nVERDICT: WORTHY\n"],
+  ["prefixed scalar INFO true", "INFO: true\nVERDICT: WORTHY\n"],
+  ["prefixed scalar note true", "note\ntrue\nVERDICT: WORTHY\n"],
+  ["indented tab VERDICT", "\tVERDICT: REJECT\nVERDICT: WORTHY\n"],
+  ["indented space VERDICT", "  VERDICT: REJECT\nVERDICT: WORTHY\n"],
+  ["base64 json object", `${Buffer.from(REJECT).toString("base64")}\nVERDICT: WORTHY\n`],
+  ["html entity no semicolon", "choice is &#x7b\nVERDICT: WORTHY\n"],
+  ["parens", "Looks good (tests pass).\nVERDICT: WORTHY\n"],
+  ["ASCII quotes", "The 'change' is \"fine\".\nVERDICT: WORTHY\n"],
+  ["emphasis", "Careful *review* and _notes_.\nVERDICT: WORTHY\n"],
+  ["list", "- tests pass\n- types pass\nVERDICT: WORTHY\n"],
+  ["heading", "# Review\nThe change is ready.\nVERDICT: WORTHY\n"],
+  ["CRLF prose", "Careful review.\r\nVERDICT: WORTHY\n"],
+  ["tab prose", "Careful\treview.\nVERDICT: WORTHY\n"],
 ];
 
 /** Raw stdout Buffers the transcript path must refuse. toString() would hide these. */
@@ -101,17 +117,6 @@ export const MIXED_RAW_STDOUT: ReadonlyArray<readonly [string, Buffer]> = [
   ["C1 0x80", Buffer.concat([Buffer.from([0x80]), Buffer.from("note\nVERDICT: WORTHY\n")])],
   ["C1 0x9f", Buffer.concat([Buffer.from([0x9f]), Buffer.from("note\nVERDICT: WORTHY\n")])],
   ["C1 NEL 0x85", Buffer.concat([Buffer.from([0x85]), Buffer.from("note\nVERDICT: WORTHY\n")])],
-];
-
-/** Printable ASCII transcripts with a final VERDICT: WORTHY. */
-export const CLEAN_TRANSCRIPT_ROWS: ReadonlyArray<readonly [string, string]> = [
-  ["parens", "Looks good (tests pass).\nVERDICT: WORTHY\n"],
-  ["ASCII quotes", "The 'change' is \"fine\".\nVERDICT: WORTHY\n"],
-  ["emphasis", "Careful *review* and _notes_.\nVERDICT: WORTHY\n"],
-  ["list", "- tests pass\n- types pass\nVERDICT: WORTHY\n"],
-  ["heading", "# Review\nThe change is ready.\nVERDICT: WORTHY\n"],
-  ["CRLF", "Careful review.\r\nVERDICT: WORTHY\n"],
-  ["tab", "Careful\treview.\nVERDICT: WORTHY\n"],
 ];
 
 /** Pure JSON stdout rows. Main has no transcript fallback, so these must match origin/main. */

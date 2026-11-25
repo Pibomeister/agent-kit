@@ -199,10 +199,14 @@ describe("ak council run", () => {
     }
   });
 
-  test("a valid final VERDICT: WORTHY from every seat approves", async () => {
+  test("a valid final VERDICT: WORTHY from every seat escalates rather than approving", async () => {
     const { result, out } = await runTranscriptCouncil(worthyTranscript);
-    expect(result.code).toBe(0);
-    expect(record(out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+    expect(result.code).toBe(1);
+    expect(record(out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      causes: ["a primary seat was unavailable"],
+    });
   });
 
   test("a pure JSON WORTHY from every seat approves", async () => {
