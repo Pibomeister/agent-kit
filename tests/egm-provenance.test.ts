@@ -23,7 +23,19 @@ const MIT_CATALOG_IDS = [
   "claude-reflect",
   "common-skills",
 ] as const;
-const PASS_ALLOW = ["None is `pass`", "not a pass"] as const;
+const PASS_ALLOW = ["None is `pass`", "not a pass", "passed over", "not scored as pass or fail"] as const;
+const PASS_LOOKALIKES = new Map<string, string>([
+  ["\u0430", "a"],
+  ["\u0440", "p"],
+  ["\u0455", "s"],
+  ["\u0441", "c"],
+  ["\u0435", "e"],
+  ["\u043e", "o"],
+  ["\u03b1", "a"],
+  ["\u03bf", "o"],
+  ["\u03c1", "p"],
+  ["\ua731", "s"],
+]);
 const CATALOG_PREFIXES = [
   "skills/",
   "roles/",
@@ -61,10 +73,23 @@ function expectTwelveCatalogDonors(catalog: Map<string, string>): void {
   expect(apache.toSorted()).toEqual(["claude-mem", "egm"]);
 }
 
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizePassScan(text: string): string {
+  const nfkc = text.normalize("NFKC").replace(/\p{Cf}/gu, "");
+  let folded = "";
+  for (const char of nfkc) folded += PASS_LOOKALIKES.get(char) ?? char;
+  return folded;
+}
+
 function passHitsAfterAllowlist(text: string): string[] {
-  let rest = text;
-  for (const phrase of PASS_ALLOW) rest = rest.split(phrase).join("");
-  return rest.match(/pass/gi) ?? [];
+  let rest = normalizePassScan(text);
+  for (const phrase of PASS_ALLOW) {
+    rest = rest.replace(new RegExp(`(?<![A-Za-z])${escapeRegex(phrase)}(?![A-Za-z])`, "gi"), "");
+  }
+  return rest.match(/\bpass(?:es|ed|ing)?\b/gi) ?? [];
 }
 
 function markdownTables(text: string): Array<{ header: string[]; rows: string[][] }> {
@@ -112,7 +137,7 @@ function sectionAfter(text: string, heading: string): string {
 }
 
 function labelledIds(block: string, label: string): string[] {
-  const match = new RegExp(`${label}:\\s*([\\s\\S]*?)(?:\\n- |$)`).exec(block);
+  const match = new RegExp(`${escapeRegex(label)}:\\s*([\\s\\S]*?)(?:\\n- |\\n\\n|$)`).exec(block);
   expect(match, label).toBeTruthy();
   return (match?.[1] ?? "")
     .split(/[,\n]/)
@@ -120,12 +145,10 @@ function labelledIds(block: string, label: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-function gapProbeComment(hosts: string): string {
+function gapProbeFromComment(hosts: string): string {
   const start = hosts.indexOf("GAP-PROBE:");
   expect(start).toBeGreaterThanOrEqual(0);
-  const from = hosts.slice(start);
-  const end = from.search(/\nimport |\n \*\//);
-  return end === -1 ? from : from.slice(0, end);
+  return hosts.slice(start);
 }
 
 function isolatedReviewContextCell(contract: string): string {
@@ -138,10 +161,34 @@ function isolatedReviewContextCell(contract: string): string {
   return cells[2] ?? "";
 }
 
-function agentsDonorSentence(agents: string): string {
-  const start = agents.indexOf("twelve donors");
+function agentsDonorParagraph(agents: string): string {
+  const paragraph = agents.split(/\n\n+/).find((part) => part.includes("twelve donors"));
+  expect(paragraph, "twelve donors paragraph").toBeDefined();
+  return paragraph ?? "";
+}
+
+function egmLockYamlComment(lockText: string): string {
+  const marker = "\n  - id: egm\n";
+  const idx = lockText.indexOf(marker);
+  expect(idx).toBeGreaterThanOrEqual(0);
+  const lines = lockText.slice(0, idx).split("\n");
+  const comments: string[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i] ?? "";
+    if (/^\s*#/.test(line)) comments.unshift(line.replace(/^\s*#\s?/, ""));
+    else break;
+  }
+  expect(comments.length, "YAML comment above egm").toBeGreaterThan(0);
+  return comments.join(" ");
+}
+
+function dossierLockComment(dossier: string): string {
+  const start = dossier.indexOf("Lock comment:");
   expect(start).toBeGreaterThanOrEqual(0);
-  return agents.slice(start, start + 600);
+  const after = dossier.slice(start + "Lock comment:".length);
+  const period = after.search(/\.\s/);
+  const sentence = period === -1 ? after : after.slice(0, period + 1);
+  return sentence.replace(/\s+/g, " ").trim();
 }
 
 function yamlItemBlock(text: string, idLine: string): string {
@@ -206,9 +253,9 @@ describe("EGM provenance (GS-004f)", () => {
     for (const [rel, pattern] of surfaces) {
       expect(readFileSync(join(REPO, rel), "utf8"), rel).toMatch(pattern);
     }
-    const agentsSentence = agentsDonorSentence(readFileSync(join(REPO, "AGENTS.md"), "utf8"));
-    expect(agentsSentence).toMatch(/twelve donors — ten MIT, two Apache-2\.0/);
-    expect(agentsSentence).toMatch(/google\/elephant-goldfish-model|\begm\b/);
+    const agentsParagraph = agentsDonorParagraph(readFileSync(join(REPO, "AGENTS.md"), "utf8"));
+    expect(agentsParagraph).toMatch(/twelve donors — ten MIT, two Apache-2\.0/);
+    expect(agentsParagraph).toMatch(/google\/elephant-goldfish-model|\begm\b/);
   });
 
   test("re-indenting the lock keeps the pin and the catalog counts", () => {
@@ -238,7 +285,7 @@ describe("EGM provenance (GS-004f)", () => {
     const verdicts = armVerdictCells(note);
     for (const verdict of verdicts) expect(verdict).toBe("not-run");
     expect(passHitsAfterAllowlist(note), "GAP-PROBE.md").toEqual([]);
-    expect(passHitsAfterAllowlist(gapProbeComment(hosts)), "hosts.ts GAP-PROBE").toEqual([]);
+    expect(passHitsAfterAllowlist(gapProbeFromComment(hosts)), "hosts.ts GAP-PROBE").toEqual([]);
     expect(passHitsAfterAllowlist(isolatedReviewContextCell(contract)), "isolated-review-context").toEqual([]);
     expect(hosts).toContain("GAP-PROBE");
     expect(hosts).toContain("GAP-MASTRA");
@@ -281,6 +328,11 @@ describe("EGM provenance (GS-004f)", () => {
     expect(matchTerms(dossier, DENY_TERMS)).toEqual([]);
     const catalogCount = sectionAfter(dossier, "6. Catalog count");
     expect(labelledIds(catalogCount, "ten MIT").toSorted()).toEqual([...MIT_CATALOG_IDS].toSorted());
+    expect(labelledIds(catalogCount, "two Apache-2.0").toSorted()).toEqual(["claude-mem", "egm"]);
+    const lockComment = egmLockYamlComment(readFileSync(join(REPO, LOCK), "utf8"));
+    expect(lockComment).toContain("Catalog donor");
+    expect(lockComment.includes("Research pin")).toBe(false);
+    expect(dossierLockComment(dossier).toLowerCase()).toBe(lockComment.toLowerCase());
   });
 
   test("finding.schema.json status and fingerprint descriptions name both phase-1b rulings", () => {
