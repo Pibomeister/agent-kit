@@ -6,17 +6,16 @@
  * after CRLF-to-LF only and compares every byte from the start of the file through
  * the line before the first `## Hard gates` line to a golden copy of origin/main
  * e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, the suffix is
- * parsed with CommonMark (parser only). A heading whose descendant text, code
- * and image alt equals `workflow` after NFKC, stripping `\p{Cf}` and
- * `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused. Any
- * `html_block` or `html_inline` whose literal matches `/<\/?h[1-6][\s/>]/i` (an
- * h-tag opener or closer, not only comments), `/<img\b/i`, or
- * `/role\s*=\s*["']?heading/i` is refused. Fenced, indented and inline-code
- * examples stay green. Homoglyph confusables, U+2800 braille blank, and GFM
- * strikethrough are out of scope. Hard gates body prose is not pinned.
- * `- Workflow notes` and prose that mentions workflow stay green. Free-text
- * protocol changes under other headings are left to review. Editing anything
- * above Hard gates needs a golden update in review.
+ * parsed with CommonMark (parser only). Raw HTML is refused except a node that
+ * is exactly one HTML comment. A heading may contain only text, code, emphasis,
+ * strong, softbreak and linebreak. A heading with a link, image or html child
+ * is refused. A heading whose text equals `workflow` after NFKC, stripping
+ * `\p{Cf}` and `\p{Default_Ignorable_Code_Point}`, trim and lowercase is
+ * refused. Homoglyph confusables, U+2800 braille blank, and GFM strikethrough
+ * are out of scope. Otherwise Hard gates body prose is not pinned.
+ * `- Workflow notes` and prose that mentions workflow stay green. Fenced,
+ * indented and inline-code examples stay green. Editing anything above Hard
+ * gates needs a golden update in review.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -48,9 +47,7 @@ function firstSentinelAt(raw: string): number {
 }
 
 const parser = new Parser();
-const RAW_H = /<\/?h[1-6][\s/>]/i;
-const RAW_IMG = /<img\b/i;
-const RAW_ROLE_HEADING = /role\s*=\s*["']?heading/i;
+const HEADING_OK = new Set(["heading", "text", "code", "emph", "strong", "softbreak", "linebreak"]);
 
 function fold(text: string): string {
   return text
@@ -60,21 +57,30 @@ function fold(text: string): string {
     .toLowerCase();
 }
 
-function headingText(node: Node): string {
-  let out = "";
+function isPlainComment(literal: string): boolean {
+  const text = literal.trim();
+  if (!text.startsWith("<!--") || !text.endsWith("-->") || text.length < 7) {
+    return false;
+  }
+  return !text.slice(4, -3).includes("-->");
+}
+
+function headingForbidden(node: Node): boolean {
+  let text = "";
   const walker = node.walker();
   let event = walker.next();
   while (event) {
-    if (event.entering && (event.node.type === "text" || event.node.type === "code")) {
-      out += event.node.literal ?? "";
+    if (event.entering) {
+      if (!HEADING_OK.has(event.node.type)) {
+        return true;
+      }
+      if (event.node.type === "text" || event.node.type === "code") {
+        text += event.node.literal ?? "";
+      }
     }
     event = walker.next();
   }
-  return out;
-}
-
-function forbiddenHtml(literal: string): boolean {
-  return RAW_H.test(literal) || RAW_IMG.test(literal) || RAW_ROLE_HEADING.test(literal);
+  return fold(text) === "workflow";
 }
 
 function hasForbiddenWorkflowMarkup(suffix: string): boolean {
@@ -84,13 +90,12 @@ function hasForbiddenWorkflowMarkup(suffix: string): boolean {
   while (event) {
     if (event.entering) {
       const node = event.node;
-      if (node.type === "heading" && fold(headingText(node)) === "workflow") {
+      if (node.type === "heading" && headingForbidden(node)) {
         return true;
       }
       if (
         (node.type === "html_block" || node.type === "html_inline") &&
-        node.literal !== null &&
-        forbiddenHtml(node.literal)
+        (node.literal === null || !isPlainComment(node.literal))
       ) {
         return true;
       }
@@ -156,13 +161,17 @@ const RED_FIXTURES: string[] = [
   "## Work\u3164flow",
   "## Work\u115Fflow",
   "## Work\u034Fflow",
-  "<!-- <h2>Workflow</h2> -->",
   '## <img alt="Workflow">',
   "## <img alt=Workflow>",
   '## <img alt="Work&#102;low">',
   '<div role="heading" aria-level="2">Workflow</div>',
   "<p role='heading' aria-level=\"2\">Workflow</p>",
   "<span role=heading>Workflow</span>",
+  '<div role="&#104;eading">Workflow</div>',
+  '<div role=" heading">Workflow</div>',
+  '## <span aria-label="Workflow"></span>',
+  '## [](# "Workflow")',
+  '<div data-role="heading">x</div>',
 ];
 
 const GREEN_FIXTURES: string[] = [
@@ -184,8 +193,11 @@ const GREEN_FIXTURES: string[] = [
   "    <h2>Workflow</h2>",
   "`## Workflow`",
   "`<h2>Workflow</h2>`",
+  "`<img>`",
   "## Workflow notes\r\n",
   "<!-- headings h1-h6 stay in the prefix -->",
+  "<!-- role=heading is refused in suffix HTML -->",
+  "<!-- <h2>Workflow</h2> -->",
 ];
 
 describe("super-review wording", () => {

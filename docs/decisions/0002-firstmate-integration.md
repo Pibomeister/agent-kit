@@ -331,17 +331,16 @@ The first follow-up above is closed this way:
   after CRLF-to-LF only and compares every byte from the start of the file through
   the line before the first `## Hard gates` line to a golden copy of origin/main
   e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, the suffix is
-  parsed with CommonMark (parser only). A heading whose descendant text, code
-  and image alt equals `workflow` after NFKC, stripping `\p{Cf}` and
-  `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused. Any
-  `html_block` or `html_inline` whose literal matches `/<\/?h[1-6][\s/>]/i` (an
-  h-tag opener or closer, not only comments), `/<img\b/i`, or
-  `/role\s*=\s*["']?heading/i` is refused. Fenced, indented and inline-code
-  examples stay green. Homoglyph confusables, U+2800 braille blank, and GFM
-  strikethrough are out of scope. Hard gates body prose is not pinned.
-  `- Workflow notes` and prose that mentions workflow stay green. Free-text
-  protocol changes under other headings are left to review. Editing anything
-  above Hard gates needs a golden update in review.
+  parsed with CommonMark (parser only). Raw HTML is refused except a node that
+  is exactly one HTML comment. A heading may contain only text, code, emphasis,
+  strong, softbreak and linebreak. A heading with a link, image or html child
+  is refused. A heading whose text equals `workflow` after NFKC, stripping
+  `\p{Cf}` and `\p{Default_Ignorable_Code_Point}`, trim and lowercase is
+  refused. Homoglyph confusables, U+2800 braille blank, and GFM strikethrough
+  are out of scope. Otherwise Hard gates body prose is not pinned.
+  `- Workflow notes` and prose that mentions workflow stay green. Fenced,
+  indented and inline-code examples stay green. Editing anything above Hard
+  gates needs a golden update in review.
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the
