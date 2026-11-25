@@ -211,9 +211,15 @@ async function dispatchVeto(
     });
     return;
   }
-  const options = runner.status(runId).cards[cardId]?.options ?? [];
-  const result = await launchSeat(council.veto, packet, options, (launcher, stdin) =>
-    spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
+  const card = runner.status(runId).cards[cardId];
+  const options = card?.options ?? [];
+  const result = await launchSeat(
+    council.veto,
+    packet,
+    options,
+    (launcher, stdin) =>
+      spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
+    card?.approve ?? "",
   );
   if (!result.ok) {
     runner.veto(runId, cardId, {
