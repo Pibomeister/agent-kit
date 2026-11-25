@@ -313,6 +313,7 @@
     "schemas/plan-record.schema.json",
     "schemas/project.schema.json",
     "schemas/review-event.schema.json",
+    "schemas/review-ledger.schema.json",
     "schemas/review-pattern.schema.json",
     "schemas/review.schema.json",
     "schemas/rulings.schema.json",

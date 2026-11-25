@@ -355,6 +355,7 @@
     ".cursor/schemas/plan-record.schema.json",
     ".cursor/schemas/project.schema.json",
     ".cursor/schemas/review-event.schema.json",
+    ".cursor/schemas/review-ledger.schema.json",
     ".cursor/schemas/review-pattern.schema.json",
     ".cursor/schemas/review.schema.json",
     ".cursor/schemas/rulings.schema.json",
