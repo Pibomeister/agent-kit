@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 const REPO = join(import.meta.dir, "..");
-const read = (p: string): string => readFileSync(join(REPO, p), "utf8").replace(/\s+/g, " ");
 const times = (hay: string, needle: string): number => hay.split(needle).length - 1;
 
 /** Collapsed skills/super-review/SKILL.md workflow step 12, including the trailing space before Hard gates. */
@@ -17,15 +16,14 @@ const STEP12 =
 
 describe("super-review wording", () => {
   test("step 12 records a changes-requested full review with --verdict changes-requested", () => {
-    const body = read("skills/super-review/SKILL.md");
-    expect(times(body, "## Workflow")).toBe(1);
-    expect(times(body, "## Hard gates")).toBe(1);
-    const workflow = body.indexOf("## Workflow");
+    const raw = readFileSync(join(REPO, "skills/super-review/SKILL.md"), "utf8");
+    const body = raw.replace(/\s+/g, " ");
+    expect([...raw.matchAll(/^## Workflow\s*$/gm)].length).toBe(1);
+    expect([...raw.matchAll(/^## Hard gates\s*$/gm)].length).toBe(1);
+    expect(times(body, "12. On `approved`")).toBe(1);
     const hard = body.indexOf("## Hard gates");
-    expect(hard).toBeGreaterThan(workflow);
-    const mid = body.slice(workflow, hard);
-    expect(times(mid, "12. On `approved`")).toBe(1);
-    const at = body.indexOf("12. On `approved`", workflow);
+    const at = body.indexOf("12. On `approved`");
+    expect(hard).toBeGreaterThan(at);
     const step = body.slice(at, hard);
     try {
       expect(step).toBe(STEP12);
