@@ -44775,6 +44775,50 @@ function describeRefusals(refusals) {
   return refusals.map((refusal) => `outbound ${refusal.kind}: ${refusal.label}: ${refusal.detail}`);
 }
 
+// src/verdict.ts
+var ADVERSARIAL_VERDICTS = ["WORTHY", "REJECT"];
+var FIELD_PREFIX = "VERDICT:";
+var FIELD_LINE = /^VERDICT:[ \t]+(\S+)[ \t]*$/;
+function fail2(reason) {
+  return { ok: false, verdict: null, reason };
+}
+function parseFinalVerdict(text5, allowed) {
+  if (allowed.length === 0)
+    return fail2("no verdict values are allowed, so no verdict can stand");
+  const lines = text5.split(/\r\n|\r|\n/);
+  let last = lines.length - 1;
+  while (last >= 0 && (lines[last] ?? "").trim() === "")
+    last -= 1;
+  if (last < 0)
+    return fail2("the transcript is empty; there is no final verdict field");
+  const candidates = [];
+  for (const [index, line] of lines.entries())
+    if (line.startsWith(FIELD_PREFIX))
+      candidates.push(index);
+  if (candidates.length === 0)
+    return fail2("there is no structured final verdict field (VERDICT: <value>)");
+  if (candidates.length > 1)
+    return fail2(`there are ${candidates.length} verdict fields; exactly one final verdict field is required`);
+  const at = candidates[0] ?? -1;
+  if (at !== last)
+    return fail2("the verdict field is not the final line; text after it makes the verdict ambiguous");
+  const matched = FIELD_LINE.exec(lines[at] ?? "");
+  if (matched === null)
+    return fail2("the verdict field is malformed; it must be exactly VERDICT: <value> with one value and nothing else");
+  const value = matched[1] ?? "";
+  const verdict = allowed.find((candidate) => candidate === value);
+  if (verdict === undefined)
+    return fail2(`the verdict value ${JSON.stringify(value)} is not one of the allowed verdicts`);
+  return { ok: true, verdict };
+}
+function parseAdversarialVerdict(text5) {
+  return parseFinalVerdict(text5, ADVERSARIAL_VERDICTS);
+}
+function failClosedAdversarialVerdict(text5) {
+  const parsed = parseAdversarialVerdict(text5);
+  return parsed.ok ? parsed.verdict : "REJECT";
+}
+
 // src/council/seat.ts
 var UNSPECIFIED = "unspecified";
 var UNVERIFIED = "unverified";
@@ -44809,7 +44853,7 @@ async function collectDetached(child, live, timeoutMs, what) {
     live.delete(child.pid);
   }
 }
-async function launchSeat(seat2, payload, options, spawn2) {
+async function launchSeat(seat2, payload, options, spawn2, approve) {
   const attempts = [];
   for (const launcher2 of seat2.chain) {
     const attempt = { actor: launcher2.actor, model_requested: launcher2.requested ?? UNSPECIFIED };
@@ -44818,12 +44862,27 @@ async function launchSeat(seat2, payload, options, spawn2) {
       const child = await spawn2(launcher2, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
-      const value = JSON.parse(child.stdout.toString());
-      if (!isCouncilAnswer(value))
-        throw new Error("launcher returned an invalid answer");
-      if (!options.includes(value.choice))
-        throw new Error(`launcher chose ${value.choice}, which is not an option`);
-      return { ok: true, launcher: launcher2, answer: value, attempts };
+      try {
+        const value = JSON.parse(child.stdout.toString());
+        if (!isCouncilAnswer(value))
+          throw new Error("launcher returned an invalid answer");
+        if (!options.includes(value.choice))
+          throw new Error(`launcher chose ${value.choice}, which is not an option`);
+        return { ok: true, launcher: launcher2, answer: value, attempts };
+      } catch (cause) {
+        if (cause instanceof SyntaxError) {
+          const text5 = child.stdout.toString();
+          const verdict = failClosedAdversarialVerdict(text5);
+          if (verdict === "REJECT" && parseAdversarialVerdict(text5).ok && options.includes(verdict) && verdict !== approve)
+            return {
+              ok: true,
+              launcher: launcher2,
+              answer: { choice: verdict, rationale: "structured final verdict field" },
+              attempts
+            };
+        }
+        throw cause instanceof Error ? cause : new Error("launcher returned an invalid answer");
+      }
     } catch (cause) {
       attempt.error = reason(cause);
     }
@@ -44966,8 +45025,9 @@ async function dispatchVeto(runner, runId, cardId, council, activeChildren) {
     });
     return;
   }
-  const options = runner.status(runId).cards[cardId]?.options ?? [];
-  const result2 = await launchSeat(council.veto, packet, options, (launcher2, stdin) => spawnPiped(launcher2.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS));
+  const card = runner.status(runId).cards[cardId];
+  const options = card?.options ?? [];
+  const result2 = await launchSeat(council.veto, packet, options, (launcher2, stdin) => spawnPiped(launcher2.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS), card?.approve ?? "");
   if (!result2.ok) {
     runner.veto(runId, cardId, {
       status: "unavailable",
@@ -45165,7 +45225,7 @@ async function serve(argv, io) {
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute15(relativeSocket))
     throw new Error("runner socket is inside worker root");
   if (existsSync40(socketPath)) {
-    const live = await new Promise((done, fail2) => {
+    const live = await new Promise((done, fail3) => {
       const probe = createConnection(socketPath);
       probe.once("connect", () => {
         probe.end();
@@ -45175,7 +45235,7 @@ async function serve(argv, io) {
         if (cause.code === "ECONNREFUSED" || cause.code === "ENOENT")
           done(false);
         else
-          fail2(cause);
+          fail3(cause);
       });
     });
     if (live)
@@ -45708,12 +45768,12 @@ ${entry.text}` }))
       process.once(signal, stop);
     try {
       const spawn2 = spawner(scratch, live);
-      const results = await Promise.all(pair.map((seat2) => launchSeat(seat2, payload, card.options, spawn2)));
+      const results = await Promise.all(pair.map((seat2) => launchSeat(seat2, payload, card.options, spawn2, card.approve)));
       seats.push(...pair.map((seat2, i) => seatEntry("primary", seat2, results[i] ?? { ok: false, attempts: [] })));
       const choices = seats.map((entry) => entry.choice);
       let veto;
       if (choices.every((choice) => choice === card.approve)) {
-        const result2 = await launchSeat(config.veto, payload, card.options, spawn2);
+        const result2 = await launchSeat(config.veto, payload, card.options, spawn2, card.approve);
         const entry = seatEntry("veto", config.veto, result2);
         seats.push(entry);
         veto = entry.choice;
