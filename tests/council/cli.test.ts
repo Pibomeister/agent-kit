@@ -205,6 +205,20 @@ describe("ak council run", () => {
     expect(record(out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
   });
 
+  test("a pure JSON WORTHY from every seat approves", async () => {
+    const body = JSON.stringify({ choice: "WORTHY", rationale: "evidence holds" });
+    const { result, out } = await runTranscriptCouncil(body);
+    expect(result.code).toBe(0);
+    expect(record(out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+  });
+
+  test("a pure JSON REJECT from every seat declines", async () => {
+    const body = JSON.stringify({ choice: "REJECT", rationale: "the constructed failure stands" });
+    const { result, out } = await runTranscriptCouncil(body);
+    expect(result.code).toBe(0);
+    expect(record(out)).toMatchObject({ outcome: "decline", choice: "REJECT" });
+  });
+
   test("mixed JSON-plus-VERDICT stdout from every seat escalates rather than approving", async () => {
     for (const [name, body] of MIXED_JSON_PLUS_VERDICT) {
       const { result, out } = await runTranscriptCouncil(body);

@@ -76,26 +76,31 @@ export function failClosedAdversarialVerdict(text: string): AdversarialVerdict {
   return parsed.ok ? parsed.verdict : "REJECT";
 }
 
-function parsesAsJsonObjectOrArray(text: string): boolean {
-  try {
-    const value: unknown = JSON.parse(text);
-    return value instanceof Object;
-  } catch {
-    return false;
-  }
-}
-
-/** True when some suffix of `line` that starts at `{` or `[` is a JSON object or array. */
-function lineHasJsonObjectOrArraySuffix(line: string): boolean {
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] !== "{" && line[i] !== "[") continue;
-    if (parsesAsJsonObjectOrArray(line.slice(i))) return true;
-  }
-  return false;
-}
-
 function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/** Strip CSI sequences, including SGR (`ESC[` parameters `m`). */
+function stripCsi(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) !== 0x1b || text[i + 1] !== "[") {
+      out += text[i];
+      continue;
+    }
+    i += 2;
+    while (i < text.length) {
+      const code = text.charCodeAt(i);
+      if (code >= 0x40 && code <= 0x7e) break;
+      i += 1;
+    }
+  }
+  return out;
+}
+
+function containsBraceOrBracket(text: string): boolean {
+  for (const ch of text) if (ch === "{" || ch === "}" || ch === "[" || ch === "]") return true;
+  return false;
 }
 
 /**
@@ -114,28 +119,20 @@ function remainderAfterFinalVerdictLine(text: string): string | undefined {
 
 /**
  * True when stdout mixes JSON-looking text with a final VERDICT line.
- * A JSON object or array is never a transcript. After a BOM and leading
- * whitespace are stripped, a leading `{`, `[`, or triple backtick is
- * mixed, except a remainder that is only `{` or `[`. Any suffix that
- * starts at `{` or `[` on a remainder line, fence lines included, and
- * parses as a JSON object or array is mixed. A remainder line that
- * starts with `{` or `[` and holds more than that character is mixed
- * even when it does not parse (truncated JSON). A JSON scalar is not.
+ * The transcript path does not parse JSON. After a BOM is stripped, CSI
+ * and SGR sequences are removed and NFKC normalisation is applied. A
+ * remainder that contains `{`, `}`, `[`, or `]` is mixed, except a
+ * remainder that is only a lone `{` or `[`. A leading triple backtick
+ * is mixed.
  */
 function mixedJsonAndTranscript(text: string): boolean {
   const remainder = remainderAfterFinalVerdictLine(text);
   if (remainder === undefined) return false;
   const head = stripBom(text).trimStart();
-  const remainderTrim = stripBom(remainder).trim();
   if (head.startsWith("```")) return true;
-  if ((head.startsWith("{") || head.startsWith("[")) && remainderTrim !== "{" && remainderTrim !== "[") return true;
-  if (parsesAsJsonObjectOrArray(remainderTrim)) return true;
-  for (const line of remainder.split(/\r\n|\r|\n/)) {
-    const trimmed = line.trim();
-    if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1) return true;
-    if (lineHasJsonObjectOrArraySuffix(line)) return true;
-  }
-  return false;
+  const normalised = stripCsi(stripBom(remainder)).normalize("NFKC").trim();
+  if (normalised === "{" || normalised === "[") return false;
+  return containsBraceOrBracket(normalised);
 }
 
 /**

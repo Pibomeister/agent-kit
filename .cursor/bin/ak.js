@@ -44361,25 +44361,31 @@ function failClosedAdversarialVerdict(text5) {
   const parsed = parseAdversarialVerdict(text5);
   return parsed.ok ? parsed.verdict : "REJECT";
 }
-function parsesAsJsonObjectOrArray(text5) {
-  try {
-    const value = JSON.parse(text5);
-    return value instanceof Object;
-  } catch {
-    return false;
-  }
-}
-function lineHasJsonObjectOrArraySuffix(line) {
-  for (let i = 0;i < line.length; i++) {
-    if (line[i] !== "{" && line[i] !== "[")
-      continue;
-    if (parsesAsJsonObjectOrArray(line.slice(i)))
-      return true;
-  }
-  return false;
-}
 function stripBom(text5) {
   return text5.charCodeAt(0) === 65279 ? text5.slice(1) : text5;
+}
+function stripCsi(text5) {
+  let out = "";
+  for (let i = 0;i < text5.length; i++) {
+    if (text5.charCodeAt(i) !== 27 || text5[i + 1] !== "[") {
+      out += text5[i];
+      continue;
+    }
+    i += 2;
+    while (i < text5.length) {
+      const code = text5.charCodeAt(i);
+      if (code >= 64 && code <= 126)
+        break;
+      i += 1;
+    }
+  }
+  return out;
+}
+function containsBraceOrBracket(text5) {
+  for (const ch of text5)
+    if (ch === "{" || ch === "}" || ch === "[" || ch === "]")
+      return true;
+  return false;
 }
 function remainderAfterFinalVerdictLine(text5) {
   const lines = text5.split(/\r\n|\r|\n/);
@@ -44398,21 +44404,12 @@ function mixedJsonAndTranscript(text5) {
   if (remainder === undefined)
     return false;
   const head = stripBom(text5).trimStart();
-  const remainderTrim = stripBom(remainder).trim();
   if (head.startsWith("```"))
     return true;
-  if ((head.startsWith("{") || head.startsWith("[")) && remainderTrim !== "{" && remainderTrim !== "[")
-    return true;
-  if (parsesAsJsonObjectOrArray(remainderTrim))
-    return true;
-  for (const line of remainder.split(/\r\n|\r|\n/)) {
-    const trimmed = line.trim();
-    if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1)
-      return true;
-    if (lineHasJsonObjectOrArraySuffix(line))
-      return true;
-  }
-  return false;
+  const normalised = stripCsi(stripBom(remainder)).normalize("NFKC").trim();
+  if (normalised === "{" || normalised === "[")
+    return false;
+  return containsBraceOrBracket(normalised);
 }
 function adversarialChoiceFromTranscript(text5, options) {
   if (mixedJsonAndTranscript(text5))
