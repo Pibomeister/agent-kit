@@ -41,13 +41,9 @@ jobs:
       - run: bun run ak build
       - run: bun run ak build --check
       - run: tools/cursor/self-host.sh --check
-      # Publication, unlike pull-request CI, requires the release tag for this
-      # version at HEAD, the merged commit. The push to main runs before any tag
-      # can exist, so a changed bundle refuses there. Pushing v<version> at the
-      # merged commit runs this workflow at the tag, which checks out and
-      # publishes that commit; so does workflow_dispatch with the tag chosen as
-      # its ref. A dispatch at the tip of main does not recover once main moves.
-      - run: tools/publish/version-gate.sh dist --require-release-tag
+      # This job holds a read-only token, so it checks only the version bump.
+      # The publish job applies the release tag check before it publishes.
+      - run: tools/publish/version-gate.sh dist
       - run: tar -czf published-bundle.tar.gz dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -65,10 +61,27 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: published-bundle
       - run: tar -xzf published-bundle.tar.gz
+      # Publication, unlike pull-request CI, requires the release tag for this
+      # version at HEAD, the merged commit. On the push to main the gate creates
+      # a missing tag at HEAD with this job's token, once HEAD is confirmed on
+      # main; a tag that exists at another commit still refuses. A tag pushed
+      # with the workflow token starts no second run. A tag run, or a
+      # workflow_dispatch with the tag as its ref, requires the tag to exist at
+      # HEAD; a dispatch at the tip of main does not recover once main moves.
+      - name: The release tag for this version is at the merged commit
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            tools/publish/version-gate.sh dist --create-release-tag
+          else
+            tools/publish/version-gate.sh dist --require-release-tag
+          fi
       - name: Publish generated bundles to the published branch
         run: |
           set -euo pipefail

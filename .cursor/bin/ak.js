@@ -25511,8 +25511,12 @@ ${result.stdout}`) ? "auth" : null;
         if (outcome === "ok")
           return parsed;
         if (serviceUnavailable(result, outcome)) {
-          advance = true;
-          break;
+          if (config.judgeFallbackCommands.length > 0) {
+            advance = true;
+            break;
+          }
+          if (result.timedOut)
+            return null;
         }
       }
       if (!advance)
@@ -38802,11 +38806,11 @@ var init_cli5 = __esm(() => {
 // src/maintenance/cli.ts
 init_common_schema();
 var import_ajv18 = __toESM(require_ajv(), 1);
-var import__202014 = __toESM(require_2020(), 1);
+var import__202015 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync7 } from "child_process";
-import { existsSync as existsSync41, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
+import { existsSync as existsSync42, readFileSync as readFileSync44, realpathSync as realpathSync20 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename23, isAbsolute as isAbsolute18, join as join54, relative as relative16 } from "path";
+import { basename as basename23, isAbsolute as isAbsolute18, join as join55, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -45319,15 +45323,1701 @@ async function runCouncil(argv, io) {
   }
 }
 
+// src/review/cli.ts
+import { readFileSync as readFileSync39, writeFileSync as writeFileSync18 } from "fs";
+
+// src/review/types.ts
+var UNRESOLVED = ["open", "disputed", "addressed"];
+var PIPELINE_SEAT = "pipeline";
+var DEFAULT_POLICY = {
+  max_rounds: 3,
+  max_scopes: 2,
+  always_block: ["security", "destructive", "data-loss"],
+  blocking_severities: ["P0", "P1"]
+};
+
+// src/review/converge.ts
+function initialState(policy) {
+  return {
+    scope: 1,
+    round: 0,
+    max_rounds: policy.max_rounds,
+    open: null,
+    imported: false,
+    covered_head: null,
+    full_seats: [],
+    approving: [],
+    capped: false,
+    extensions: 0,
+    council: null,
+    bounded: false,
+    rows: [],
+    theme_rounds: [],
+    repeats: 0,
+    flips: 0,
+    problems: []
+  };
+}
+function isUnresolved(row) {
+  return UNRESOLVED.includes(row.status);
+}
+function isNote(row, policy) {
+  return !policy.blocking_severities.includes(row.severity) || row.origin === "pre-existing" || row.category === "convention" && row.rule === null;
+}
+function blocks(row) {
+  if (!isUnresolved(row))
+    return false;
+  return row.always_block || row.bar === "full" || row.red.length > 0;
+}
+function roundCap(state) {
+  return state.max_rounds + state.extensions;
+}
+function rowOf(state, id) {
+  return state.rows.find((row) => row.id === id);
+}
+function ordinal(id) {
+  return Number(id.slice(1));
+}
+function reviewHeld(row) {
+  return row.seats.some((seat2) => seat2 !== PIPELINE_SEAT);
+}
+function awaitsBoundedRound(state) {
+  return state.rows.some((row) => isUnresolved(row) && (row.ruling === "fix" || row.ruling === "escalate"));
+}
+function place(row, mode, policy) {
+  row.disposition = null;
+  row.followup = null;
+  if (row.always_block) {
+    row.status = "open";
+    row.bar = mode === "full" ? "full" : "closure";
+    return;
+  }
+  if (mode === "bounded" || mode === "closure" && !row.in_scope) {
+    row.status = "observation";
+    row.disposition = "out-of-scope";
+    return;
+  }
+  if (isNote(row, policy)) {
+    row.status = "deferred";
+    row.disposition = "note";
+    return;
+  }
+  row.status = "open";
+  row.bar = mode === "full" ? "full" : "closure";
+}
+function hitTheme(state, theme, open) {
+  if (open.mode !== "closure")
+    return;
+  if (state.theme_rounds.some((hit) => hit.theme === theme && hit.round === open.round))
+    return;
+  state.theme_rounds.push({ theme, round: open.round });
+}
+function reopen(state, row, open) {
+  row.status = "open";
+  row.disposition = null;
+  row.followup = null;
+  row.claim = null;
+  row.bar = open.mode === "full" ? "full" : "closure";
+  row.reopened += 1;
+  hitTheme(state, row.theme, open);
+}
+function reopenReason(row, event, policy) {
+  if (event.risk !== undefined && !row.always_block && policy.always_block.includes(row.category))
+    return "always-block";
+  if (event.blob === undefined || event.blob === row.closed_blob || !event.in_scope)
+    return null;
+  return row.always_block || !isNote(row, policy) ? "anchor-changed" : null;
+}
+function roundOpenRefusal(state, event) {
+  if (state.open !== null)
+    return "a round is already open";
+  if (event.scope !== state.scope)
+    return `the current scope is ${state.scope}`;
+  if (event.mode === "import")
+    return event.round === 0 && state.scope === 1 && state.round === 0 && !state.imported ? null : "an import round is round 0, once, before round 1 of scope 1";
+  if (event.round !== state.round + 1)
+    return `the next round of scope ${state.scope} is ${state.round + 1}`;
+  if (event.max_rounds !== undefined && event.mode !== "full")
+    return "only round 1 of a scope sets its round cap";
+  if (event.mode === "full")
+    return event.round === 1 ? null : "a scope has one full round, and it is round 1";
+  if (event.round === 1)
+    return "round 1 of a scope is the full round";
+  if (event.mode === "closure")
+    return event.round <= roundCap(state) ? null : `the round cap of ${roundCap(state)} is reached`;
+  if (!state.capped || state.council === null)
+    return "a bounded round follows a council call at the cap";
+  if (state.bounded)
+    return "the one bounded round was already opened";
+  return awaitsBoundedRound(state) ? null : "no row carries a council ruling of fix or escalate";
+}
+function findingRefusal(state, event, open) {
+  if (event.id !== `F${state.rows.length + 1}`)
+    return `the next finding id is F${state.rows.length + 1}`;
+  if (state.rows.some((row) => row.fingerprint === event.fingerprint))
+    return "the fingerprint is already in the ledger: report a seat or a repeat";
+  if (event.first_seen_head !== open.head || event.first_seen_scope !== open.scope || event.first_seen_round !== open.round)
+    return "first_seen does not name the open round";
+  if (open.mode === "import")
+    return event.seat === PIPELINE_SEAT ? null : "an import round takes pipeline findings";
+  if (event.seat === PIPELINE_SEAT)
+    return "a pipeline finding is imported in round 0";
+  return event.status === undefined && event.disposition === undefined ? null : "only an imported finding states its status";
+}
+function duplicateRefusal(state, event) {
+  const later = rowOf(state, event.id);
+  const earlier = rowOf(state, event.of);
+  if (later === undefined || earlier === undefined)
+    return "both rows must exist";
+  if (ordinal(event.of) >= ordinal(event.id))
+    return "a row is a duplicate of an earlier row";
+  if (later.disposition?.startsWith("duplicate:") === true)
+    return `${later.id} is already a duplicate`;
+  if (!isUnresolved(earlier) && (later.always_block || later.red.length > 0))
+    return `${later.id} carries evidence the closed row ${earlier.id} does not: it stays a row`;
+  if (later.always_block && !earlier.always_block)
+    return `${later.id} always blocks and ${earlier.id} does not: it stays a row`;
+  return null;
+}
+function councilRefusal(state, event) {
+  if (state.open !== null)
+    return "a council ruling is recorded between rounds";
+  if (!state.capped || state.round < roundCap(state))
+    return "the council is called at the round cap";
+  if (state.council !== null)
+    return "the one council call of this pull request was already recorded";
+  const ids = event.rulings.map((ruling) => ruling.id);
+  if (new Set(ids).size !== ids.length)
+    return "a row has one ruling";
+  const refused2 = ids.find((id) => {
+    const row = rowOf(state, id);
+    return row === undefined || !isUnresolved(row) || row.escalate === null || row.always_block;
+  });
+  return refused2 === undefined ? null : `${refused2} is not an escalated row the council may rule on`;
+}
+function inRoundRefusal(state, event, open) {
+  if (event.kind === "finding")
+    return findingRefusal(state, event, open);
+  if (event.kind === "round-close") {
+    if (open.mode !== "import" && open.seats.length === 0)
+      return "no seat delivered a verdict in this round";
+    const missing2 = event.anchors?.find((anchor) => rowOf(state, anchor.id) === undefined);
+    return missing2 === undefined ? null : `no row ${missing2.id}`;
+  }
+  if (open.mode === "import")
+    return "an import round takes pipeline findings only";
+  if (event.kind === "verdict") {
+    if (event.seat === PIPELINE_SEAT)
+      return "the pipeline delivers no verdict";
+    return open.seats.includes(event.seat) ? `${event.seat} already delivered a verdict in this round` : null;
+  }
+  if (event.kind === "duplicate")
+    return duplicateRefusal(state, event);
+  if (event.kind !== "seat" && event.kind !== "repeat" && event.kind !== "flip" && event.kind !== "evidence" && event.kind !== "closure")
+    return null;
+  const row = rowOf(state, event.id);
+  if (row === undefined)
+    return `no row ${event.id}`;
+  if (event.kind === "evidence")
+    return event.evidence.kind === "repro" && event.evidence.head !== open.head ? "a reproduction counts at the head of the open round" : null;
+  if (event.seat === PIPELINE_SEAT)
+    return "the pipeline never rules";
+  if (event.kind === "flip")
+    return null;
+  if (event.kind === "repeat")
+    return isUnresolved(row) ? `${row.id} is unresolved: report a seat` : null;
+  if (event.kind === "closure") {
+    if (!isUnresolved(row))
+      return `${row.id} is ${row.status}: there is nothing to close`;
+    return row.votes.some((vote) => vote.seat === event.seat) ? `${event.seat} already ruled on ${row.id}` : null;
+  }
+  if (row.seats.includes(event.seat))
+    return `${event.seat} already holds ${row.id}`;
+  return isUnresolved(row) || row.status === "observation" && !reviewHeld(row) ? null : `${row.id} is ${row.status}: report a repeat`;
+}
+var IN_ROUND = [
+  "verdict",
+  "round-close",
+  "finding",
+  "seat",
+  "repeat",
+  "flip",
+  "duplicate",
+  "evidence",
+  "closure"
+];
+function refusal(state, event) {
+  if (IN_ROUND.includes(event.kind))
+    return state.open === null ? "no round is open" : inRoundRefusal(state, event, state.open);
+  switch (event.kind) {
+    case "scope-open":
+      if (state.open !== null)
+        return "a round is open";
+      return event.scope === state.scope + 1 ? null : `the next scope is ${state.scope + 1}`;
+    case "round-open":
+      return roundOpenRefusal(state, event);
+    case "carry":
+      if (state.open !== null)
+        return "a round is open";
+      return state.covered_head === null ? "no round of this scope has closed: there is no review to carry" : null;
+    case "response": {
+      const row = rowOf(state, event.id);
+      if (row === undefined)
+        return `no row ${event.id}`;
+      return isUnresolved(row) ? null : `${row.id} is ${row.status}: the author answers an unresolved row`;
+    }
+    case "followup":
+    case "owner":
+      return rowOf(state, event.id) === undefined ? `no row ${event.id}` : null;
+    case "council":
+      return councilRefusal(state, event);
+    case "extension":
+      if (state.open !== null)
+        return "a round is open";
+      if (!state.capped || state.bounded)
+        return "an extension adds one closure round at the cap";
+      return state.extensions === 0 ? null : "this scope already has its one extension";
+    default:
+      return null;
+  }
+}
+function applyFinding(state, event, open, policy) {
+  const concrete = policy.always_block.includes(event.category);
+  const row = {
+    id: event.id,
+    fingerprint: event.fingerprint,
+    theme: event.theme,
+    anchor: event.anchor,
+    severity: event.severity,
+    category: event.category,
+    origin: event.origin,
+    cause_key: event.cause_key,
+    text: event.text,
+    suggested_fix: event.suggested_fix ?? null,
+    rule: event.rule ?? null,
+    risk: event.risk ?? null,
+    first_seen: { head: event.first_seen_head, scope: event.first_seen_scope, round: event.first_seen_round },
+    seats: [event.seat],
+    status: "observation",
+    disposition: event.disposition ?? null,
+    followup: null,
+    evidence: [],
+    red: [],
+    repro: "none",
+    always_block: concrete && event.risk !== undefined,
+    form_error: concrete && event.risk === undefined,
+    in_scope: open.mode === "full" || event.in_scope,
+    bar: "closure",
+    closed_blob: event.anchor.blob,
+    escalate: null,
+    ruling: null,
+    claim: null,
+    reopened: 0,
+    votes: []
+  };
+  state.rows.push(row);
+  if (open.mode === "import") {
+    row.status = event.status ?? "observation";
+    return;
+  }
+  place(row, open.mode, policy);
+  if (row.status === "open")
+    hitTheme(state, row.theme, open);
+}
+function applyEvidence(state, event, open, policy) {
+  const row = rowOf(state, event.id);
+  if (row === undefined)
+    return;
+  const item = event.evidence;
+  row.evidence.push(item);
+  if (item.kind !== "repro")
+    return;
+  if (item.exit === undefined || item.exit === 0) {
+    if (!row.red.includes(item.ref))
+      return;
+    row.red = row.red.filter((ref) => ref !== item.ref);
+    if (row.red.length > 0)
+      return;
+    row.repro = "green";
+    if (!isUnresolved(row))
+      return;
+    row.status = "closed";
+    row.disposition = "fixed";
+    row.escalate = null;
+    return;
+  }
+  if (item.base_exit === undefined)
+    return;
+  if (item.base_exit !== 0) {
+    if (row.red.length > 0)
+      return;
+    row.origin = "pre-existing";
+    if (row.always_block || !isUnresolved(row))
+      return;
+    row.status = "deferred";
+    row.disposition = "pre-existing";
+    row.escalate = null;
+    return;
+  }
+  row.origin = "introduced";
+  if (!row.always_block && (isNote(row, policy) || row.status === "observation"))
+    return;
+  if (!row.red.includes(item.ref))
+    row.red.push(item.ref);
+  row.repro = "red";
+  if (!isUnresolved(row))
+    reopen(state, row, open);
+}
+function applyRepeat(state, event, open, policy) {
+  state.repeats += 1;
+  const row = rowOf(state, event.id);
+  if (row === undefined)
+    return;
+  const reason2 = reopenReason(row, event, policy);
+  if (reason2 === null)
+    return;
+  if (reason2 === "always-block") {
+    row.risk = event.risk ?? null;
+    row.always_block = true;
+    row.form_error = false;
+  }
+  if (!row.seats.includes(event.seat))
+    row.seats.push(event.seat);
+  row.in_scope = event.in_scope;
+  row.red = [];
+  row.repro = "none";
+  reopen(state, row, open);
+}
+function applyClosure(state, event, open) {
+  const row = rowOf(state, event.id);
+  if (row === undefined)
+    return;
+  row.votes.push({ seat: event.seat, vote: event.vote });
+  if (event.vote === "not-addressed")
+    hitTheme(state, row.theme, open);
+}
+function defer(row, disposition) {
+  row.status = "deferred";
+  row.disposition = disposition;
+  row.escalate = null;
+}
+function resolveRow(row, open, seats) {
+  const agree = row.votes.filter((vote) => vote.vote === "addressed").length;
+  const disagree = row.votes.length - agree;
+  if (row.red.length > 0) {
+    row.status = "open";
+    return;
+  }
+  if (row.always_block) {
+    const every = open.seats.every((seat2) => row.votes.some((vote) => vote.seat === seat2 && vote.vote === "addressed"));
+    if (every) {
+      row.disposition = row.status === "disputed" ? row.claim ?? "unsupported" : "fixed";
+      row.status = row.status === "disputed" ? "dropped" : "closed";
+      row.escalate = null;
+    } else if (disagree > 0)
+      row.status = "open";
+    return;
+  }
+  if (row.status === "disputed") {
+    if (disagree > 0)
+      defer(row, "split");
+    else if (agree >= Math.min(2, Math.max(1, seats))) {
+      if (row.claim === "pre-existing" || row.claim === "follow-up")
+        defer(row, row.claim);
+      else {
+        row.status = "dropped";
+        row.disposition = row.claim ?? "unsupported";
+        row.escalate = null;
+      }
+    }
+    return;
+  }
+  if (disagree === 0 && agree > 0) {
+    row.status = "closed";
+    row.disposition = "fixed";
+    row.escalate = null;
+    return;
+  }
+  if (row.status === "addressed" && disagree > 0)
+    defer(row, "unreproduced");
+  else if (row.bar === "closure")
+    defer(row, "unreproduced");
+}
+function applyCap(state, open) {
+  const themes = state.theme_rounds.filter((hit) => hit.round === open.round).map((hit) => hit.theme);
+  const twice = themes.filter((theme) => state.theme_rounds.some((hit) => hit.theme === theme && hit.round === open.round - 1));
+  for (const row of state.rows) {
+    if (!isUnresolved(row))
+      continue;
+    if (row.always_block || row.red.length > 0)
+      row.escalate = "evidence";
+    else if (open.mode === "closure" && twice.includes(row.theme))
+      row.escalate = "design";
+    else if (row.escalate === null)
+      defer(row, "cap");
+  }
+  state.capped = true;
+}
+function applyRoundClose(state, open) {
+  state.open = null;
+  if (open.mode === "import")
+    return;
+  for (const row of state.rows)
+    if (isUnresolved(row))
+      resolveRow(row, open, state.full_seats.length);
+  if (open.mode === "bounded" || open.round >= state.max_rounds)
+    applyCap(state, open);
+  state.covered_head = open.head;
+}
+function applyInRound(state, event, open, policy) {
+  switch (event.kind) {
+    case "verdict":
+      open.seats.push(event.seat);
+      if (open.mode === "full")
+        state.full_seats.push(event.seat);
+      state.approving = state.approving.filter((seat2) => seat2 !== event.seat);
+      if (event.word === "approve")
+        state.approving.push(event.seat);
+      return;
+    case "round-close":
+      applyRoundClose(state, open);
+      for (const anchor of event.anchors ?? []) {
+        const row = rowOf(state, anchor.id);
+        if (row !== undefined)
+          row.closed_blob = anchor.blob;
+      }
+      return;
+    case "finding":
+      applyFinding(state, event, open, policy);
+      return;
+    case "seat": {
+      const row = rowOf(state, event.id);
+      if (row === undefined)
+        return;
+      const promoted = !isUnresolved(row);
+      row.seats.push(event.seat);
+      if (!promoted)
+        return;
+      place(row, open.mode, policy);
+      if (row.status === "open")
+        hitTheme(state, row.theme, open);
+      return;
+    }
+    case "repeat":
+      applyRepeat(state, event, open, policy);
+      return;
+    case "flip":
+      state.flips += 1;
+      return;
+    case "duplicate": {
+      const later = rowOf(state, event.id);
+      const earlier = rowOf(state, event.of);
+      if (later === undefined || earlier === undefined)
+        return;
+      if (isUnresolved(earlier)) {
+        for (const seat2 of later.seats)
+          if (!earlier.seats.includes(seat2))
+            earlier.seats.push(seat2);
+        for (const ref of later.red)
+          if (!earlier.red.includes(ref))
+            earlier.red.push(ref);
+        earlier.evidence.push(...later.evidence);
+        if (earlier.red.length > 0)
+          earlier.repro = "red";
+      } else
+        state.repeats += 1;
+      later.status = "dropped";
+      later.disposition = `duplicate:${earlier.id}`;
+      later.escalate = null;
+      return;
+    }
+    case "evidence":
+      applyEvidence(state, event, open, policy);
+      return;
+    case "closure":
+      applyClosure(state, event, open);
+      return;
+    default:
+  }
+}
+function applyBetweenRounds(state, event, policy) {
+  switch (event.kind) {
+    case "scope-open":
+      state.scope = event.scope;
+      state.round = 0;
+      state.max_rounds = policy.max_rounds;
+      state.covered_head = null;
+      state.full_seats = [];
+      state.approving = [];
+      state.capped = false;
+      state.extensions = 0;
+      state.theme_rounds = [];
+      for (const row of state.rows) {
+        row.escalate = null;
+        row.ruling = null;
+      }
+      return;
+    case "round-open":
+      state.open = { scope: event.scope, round: event.round, mode: event.mode, head: event.head, seats: [] };
+      if (event.mode === "import") {
+        state.imported = true;
+        return;
+      }
+      state.round = event.round;
+      if (event.max_rounds !== undefined)
+        state.max_rounds = Math.min(policy.max_rounds, event.max_rounds);
+      if (event.mode === "bounded")
+        state.bounded = true;
+      for (const row of state.rows)
+        row.votes = [];
+      return;
+    case "carry":
+      state.covered_head = event.head;
+      return;
+    case "response": {
+      const row = rowOf(state, event.id);
+      if (row === undefined)
+        return;
+      row.status = event.response === "fixed" ? "addressed" : "disputed";
+      row.claim = event.response === "dispute" ? event.claim ?? null : null;
+      row.evidence.push(...event.evidence ?? []);
+      return;
+    }
+    case "followup": {
+      const row = rowOf(state, event.id);
+      if (row !== undefined)
+        row.followup = event.ref;
+      return;
+    }
+    case "council":
+      state.council = event.record;
+      for (const ruling of event.rulings) {
+        const row = rowOf(state, ruling.id);
+        if (row === undefined)
+          continue;
+        row.ruling = ruling.choice;
+        if (ruling.choice === "follow-up")
+          defer(row, `council:${event.record}`);
+      }
+      return;
+    case "owner": {
+      const row = rowOf(state, event.id);
+      if (row === undefined)
+        return;
+      row.status = event.status;
+      row.disposition = `owner:${event.order}`;
+      row.escalate = null;
+      return;
+    }
+    case "extension":
+      state.extensions += 1;
+      return;
+    default:
+  }
+}
+function step(state, event, policy) {
+  const refused2 = refusal(state, event);
+  if (refused2 !== null)
+    return refused2;
+  if (state.open !== null && IN_ROUND.includes(event.kind))
+    applyInRound(state, event, state.open, policy);
+  else
+    applyBetweenRounds(state, event, policy);
+  return null;
+}
+function fold(events, policy) {
+  const state = initialState(policy);
+  events.forEach((event, index) => {
+    if (event.seq !== index + 1)
+      state.problems.push(`line ${index + 1}: seq is ${event.seq}`);
+    const refused2 = step(state, event, policy);
+    if (refused2 !== null)
+      state.problems.push(`line ${index + 1} (${event.kind}): ${refused2}`);
+  });
+  return state;
+}
+function card(row) {
+  const where = row.anchor.symbol === "" ? row.anchor.file : `${row.anchor.file} ${row.anchor.symbol}`;
+  const what = row.escalate === "design" ? `The theme of row ${row.id} (${row.category} in ${where}) was reopened in two consecutive rounds. Is the open finding a design decision for a follow-up, or a fix this pull request owes?` : `Row ${row.id} is still open at the round cap with a red reproduction. Does it go to a follow-up, or does this pull request owe the fix?`;
+  return {
+    id: row.id.toLowerCase(),
+    row: row.id,
+    theme: row.escalate === "design" ? row.theme : null,
+    question: `${what} Finding (${row.severity}, ${row.category}): ${row.text}`,
+    options: ["follow-up", "fix"],
+    approve: "follow-up"
+  };
+}
+function blockedAction(state, blocking, cap) {
+  const ids = blocking.map((row) => row.id).join(", ");
+  if (state.round < cap) {
+    const unanswered = blocking.some((row) => row.status === "open");
+    return unanswered ? { action: "fix", reason: `${ids} block and wait for the author's answer`, cards: [] } : { action: "closure-round", reason: `${ids} wait for a closure round`, cards: [] };
+  }
+  const eligible = blocking.filter((row) => row.escalate !== null && !row.always_block);
+  if (state.council === null && eligible.length > 0)
+    return {
+      action: "council",
+      reason: `${eligible.map((row) => row.id).join(", ")} block at the round cap: one council call`,
+      cards: eligible.map(card)
+    };
+  if (state.council !== null && !state.bounded && awaitsBoundedRound(state))
+    return { action: "bounded-closure", reason: `${ids} block after the council ruling: one bounded round`, cards: [] };
+  return { action: "owner-hold", reason: `${ids} block and no automatic step is left: the owner rules`, cards: [] };
+}
+function decide3(events, policy, context) {
+  const state = fold(events, policy);
+  const cap = roundCap(state);
+  const blocking = state.rows.filter(blocks);
+  const escalated = blocking.filter((row) => row.escalate !== null);
+  const unfiled = state.rows.filter((row) => row.status === "deferred" && row.followup === null);
+  const covered = state.covered_head !== null && state.covered_head === context.head;
+  const held = blocking.length > 0 ? "blocked" : "incomplete";
+  const result2 = (verdict, action, reasons, cards = []) => ({
+    verdict,
+    action,
+    reasons,
+    scope: state.scope,
+    round: state.round,
+    cap,
+    covered_head: state.covered_head,
+    blocking: blocking.map((row) => row.id),
+    escalate: escalated.map((row) => row.id),
+    cards,
+    followups_needed: unfiled.map((row) => row.id),
+    seats: covered ? [...state.full_seats] : []
+  });
+  if (state.scope > policy.max_scopes)
+    return result2(held, "captain-hold", [
+      `scope ${state.scope} is past the ${policy.max_scopes} a pull request may open: split or replan`
+    ]);
+  if (state.problems.length > 0 || context.integrity_failures.length > 0)
+    return result2(held, "repair", [...state.problems, ...context.integrity_failures]);
+  if (state.open !== null)
+    return result2(held, "close-round", [`round ${state.open.round} of scope ${state.open.scope} is open`]);
+  if (state.covered_head === null)
+    return result2(held, "review-round", [`no review round of scope ${state.scope} has closed`]);
+  if (blocking.length > 0) {
+    const next = blockedAction(state, blocking, cap);
+    return result2("blocked", next.action, [next.reason], next.cards);
+  }
+  if (!covered) {
+    return state.round < cap ? result2("incomplete", "closure-round", [
+      `the review covers ${state.covered_head}, not ${context.head}: the delta needs a closure pass or a carry`
+    ]) : result2("incomplete", "owner-hold", [
+      `the head moved to ${context.head} after the last round this scope may hold: an extension or a new scope is the owner's call`
+    ]);
+  }
+  const required = Math.max(1, context.seats_required);
+  if (state.full_seats.length < required)
+    return result2("incomplete", "repair", [
+      `round 1 of scope ${state.scope} sat ${state.full_seats.length} of ${required} required seats`
+    ]);
+  if (state.approving.length === 0)
+    return result2("incomplete", state.round < cap ? "closure-round" : "owner-hold", [
+      `no seat's latest verdict in scope ${state.scope} approves`
+    ]);
+  if (unfiled.length > 0)
+    return result2("incomplete", "file-follow-ups", [
+      `${unfiled.map((row) => row.id).join(", ")} are deferred with no follow-up reference`
+    ]);
+  if (context.evidence_missing.length > 0)
+    return result2("incomplete", "supply-evidence", [`missing at the head: ${context.evidence_missing.join(", ")}`]);
+  return result2("approved", "none", []);
+}
+
+// src/review/ledger.ts
+init_common_schema();
+var import__202014 = __toESM(require_2020(), 1);
+var import_ajv_formats5 = __toESM(require_dist(), 1);
+import { createHash as createHash14 } from "crypto";
+import { appendFileSync as appendFileSync4, existsSync as existsSync41, readFileSync as readFileSync38, realpathSync as realpathSync18, statSync as statSync20 } from "fs";
+import { join as join48, sep as sep8 } from "path";
+// schemas/review-ledger.schema.json
+var review_ledger_schema_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://agent-kit.local/schemas/review-ledger.schema.json",
+  title: "Review convergence ledger event",
+  description: "One line of a review convergence ledger: the append-only JSONL file `ak review ledger add` writes for one pull request (docs/decisions/0018-review-convergence.md). A line is never edited. A status change is a new line for the same finding id, and the current state of every finding is a fold over the lines, so two readers of the same file reach the same state and an interrupted write loses at most one line. `seq` counts lines from 1 with no gap, which is how a reader tells a torn line from a removed one. This is not the learning runtime's review ledger (review-event.schema.json), which records review comments after the fact. Field names follow finding.schema.json where the two describe the same thing: `severity`, `fingerprint`, `evidence`. The ledger is evidence a gate holds. Nothing in it grants authority, and `ak review decide` does not authenticate who appended a line.",
+  type: "object",
+  required: ["v", "seq", "kind"],
+  oneOf: [
+    { $ref: "#/$defs/scope-open" },
+    { $ref: "#/$defs/round-open" },
+    { $ref: "#/$defs/verdict" },
+    { $ref: "#/$defs/round-close" },
+    { $ref: "#/$defs/carry" },
+    { $ref: "#/$defs/finding" },
+    { $ref: "#/$defs/seat" },
+    { $ref: "#/$defs/repeat" },
+    { $ref: "#/$defs/flip" },
+    { $ref: "#/$defs/duplicate" },
+    { $ref: "#/$defs/response" },
+    { $ref: "#/$defs/evidence" },
+    { $ref: "#/$defs/closure" },
+    { $ref: "#/$defs/followup" },
+    { $ref: "#/$defs/council" },
+    { $ref: "#/$defs/owner" },
+    { $ref: "#/$defs/extension" }
+  ],
+  $defs: {
+    v: { description: "Ledger line format version.", const: 1 },
+    seq: { description: "Position of the line in the file, from 1, with no gap.", type: "integer", minimum: 1 },
+    finding_id: {
+      description: "Assigned by the tool in order of first report and stable for the life of the pull request.",
+      type: "string",
+      pattern: "^F[1-9][0-9]*$"
+    },
+    seat_id: {
+      description: "The seat that reported or ruled. `pipeline` names the delivery pipeline's Review, whose findings are imported in round 0 and which never rules.",
+      $ref: "common.schema.json#/$defs/kebab_id"
+    },
+    head: {
+      description: "The exact head a line was recorded against.",
+      $ref: "common.schema.json#/$defs/revision"
+    },
+    severity: {
+      description: "The same four values finding.schema.json uses. P0 is a wrong merge, data loss or a security defect. P1 is a defect in ordinary use. P2 is an edge case outside ordinary use. P3 is a note. P2 and P3 never block.",
+      enum: ["P0", "P1", "P2", "P3"]
+    },
+    category: {
+      description: "What kind of defect the finding claims. `security`, `destructive` and `data-loss` are the always-block classes, and only with a `risk` sentence.",
+      enum: ["correctness", "security", "destructive", "data-loss", "convention", "reuse", "test-gap", "docs"]
+    },
+    status: {
+      description: "`open`, `addressed` and `disputed` are unresolved. `closed`, `deferred`, `dropped` and `observation` are terminal until a reopen the engine admits.",
+      enum: ["open", "disputed", "addressed", "closed", "deferred", "dropped", "observation"]
+    },
+    risk: {
+      description: "What makes an always-block class concrete: the asset at risk and the action that harms it. A finding in one of those classes without this object is a form error and blocks only as an ordinary finding.",
+      type: "object",
+      additionalProperties: false,
+      required: ["asset", "action"],
+      properties: {
+        asset: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        action: { $ref: "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    anchor: {
+      description: "Where the finding sits, computed by the tool from the snapshot and never by the reviewer: the file, the enclosing symbol, the line at the head where the finding was first seen, and the digest of the symbol's body.",
+      type: "object",
+      additionalProperties: false,
+      required: ["file", "symbol", "line", "blob"],
+      properties: {
+        file: { $ref: "common.schema.json#/$defs/repo_path" },
+        symbol: {
+          description: "Empty when the line has no enclosing symbol or no snapshot was given.",
+          type: "string"
+        },
+        line: { type: "integer", minimum: 1 },
+        blob: { $ref: "common.schema.json#/$defs/hash" }
+      }
+    },
+    evidence_item: {
+      description: "One piece of evidence for or against a finding. A `repro` is a reviewer's test or command that a worker ran: `exit` is its exit status at `head`, and `base_exit` is its exit status at the merge base. Red at the head and green at the base is an introduced defect. Red at both is pre-existing. `red-green` is the author's test, red before the fix and green after. `reading` is an argument from a file and line. `council` is a council record.",
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "ref", "head", "sha256"],
+      properties: {
+        kind: { enum: ["repro", "red-green", "reading", "council"] },
+        ref: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        head: { $ref: "#/$defs/head" },
+        exit: { type: "integer", minimum: 0 },
+        base_exit: { type: "integer", minimum: 0 },
+        sha256: { $ref: "common.schema.json#/$defs/hash" }
+      },
+      if: { properties: { kind: { const: "repro" } } },
+      then: { required: ["exit", "base_exit"] }
+    },
+    "scope-open": {
+      description: "A full re-review trigger fired: a new review scope starts at round 1. Rows stay and earlier approvals no longer count. A pull request may open one new scope; a further one holds it for a split-or-replan decision.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "scope", "trigger", "head"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "scope-open" },
+        scope: { type: "integer", minimum: 2 },
+        trigger: {
+          enum: ["large-rebase", "risk-tier-rise", "surface-changed", "scope-growth", "requirement-change"]
+        },
+        head: { $ref: "#/$defs/head" }
+      }
+    },
+    "round-open": {
+      description: "A review round starts at `head`. Round 0 is the import of the delivery pipeline's findings. Round 1 is the one full review of a scope. Later rounds are closure rounds, up to the cap. A `bounded` round is the one closure round a council ruling may order after the cap.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "scope", "round", "mode", "head"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "round-open" },
+        scope: { type: "integer", minimum: 1 },
+        round: { type: "integer", minimum: 0 },
+        mode: { enum: ["import", "full", "closure", "bounded"] },
+        head: { $ref: "#/$defs/head" },
+        max_rounds: {
+          description: "Only on round 1 of a scope: the scope's round cap, when it is lower than the policy's. Nothing raises the cap.",
+          enum: [2, 3]
+        }
+      }
+    },
+    verdict: {
+      description: "A seat delivered its review in the open round. `word` is the seat's own verdict word. It alone never makes the verdict `blocked`: only ledger rows block. Approval needs at least one seat whose latest verdict in the scope is `approve`.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "seat", "word"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "verdict" },
+        seat: { $ref: "#/$defs/seat_id" },
+        word: { enum: ["approve", "block"] }
+      }
+    },
+    "round-close": {
+      description: "The open round's batch is complete. The engine applies the closure rules and, at the cap, the cap outcomes when it reads this line. `anchors` carries the digest of each listed row's symbol body at this round's head, which is what a later reopen is compared with.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "round-close" },
+        anchors: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "blob"],
+            properties: {
+              id: { $ref: "#/$defs/finding_id" },
+              blob: { $ref: "common.schema.json#/$defs/hash" }
+            }
+          }
+        }
+      }
+    },
+    carry: {
+      description: "The head moved with an empty delta by patch id. No seat is called and the earlier review carries to `head`.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "head"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "carry" },
+        head: { $ref: "#/$defs/head" }
+      }
+    },
+    finding: {
+      description: "A finding seen for the first time. `fingerprint` is sha256 over category, file, symbol and cause key, and `theme` is sha256 over category, file and symbol. Neither has a line number, so moved code neither duplicates nor hides a finding. `in_scope` says whether the finding sits inside the delta scope of its round; it is true in a full round. `rule` cites the project rule a `convention` finding rests on. `candidates` lists earlier rows with the same theme and a different fingerprint. `status` and `disposition` are set only on an imported pipeline finding.",
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "v",
+        "seq",
+        "kind",
+        "id",
+        "fingerprint",
+        "theme",
+        "anchor",
+        "severity",
+        "category",
+        "origin",
+        "seat",
+        "first_seen_head",
+        "first_seen_scope",
+        "first_seen_round",
+        "cause_key",
+        "text",
+        "in_scope"
+      ],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "finding" },
+        id: { $ref: "#/$defs/finding_id" },
+        fingerprint: { $ref: "common.schema.json#/$defs/hash" },
+        theme: { $ref: "common.schema.json#/$defs/hash" },
+        anchor: { $ref: "#/$defs/anchor" },
+        severity: { $ref: "#/$defs/severity" },
+        category: { $ref: "#/$defs/category" },
+        origin: { enum: ["introduced", "pre-existing"] },
+        seat: { $ref: "#/$defs/seat_id" },
+        first_seen_head: { $ref: "#/$defs/head" },
+        first_seen_scope: { type: "integer", minimum: 1 },
+        first_seen_round: { type: "integer", minimum: 0 },
+        cause_key: { $ref: "common.schema.json#/$defs/kebab_id" },
+        text: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        suggested_fix: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        in_scope: { type: "boolean" },
+        risk: { $ref: "#/$defs/risk" },
+        rule: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        candidates: { type: "array", items: { $ref: "#/$defs/finding_id" } },
+        status: { enum: ["closed", "deferred", "dropped", "observation"] },
+        disposition: { $ref: "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    seat: {
+      description: "Another seat reported the fingerprint of an unresolved row. The seat joins the row's holders and no new id is assigned.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "seat"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "seat" },
+        id: { $ref: "#/$defs/finding_id" },
+        seat: { $ref: "#/$defs/seat_id" }
+      }
+    },
+    repeat: {
+      description: "A seat reported the fingerprint of a row that is already terminal. The report is not shown to the author. `blob` is the digest of the symbol body at this round's head. The engine reopens the row only when that digest differs from the one recorded when the row was closed and the report is inside the delta scope, or when an always-block class is newly made concrete by `risk`.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "seat", "in_scope"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "repeat" },
+        id: { $ref: "#/$defs/finding_id" },
+        seat: { $ref: "#/$defs/seat_id" },
+        blob: { $ref: "common.schema.json#/$defs/hash" },
+        in_scope: { type: "boolean" },
+        risk: { $ref: "#/$defs/risk" }
+      }
+    },
+    flip: {
+      description: "A seat tried to change a terminal row's status with no change in its anchor and no new evidence. The attempt was rejected. The line is a record for the metrics and changes no state.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "seat", "reason"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "flip" },
+        id: { $ref: "#/$defs/finding_id" },
+        seat: { $ref: "#/$defs/seat_id" },
+        reason: { $ref: "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    duplicate: {
+      description: "A judgment made outside the engine that row `id` reports the same defect as the earlier row `of`. The later row is dropped and its report counts as a report of the earlier one. Absent this line two candidate rows stay separate.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "of"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "duplicate" },
+        id: { $ref: "#/$defs/finding_id" },
+        of: { $ref: "#/$defs/finding_id" }
+      }
+    },
+    response: {
+      description: "The author's answer to an unresolved row: `fixed`, normally with a red-green pair, or `dispute` with a claim and a reason. The author never closes a row.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "response"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "response" },
+        id: { $ref: "#/$defs/finding_id" },
+        response: { enum: ["fixed", "dispute"] },
+        claim: {
+          description: "What a dispute asserts. Seats that agree drop the row under this disposition, or defer it when the claim is `follow-up`.",
+          enum: ["unsupported", "pre-existing", "out-of-scope", "follow-up"]
+        },
+        reason: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        evidence: { type: "array", items: { $ref: "#/$defs/evidence_item" } }
+      },
+      if: { properties: { response: { const: "dispute" } } },
+      then: { required: ["claim", "reason"] }
+    },
+    evidence: {
+      description: "Evidence attached to a row inside a round. A `repro` that is red at the head and green at the merge base keeps or makes the row open. A row with a red `repro` closes when a later `repro` line is green.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "evidence"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "evidence" },
+        id: { $ref: "#/$defs/finding_id" },
+        evidence: { $ref: "#/$defs/evidence_item" }
+      }
+    },
+    closure: {
+      description: "A seat's closure answer for one row in the open round. On a disputed row `addressed` means the seat agrees with the author.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "seat", "vote"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "closure" },
+        id: { $ref: "#/$defs/finding_id" },
+        seat: { $ref: "#/$defs/seat_id" },
+        vote: { enum: ["addressed", "not-addressed"] },
+        location: {
+          description: "The file and line in the delta the seat points at.",
+          $ref: "common.schema.json#/$defs/nonempty_string"
+        }
+      }
+    },
+    followup: {
+      description: "The follow-up filed for a row. Every deferred row needs one before the engine approves.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "id", "ref"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "followup" },
+        id: { $ref: "#/$defs/finding_id" },
+        ref: { $ref: "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    council: {
+      description: "The one council call a pull request gets at the cap. `record` is the digest of the council record. A `follow-up` ruling defers the row. `fix` and `escalate` leave it open for one bounded closure round. Always-block rows are never on a council card.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "record", "rulings"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "council" },
+        record: { $ref: "common.schema.json#/$defs/hash" },
+        rulings: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "choice"],
+            properties: {
+              id: { $ref: "#/$defs/finding_id" },
+              choice: { enum: ["follow-up", "fix", "escalate"] }
+            }
+          }
+        }
+      }
+    },
+    owner: {
+      description: "An owner's ruling on one row, recorded with the order it came in. Whoever appends the line attests the order; the ledger does not prove it.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "order", "id", "status"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "owner" },
+        order: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        id: { $ref: "#/$defs/finding_id" },
+        status: { enum: ["closed", "deferred", "dropped"] }
+      }
+    },
+    extension: {
+      description: "A human-authorized extension: one extra closure round past the cap in the current scope, recorded with the order it came in. Whoever appends the line attests the order.",
+      type: "object",
+      additionalProperties: false,
+      required: ["v", "seq", "kind", "order"],
+      properties: {
+        v: { $ref: "#/$defs/v" },
+        seq: { $ref: "#/$defs/seq" },
+        kind: { const: "extension" },
+        order: { $ref: "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    finding_report: {
+      description: "What `ak review ledger add` takes for a finding a seat reported. The tool assigns the id, computes the fingerprint, the theme and the anchor, and decides whether the report is a new row, a second seat on an unresolved row or a repeat of a terminal one. `symbol` and `blob` are read only when no snapshot is given. `in_scope` defaults to true.",
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "seat", "severity", "category", "origin", "file", "line", "cause_key", "text"],
+      properties: {
+        kind: { const: "finding" },
+        seat: { $ref: "#/$defs/seat_id" },
+        severity: { $ref: "#/$defs/severity" },
+        category: { $ref: "#/$defs/category" },
+        origin: { enum: ["introduced", "pre-existing"] },
+        file: { $ref: "common.schema.json#/$defs/repo_path" },
+        line: { type: "integer", minimum: 1 },
+        symbol: { type: "string" },
+        blob: { $ref: "common.schema.json#/$defs/hash" },
+        cause_key: { $ref: "common.schema.json#/$defs/kebab_id" },
+        text: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        suggested_fix: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        in_scope: { type: "boolean" },
+        risk: { $ref: "#/$defs/risk" },
+        rule: { $ref: "common.schema.json#/$defs/nonempty_string" },
+        status: { enum: ["closed", "deferred", "dropped", "observation"] },
+        disposition: { $ref: "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  }
+};
+
+// src/review/ledger.ts
+var SCHEMA_ID = review_ledger_schema_default.$id;
+function sha2563(text5) {
+  return `sha256:${createHash14("sha256").update(text5).digest("hex")}`;
+}
+function fingerprint(category, file, symbol, causeKey) {
+  return sha2563(JSON.stringify([category, file, symbol, causeKey]));
+}
+function themeOf(category, file, symbol) {
+  return sha2563(JSON.stringify([category, file, symbol]));
+}
+var compiled2;
+function guards() {
+  if (compiled2 !== undefined)
+    return compiled2;
+  const ajv8 = new import__202014.default({ strict: false, allErrors: true, validateFormats: true });
+  import_ajv_formats5.default(ajv8);
+  ajv8.addSchema(common_schema_default);
+  const event = ajv8.compile(review_ledger_schema_default);
+  compiled2 = {
+    event,
+    report: ajv8.compile({ $ref: `${SCHEMA_ID}#/$defs/finding_report` }),
+    item: ajv8.compile({ type: "object", required: ["kind"], properties: { kind: { type: "string" } } }),
+    roundOpen: ajv8.compile({
+      type: "object",
+      additionalProperties: false,
+      required: ["kind", "head"],
+      properties: {
+        kind: { const: "round-open" },
+        head: { type: "string" },
+        mode: { enum: ["import", "full", "closure", "bounded"] },
+        max_rounds: { type: "integer" }
+      }
+    }),
+    roundClose: ajv8.compile({
+      type: "object",
+      additionalProperties: false,
+      required: ["kind"],
+      properties: {
+        kind: { const: "round-close" },
+        anchors: { $ref: `${SCHEMA_ID}#/$defs/round-close/properties/anchors` }
+      }
+    }),
+    byKind: (kind) => (kind in review_ledger_schema_default.$defs) ? ajv8.getSchema(`${SCHEMA_ID}#/$defs/${kind}`) : undefined
+  };
+  return compiled2;
+}
+function detail(errors2) {
+  return (errors2 ?? []).slice(0, 4).map((error2) => `${error2.instancePath === "" ? "the line" : error2.instancePath} ${error2.message ?? "is invalid"}`).join("; ");
+}
+function isLedgerEvent(value) {
+  return guards().event(value);
+}
+function eventProblem(kind, value) {
+  const validate = guards().byKind(kind);
+  if (validate === undefined)
+    return `no ledger line has kind ${JSON.stringify(kind)}`;
+  return validate(value) ? "does not match the ledger line schema" : detail(validate.errors);
+}
+var CODE_SYMBOL = /^[A-Za-z_$]/;
+var HEADING = /^#{1,6}\s/;
+var WORD = /[A-Za-z_$][\w$]*/g;
+var KEYWORDS2 = new Set([
+  "export",
+  "default",
+  "async",
+  "function",
+  "class",
+  "const",
+  "let",
+  "var",
+  "static",
+  "public",
+  "private",
+  "protected",
+  "interface",
+  "type",
+  "enum",
+  "abstract",
+  "declare",
+  "def",
+  "func",
+  "fn",
+  "pub"
+]);
+function startsSymbol(file, line) {
+  return file.endsWith(".md") ? HEADING.test(line) : CODE_SYMBOL.test(line);
+}
+function symbolName(file, line) {
+  if (file.endsWith(".md"))
+    return line.replace(/^#+\s*/, "").trim();
+  return (line.match(WORD) ?? []).find((word) => !KEYWORDS2.has(word)) ?? "";
+}
+function symbolsOf(file, text5) {
+  const lines = text5.split(`
+`);
+  const spans = [{ name: "", start: 0, end: lines.length }];
+  lines.forEach((line, index) => {
+    if (!startsSymbol(file, line))
+      return;
+    const last = spans.at(-1);
+    if (last !== undefined)
+      last.end = index;
+    spans.push({ name: symbolName(file, line), start: index, end: lines.length });
+  });
+  return spans;
+}
+function bodyBlob(text5, span2) {
+  return sha2563(text5.split(`
+`).slice(span2.start, span2.end).join(`
+`));
+}
+function anchorAt(file, text5, line) {
+  const spans = symbolsOf(file, text5);
+  const index = Math.max(0, line - 1);
+  const span2 = spans.findLast((candidate) => candidate.start <= index) ?? spans[0];
+  if (span2 === undefined)
+    return { symbol: "", blob: sha2563("") };
+  return { symbol: span2.name, blob: bodyBlob(text5, span2) };
+}
+function blobOf(file, text5, symbol) {
+  const span2 = symbolsOf(file, text5).find((candidate) => candidate.name === symbol);
+  return span2 === undefined ? null : bodyBlob(text5, span2);
+}
+function snapshotText(snapshot, file) {
+  const root = realpathSync18(snapshot);
+  const target = join48(root, file);
+  if (!existsSync41(target))
+    return null;
+  const real = realpathSync18(target);
+  if (!real.startsWith(`${root}${sep8}`))
+    throw new Error(`${file} resolves outside the snapshot`);
+  return statSync20(real).isFile() ? readFileSync38(real, "utf8") : null;
+}
+function anchorOf(report, snapshot) {
+  if (snapshot === undefined)
+    return { file: report.file, symbol: report.symbol ?? "", line: report.line, blob: report.blob ?? sha2563("") };
+  const text5 = snapshotText(snapshot, report.file) ?? "";
+  return { file: report.file, line: report.line, ...anchorAt(report.file, text5, report.line) };
+}
+function readLedger(path) {
+  if (!existsSync41(path))
+    return { events: [], torn: 0, unterminated: false, sha256: sha2563("") };
+  const text5 = readFileSync38(path, "utf8");
+  const events = [];
+  let torn = 0;
+  text5.split(`
+`).forEach((line, index) => {
+    if (line.trim() === "")
+      return;
+    let value;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      torn += 1;
+      return;
+    }
+    if (!isLedgerEvent(value))
+      throw new Error(`${path}:${index + 1}: not a ledger line`);
+    if (value.seq !== events.length + 1)
+      throw new Error(`${path}:${index + 1}: seq is ${value.seq} and the next line is ${events.length + 1}`);
+    events.push(value);
+  });
+  return { events, torn, unterminated: text5 !== "" && !text5.endsWith(`
+`), sha256: sha2563(text5) };
+}
+function appendLedger(path, events, unterminated) {
+  if (events.length === 0)
+    return;
+  const lines = events.map((event) => `${JSON.stringify(event)}
+`).join("");
+  appendFileSync4(path, `${unterminated ? `
+` : ""}${lines}`, { mode: 384 });
+}
+function admit2(adding, input, kind, candidate) {
+  if (!guards().event(candidate))
+    throw new Error(`input ${input} (${kind}): ${eventProblem(kind, candidate)}`);
+  const refused2 = step(adding.state, candidate, adding.options.policy);
+  if (refused2 !== null)
+    throw new Error(`input ${input} (${kind}): ${refused2}`);
+  adding.seq += 1;
+  adding.appended.push(candidate);
+  return candidate;
+}
+function numbered(adding, rest) {
+  return { v: 1, seq: adding.seq + 1, ...rest };
+}
+function openRound(adding, input, kind) {
+  if (adding.state.open === null)
+    throw new Error(`input ${input} (${kind}): no round is open`);
+  return adding.state.open;
+}
+function knownRow(adding, input, row, report, anchor) {
+  if (isUnresolved(row) || row.status === "observation" && row.seats.every((seat2) => seat2 === PIPELINE_SEAT)) {
+    if (row.seats.includes(report.seat))
+      return {
+        input,
+        kind: "finding",
+        lines: [],
+        id: row.id,
+        status: row.status,
+        note: "already reported by this seat"
+      };
+    admit2(adding, input, "seat", numbered(adding, { kind: "seat", id: row.id, seat: report.seat }));
+    return { input, kind: "finding", lines: ["seat"], id: row.id, status: row.status };
+  }
+  const reopened = row.reopened;
+  const repeat = numbered(adding, {
+    kind: "repeat",
+    id: row.id,
+    seat: report.seat,
+    in_scope: report.in_scope ?? true
+  });
+  if (adding.options.snapshot !== undefined || report.blob !== undefined)
+    repeat.blob = anchor.blob;
+  if (report.risk !== undefined)
+    repeat.risk = report.risk;
+  admit2(adding, input, "repeat", repeat);
+  if (row.reopened > reopened)
+    return { input, kind: "finding", lines: ["repeat"], id: row.id, status: row.status, note: "reopened" };
+  const flip = numbered(adding, {
+    kind: "flip",
+    id: row.id,
+    seat: report.seat,
+    reason: "no change in the anchor and no new evidence"
+  });
+  admit2(adding, input, "flip", flip);
+  return {
+    input,
+    kind: "finding",
+    lines: ["repeat", "flip"],
+    id: row.id,
+    status: row.status,
+    note: "repeat of a terminal row: not shown to the author"
+  };
+}
+function addFinding(adding, input, item) {
+  const report = item;
+  const validate = guards().report;
+  if (!validate(report))
+    throw new Error(`input ${input} (finding): ${detail(validate.errors)}`);
+  const open = openRound(adding, input, "finding");
+  const anchor = anchorOf(report, adding.options.snapshot);
+  const print = fingerprint(report.category, report.file, anchor.symbol, report.cause_key);
+  const known = adding.state.rows.find((row2) => row2.fingerprint === print);
+  if (known !== undefined)
+    return knownRow(adding, input, known, report, anchor);
+  const theme = themeOf(report.category, report.file, anchor.symbol);
+  const candidates = adding.state.rows.filter((row2) => row2.theme === theme).map((row2) => row2.id);
+  const id = `F${adding.state.rows.length + 1}`;
+  const line = numbered(adding, {
+    kind: "finding",
+    id,
+    fingerprint: print,
+    theme,
+    anchor,
+    severity: report.severity,
+    category: report.category,
+    origin: report.origin,
+    seat: report.seat,
+    first_seen_head: open.head,
+    first_seen_scope: open.scope,
+    first_seen_round: open.round,
+    cause_key: report.cause_key,
+    text: report.text,
+    in_scope: open.mode === "full" || (report.in_scope ?? true)
+  });
+  if (report.suggested_fix !== undefined)
+    line.suggested_fix = report.suggested_fix;
+  if (report.risk !== undefined)
+    line.risk = report.risk;
+  if (report.rule !== undefined)
+    line.rule = report.rule;
+  if (candidates.length > 0)
+    line.candidates = candidates;
+  if (report.status !== undefined)
+    line.status = report.status;
+  if (report.disposition !== undefined)
+    line.disposition = report.disposition;
+  admit2(adding, input, "finding", line);
+  const outcome = { input, kind: "finding", lines: ["finding"], id };
+  const row = adding.state.rows.at(-1);
+  if (row !== undefined)
+    outcome.status = row.status;
+  if (candidates.length > 0)
+    outcome.candidates = candidates;
+  return outcome;
+}
+function nextMode(state) {
+  if (state.round === 0)
+    return "full";
+  return state.round < roundCap(state) || state.council === null ? "closure" : "bounded";
+}
+function addRoundOpen(adding, input, item) {
+  const given = item;
+  const validate = guards().roundOpen;
+  if (!validate(given))
+    throw new Error(`input ${input} (round-open): ${detail(validate.errors)}`);
+  const mode = given.mode ?? nextMode(adding.state);
+  const cap = given.max_rounds ?? adding.options.maxRounds;
+  const line = numbered(adding, {
+    kind: "round-open",
+    scope: adding.state.scope,
+    round: mode === "import" ? 0 : adding.state.round + 1,
+    mode,
+    head: given.head
+  });
+  if (mode === "full" && cap !== undefined)
+    line.max_rounds = cap;
+  admit2(adding, input, "round-open", line);
+  return { input, kind: "round-open", lines: ["round-open"] };
+}
+function closeAnchors(adding) {
+  const snapshot = adding.options.snapshot;
+  if (snapshot === undefined)
+    return [];
+  const anchors = [];
+  for (const row of adding.state.rows) {
+    const text5 = snapshotText(snapshot, row.anchor.file);
+    const blob = text5 === null ? null : blobOf(row.anchor.file, text5, row.anchor.symbol);
+    if (blob !== null)
+      anchors.push({ id: row.id, blob });
+  }
+  return anchors;
+}
+function addRoundClose(adding, input, item) {
+  const given = item;
+  const validate = guards().roundClose;
+  if (!validate(given))
+    throw new Error(`input ${input} (round-close): ${detail(validate.errors)}`);
+  const anchors = given.anchors ?? closeAnchors(adding);
+  const line = numbered(adding, { kind: "round-close" });
+  if (anchors.length > 0)
+    line.anchors = anchors;
+  admit2(adding, input, "round-close", line);
+  return { input, kind: "round-close", lines: ["round-close"] };
+}
+var COMPUTED = new Set(["seat", "repeat", "flip"]);
+function addOne(adding, input, item) {
+  if (item.kind === "finding")
+    return addFinding(adding, input, item);
+  if (item.kind === "round-open")
+    return addRoundOpen(adding, input, item);
+  if (item.kind === "round-close")
+    return addRoundClose(adding, input, item);
+  if (COMPUTED.has(item.kind))
+    throw new Error(`input ${input} (${item.kind}): the tool writes this line from a finding report`);
+  const candidate = item.kind === "scope-open" ? numbered(adding, { ...item, scope: adding.state.scope + 1 }) : numbered(adding, { ...item });
+  const line = admit2(adding, input, item.kind, candidate);
+  const outcome = { input, kind: item.kind, lines: [line.kind] };
+  if ("id" in line)
+    outcome.id = line.id;
+  return outcome;
+}
+function parseInput(text5) {
+  const value = JSON.parse(text5);
+  const list3 = Array.isArray(value) ? value : [value];
+  const validate = guards().item;
+  return list3.map((entry, index) => {
+    if (!validate(entry))
+      throw new Error(`input ${index + 1}: an object with a kind is expected`);
+    if ("v" in entry || "seq" in entry)
+      throw new Error(`input ${index + 1}: the tool numbers the lines`);
+    return entry;
+  });
+}
+function addEvents(existing, items2, options) {
+  const state = fold(existing, options.policy);
+  if (state.problems.length > 0)
+    throw new Error(`the ledger has refused lines: ${state.problems.join("; ")}`);
+  const adding = { state, seq: existing.length, appended: [], options };
+  const outcomes = items2.map((item, index) => addOne(adding, index + 1, item));
+  return { appended: adding.appended, outcomes };
+}
+
+// src/review/cli.ts
+var USAGE5 = [
+  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
+  "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
+  "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]"
+];
+var NOTE = "This record grants no authority. It approves no checkpoint, ticket, merge or deploy.";
+var REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
+var FLAGS = {
+  add: ["--ledger", "--event", "--snapshot", "--max-rounds", "--out"],
+  show: ["--ledger", "--out"],
+  decide: ["--ledger", "--head", "--seats", "--missing-evidence", "--integrity-failure", "--out"]
+};
+function commandOf(argv) {
+  if (argv[0] === "decide")
+    return "decide";
+  if (argv[0] !== "ledger")
+    return;
+  return argv[1] === "add" || argv[1] === "show" ? argv[1] : undefined;
+}
+function parseFlags(argv, allowed) {
+  const one = new Map;
+  const many = new Map;
+  for (let i = 0;i < argv.length; i += 2) {
+    const name = argv[i] ?? "";
+    const value = argv[i + 1];
+    if (!allowed.includes(name))
+      return { ok: false, error: `unknown flag ${name}` };
+    if (value === undefined || value.startsWith("--") && value !== "-")
+      return { ok: false, error: `${name} needs a value` };
+    if (REPEATED.has(name))
+      many.set(name, [...many.get(name) ?? [], value]);
+    else if (one.has(name))
+      return { ok: false, error: `${name} is given twice` };
+    else
+      one.set(name, value);
+  }
+  return { ok: true, flags: { one, many } };
+}
+
+class UsageError extends Error {
+}
+function required(flags, name) {
+  const value = flags.one.get(name);
+  if (value === undefined)
+    throw new UsageError(`${name} is required`);
+  return value;
+}
+function emit(io, out, line, record) {
+  const text5 = `${JSON.stringify(record, null, 2)}
+`;
+  if (out === undefined) {
+    io.out(text5.trimEnd());
+    return;
+  }
+  writeFileSync18(out, text5, { mode: 384 });
+  io.out(`${line}: ${out}`);
+}
+function ledgerRef(path, file) {
+  return { path, sha256: file.sha256, lines: file.events.length, torn: file.torn };
+}
+function maxRounds(flags, policy) {
+  const given = flags.one.get("--max-rounds");
+  if (given === undefined)
+    return;
+  if (given !== "2" && given !== String(policy.max_rounds))
+    throw new UsageError(`--max-rounds is 2 or ${policy.max_rounds}`);
+  return Number(given);
+}
+function add(flags, io) {
+  const path = required(flags, "--ledger");
+  const source = required(flags, "--event");
+  const cap = maxRounds(flags, DEFAULT_POLICY);
+  const snapshot = flags.one.get("--snapshot");
+  const text5 = source === "-" ? (io.stdin ?? (() => readFileSync39(0, "utf8")))() : readFileSync39(source, "utf8");
+  const before = readLedger(path);
+  const options = { policy: DEFAULT_POLICY };
+  if (snapshot !== undefined)
+    options.snapshot = snapshot;
+  if (cap !== undefined)
+    options.maxRounds = cap;
+  const result2 = addEvents(before.events, parseInput(text5), options);
+  appendLedger(path, result2.appended, before.unterminated);
+  const after = readLedger(path);
+  const record = {
+    schema: "review-ledger-add",
+    schema_version: 1,
+    ledger: ledgerRef(path, after),
+    appended: result2.appended,
+    outcomes: result2.outcomes,
+    grants: [],
+    note: NOTE
+  };
+  emit(io, flags.one.get("--out"), `review ledger add lines=${result2.appended.length} seq=${after.events.length}`, record);
+  return 0;
+}
+function show3(flags, io) {
+  const path = required(flags, "--ledger");
+  const file = readLedger(path);
+  const state = fold(file.events, DEFAULT_POLICY);
+  const record = {
+    schema: "review-ledger-state",
+    schema_version: 1,
+    ledger: ledgerRef(path, file),
+    policy: DEFAULT_POLICY,
+    state,
+    grants: [],
+    note: NOTE
+  };
+  emit(io, flags.one.get("--out"), `review ledger scope=${state.scope} round=${state.round} rows=${state.rows.length} problems=${state.problems.length}`, record);
+  return state.problems.length === 0 ? 0 : 1;
+}
+function decideCommand2(flags, io) {
+  const path = required(flags, "--ledger");
+  const head = required(flags, "--head");
+  const seats = required(flags, "--seats");
+  if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head))
+    throw new UsageError("--head is a full commit id");
+  if (!/^[1-9][0-9]?$/.test(seats))
+    throw new UsageError("--seats is a count from 1");
+  const file = readLedger(path);
+  const context = {
+    head,
+    seats_required: Number(seats),
+    evidence_missing: flags.many.get("--missing-evidence") ?? [],
+    integrity_failures: flags.many.get("--integrity-failure") ?? []
+  };
+  const decision = decide3(file.events, DEFAULT_POLICY, context);
+  const state = fold(file.events, DEFAULT_POLICY);
+  const record = {
+    schema: "review-decision",
+    schema_version: 1,
+    ledger: ledgerRef(path, file),
+    policy: DEFAULT_POLICY,
+    context,
+    ...decision,
+    repeats: state.repeats,
+    flips: state.flips,
+    grants: [],
+    note: NOTE
+  };
+  emit(io, flags.one.get("--out"), `review ${decision.verdict} action=${decision.action}`, record);
+  return decision.verdict === "approved" ? 0 : 1;
+}
+function runReview(argv, io) {
+  const command = commandOf(argv);
+  if (command === undefined) {
+    for (const line of USAGE5)
+      io.err(line);
+    return 2;
+  }
+  const parsed = parseFlags(argv.slice(command === "decide" ? 1 : 2), FLAGS[command]);
+  if (!parsed.ok) {
+    io.err(`ak review: ${parsed.error}`);
+    for (const line of USAGE5)
+      io.err(line);
+    return 2;
+  }
+  try {
+    if (command === "add")
+      return add(parsed.flags, io);
+    if (command === "show")
+      return show3(parsed.flags, io);
+    return decideCommand2(parsed.flags, io);
+  } catch (cause) {
+    io.err(`ak review: ${cause instanceof Error ? cause.message : String(cause)}`);
+    if (cause instanceof UsageError)
+      for (const line of USAGE5)
+        io.err(line);
+    return 2;
+  }
+}
+
 // src/semantic-lint/key.ts
-import { lstatSync as lstatSync7, readFileSync as readFileSync38 } from "fs";
+import { lstatSync as lstatSync7, readFileSync as readFileSync40 } from "fs";
 function readKeyFile(path) {
   const stat = lstatSync7(path, { throwIfNoEntry: false });
   if (stat === undefined)
     return null;
   if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 511) !== 384 || process.getuid !== undefined && stat.uid !== process.getuid())
     throw new Error("auth");
-  const lines = readFileSync38(path, "utf8").split(`
+  const lines = readFileSync40(path, "utf8").split(`
 `);
   for (const line of lines) {
     const match = /^(?:TYPESAFE_API_KEY|TYPESAFEAI_API_KEY)\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#'"`$]+))\s*$/.exec(line.trim());
@@ -45356,13 +47046,13 @@ var semantic_lint_default = {
 var import_ajv17 = __toESM(require_ajv(), 1);
 import { randomBytes as randomBytes5 } from "crypto";
 import { homedir as homedir5 } from "os";
-import { join as join51, resolve as resolve19 } from "path";
+import { join as join52, resolve as resolve19 } from "path";
 
 // src/semantic-lint/client.ts
 var import_ajv15 = __toESM(require_ajv(), 1);
 import { randomUUID as randomUUID2 } from "crypto";
-import { mkdirSync as mkdirSync26, writeFileSync as writeFileSync18 } from "fs";
-import { join as join48 } from "path";
+import { mkdirSync as mkdirSync26, writeFileSync as writeFileSync19 } from "fs";
+import { join as join49 } from "path";
 import { setTimeout as delay } from "timers/promises";
 // provenance/semantic-lint-response.schema.json
 var semantic_lint_response_schema_default = {
@@ -45408,7 +47098,7 @@ function measurement(value) {
 function requestFor(input) {
   const questions = {};
   const subjects = [];
-  const add = (file, rule, task) => {
+  const add2 = (file, rule, task) => {
     const id = `q${subjects.length}`;
     subjects.push({ id, file, rule });
     questions[id] = {
@@ -45421,9 +47111,9 @@ function requestFor(input) {
     };
   };
   for (const file of input.files)
-    add(file.path, "code-claims", "Do names and comments in this file claim behavior that its implementation contradicts?");
+    add2(file.path, "code-claims", "Do names and comments in this file claim behavior that its implementation contradicts?");
   if (input.files.some((file) => /\.(?:md|txt)$/i.test(file.path)))
-    add("(batch)", "code-doc", "Do the supplied documents make a claim contradicted by the supplied changed code? Missing context is uncertainty, not a contradiction.");
+    add2("(batch)", "code-doc", "Do the supplied documents make a claim contradicted by the supplied changed code? Missing context is uncertainty, not a contradiction.");
   return { request: { model: semantic_lint_default.model, state: { files: input.files }, questions }, subjects };
 }
 async function askBatch(input, options) {
@@ -45433,7 +47123,7 @@ async function askBatch(input, options) {
   for (let attempt = 1;attempt <= 2; attempt += 1) {
     if (options.signal?.aborted)
       return { status: "error", reason: "cancelled", findings: [] };
-    const path = join48(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
+    const path = join49(options.receipts, `${Date.now()}-${randomUUID2()}.json`);
     const receipt = {
       request,
       requested_model: semantic_lint_default.model,
@@ -45448,7 +47138,7 @@ async function askBatch(input, options) {
     };
     const save2 = () => {
       mkdirSync26(options.receipts, { recursive: true, mode: 448 });
-      writeFileSync18(path, `${JSON.stringify(receipt)}
+      writeFileSync19(path, `${JSON.stringify(receipt)}
 `, { mode: 384 });
     };
     try {
@@ -45531,9 +47221,9 @@ async function askBatch(input, options) {
 // src/semantic-lint/claim.ts
 init_trace();
 var import_ajv16 = __toESM(require_ajv(), 1);
-import { createHash as createHash14, randomBytes as randomBytes4 } from "crypto";
-import { mkdirSync as mkdirSync27, readdirSync as readdirSync13, readFileSync as readFileSync39, renameSync as renameSync7, statSync as statSync20, writeFileSync as writeFileSync19 } from "fs";
-import { join as join49 } from "path";
+import { createHash as createHash15, randomBytes as randomBytes4 } from "crypto";
+import { mkdirSync as mkdirSync27, readdirSync as readdirSync13, readFileSync as readFileSync41, renameSync as renameSync7, statSync as statSync21, writeFileSync as writeFileSync20 } from "fs";
+import { join as join50 } from "path";
 var CLAIM_VERSION = 1;
 var STALE_MS = 120000;
 var ajv9 = new import_ajv16.default({ strict: false });
@@ -45549,7 +47239,7 @@ var isRecord = ajv9.compile({
 });
 var GENERATION = /^[1-9][0-9]*$/;
 function claimKey(body) {
-  return createHash14("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
+  return createHash15("sha256").update(JSON.stringify([CLAIM_VERSION, semantic_lint_default.revision, semantic_lint_default.endpoint, body])).digest("hex");
 }
 function line(record) {
   return `${JSON.stringify(record)}
@@ -45559,16 +47249,16 @@ function taken(cause) {
   return cause instanceof Error && "code" in cause && cause.code === "EEXIST";
 }
 function current(path) {
-  const text5 = readFileSync39(path, "utf8");
+  const text5 = readFileSync41(path, "utf8");
   try {
     const raw = JSON.parse(text5);
     if (isRecord(raw))
       return raw;
   } catch {}
-  return { state: "in-progress", trace: "", started_at: statSync20(path).mtimeMs, ended_at: null };
+  return { state: "in-progress", trace: "", started_at: statSync21(path).mtimeMs, ended_at: null };
 }
 function acquireClaim(receipts, key, trace2, now = Date.now) {
-  const dir = join49(receipts, "claims", key);
+  const dir = join50(receipts, "claims", key);
   try {
     mkdirSync27(dir, { recursive: true, mode: 448 });
   } catch {
@@ -45579,7 +47269,7 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     try {
       const highest2 = Math.max(0, ...readdirSync13(dir).filter((name) => GENERATION.test(name)).map(Number));
       if (highest2 > 0) {
-        const record = current(join49(dir, String(highest2)));
+        const record = current(join50(dir, String(highest2)));
         if (record.state === "complete")
           return { kind: "duplicate", trace: parseTraceparent(record.trace) === null ? null : record.trace };
         if (record.state === "in-progress" && now() - record.started_at < STALE_MS)
@@ -45589,9 +47279,9 @@ function acquireClaim(receipts, key, trace2, now = Date.now) {
     } catch {
       return { kind: "error" };
     }
-    const path = join49(dir, String(next));
+    const path = join50(dir, String(next));
     try {
-      writeFileSync19(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
+      writeFileSync20(path, line({ state: "in-progress", trace: trace2, started_at: now(), ended_at: null }), {
         flag: "wx",
         mode: 384
       });
@@ -45607,7 +47297,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
   try {
     const { started_at } = current(claim3.path);
     const temp = `${claim3.path}.${randomBytes4(8).toString("hex")}.tmp`;
-    writeFileSync19(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
+    writeFileSync20(temp, line({ state, trace: trace2, started_at, ended_at: now() }), { flag: "wx", mode: 384 });
     renameSync7(temp, claim3.path);
     return true;
   } catch {
@@ -45617,8 +47307,8 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync8, readFileSync as readFileSync40, realpathSync as realpathSync18 } from "fs";
-import { isAbsolute as isAbsolute17, join as join50, relative as relative15, resolve as resolve18 } from "path";
+import { lstatSync as lstatSync8, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
+import { isAbsolute as isAbsolute17, join as join51, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -45636,7 +47326,7 @@ function collectInput(cwd) {
   const top = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 1500 });
   if (top.code !== 0)
     throw new Error("repository");
-  const root = realpathSync18(top.stdout.trim());
+  const root = realpathSync19(top.stdout.trim());
   const changed = run(["git", "diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR", "--"], {
     cwd: root,
     timeoutMs: 1500
@@ -45656,13 +47346,13 @@ function collectInput(cwd) {
     else {
       try {
         const stat = lstatSync8(absolute);
-        const rel = relative15(root, realpathSync18(absolute));
+        const rel = relative15(root, realpathSync19(absolute));
         if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
           reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
         else {
-          const content = readFileSync40(join50(root, path), "utf8");
+          const content = readFileSync42(join51(root, path), "utf8");
           if (binary(content))
             reason2 = "binary";
           else if (SECRET_CONTENT.test(content))
@@ -45766,8 +47456,8 @@ async function hookMain(argv) {
   const result2 = await runHook({
     root: process.cwd(),
     enabled,
-    keyFile: join51(homedir5(), semantic_lint_default.key_file),
-    receipts: join51(process.env.XDG_STATE_HOME ?? join51(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
+    keyFile: join52(homedir5(), semantic_lint_default.key_file),
+    receipts: join52(process.env.XDG_STATE_HOME ?? join52(homedir5(), ".local", "state"), "agent-kit", "semantic-lint"),
     traceparent: process.env.TRACEPARENT,
     signal: controller.signal
   });
@@ -45796,13 +47486,13 @@ var isCommand = ajv10.compile({ type: "string" });
 if (false) {}
 
 // src/maintenance/host-probe-version.ts
-import { readdirSync as readdirSync14, readFileSync as readFileSync41 } from "fs";
-import { join as join53 } from "path";
+import { readdirSync as readdirSync14, readFileSync as readFileSync43 } from "fs";
+import { join as join54 } from "path";
 
 // src/review-isolation-probe/host-cli.ts
 import { spawnSync as spawnSync6 } from "child_process";
 import { accessSync as accessSync2, constants as constants2 } from "fs";
-import { join as join52 } from "path";
+import { join as join53 } from "path";
 var VERSION_TIMEOUT_MS = 5000;
 var HOST_VERSION_NOT_ON_PATH = "not on PATH";
 var HOST_VERSION_FIXTURE = "fixture (host CLI not invoked)";
@@ -45832,7 +47522,7 @@ function which(names, pathEnv) {
     for (const dir of path.split(":")) {
       if (dir === "")
         continue;
-      const candidate = join52(dir, name);
+      const candidate = join53(dir, name);
       if (isExecutable(candidate))
         return candidate;
     }
@@ -45953,9 +47643,9 @@ function readLatestProbedHostVersion(factsRoot, host) {
     return null;
   }
   for (const date of dates.toSorted().toReversed()) {
-    const path = join53(factsRoot, date, `review-isolation-${host}.md`);
+    const path = join54(factsRoot, date, `review-isolation-${host}.md`);
     try {
-      const version2 = parseProbedHostVersion(readFileSync41(path, "utf8"));
+      const version2 = parseProbedHostVersion(readFileSync43(path, "utf8"));
       if (version2 !== null)
         return { date, version: version2, path };
     } catch {
@@ -46076,7 +47766,7 @@ var validSettings = ajv11.compile({
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__202014.default({ strict: false });
+var bindingAjv = new import__202015.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -46089,8 +47779,8 @@ var ROOT = process.env.AK_PUBLISHED_ROOT ?? "https://raw.githubusercontent.com/P
 var COMMAND_TIMEOUT_MS = 15000;
 var MUTATION_TIMEOUT_MS = 300000;
 var FETCH_TIMEOUT_MS = 5000;
-function finding(level, check2, detail, remedy) {
-  return { level, check: check2, detail, remedy };
+function finding(level, check2, detail2, remedy) {
+  return { level, check: check2, detail: detail2, remedy };
 }
 function command(binary2, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary2 === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
@@ -46111,7 +47801,7 @@ function jsonCommand(binary2, args, cwd = process.cwd()) {
 }
 function projectRoot() {
   const top = command("git", ["rev-parse", "--show-toplevel"]);
-  return realpathSync19(top.ok ? top.output : process.cwd());
+  return realpathSync20(top.ok ? top.output : process.cwd());
 }
 function inProject(row, root) {
   if (row.projectEnabled === true)
@@ -46119,7 +47809,7 @@ function inProject(row, root) {
   if (row.projectPath === undefined)
     return true;
   try {
-    return realpathSync19(row.projectPath) === root;
+    return realpathSync20(row.projectPath) === root;
   } catch {
     return false;
   }
@@ -46144,9 +47834,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join54(process.env.CODEX_HOME ?? join54(homedir6(), ".codex"), "config.toml");
+  const file = join55(process.env.CODEX_HOME ?? join55(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync42(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync44(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -46185,10 +47875,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join54(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join55(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson3(readFileSync42(file, "utf8"), validSettings);
+    settings = parseJson3(readFileSync44(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -46199,7 +47889,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync41(join54(root, BINDING_FILE)) ? root : null;
+  return existsSync42(join55(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -46211,7 +47901,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join54(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join55(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -46255,13 +47945,13 @@ function checkLinearis(root, backend) {
   if (!root || backend !== "linear-linearis")
     return finding("WARN", "linearis", "no linear-linearis binding to check", "Add the binding if this repo uses Linear.");
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
-  const top = topResult.ok ? realpathSync19(topResult.output) : realpathSync19(root);
+  const top = topResult.ok ? realpathSync20(topResult.output) : realpathSync20(root);
   for (const base2 of new Set([root, top])) {
-    const binary2 = join54(base2, "node_modules", ".bin", "linearis");
-    if (!existsSync41(binary2))
+    const binary2 = join55(base2, "node_modules", ".bin", "linearis");
+    if (!existsSync42(binary2))
       continue;
-    const target = realpathSync19(binary2);
-    if ([root, top].every((folder) => relative16(join54(realpathSync19(folder), "node_modules"), target).startsWith("..")))
+    const target = realpathSync20(binary2);
+    if ([root, top].every((folder) => relative16(join55(realpathSync20(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -46274,7 +47964,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute18(root)) {
-      const value = parseJson3(readFileSync42(join54(root, suffix), "utf8"), validManifest);
+      const value = parseJson3(readFileSync44(join55(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -46348,13 +48038,13 @@ async function doctor2(json = false, lessonsDir) {
     hasCodex || codexConfigured ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure) : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
-    ...probedHostVersionFindings(join54(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
+    ...probedHostVersionFindings(join55(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
-    checkSemanticLint(join54(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
+    checkSemanticLint(join55(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
   ];
   items2.push(...doctorLessonsFindings(lessonsDir, items2));
   if (!hasClaude && !hasCodex) {
@@ -46372,8 +48062,8 @@ async function maintenanceCommandNotice() {
   if (!path || basename23(path) !== "ak")
     return null;
   try {
-    const current2 = readFileSync42(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync42(join54(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current2 = readFileSync44(path, "utf8");
+    const published = isAbsolute18(ROOT) ? readFileSync44(join55(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
@@ -46503,6 +48193,9 @@ if (import.meta.main) {
   } else if (action === "council") {
     const io = { out: (line2) => console.log(line2), err: (line2) => console.error(line2) };
     process.exitCode = await runCouncil(flags, io);
+  } else if (action === "review") {
+    const io = { out: (line2) => console.log(line2), err: (line2) => console.error(line2) };
+    process.exitCode = runReview(flags, io);
   } else if (action === "semantic-lint" && flags[0] === "hook" && await hookMain(flags.slice(1)) === 0) {} else if (doctorArgs2 !== null)
     process.exitCode = await doctor2(doctorArgs2.json, doctorArgs2.lessons);
   else if (action === "update" && flags.length === 0)
@@ -46521,7 +48214,7 @@ if (import.meta.main) {
       }
     }
   } else {
-    console.error("Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak semantic-lint hook [--host codex]");
+    console.error("Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026 | ak council run \u2026 | ak review ledger add|show \u2026 | ak review decide \u2026 | ak semantic-lint hook [--host codex]");
     process.exitCode = 2;
   }
 }

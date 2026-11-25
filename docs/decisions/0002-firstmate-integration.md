@@ -99,8 +99,8 @@ backing a publish.
 policy, the runner contract's idempotency rule (§5), `compileSchemas`, the packaging and adapter
 machinery, Firstmate's status verbs.
 
-**Changed:** `schemas/common` (`diff_hash`, `$defs.child`, capability `firstmate-supervision`),
-`schemas/review` (`raw_output`), the new binding schema; `super-review`, `super-verify`, `super-ship`
+**Changed:** `schemas/common.schema.json` (`diff_hash`, `$defs.child`, capability `firstmate-supervision`),
+`schemas/review.schema.json` (`raw_output`), the new binding schema; `super-review`, `super-verify`, `super-ship`
 (+ transport reference), `babysit-pr`, `receiving-review`; three rulings; the Claude Code host table;
 `src/firstmate/` and `ak firstmate`.
 
@@ -300,9 +300,13 @@ The first follow-up above is closed this way:
   its branch (no `--run` and no opened run), "in the head's history" stops at the fork point: an
   earlier record counts only if its snapshot is not already on the default branch
   (`origin/HEAD`, else `main`, else `master`; ancestor-only when none resolves). A record at the head's
-  own revision always counts. Such a run shares its name with any earlier task on the branch, so
-  without this a branch reused after a merge would inherit the old run's `build-checks`. Work with
-  the default branch itself checked out has no fork point, and stays ancestor-only. The bound's known
+  own revision always counts once the fork-point probes succeed or return an absent answer.
+  A missing ref, including a dangling `origin/HEAD`, allows the next candidate. A spawn error,
+  a Git fatal, or exit 0 without required output refuses the check rather than removing the bound;
+  the refusal includes the failed call's diagnostic. Such a run shares its name with any earlier
+  task on the branch, so without this a branch reused after a merge would inherit the old run's
+  `build-checks`. Work with the default branch itself checked out has no fork point, and stays
+  ancestor-only. The bound's known
   limit after a squash or rebase merge, and the task-bound run `open` mints to close it, are described
   in the header of `src/lifecycle/gate.ts`. An explicit run id, `--run`
   or the binding's `run_id` in the Firstmate audit, is unique to its run and opts out of the bound:
