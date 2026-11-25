@@ -604,6 +604,7 @@ convergence:
             The patch of the pull request changed, and the lines the rewritten commits changed
             are more than `rewritten_percent` of the changed lines of the pull request.
           - a merge resolved a conflict in a path of the pull request
+          - a merge has more than two parents
         rewritten_percent: 30
       - id: path-identity
         fires_when:

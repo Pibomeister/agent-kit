@@ -532,6 +532,76 @@ describe("ak review scope: later-round tree identity", () => {
     expect(run.err.join("\n")).toContain("is an ancestor of base");
     expect(f.decide(H).code).toBe(1);
   });
+
+  test("RC-LAUNDER-SIBLING-BASE: a dirty blob copied onto a sibling --base does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.commit({ "src/evil.ts": "pwned\n" }, "dirty on pr");
+    f.git("checkout", "main");
+    const S = f.commit({ "src/evil.ts": "pwned\n" }, "same blob on sibling base");
+    f.git("checkout", "pr");
+    f.git("merge", "--no-ff", "-m", "merge sibling that holds the dirty blob", S);
+    const H = f.git("rev-parse", "HEAD");
+    const run = review([
+      "scope",
+      "--ledger",
+      f.ledger,
+      "--repo",
+      f.root,
+      "--base",
+      S,
+      "--head",
+      H,
+      "--previous",
+      f.reviewed().path,
+    ]);
+    expect(run.code).toBe(0);
+    expect(member(parseJson(run.out[0] ?? ""), "outcome")).not.toBe("carry");
+    expect(f.decide(H).code).toBe(1);
+  });
+
+  test("RC-LAUNDER-MAIN-ABSORB: a blob that arrives only through main still carries", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "main");
+    f.commit({ "src/evil.ts": "pwned\n" }, "blob on main");
+    f.git("checkout", "pr");
+    f.git("merge", "--no-ff", "-m", "merge main", "main");
+    const H = f.git("rev-parse", "HEAD");
+    expect(f.record(H)).toMatchObject({
+      outcome: "carry",
+      triggers: [],
+      delta: { empty: true },
+    });
+  });
+
+  test("RC-OURS-MERGE-HIDES-DIRTY-HISTORY: an ours merge of a dirty parent does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "-b", "evil", f.head);
+    const dirty = f.commit({ "src/evil.ts": "pwned\n" }, "dirty");
+    f.git("checkout", "pr");
+    f.git("merge", "-s", "ours", "--no-ff", "-m", "ours hides dirty parent", dirty);
+    const H = f.git("rev-parse", "HEAD");
+    expect(f.record(H)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    expect(f.decide(H).code).toBe(1);
+  });
+
+  test("RC-COMMIT-TREE-TWO-PARENT-MIX: a two-parent commit with the reviewed tree does not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "-b", "evil", f.head);
+    const dirty = f.commit(
+      { "src/a.ts": lines("a", 10) + lines("first", 30) + lines("pwn", 1) },
+      "dirty edit of reviewed file",
+    );
+    f.git("checkout", "pr");
+    const tree = f.git("rev-parse", `${f.head}^{tree}`);
+    const mixed = f.git("commit-tree", tree, "-p", f.head, "-p", dirty, "-m", "two-parent with reviewed tree");
+    f.git("reset", "--hard", mixed);
+    expect(f.record(mixed)).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    expect(f.decide(mixed).code).toBe(1);
+  });
 });
 
 describe("ak review scope: what is not a trigger", () => {
@@ -896,6 +966,42 @@ describe("ak review scope: large rebase", () => {
       triggers: ["large-rebase"],
       delta: { conflict_paths: ["src/mix.ts"] },
       event: { kind: "scope-open", trigger: "large-rebase", head: mixed },
+    });
+  });
+
+  test("RC-OCTOPUS-SAME-TREE: a three-parent merge whose tree equals the first parent is a large-rebase", () => {
+    const f = fixture();
+    f.round(f.head);
+    const root = f.head;
+    f.git("checkout", "-b", "side-b", root);
+    const b = f.commit({ "src/evil.ts": "pwned\n" }, "b dirty");
+    f.git("checkout", "-b", "side-c", root);
+    const c = f.commit({ "src/other.ts": "c\n" }, "c");
+    f.git("checkout", "pr");
+    const tree = f.git("rev-parse", `${root}^{tree}`);
+    const mixed = f.git("commit-tree", tree, "-p", root, "-p", b, "-p", c, "-m", "octopus same tree as first parent");
+    f.git("reset", "--hard", mixed);
+    expect(f.git("rev-list", "--parents", "-n", "1", mixed).split(" ")).toHaveLength(4);
+    expect(f.record(mixed)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["large-rebase"],
+      delta: { conflict_paths: ["."] },
+      event: { kind: "scope-open", trigger: "large-rebase", head: mixed },
+    });
+  });
+
+  test("RC-X-OURS-EMPTY-NEW-SCOPE: a two-parent -X ours merge of a conflicting main is a large-rebase", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "main");
+    f.commit({ "src/a.ts": lines("a", 10) + lines("theirs", 2) }, "main edits a.ts");
+    f.git("checkout", "pr");
+    f.git("merge", "-X", "ours", "--no-ff", "-m", "merge main taking ours", "main");
+    const H = f.git("rev-parse", "HEAD");
+    expect(f.record(H)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["large-rebase"],
+      delta: { empty: true, conflict_paths: ["src/a.ts"] },
     });
   });
 });

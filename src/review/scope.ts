@@ -10,7 +10,7 @@
  * - `readPatch` turns a zero-context diff into a patch id, a count of changed
  *   lines and the changed lines themselves. A mode-only pair and a gitlink each
  *   count as one changed line. The id is for rewritten-commit matching. Empty
- *   is blob identity in `delta.ts`.
+ *   is blob identity plus no novel own commit in `delta.ts`.
  * - `scopeTriggers` says which triggers fire, which could not be evaluated and
  *   why.
  * - `scopeOutcome` turns the triggers and the ledger's scope into one of
@@ -113,7 +113,9 @@ export function linesNotIn(patch: Patch, other: Patch): number {
 export interface DeltaFacts {
   /**
    * The pull request at the new head has the same path, mode and blob as it
-   * had at the last reviewed head. The changed-line patch id is not this test.
+   * had at the last reviewed head, and every new non-merge commit is empty or
+   * matches a reviewed own-commit patch or the reviewed pull request. The
+   * changed-line patch id of the whole pull request is not this test.
    */
   empty: boolean;
   /** Changed lines of the pull request at the last reviewed head. */
@@ -251,7 +253,7 @@ export interface ScopePosition {
  *   already past its last one. The lane's captain splits or replans.
  * - `full`: no round of the current scope has closed. Round 1 reviews the whole change.
  * - `new-scope`: a trigger fired and one scope is left.
- * - `carry`: the patch is unchanged. No seat is called.
+ * - `carry`: the patch is unchanged and no novel own commit appeared. No seat is called.
  * - `closure`: a closure round reviews the delta.
  *
  * `triggers` is null before round 1 of a scope, where there is no reviewed head to compare with.

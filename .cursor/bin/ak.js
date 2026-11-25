@@ -42629,6 +42629,9 @@ function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/dev/null
     GIT_OPTIONAL_LOCKS: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
     GIT_GRAFT_FILE: "/dev/null",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.commitGraph",
+    GIT_CONFIG_VALUE_0: "false",
     LC_ALL: "C"
   };
 }
@@ -46850,6 +46853,29 @@ function headPatch(repo, base2, head) {
 function readHead(repo, base2, head) {
   return headPatch(repo, base2, head).reading;
 }
+function commitPatch(repo, commit) {
+  const run3 = git4(repo, ["diff", ...DIFF, `${commit}^`, commit], [0, 1, 128]);
+  if (run3.status === 128)
+    return null;
+  return readPatch(run3.out);
+}
+function novelNonMerge(repo, base2, previous, head, reviewedFrom, reviewedPatchId) {
+  const known = new Set(ownCommits(repo, reviewedFrom, previous).map(({ patch }) => patch.id));
+  known.add(reviewedPatchId);
+  for (const commit of git4(repo, ["rev-list", "--no-merges", `${previous}..${head}`, "--not", base2]).out.split(`
+`)) {
+    if (commit === "")
+      continue;
+    const patch = commitPatch(repo, commit);
+    if (patch === null)
+      return true;
+    if (patch.lines === 0)
+      continue;
+    if (!known.has(patch.id))
+      return true;
+  }
+  return false;
+}
 function ownCommits(repo, from, head) {
   const log = git4(repo, ["log", "--reverse", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
   return log.split("\x00").slice(1).map((entry) => {
@@ -46881,6 +46907,7 @@ function conflictPaths(repo, base2, previous, head) {
     const parents = git4(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
     const [ours, theirs] = parents;
     if (parents.length > 2) {
+      const before = conflicted.size;
       const first = parents[0];
       if (first !== undefined) {
         const names = git4(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", first, merge]).out;
@@ -46889,6 +46916,8 @@ function conflictPaths(repo, base2, previous, head) {
           if (path !== "")
             conflicted.add(path);
       }
+      if (conflicted.size === before)
+        conflicted.add(".");
       continue;
     }
     if (parents.length !== 2 || ours === undefined || theirs === undefined)
@@ -46913,7 +46942,7 @@ function readDelta(repo, base2, previous, head) {
     now: now.reading,
     previous: before.reading,
     delta: {
-      empty: sameTree(beforeTree, nowTree),
+      empty: sameTree(beforeTree, nowTree) && !novelNonMerge(repo, base2, previous, head, before.reading.merge_base, before.patch.id),
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),

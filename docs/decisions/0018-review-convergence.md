@@ -82,7 +82,8 @@ next review covers.
     request at a head with the pull request at the last reviewed head, which the ledger names.
     - `large-rebase`: the patch changed and the rewritten commits changed lines amounting to more
       than 30% of the pull request's changed lines, or a merge resolved a conflict in a path of
-      the pull request, or a non-empty merge has more than two parents.
+      the pull request, or a merge has more than two parents. A two-parent merge that git
+      resolved with `-X ours` is still a conflicted merge.
     - `path-identity`: a path changed as a gitlink (mode 160000), or a same-blob add and delete
       pair appears, which is a rename when rename detection is off.
     - `risk-tier-rise`: the merge-stage class is above the class of the last reviewed round.
@@ -93,9 +94,13 @@ next review covers.
     - `requirement-change`: the digest of the ticket's acceptance criteria changed.
 
     A fix commit, a reached cap and a rebase that leaves the blobs unchanged open nothing.
-14. **An unchanged tree calls no seat.** When every path of the pull request has the same mode and
-    blob it had at the last reviewed head, the outcome is `carry` and the earlier verdict covers
-    the new head. The changed-line patch id is only for rewritten-commit matching.
+14. **An unchanged tree calls no seat only when ancestry is also reviewed work.** When every path
+    of the pull request has the same mode and blob it had at the last reviewed head, and every
+    non-merge commit in `previous..head` excluding `base` is empty or has the patch of a reviewed
+    own commit or of the reviewed pull request, the outcome is `carry` and the earlier verdict
+    covers the new head. A novel own commit is `closure` or a new scope. The changed-line patch
+    id is only for rewritten-commit matching. Content that arrives only through the base branch is
+    trusted base movement. The base branch, like the ledger, must sit outside author write.
 
 `DEFAULT_POLICY` in `src/review/types.ts` holds the cap, the scope count, the always-block
 categories, the blocking severities and the trigger thresholds. The tools compare these values and
@@ -171,8 +176,10 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   and removed again nets to nothing.
 - **A resolved conflict is read from merges.** Each two-parent merge that is new at the head is
   repeated with `git merge-tree`, and a conflicted path counts when the pull request changes it.
-  Git records no conflict for a rebase. A conflict resolved in a rebase changes the patch, and the
-  rewritten share counts it.
+  A two-parent merge that git resolved with `-X ours` is still a conflict. A merge of more than
+  two parents is a conflict even when its tree equals the first parent. Git records no conflict
+  for a rebase. A conflict resolved in a rebase changes the patch, and the rewritten share counts
+  it.
 - **"The delta adds" counts changed lines the earlier patch does not hold.** A line that left the
   patch is reported and adds nothing.
 - **The caller supplies three inputs, and a missing one is reported.** The class, the intent file
@@ -216,6 +223,10 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 - The scope command refuses a `--record` whose `head` is not `--head`. A later `ledger add` of a
   carry needs that last reviewed record as `--previous`. `readDelta` refuses a `--base` that the
   last reviewed head is a strict ancestor of, so a commit sitting between the reviewed head and a
-  later empty head cannot empty the delta. An octopus merge that changes a path is a large-rebase.
+  later empty head cannot empty the delta. Carry also requires that every non-merge commit in
+  `previous..head` excluding `base` is empty or matches a reviewed own-commit patch or the
+  reviewed pull request patch. An octopus
+  merge is a large-rebase even when its tree equals the first parent. The base branch, like the
+  ledger, must sit outside author write.
 - The mutation check in `tests/review/mutation.test.ts` breaks each rule once and expects a red
   test. A rule added to the engine needs a mutant there.

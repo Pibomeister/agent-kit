@@ -60,6 +60,7 @@ describe("scopeTriggers", () => {
       { empty: true, added_lines: 0, conflict_paths: ["src/a.ts"] },
       ["large-rebase"],
     ],
+    ["a three-parent merge with no mixed path", { empty: true, conflict_paths: ["."] }, ["large-rebase"]],
     ["a delta that adds 50%", { added_lines: 50 }, []],
     ["a delta that adds 51%", { added_lines: 51 }, ["scope-growth"]],
     ["a delta that adds 400 lines to 1000", { pr_lines: 1000, added_lines: 400 }, []],

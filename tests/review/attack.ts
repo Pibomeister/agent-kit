@@ -19,6 +19,12 @@ const FILTERS = [
   "MB-force-pushed-base-branch",
   "FU-replace-decide",
   "FU-decide-dirty-head-after-forged-carry",
+  "RC-LAUNDER-SIBLING-BASE",
+  "RC-LAUNDER-MAIN-ABSORB",
+  "RC-OURS-MERGE-HIDES-DIRTY-HISTORY",
+  "RC-COMMIT-TREE-TWO-PARENT-MIX",
+  "RC-OCTOPUS-SAME-TREE",
+  "RC-X-OURS-EMPTY-NEW-SCOPE",
   "says the whole change is reviewed",
   "a merge of the base branch with no conflict",
   "the last round of the cap is a closure",
@@ -33,13 +39,17 @@ const DID_NOT_LAND = [
   ["GIT_GRAFT_FILE grafting the reviewed tree", "isolatedGitEnv sets GIT_GRAFT_FILE=/dev/null"],
   ["carry JSON with no --previous", "ledger add requires the last reviewed scope record"],
   ["decide after a refused carry", "verdict is incomplete"],
+  [
+    "a blob that arrives only through main",
+    "RC-LAUNDER-MAIN-ABSORB still carries. The base branch must sit outside author write",
+  ],
 ] as const;
 
 function main(): number {
   console.log("did not land");
   for (const [attack, reason] of DID_NOT_LAND) console.log(`  ${attack}: ${reason}`);
   const filter = FILTERS.join("|");
-  const run = spawnSync("bun", ["test", "tests/review/scope-git.test.ts", "-t", filter], {
+  const run = spawnSync("bun", ["test", "tests/review/scope-git.test.ts", "-t", filter, "--timeout=30000"], {
     cwd: ROOT,
     stdio: "inherit",
     env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" },

@@ -7,8 +7,11 @@
  * lines on the base branch is not a change to the pull request. Renames are
  * not detected, user diff drivers do not run, gitlinks are not ignored, and the
  * algorithm is fixed, so two machines read the same patch from the same commits.
- * Empty is the raw tree: the same path, mode and blob at both heads. The
- * changed-line patch id is only for rewritten-commit matching.
+ * Empty is the raw tree: the same path, mode and blob at both heads, and no
+ * novel non-merge commit in previous..head excluding base. A commit is novel
+ * unless it is empty or its patch is a reviewed own commit's or the reviewed
+ * pull request's. The changed-line patch id is only for rewritten-commit
+ * matching.
  *
  * This file changes no work tree, index or ref. `git merge-tree` writes the
  * objects of each merge it repeats into the object store, as unreachable
@@ -169,6 +172,39 @@ export function readHead(repo: string, base: string, head: string): HeadReading 
   return headPatch(repo, base, head).reading;
 }
 
+/** Patch of a non-merge commit against its parent. A missing parent is a novel commit. */
+function commitPatch(repo: string, commit: string): Patch | null {
+  const run = git(repo, ["diff", ...DIFF, `${commit}^`, commit], [0, 1, 128]);
+  if (run.status === 128) return null;
+  return readPatch(run.out);
+}
+
+/**
+ * True when `head` has a non-merge commit that is not on `base`, is not an
+ * ancestor of `previous`, and is neither empty nor a patch a reviewed own
+ * commit or the reviewed pull request already had. Carry is then false even
+ * if the result trees match.
+ */
+function novelNonMerge(
+  repo: string,
+  base: string,
+  previous: string,
+  head: string,
+  reviewedFrom: string,
+  reviewedPatchId: string,
+): boolean {
+  const known = new Set(ownCommits(repo, reviewedFrom, previous).map(({ patch }) => patch.id));
+  known.add(reviewedPatchId);
+  for (const commit of git(repo, ["rev-list", "--no-merges", `${previous}..${head}`, "--not", base]).out.split("\n")) {
+    if (commit === "") continue;
+    const patch = commitPatch(repo, commit);
+    if (patch === null) return true;
+    if (patch.lines === 0) continue;
+    if (!known.has(patch.id)) return true;
+  }
+  return false;
+}
+
 /** Each own commit of a head, oldest first: every commit after the merge base that is not a merge. */
 function ownCommits(repo: string, from: string, head: string): { commit: string; patch: Patch }[] {
   const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
@@ -214,8 +250,7 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
  * the base branch does. So the pull request's own history made it, and a path
  * that conflicts in it is one the pull request's commits changed. Each merge is
  * repeated from its two parents. A merge of more than two parents is treated as
- * conflicted: a mixed tree can be written by hand even when git's octopus
- * strategy would have refused.
+ * conflicted even when its tree equals the first parent.
  */
 function conflictPaths(repo: string, base: string, previous: string, head: string): string[] {
   const merges = git(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base}`]).out.split("\n");
@@ -225,11 +260,13 @@ function conflictPaths(repo: string, base: string, previous: string, head: strin
     const parents = git(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
     const [ours, theirs] = parents;
     if (parents.length > 2) {
+      const before = conflicted.size;
       const first = parents[0];
       if (first !== undefined) {
         const names = git(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", first, merge]).out;
         for (const path of names.split("\n")) if (path !== "") conflicted.add(path);
       }
+      if (conflicted.size === before) conflicted.add(".");
       continue;
     }
     if (parents.length !== 2 || ours === undefined || theirs === undefined) continue;
@@ -264,7 +301,9 @@ export function readDelta(repo: string, base: string, previous: string, head: st
     now: now.reading,
     previous: before.reading,
     delta: {
-      empty: sameTree(beforeTree, nowTree),
+      empty:
+        sameTree(beforeTree, nowTree) &&
+        !novelNonMerge(repo, base, previous, head, before.reading.merge_base, before.patch.id),
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),

@@ -253,9 +253,9 @@ function failedGit(stderr: string): GitResult {
 }
 
 /**
- * Env for a git child that cannot follow replace refs, grafts, or GIT_DIR
- * redirects. `ak review scope` uses the same isolation. Redirecting GIT_*
- * names are omitted, not copied from the process.
+ * Env for a git child that cannot follow replace refs, grafts, the commit
+ * graph, or GIT_DIR redirects. `ak review scope` uses the same isolation.
+ * Redirecting GIT_* names are omitted, not copied from the process.
  */
 export function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/dev/null"): NodeJS.ProcessEnv {
   return {
@@ -267,6 +267,9 @@ export function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/d
     GIT_OPTIONAL_LOCKS: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
     GIT_GRAFT_FILE: "/dev/null",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.commitGraph",
+    GIT_CONFIG_VALUE_0: "false",
     LC_ALL: "C",
   };
 }
