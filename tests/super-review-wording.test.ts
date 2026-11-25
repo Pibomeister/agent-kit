@@ -5,17 +5,22 @@
  * Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
  * after CRLF-to-LF only and compares every byte from the start of the file through
  * the line before the first `## Hard gates` line to a golden copy of origin/main
- * e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, a CommonMark
- * heading or raw HTML h1-h6 whose text, including image alt, equals Workflow
- * after Cf strip and casefold is refused. The oracle is CommonMark, not GFM, so
- * `~~Workflow~~` is out of scope. `- Workflow notes` and prose that mentions
- * workflow stay green. Free-text protocol changes under other headings are left
- * to review. Editing anything above Hard gates needs a golden update in review.
+ * e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, the suffix is
+ * parsed with CommonMark (parser only). A heading whose descendant text, code
+ * and image alt equals `workflow` after NFKC, stripping `\p{Cf}` and
+ * `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused. Any
+ * `html_block` or `html_inline` whose literal matches `/<\/?h[1-6][\s/>]/i` is
+ * refused, including an h tag inside an HTML comment. Fenced, indented and
+ * inline-code examples stay green. Homoglyph confusables, U+2800 braille blank,
+ * and GFM strikethrough are out of scope. `- Workflow notes` and prose that
+ * mentions workflow stay green. Free-text protocol changes under other headings
+ * are left to review. Editing anything above Hard gates needs a golden update
+ * in review.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { HtmlRenderer, Parser } from "commonmark";
+import { Parser, type Node } from "commonmark";
 import { describe, expect, test } from "bun:test";
 
 const REPO = join(import.meta.dir, "..");
@@ -42,118 +47,50 @@ function firstSentinelAt(raw: string): number {
 }
 
 const parser = new Parser();
-const htmlRenderer = new HtmlRenderer();
+const RAW_H = /<\/?h[1-6][\s/>]/i;
 
 function fold(text: string): string {
   return text
-    .replace(/\p{Cf}/gu, "")
+    .normalize("NFKC")
+    .replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, "")
     .trim()
     .toLowerCase();
 }
 
-function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g, (entity) => {
-    let out = "";
-    const walker = parser.parse(entity).walker();
-    let event = walker.next();
-    while (event) {
-      if (event.entering && event.node.type === "text") {
-        out += event.node.literal ?? "";
-      }
-      event = walker.next();
-    }
-    return out === "" ? entity : out;
-  });
-}
-
-function endOfTag(html: string, from: number): number {
-  let quote: string | null = null;
-  for (let i = from; i < html.length; i++) {
-    const c = html[i];
-    if (c === undefined) {
-      break;
-    }
-    if (quote !== null) {
-      if (c === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (c === '"' || c === "'") {
-      quote = c;
-      continue;
-    }
-    if (c === ">") {
-      return i + 1;
-    }
-  }
-  return -1;
-}
-
-function attrValue(tag: string, name: string): string {
-  const match = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|[^\\s>]+)`, "i").exec(tag);
-  if (match === null) {
-    return "";
-  }
-  return match[2] ?? match[3] ?? match[1] ?? "";
-}
-
-function headingInner(html: string): string {
-  const body = html.replace(/<!--[\s\S]*?-->/g, "");
-  let i = 0;
+function headingText(node: Node): string {
   let out = "";
-  while (i < body.length) {
-    if (body[i] !== "<") {
-      const next = body.indexOf("<", i);
-      out += next < 0 ? body.slice(i) : body.slice(i, next);
-      i = next < 0 ? body.length : next;
-      continue;
+  const walker = node.walker();
+  let event = walker.next();
+  while (event) {
+    if (event.entering && (event.node.type === "text" || event.node.type === "code")) {
+      out += event.node.literal ?? "";
     }
-    const end = endOfTag(body, i + 1);
-    if (end < 0) {
-      out += body.slice(i);
-      break;
-    }
-    const tag = body.slice(i, end);
-    if (/^<img\b/i.test(tag)) {
-      out += attrValue(tag, "alt");
-    }
-    i = end;
+    event = walker.next();
   }
   return out;
 }
 
-function htmlHeadingTexts(html: string): string[] {
-  const texts: string[] = [];
-  let i = 0;
-  while (i < html.length) {
-    const open = /<h([1-6])\b/i.exec(html.slice(i));
-    if (open === null || open.index === undefined) {
-      break;
-    }
-    const level = open[1];
-    if (level === undefined) {
-      break;
-    }
-    const afterName = i + open.index + open[0].length;
-    const openEnd = endOfTag(html, afterName);
-    if (openEnd < 0) {
-      break;
-    }
-    const close = new RegExp(`</h${level}\\s*>`, "i").exec(html.slice(openEnd));
-    texts.push(close === null ? html.slice(openEnd) : html.slice(openEnd, openEnd + close.index));
-    if (close === null) {
-      break;
-    }
-    i = openEnd + close.index + close[0].length;
-  }
-  return texts;
-}
-
 function hasWorkflowHeading(suffix: string): boolean {
-  return htmlHeadingTexts(htmlRenderer.render(parser.parse(suffix))).some(
-    (inner) => fold(decodeEntities(headingInner(inner))) === "workflow",
-  );
+  const root = parser.parse(suffix);
+  const walker = root.walker();
+  let event = walker.next();
+  while (event) {
+    if (event.entering) {
+      const node = event.node;
+      if (node.type === "heading" && fold(headingText(node)) === "workflow") {
+        return true;
+      }
+      if (
+        (node.type === "html_block" || node.type === "html_inline") &&
+        node.literal !== null &&
+        RAW_H.test(node.literal)
+      ) {
+        return true;
+      }
+    }
+    event = walker.next();
+  }
+  return false;
 }
 
 const CF = ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF", "\u00AD"];
@@ -200,6 +137,19 @@ const RED_FIXTURES: string[] = [
   "<h2\n>Workflow</h2>",
   '<h2\nid="wf">Workflow</h2>',
   "<h2>Workfl&ZeroWidthSpace;ow</h2>",
+  '<h2 title="oops>\n\n## Workflow',
+  "<h2>outer<h3>Workflow</h3></h2>",
+  "<h2>Workflow</h2/>",
+  "<h2/>",
+  "## Ｗｏｒｋｆｌｏｗ",
+  "## 𝐖𝐨𝐫𝐤𝐟𝐥𝐨𝐰",
+  "## Workﬂow",
+  "## Ⓦⓞⓡⓚⓕⓛⓞⓦ",
+  "## &#xFF37;&#xFF4F;&#xFF52;&#xFF4B;&#xFF46;&#xFF4C;&#xFF4F;&#xFF57;",
+  "## Work\u3164flow",
+  "## Work\u115Fflow",
+  "## Work\u034Fflow",
+  "<!-- <h2>Workflow</h2> -->",
 ];
 
 const GREEN_FIXTURES: string[] = [
@@ -215,6 +165,13 @@ const GREEN_FIXTURES: string[] = [
   "<https://example.invalid/Workflow>",
   "**Workflow*",
   "## ~~Workflow~~",
+  "```\n## Workflow\n```",
+  "```\n<h2>Workflow</h2>\n```",
+  "    ## Workflow",
+  "    <h2>Workflow</h2>",
+  "`## Workflow`",
+  "`<h2>Workflow</h2>`",
+  "## Workflow notes\r\n",
 ];
 
 describe("super-review wording", () => {
@@ -235,7 +192,7 @@ describe("super-review wording", () => {
     expect(hasWorkflowHeading(raw.slice(hardAt))).toBe(false);
   });
 
-  test("R11 and R12 heading fixtures", () => {
+  test("R11, R12 and R13 heading fixtures", () => {
     for (const payload of RED_FIXTURES) {
       expect(hasWorkflowHeading(`${SENTINEL}\n${payload}`), payload).toBe(true);
     }

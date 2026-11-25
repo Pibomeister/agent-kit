@@ -7,7 +7,4 @@ declare module "commonmark" {
   export class Parser {
     parse(markdown: string): Node;
   }
-  export class HtmlRenderer {
-    render(node: Node): string;
-  }
 }
