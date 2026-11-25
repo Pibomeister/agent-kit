@@ -327,13 +327,12 @@ The first follow-up above is closed this way:
   The current step 12 wording is enforced by `tests/super-review-wording.test.ts`.
   Super-review workflow step 12: a changes-requested full review is recorded with
   `--verdict changes-requested`. The 0.1.37 wording recorded the gate only on approved.
-  The lock reads SKILL.md after CRLF-to-LF only. It compares the bytes after the
-  Workflow heading line through the line before Hard gates to a golden copy of
-  origin/main e6d4dfc6. Headings are found by CommonMark rules: trim, strip
-  closing hashes, casefold. Before the Workflow heading, an ordered-list marker
-  or a heading whose normalized text is `workflow` fails. Agents read the
-  source. HTML rendering is out of scope. SKILL.md may contain U+2014 EM DASH.
-  Any other non-ASCII character fails.
+  Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
+  after CRLF-to-LF only and compares every byte from the start of the file through
+  the line before the first `## Hard gates` line to a golden copy of origin/main
+  e6d4dfc6. `## Hard gates` is the sentinel. A later Workflow heading is refused,
+  including a fenced one after Hard gates. Editing anything above Hard gates needs
+  a golden update in review.
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the
