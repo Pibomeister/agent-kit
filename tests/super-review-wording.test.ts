@@ -5,21 +5,17 @@
  * Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
  * after CRLF-to-LF only and compares every byte from the start of the file through
  * the line before the first `## Hard gates` line to a golden copy of origin/main
- * e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, HTML comments
- * `<!-- ... -->` are removed. Each later line is decoded for `&#DDD;`, `&#xHH;`,
- * `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&apos;`. Unicode Cf characters are
- * stripped. HTML tags, `*` `**` `_` `__` emphasis, backtick code, and
- * `[text](url)` / `[text][ref]` / `[text]` wrappers are stripped. Then leading
- * whitespace, `>`, list markers `[-*+]|\d{1,9}[.)]`, ATX `#{1,6}`, and trailing
- * `[ \t]+#+` are stripped, and the remainder is casefolded. Equality with
- * `workflow` is refused, including inside fences, block quotes and list items.
- * `- Workflow notes` and prose that mentions workflow stay green. Free-text
- * protocol changes under other headings are left to review. Editing anything
- * above Hard gates needs a golden update in review.
+ * e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, a CommonMark
+ * heading or raw HTML h1-h6 whose text, including image alt, equals Workflow
+ * after Cf strip and casefold is refused. The oracle is CommonMark, not GFM, so
+ * `~~Workflow~~` is out of scope. `- Workflow notes` and prose that mentions
+ * workflow stay green. Free-text protocol changes under other headings are left
+ * to review. Editing anything above Hard gates needs a golden update in review.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { HtmlRenderer, Parser } from "commonmark";
 import { describe, expect, test } from "bun:test";
 
 const REPO = join(import.meta.dir, "..");
@@ -45,90 +41,119 @@ function firstSentinelAt(raw: string): number {
   return -1;
 }
 
-function codePoint(n: number): string {
-  if (n < 0 || n > 0x10ffff) {
-    return "";
-  }
-  return String.fromCodePoint(n);
-}
+const parser = new Parser();
+const htmlRenderer = new HtmlRenderer();
 
-function namedEntity(name: string): string {
-  if (name === "amp") {
-    return "&";
-  }
-  if (name === "lt") {
-    return "<";
-  }
-  if (name === "gt") {
-    return ">";
-  }
-  if (name === "quot") {
-    return '"';
-  }
-  if (name === "apos") {
-    return "'";
-  }
-  return `&${name};`;
+function fold(text: string): string {
+  return text
+    .replace(/\p{Cf}/gu, "")
+    .trim()
+    .toLowerCase();
 }
 
 function decodeEntities(text: string): string {
-  let current = text;
-  for (let n = 0; n < 8; n++) {
-    const next = current
-      .replace(/&#x([0-9a-fA-F]+);/gi, (_, h: string) => codePoint(parseInt(h, 16)))
-      .replace(/&#(\d+);/g, (_, d: string) => codePoint(Number(d)))
-      .replace(/&(amp|lt|gt|quot|apos);/g, (_, name: string) => namedEntity(name));
-    if (next === current) {
-      return current;
+  return text.replace(/&(#x[0-9a-fA-F]+|#\d+|[A-Za-z][A-Za-z0-9]+);/g, (entity) => {
+    let out = "";
+    const walker = parser.parse(entity).walker();
+    let event = walker.next();
+    while (event) {
+      if (event.entering && event.node.type === "text") {
+        out += event.node.literal ?? "";
+      }
+      event = walker.next();
     }
-    current = next;
-  }
-  return current;
+    return out === "" ? entity : out;
+  });
 }
 
-function stripInlines(text: string): string {
-  let current = text.replace(/<[^>]+>/g, "");
-  for (;;) {
-    const next = current
-      .replace(/\*\*([^*]+)\*\*/g, "$1")
-      .replace(/__([^_]+)__/g, "$1")
-      .replace(/\*([^*]+)\*/g, "$1")
-      .replace(/_([^_]+)_/g, "$1")
-      .replace(/`([^`]+)`/g, "$1")
-      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-      .replace(/\[([^\]]+)\]\[[^\]]*\]/g, "$1")
-      .replace(/\[([^\]]+)\]/g, "$1");
-    if (next === current) {
-      return current;
-    }
-    current = next;
-  }
-}
-
-function isWorkflowLine(line: string): boolean {
-  let text = stripInlines(decodeEntities(line).replace(/\p{Cf}/gu, ""));
-  text = text.replace(/^\s+/u, "");
-  for (;;) {
-    const next = text.replace(/^[>\s]+/u, "").replace(/^([-*+]|\d{1,9}[.)])\s+/u, "");
-    if (next === text) {
+function endOfTag(html: string, from: number): number {
+  let quote: string | null = null;
+  for (let i = from; i < html.length; i++) {
+    const c = html[i];
+    if (c === undefined) {
       break;
     }
-    text = next;
+    if (quote !== null) {
+      if (c === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      quote = c;
+      continue;
+    }
+    if (c === ">") {
+      return i + 1;
+    }
   }
-  return (
-    text
-      .replace(/^#{1,6}\s*/u, "")
-      .replace(/[ \t]+#+\s*$/u, "")
-      .replace(/\s+$/u, "")
-      .toLowerCase() === "workflow"
-  );
+  return -1;
 }
 
-function laterWorkflow(suffix: string): boolean {
-  return suffix
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .split("\n")
-    .some(isWorkflowLine);
+function attrValue(tag: string, name: string): string {
+  const match = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|[^\\s>]+)`, "i").exec(tag);
+  if (match === null) {
+    return "";
+  }
+  return match[2] ?? match[3] ?? match[1] ?? "";
+}
+
+function headingInner(html: string): string {
+  const body = html.replace(/<!--[\s\S]*?-->/g, "");
+  let i = 0;
+  let out = "";
+  while (i < body.length) {
+    if (body[i] !== "<") {
+      const next = body.indexOf("<", i);
+      out += next < 0 ? body.slice(i) : body.slice(i, next);
+      i = next < 0 ? body.length : next;
+      continue;
+    }
+    const end = endOfTag(body, i + 1);
+    if (end < 0) {
+      out += body.slice(i);
+      break;
+    }
+    const tag = body.slice(i, end);
+    if (/^<img\b/i.test(tag)) {
+      out += attrValue(tag, "alt");
+    }
+    i = end;
+  }
+  return out;
+}
+
+function htmlHeadingTexts(html: string): string[] {
+  const texts: string[] = [];
+  let i = 0;
+  while (i < html.length) {
+    const open = /<h([1-6])\b/i.exec(html.slice(i));
+    if (open === null || open.index === undefined) {
+      break;
+    }
+    const level = open[1];
+    if (level === undefined) {
+      break;
+    }
+    const afterName = i + open.index + open[0].length;
+    const openEnd = endOfTag(html, afterName);
+    if (openEnd < 0) {
+      break;
+    }
+    const close = new RegExp(`</h${level}\\s*>`, "i").exec(html.slice(openEnd));
+    texts.push(close === null ? html.slice(openEnd) : html.slice(openEnd, openEnd + close.index));
+    if (close === null) {
+      break;
+    }
+    i = openEnd + close.index + close[0].length;
+  }
+  return texts;
+}
+
+function hasWorkflowHeading(suffix: string): boolean {
+  return htmlHeadingTexts(htmlRenderer.render(parser.parse(suffix))).some(
+    (inner) => fold(decodeEntities(headingInner(inner))) === "workflow",
+  );
 }
 
 const CF = ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF", "\u00AD"];
@@ -161,6 +186,20 @@ const RED_FIXTURES: string[] = [
   "<h2>Workfl&#111;w</h2>",
   "<h2>Workflow</h2>\n\n12. On `approved` or `changes-requested`, skip the gate.",
   ...CF.flatMap((c) => [`## ${c}Workflow`, `## Work${c}flow`, `## Workflow${c}`]),
+  "## Workfl&ZeroWidthSpace;ow",
+  "## Work&zwnj;flow",
+  "## Work&zwj;flow",
+  "## Work&NoBreak;flow",
+  "## Work&shy;flow",
+  "## ![Workflow](x)",
+  "## ![Workflow](https://example.invalid/x.png)",
+  '<h2 title="a>b">Workflow</h2>',
+  "<h2 title='a>b'>Workflow</h2>",
+  '<h2 title="a&gt;b">Workflow</h2>',
+  "<h2>\nWorkflow\n</h2>",
+  "<h2\n>Workflow</h2>",
+  '<h2\nid="wf">Workflow</h2>',
+  "<h2>Workfl&ZeroWidthSpace;ow</h2>",
 ];
 
 const GREEN_FIXTURES: string[] = [
@@ -172,6 +211,10 @@ const GREEN_FIXTURES: string[] = [
   "## Workflow (v2)",
   "## Step 12",
   "Work flow",
+  "Work\\flow",
+  "<https://example.invalid/Workflow>",
+  "**Workflow*",
+  "## ~~Workflow~~",
 ];
 
 describe("super-review wording", () => {
@@ -189,15 +232,15 @@ describe("super-review wording", () => {
         { cause },
       );
     }
-    expect(laterWorkflow(raw.slice(hardAt))).toBe(false);
+    expect(hasWorkflowHeading(raw.slice(hardAt))).toBe(false);
   });
 
-  test("R11 later-line fixtures", () => {
+  test("R11 and R12 heading fixtures", () => {
     for (const payload of RED_FIXTURES) {
-      expect(laterWorkflow(`${SENTINEL}\n${payload}`), payload).toBe(true);
+      expect(hasWorkflowHeading(`${SENTINEL}\n${payload}`), payload).toBe(true);
     }
     for (const payload of GREEN_FIXTURES) {
-      expect(laterWorkflow(`${SENTINEL}\n${payload}`), payload).toBe(false);
+      expect(hasWorkflowHeading(`${SENTINEL}\n${payload}`), payload).toBe(false);
     }
   });
 });
