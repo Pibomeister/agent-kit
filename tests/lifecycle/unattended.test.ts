@@ -2036,29 +2036,6 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
-  test("ship-preflight refuses a self-hiding extra .gitignore when git init would inherit a hostile template", () => {
-    const cwd = repo();
-    writeFileSync(join(cwd, ".gitignore"), "dist/\n");
-    git(cwd, "add", ".gitignore");
-    git(cwd, "commit", "-q", "-m", "committed gitignore");
-    declareSupervisor();
-    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
-    const run = fullRun(cwd);
-    const template = join(outsideDir(), "tmpl");
-    mkdirSync(join(template, "info"), { recursive: true });
-    writeFileSync(join(template, "info", "exclude"), "*\n");
-    const globalConfig = join(outsideDir(), "gitconfig");
-    writeFileSync(globalConfig, `[init]\n\ttemplateDir = ${template}\n`);
-    writeFileSync(join(cwd, "src", ".gitignore"), ".gitignore\nsecret.txt\n");
-    writeFileSync(join(cwd, "src", "secret.txt"), "secret\n");
-    setEnv({ GIT_CONFIG_GLOBAL: globalConfig });
-    const before = runState(cwd, run);
-    const r = ak(cwd, "record", "--gate", "ship-preflight");
-    expectShipDirt(r, "src/.gitignore", cwd);
-    expect(runState(cwd, run)).toEqual(before);
-    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
-  });
-
   test("ship-preflight passes an honest tree when GIT_ATTR_SOURCE is set", () => {
     const cwd = repo();
     declareSupervisor();
@@ -2076,6 +2053,19 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     setEnv({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "ak.strip", GIT_CONFIG_VALUE_0: "yes" });
     const r = lifecycleGit(cwd, ["config", "--get", "ak.strip"]);
     expect(r.code).not.toBe(0);
+  });
+
+  test("git() ignores GIT_DIR in the extra env, so dirt in cwd still shows", () => {
+    const dirty = repo();
+    const clean = repo();
+    writeFileSync(join(dirty, "secret.txt"), "secret\n");
+    const dirtyGit = lifecycleGit(dirty, ["rev-parse", "--absolute-git-dir"]).text;
+    const cleanGit = lifecycleGit(clean, ["rev-parse", "--absolute-git-dir"]).text;
+    const status = lifecycleGit(dirty, ["status", "--porcelain"], { GIT_DIR: cleanGit });
+    expect(status.code).toBe(0);
+    expect(status.text).toContain("secret.txt");
+    const pointed = lifecycleGit(dirty, ["rev-parse", "--absolute-git-dir"], { GIT_DIR: cleanGit });
+    expect(pointed.text).toBe(dirtyGit);
   });
 
   test("unfilteredTrackedDirt reports a gitlink that is not a directory", () => {

@@ -1,20 +1,18 @@
 /**
- * A git call that must print its answer can exit 0 with no output under host load. The gate must
- * read that silence as a failed call naming the command, never as a real answer: not as a missing
- * revision, not as "not a git checkout" with no evidence, and not as a detached head.
- *
- * Snapshot git is pinned to `/usr/bin` then `/bin` and never searches PATH, so a PATH shim cannot
- * produce that silence. These cases prove the shim is ignored: the real git still answers.
+ * Snapshot git is pinned to TRUSTED_GIT_PATH and never searches PATH, so a PATH shim cannot
+ * silence a must-print call. gitMustPrint still treats exit 0 with no output as a failed call;
+ * that is tested directly, not by injecting a silent git on PATH.
  */
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { isolatedGitArgv } from "../../src/lifecycle/git-isolation.ts";
 import {
   checkGates,
   defaultEvidenceDir,
+  gitMustPrint,
   grantBypass,
   main,
   openRun,
@@ -73,6 +71,19 @@ function withSilentGit<T>(silent: readonly string[], body: () => T): T {
 const isSnapshot = (s: Snapshot | string): s is Snapshot => Object(s) === s;
 
 describe("a PATH git shim cannot silence a must-print call", () => {
+  test("the runner contract names TRUSTED_GIT_PATH for snapshot git PATH", () => {
+    const text = readFileSync(join(import.meta.dir, "../../adapters/runner-contract/CONTRACT.md"), "utf8");
+    expect(text).toContain("TRUSTED_GIT_PATH");
+  });
+
+  test("gitMustPrint treats exit 0 with no output as a failed call naming the command", () => {
+    const dir = repo();
+    const r = gitMustPrint(dir, ["diff", "--no-ext-diff", "HEAD"]);
+    expect(r.code).toBe(-1);
+    expect(r.stderr).toContain("no output");
+    expect(r.stderr).toContain("git diff --no-ext-diff HEAD");
+  });
+
   test("a clean snapshot still works: commands that legitimately print nothing are untouched", () => {
     const dir = repo();
     const snapshot = takeSnapshot(dir);

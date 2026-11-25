@@ -418,7 +418,7 @@ trusted gate evidence or lift an existing approval stop.
 The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable bits and index
 entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
 outside the worker root; nested repositories use the same executable and a runner-private Git home.
-Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
+Its Git calls disable fsmonitor, hooks and the global excludes file, run with `TRUSTED_GIT_PATH`,
 have a ten-second timeout with a kill signal, pin `--git-dir` and `--work-tree` from the layout
 resolved once at start so a nested cwd cannot retarget the repository, ignore worker `diff.relative`
 with `-c diff.relative=false` and `--no-relative` on diffs, set `attr.tree` to the empty tree so

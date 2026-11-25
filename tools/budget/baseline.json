@@ -43,7 +43,7 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39164,
+      "bytes": 39165,
       "tokens": 9762
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
@@ -938,7 +938,7 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39164,
+      "bytes": 39165,
       "tokens": 9762
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
@@ -1833,7 +1833,7 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39200,
+      "bytes": 39201,
       "tokens": 9771
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
@@ -2728,7 +2728,7 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39164,
+      "bytes": 39165,
       "tokens": 9762
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
@@ -3623,7 +3623,7 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39164,
+      "bytes": 39165,
       "tokens": 9762
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
@@ -4518,7 +4518,7 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39164,
+      "bytes": 39165,
       "tokens": 9762
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {

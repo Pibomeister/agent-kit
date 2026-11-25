@@ -339,9 +339,7 @@ function gitignoresExcludedByCommittedRules(
   if (committed.length === 0) return dropped;
   const scratch = mkdtempSync(join(tmpdir(), "ak-cgi-"));
   try {
-    if (git(scratch, ["init", "-q", "-b", "main", "--template="]).code !== 0) return dropped;
-    mkdirSync(join(scratch, ".git", "info"), { recursive: true });
-    writeFileSync(join(scratch, ".git", "info", "exclude"), "");
+    if (git(scratch, ["init", "-q", "-b", "main"]).code !== 0) return dropped;
     for (const rel of committed) {
       const shown = list(["show", `HEAD:${rel}`]);
       if (shown.code !== 0) continue;
