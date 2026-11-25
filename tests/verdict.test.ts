@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
+import { isCouncilAnswer } from "../src/council/config.ts";
 import { launchSeat, type Spawn } from "../src/council/seat.ts";
-import { MIXED_JSON_PLUS_VERDICT, WORTHY_WITH_JSON_SCALAR } from "./helpers/mixed-stdout.ts";
+import { JSON_STDOUT_ROWS, MIXED_JSON_PLUS_VERDICT, WORTHY_WITH_JSON_SCALAR } from "./helpers/mixed-stdout.ts";
 import {
   ADVERSARIAL_VERDICTS,
   failClosedAdversarialVerdict,
@@ -185,11 +186,30 @@ describe("council seat verdict consumption", () => {
     }
   });
 
-  test("a JSON scalar or lone brace remainder still admits a final VERDICT: WORTHY", async () => {
+  test("a JSON scalar remainder still admits a final VERDICT: WORTHY", async () => {
     for (const [name, stdout] of WORTHY_WITH_JSON_SCALAR) {
       const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
       expect(result.ok, name).toBe(true);
       expect(result).toMatchObject({ answer: { choice: "WORTHY" } });
+    }
+  });
+
+  test("pure JSON stdout matches origin/main on every json row", async () => {
+    for (const [name, stdout] of JSON_STDOUT_ROWS) {
+      let mainOk = false;
+      let mainChoice: string | undefined;
+      try {
+        const value: unknown = JSON.parse(stdout);
+        if (isCouncilAnswer(value) && options.some((opt) => opt === value.choice)) {
+          mainOk = true;
+          mainChoice = value.choice;
+        }
+      } catch {
+        mainOk = false;
+      }
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(mainOk);
+      if (mainOk) expect(result).toMatchObject({ answer: { choice: mainChoice } });
     }
   });
 });

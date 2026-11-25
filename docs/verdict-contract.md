@@ -46,15 +46,18 @@ final `VERDICT: WORTHY` or `VERDICT: REJECT` is the seat's choice when
 that value is one of the card options. A yes/no card is not answered by a
 `VERDICT` field. Mixed JSON-plus-transcript stdout is unavailable. The
 substitute chain continues and no REJECT is synthesized.
-The remainder is the text before the final `VERDICT` line. Strip a BOM,
-then CSI and SGR escape sequences, then apply NFKC normalisation. The
-transcript path may approve only when that normalised remainder contains
-none of `{`, `}`, `[`, or `]`. A remainder that is only a lone `{` or
-`[` is the exception and is not mixed. Any other bracket or brace is
-mixed, including a quoted JSON object in prose. Seats must not put
-brackets or braces before the final `VERDICT` line. After a BOM and
-leading whitespace are stripped, stdout that starts with a leading
-triple backtick is mixed, including a `diff` fence.
+The transcript path does not parse JSON and does not strip or rewrite
+stdout. Raw stdout is mixed when it contains any of these.
+A C0 control other than tab, line feed, or carriage return. DEL. A C1
+control in 0x80 to 0x9f. Any escape sequence is mixed.
+After NFKC normalisation, a character in Unicode general category Ps
+or Pe other than ASCII `(` and `)`. A lone `{` or `[` is Ps, so it is
+mixed. There is no lone-brace exception.
+A triple-backtick or `~~~` fence anywhere, including a later fence or a
+fenced JSON scalar.
+A `\u` or `\x` escape followed by hex digits.
+Seats must not put brackets, braces, fences, escapes, or control bytes
+before the final `VERDICT` line.
 Garbage, an empty transcript, a missing field, or a value outside the
 card options is not an answer, so the substitute chain moves on and an
 exhausted chain leaves the seat unavailable, which escalates rather

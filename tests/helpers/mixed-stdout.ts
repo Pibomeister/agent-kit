@@ -48,13 +48,48 @@ export const MIXED_JSON_PLUS_VERDICT: ReadonlyArray<readonly [string, string]> =
   ["escaped quotes", 'The payload is {\\"choice\\":\\"REJECT\\",\\"rationale\\":\\"x\\"}\nVERDICT: WORTHY\n'],
   ["quoted object in prose", 'The schema looks like {"ok":true} here.\nVERDICT: WORTHY\n'],
   ["leading diff fence", "```diff\n+ ok\nVERDICT: WORTHY\n"],
-];
-
-/** Remainder lines that look like JSON but carry no object or array braces. */
-export const WORTHY_WITH_JSON_SCALAR: ReadonlyArray<readonly [string, string]> = [
+  ["csi-eaten braces", `\u001b[{"choice":"REJECT","rationale":"x"\u001b[}\nVERDICT: WORTHY\n`],
+  ["csi-eaten close", "{\u001b[}\nVERDICT: WORTHY\n"],
   ["lone brace", "{\nVERDICT: WORTHY\n"],
   ["lone bracket", "[\nVERDICT: WORTHY\n"],
+  ["fenced json true", "```json\ntrue\n```\nVERDICT: WORTHY\n"],
+  ["csi then fenced true", `${CSI_GREEN}\`\`\`json\ntrue\n\`\`\`\nVERDICT: WORTHY\n`],
+  ["later fenced true", "note\n```json\ntrue\n```\nVERDICT: WORTHY\n"],
+  ["tilde fenced true", "~~~\ntrue\n~~~\nVERDICT: WORTHY\n"],
+  ["lookalike ❴", "note ❴payload\nVERDICT: WORTHY\n"],
+  ["lookalike ⟦", "note ⟦payload\nVERDICT: WORTHY\n"],
+  ["lookalike 「", "note 「payload\nVERDICT: WORTHY\n"],
+  ["lookalike ⦃", "note ⦃payload\nVERDICT: WORTHY\n"],
+  ["lookalike 【", "note 【payload\nVERDICT: WORTHY\n"],
+  ["lookalike ❨", "note ❨payload\nVERDICT: WORTHY\n"],
+  ["lookalike ❰", "note ❰payload\nVERDICT: WORTHY\n"],
+  ["lookalike ｟", "note ｟payload\nVERDICT: WORTHY\n"],
+  ["lookalike 〈", "note 〈payload\nVERDICT: WORTHY\n"],
+  ["unicode escape braces", "choice is \\u007bREJECT\\u007d\nVERDICT: WORTHY\n"],
+  ["hex escape braces", "choice is \\x7bREJECT\\x7d\nVERDICT: WORTHY\n"],
+];
+
+/** Remainder lines that look like JSON and carry no paired punctuation. */
+export const WORTHY_WITH_JSON_SCALAR: ReadonlyArray<readonly [string, string]> = [
   ["number", "42\nVERDICT: WORTHY\n"],
   ["true", "true\nVERDICT: WORTHY\n"],
   ["null", "null\nVERDICT: WORTHY\n"],
+];
+
+/** Pure JSON stdout rows. Main has no transcript fallback, so these must match origin/main. */
+export const JSON_STDOUT_ROWS: ReadonlyArray<readonly [string, string]> = [
+  ["json/worthy", JSON.stringify({ choice: "WORTHY", rationale: "evidence holds" })],
+  ["json/reject", JSON.stringify({ choice: "REJECT", rationale: "the constructed failure stands" })],
+  ["json/pretty", '{\n  "choice": "WORTHY",\n  "rationale": "evidence holds"\n}'],
+  ["json/model_served", JSON.stringify({ choice: "WORTHY", rationale: "ok", model_served: "served" })],
+  ["json/whitespace", '  {"choice":"WORTHY","rationale":"ok"}  \n'],
+  ["json/missing-rationale", JSON.stringify({ choice: "WORTHY" })],
+  ["json/missing-choice", JSON.stringify({ rationale: "ok" })],
+  ["json/extra-key", JSON.stringify({ choice: "WORTHY", rationale: "ok", extra: true })],
+  ["json/array", "[1,2]"],
+  ["json/true", "true"],
+  ["json/null", "null"],
+  ["json/number", "42"],
+  ["json/string", '"WORTHY"'],
+  ["json/empty", ""],
 ];

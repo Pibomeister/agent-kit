@@ -44809,30 +44809,29 @@ function failClosedAdversarialVerdict(text5) {
   const parsed = parseAdversarialVerdict(text5);
   return parsed.ok ? parsed.verdict : "REJECT";
 }
-function stripBom(text5) {
-  return text5.charCodeAt(0) === 65279 ? text5.slice(1) : text5;
-}
-function stripCsi(text5) {
-  let out = "";
+function hasForbiddenControl(text5) {
   for (let i = 0;i < text5.length; i++) {
-    if (text5.charCodeAt(i) !== 27 || text5[i + 1] !== "[") {
-      out += text5[i];
-      continue;
-    }
-    i += 2;
-    while (i < text5.length) {
-      const code = text5.charCodeAt(i);
-      if (code >= 64 && code <= 126)
-        break;
-      i += 1;
-    }
-  }
-  return out;
-}
-function containsBraceOrBracket(text5) {
-  for (const ch of text5)
-    if (ch === "{" || ch === "}" || ch === "[" || ch === "]")
+    const c = text5.charCodeAt(i);
+    if (c <= 31 && c !== 9 && c !== 10 && c !== 13)
       return true;
+    if (c === 127 || c >= 128 && c <= 159)
+      return true;
+  }
+  return false;
+}
+function hasFence(text5) {
+  return text5.includes("```") || text5.includes("~~~");
+}
+function hasUnicodeOrHexEscape(text5) {
+  return /\\u[0-9a-fA-F]|\\x[0-9a-fA-F]/.test(text5);
+}
+function hasDisallowedPairedPunctuation(text5) {
+  for (const ch of text5.normalize("NFKC")) {
+    if (ch === "(" || ch === ")")
+      continue;
+    if (/\p{Ps}|\p{Pe}/u.test(ch))
+      return true;
+  }
   return false;
 }
 function remainderAfterFinalVerdictLine(text5) {
@@ -44848,16 +44847,9 @@ function remainderAfterFinalVerdictLine(text5) {
 `);
 }
 function mixedJsonAndTranscript(text5) {
-  const remainder = remainderAfterFinalVerdictLine(text5);
-  if (remainder === undefined)
+  if (remainderAfterFinalVerdictLine(text5) === undefined)
     return false;
-  const head = stripBom(text5).trimStart();
-  if (head.startsWith("```"))
-    return true;
-  const normalised = stripCsi(stripBom(remainder)).normalize("NFKC").trim();
-  if (normalised === "{" || normalised === "[")
-    return false;
-  return containsBraceOrBracket(normalised);
+  return hasForbiddenControl(text5) || hasFence(text5) || hasUnicodeOrHexEscape(text5) || hasDisallowedPairedPunctuation(text5);
 }
 function adversarialChoiceFromTranscript(text5, options) {
   if (mixedJsonAndTranscript(text5))

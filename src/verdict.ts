@@ -76,30 +76,28 @@ export function failClosedAdversarialVerdict(text: string): AdversarialVerdict {
   return parsed.ok ? parsed.verdict : "REJECT";
 }
 
-function stripBom(text: string): string {
-  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-}
-
-/** Strip CSI sequences, including SGR (`ESC[` parameters `m`). */
-function stripCsi(text: string): string {
-  let out = "";
+function hasForbiddenControl(text: string): boolean {
   for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) !== 0x1b || text[i + 1] !== "[") {
-      out += text[i];
-      continue;
-    }
-    i += 2;
-    while (i < text.length) {
-      const code = text.charCodeAt(i);
-      if (code >= 0x40 && code <= 0x7e) break;
-      i += 1;
-    }
+    const c = text.charCodeAt(i);
+    if (c <= 0x1f && c !== 0x09 && c !== 0x0a && c !== 0x0d) return true;
+    if (c === 0x7f || (c >= 0x80 && c <= 0x9f)) return true;
   }
-  return out;
+  return false;
 }
 
-function containsBraceOrBracket(text: string): boolean {
-  for (const ch of text) if (ch === "{" || ch === "}" || ch === "[" || ch === "]") return true;
+function hasFence(text: string): boolean {
+  return text.includes("```") || text.includes("~~~");
+}
+
+function hasUnicodeOrHexEscape(text: string): boolean {
+  return /\\u[0-9a-fA-F]|\\x[0-9a-fA-F]/.test(text);
+}
+
+function hasDisallowedPairedPunctuation(text: string): boolean {
+  for (const ch of text.normalize("NFKC")) {
+    if (ch === "(" || ch === ")") continue;
+    if (/\p{Ps}|\p{Pe}/u.test(ch)) return true;
+  }
   return false;
 }
 
@@ -119,20 +117,18 @@ function remainderAfterFinalVerdictLine(text: string): string | undefined {
 
 /**
  * True when stdout mixes JSON-looking text with a final VERDICT line.
- * The transcript path does not parse JSON. After a BOM is stripped, CSI
- * and SGR sequences are removed and NFKC normalisation is applied. A
- * remainder that contains `{`, `}`, `[`, or `]` is mixed, except a
- * remainder that is only a lone `{` or `[`. A leading triple backtick
- * is mixed.
+ * The transcript path does not parse JSON and does not strip controls.
+ * Raw stdout is mixed when it has a forbidden control, a ``` or ~~~
+ * fence, a \\u or \\x hex escape, or, after NFKC, any Ps or Pe mark
+ * other than ASCII ( and ). The lone `{` or `[` remainder exception
+ * is dropped. Those characters are Ps, so class (b) already refuses
+ * them.
  */
 function mixedJsonAndTranscript(text: string): boolean {
-  const remainder = remainderAfterFinalVerdictLine(text);
-  if (remainder === undefined) return false;
-  const head = stripBom(text).trimStart();
-  if (head.startsWith("```")) return true;
-  const normalised = stripCsi(stripBom(remainder)).normalize("NFKC").trim();
-  if (normalised === "{" || normalised === "[") return false;
-  return containsBraceOrBracket(normalised);
+  if (remainderAfterFinalVerdictLine(text) === undefined) return false;
+  return (
+    hasForbiddenControl(text) || hasFence(text) || hasUnicodeOrHexEscape(text) || hasDisallowedPairedPunctuation(text)
+  );
 }
 
 /**
