@@ -47,7 +47,15 @@ const DIFF = [
   "--dst-prefix=b/",
 ];
 
-const RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index", "--ignore-submodules=none"] as const;
+/** `--full-index` fills patch `index` lines; `--no-abbrev` is what keeps `--raw` blob ids full. */
+const RAW = [
+  "--raw",
+  "--no-renames",
+  "--no-ext-diff",
+  "--full-index",
+  "--no-abbrev",
+  "--ignore-submodules=none",
+] as const;
 const RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
 
 interface TreeEntry {
@@ -290,6 +298,7 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
 interface PathLines {
   path: string;
   lines: number;
+  sha: string;
 }
 
 interface MergeInspection {
@@ -308,7 +317,25 @@ function decode(stdout: Uint8Array): string {
   return new TextDecoder().decode(stdout);
 }
 
-/** Paths and changed lines of `from` versus `to` inside the throwaway object store. */
+/** The non-zero blob on a `--full-index` `index` line. Prefer the recorded (`from`) side. */
+function blobFromPatch(diff: string): string {
+  for (const line of diff.split("\n")) {
+    const match = /^index ([0-9a-f]+)\.\.([0-9a-f]+)/.exec(line);
+    if (match === null) continue;
+    const src = match[1] ?? "";
+    const dst = match[2] ?? "";
+    if (src !== "" && !/^0+$/.test(src)) return src;
+    if (dst !== "" && !/^0+$/.test(dst)) return dst;
+  }
+  return "";
+}
+
+/**
+ * Paths and changed lines of `from` versus `to` inside the throwaway object store.
+ * The store is bare, so `.gitmodules ignore=all` is not read. `-c
+ * diff.ignoreSubmodules=all` is that setting; `--ignore-submodules=none` is the
+ * override that still lists a gitlink.
+ */
 function throwawayDiff(
   context: RunnerGitContext,
   repo: string,
@@ -319,7 +346,18 @@ function throwawayDiff(
   const names = gitProcess(
     context,
     repo,
-    ["diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", "--end-of-options", from, to],
+    [
+      "-c",
+      "diff.ignoreSubmodules=all",
+      "diff",
+      "--name-only",
+      "--no-renames",
+      "--ignore-submodules=none",
+      "-z",
+      "--end-of-options",
+      from,
+      to,
+    ],
     10_000,
     undefined,
     extraEnv,
@@ -333,13 +371,14 @@ function throwawayDiff(
     const patch = gitProcess(
       context,
       repo,
-      ["diff", ...DIFF, "--end-of-options", from, to, "--", path],
+      ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to, "--", path],
       10_000,
       undefined,
       extraEnv,
     );
     if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
-    path_lines.push({ path, lines: readPatch(decode(patch.stdout)).lines });
+    const text = decode(patch.stdout);
+    path_lines.push({ path, lines: readPatch(text).lines, sha: blobFromPatch(text) });
   }
   return { paths, path_lines };
 }
@@ -349,6 +388,7 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
   const conflicted = new Set<string>();
   const novelPaths = new Set<string>();
   const novelLineByPath = new Map<string, number>();
+  const novelShaByPath = new Map<string, string>();
   const pairs: { merge: string; ours: string; theirs: string }[] = [];
   let novel_merge = false;
   for (const merge of merges) {
@@ -409,8 +449,10 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
         if (run.novel) {
           novel_merge = true;
           for (const path of run.extra.paths) novelPaths.add(path);
-          for (const { path, lines } of run.extra.path_lines)
+          for (const { path, lines, sha } of run.extra.path_lines) {
             novelLineByPath.set(path, (novelLineByPath.get(path) ?? 0) + lines);
+            if (sha !== "") novelShaByPath.set(path, sha);
+          }
         }
         if (run.code === 0) continue;
         // The first field is the tree. The rest are the conflicted paths.
@@ -425,7 +467,11 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
     conflict_paths: [...conflicted].toSorted(),
     novel_merge,
     novel_paths,
-    novel_path_lines: novel_paths.map((path) => ({ path, lines: novelLineByPath.get(path) ?? 0 })),
+    novel_path_lines: novel_paths.map((path) => ({
+      path,
+      lines: novelLineByPath.get(path) ?? 0,
+      sha: novelShaByPath.get(path) ?? "",
+    })),
   };
 }
 
@@ -470,8 +516,14 @@ export function readDelta(repo: string, base: string, previous: string, head: st
   const empty = identical && !merges.novel_merge && !nonMerges.novel;
   const novelPaths = [...new Set([...merges.novel_paths, ...nonMerges.paths])].toSorted();
   const visiblePaths = identical ? [] : changedPaths(repo, previous, head);
+  const nowBlobs = new Set([...nowTree.values()].map((entry) => entry.sha));
+  const countedBlobs = new Set<string>();
   let hiddenMergeLines = 0;
-  for (const { path, lines } of merges.novel_path_lines) if (!nowTree.has(path)) hiddenMergeLines += lines;
+  for (const { sha, lines } of merges.novel_path_lines) {
+    if (sha === "" || nowBlobs.has(sha) || countedBlobs.has(sha)) continue;
+    countedBlobs.add(sha);
+    hiddenMergeLines += lines;
+  }
   return {
     now: now.reading,
     previous: before.reading,

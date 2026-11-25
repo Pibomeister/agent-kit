@@ -18,10 +18,26 @@ import validProject from "../fixtures/delegation/valid.project.json" with { type
 import validTicket from "../fixtures/delegation/valid.ticket.json" with { type: "json" };
 import { runCli } from "../../src/cli.ts";
 import { runReview } from "../../src/review/cli.ts";
+import { linesNotIn, readPatch } from "../../src/review/scope.ts";
 import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
 import * as snapshot from "../../src/runner/snapshot.ts";
 import { parseJson, type JsonValue } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
+
+/** Same flags `delta.ts` uses for pull-request patches. */
+const PR_DIFF = [
+  "-U0",
+  "--no-renames",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--no-color",
+  "--full-index",
+  "--ignore-submodules=none",
+  "--submodule=short",
+  "--diff-algorithm=myers",
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
+] as const;
 
 const NOTE = "This record grants no authority. It approves no checkpoint, ticket, merge or deploy.";
 
@@ -92,6 +108,14 @@ function fixture() {
         const [added, removed] = row.split("\t");
         return sum + Number(added) + Number(removed);
       }, 0);
+  /** Added column of `git diff --numstat --no-renames from to`. */
+  const numstatAdds = (from: string, to: string): number =>
+    git("diff", "--numstat", "--no-renames", from, to)
+      .split("\n")
+      .reduce((sum, row) => {
+        const added = Number(row.split("\t")[0]);
+        return Number.isFinite(added) ? sum + added : sum;
+      }, 0);
   const add = (...events: JsonValue[]): void => {
     const only = events.length === 1 ? (events[0] ?? null) : null;
     const payload = member(only, "schema") === "review-scope" && only !== null ? only : events;
@@ -144,6 +168,7 @@ function fixture() {
     write,
     commit,
     numstat,
+    numstatAdds,
     add,
     round,
     scope,
@@ -781,6 +806,98 @@ describe("ak review scope: later-round tree identity", () => {
     expect(run.err.join("\n")).toContain("refusing to merge unrelated histories");
   });
 
+  test("R8-DIRTY-MV: a dirty merge then git mv does not double-count added_lines", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/evil.ts": lines("evil", 20) });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty merge 20");
+    f.git("reset", "--hard", dirtyMerge);
+    f.git("mv", "src/evil.ts", "src/note.ts");
+    f.git("commit", "-m", "mv evil to note");
+    const next = f.git("rev-parse", "HEAD");
+    const scoped = f.record(next);
+    expect(scoped).toMatchObject({
+      outcome: "closure",
+      delta: { empty: false, changed_paths: ["src/evil.ts", "src/note.ts"] },
+    });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(f.numstatAdds(reviewed, next));
+    expect(f.decide(next).code).toBe(1);
+  });
+
+  test("R8-DIRTY-RENAME-RESTORE: a dirty rename then restore does not double-count added_lines", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/note.ts": lines("evil", 40) });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty merge at renamed path");
+    f.git("reset", "--hard", dirtyMerge);
+    f.git("mv", "src/note.ts", "src/evil.ts");
+    f.git("commit", "-m", "restore original name");
+    const next = f.git("rev-parse", "HEAD");
+    const scoped = f.record(next);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toEqual(expect.arrayContaining(["src/evil.ts", "src/note.ts"]));
+    expect(scoped).toMatchObject({ delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(f.numstatAdds(reviewed, next));
+    expect(f.decide(next).code).toBe(1);
+  });
+
+  test("R8-DIRTY-KEPT: a dirty merge path kept in the PR tree does not add hidden lines", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/evil.ts": "pwned\n" });
+    f.git("add", "-A");
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty merge kept");
+    f.git("reset", "--hard", dirtyMerge);
+    const next = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 3) }, "keep evil, fix a");
+    const scoped = f.record(next);
+    const beforeBase = f.git("merge-base", "main", reviewed);
+    const nowBase = f.git("merge-base", "main", next);
+    const expected = linesNotIn(
+      readPatch(f.git("diff", ...PR_DIFF, nowBase, next)),
+      readPatch(f.git("diff", ...PR_DIFF, beforeBase, reviewed)),
+    );
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(expected);
+    expect(f.decide(next).code).toBe(1);
+  });
+
+  test("R8-DIRTY-GITLINK-OURS: a dirty-merge gitlink with ignore=all lists vendor/lib after ours-back", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    const pin = f.git("rev-parse", "main");
+    f.write({
+      ".gitmodules": '[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = ./vendor/lib\n\tignore = all\n',
+    });
+    f.git("add", ".gitmodules");
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`);
+    const dirtyTree = f.git("write-tree");
+    f.git("reset", "--hard", reviewed);
+    const dirtyMerge = f.git("commit-tree", dirtyTree, "-p", reviewed, "-p", main, "-m", "dirty gitlink merge");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    const restored = f.git("commit-tree", tree, "-p", dirtyMerge, "-p", main, "-m", "ours back to reviewed");
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("vendor/lib");
+    expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false } });
+  });
+
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
     const f = fixture();
     f.round(f.head);
@@ -848,16 +965,6 @@ describe("ak review scope: later-round tree identity", () => {
     expect(argv[argv.indexOf("core.commitGraph=false") - 1]).toBe("-c");
     const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
     expect(source).toContain("isolatedGitArgv(");
-  });
-
-  test("throwawayDiff keeps --ignore-submodules=none even if changedPaths also has it", () => {
-    const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
-    const start = source.indexOf("function throwawayDiff");
-    const end = source.indexOf("function inspectMerges");
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    expect(source.slice(start, end)).toContain("--ignore-submodules=none");
-    expect(source).not.toContain("--allow-unrelated-histories");
   });
 });
 

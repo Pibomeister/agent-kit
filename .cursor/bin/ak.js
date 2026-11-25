@@ -46797,7 +46797,14 @@ var DIFF = [
   "--src-prefix=a/",
   "--dst-prefix=b/"
 ];
-var RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index", "--ignore-submodules=none"];
+var RAW = [
+  "--raw",
+  "--no-renames",
+  "--no-ext-diff",
+  "--full-index",
+  "--no-abbrev",
+  "--ignore-submodules=none"
+];
 var RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
 function rawRows(repo, from, to) {
   const rows2 = [];
@@ -46952,17 +46959,44 @@ function linesRewritten(repo, base2, reviewed, now, head) {
 function decode2(stdout) {
   return new TextDecoder().decode(stdout);
 }
+function blobFromPatch(diff) {
+  for (const line of diff.split(`
+`)) {
+    const match = /^index ([0-9a-f]+)\.\.([0-9a-f]+)/.exec(line);
+    if (match === null)
+      continue;
+    const src = match[1] ?? "";
+    const dst = match[2] ?? "";
+    if (src !== "" && !/^0+$/.test(src))
+      return src;
+    if (dst !== "" && !/^0+$/.test(dst))
+      return dst;
+  }
+  return "";
+}
 function throwawayDiff(context, repo, extraEnv, from, to) {
-  const names = gitProcess(context, repo, ["diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", "--end-of-options", from, to], 1e4, undefined, extraEnv);
+  const names = gitProcess(context, repo, [
+    "-c",
+    "diff.ignoreSubmodules=all",
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "--ignore-submodules=none",
+    "-z",
+    "--end-of-options",
+    from,
+    to
+  ], 1e4, undefined, extraEnv);
   if (names.code !== 0 && names.code !== 1)
     throw new Error(`git diff failed: ${names.stderr}`);
   const paths2 = decode2(names.stdout).split("\x00").filter((path) => path.length > 0);
   const path_lines = [];
   for (const path of paths2) {
-    const patch = gitProcess(context, repo, ["diff", ...DIFF, "--end-of-options", from, to, "--", path], 1e4, undefined, extraEnv);
+    const patch = gitProcess(context, repo, ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to, "--", path], 1e4, undefined, extraEnv);
     if (patch.code !== 0 && patch.code !== 1)
       throw new Error(`git diff failed: ${patch.stderr}`);
-    path_lines.push({ path, lines: readPatch(decode2(patch.stdout)).lines });
+    const text5 = decode2(patch.stdout);
+    path_lines.push({ path, lines: readPatch(text5).lines, sha: blobFromPatch(text5) });
   }
   return { paths: paths2, path_lines };
 }
@@ -46972,6 +47006,7 @@ function inspectMerges(repo, base2, previous, head) {
   const conflicted = new Set;
   const novelPaths = new Set;
   const novelLineByPath = new Map;
+  const novelShaByPath = new Map;
   const pairs = [];
   let novel_merge = false;
   for (const merge of merges) {
@@ -47027,8 +47062,11 @@ function inspectMerges(repo, base2, previous, head) {
           novel_merge = true;
           for (const path of run3.extra.paths)
             novelPaths.add(path);
-          for (const { path, lines } of run3.extra.path_lines)
+          for (const { path, lines, sha } of run3.extra.path_lines) {
             novelLineByPath.set(path, (novelLineByPath.get(path) ?? 0) + lines);
+            if (sha !== "")
+              novelShaByPath.set(path, sha);
+          }
         }
         if (run3.code === 0)
           continue;
@@ -47045,7 +47083,11 @@ function inspectMerges(repo, base2, previous, head) {
     conflict_paths: [...conflicted].toSorted(),
     novel_merge,
     novel_paths,
-    novel_path_lines: novel_paths.map((path) => ({ path, lines: novelLineByPath.get(path) ?? 0 }))
+    novel_path_lines: novel_paths.map((path) => ({
+      path,
+      lines: novelLineByPath.get(path) ?? 0,
+      sha: novelShaByPath.get(path) ?? ""
+    }))
   };
 }
 function changedPaths(repo, previous, head) {
@@ -47072,10 +47114,15 @@ function readDelta(repo, base2, previous, head) {
   const empty = identical && !merges.novel_merge && !nonMerges.novel;
   const novelPaths = [...new Set([...merges.novel_paths, ...nonMerges.paths])].toSorted();
   const visiblePaths = identical ? [] : changedPaths(repo, previous, head);
+  const nowBlobs = new Set([...nowTree.values()].map((entry) => entry.sha));
+  const countedBlobs = new Set;
   let hiddenMergeLines = 0;
-  for (const { path, lines } of merges.novel_path_lines)
-    if (!nowTree.has(path))
-      hiddenMergeLines += lines;
+  for (const { sha, lines } of merges.novel_path_lines) {
+    if (sha === "" || nowBlobs.has(sha) || countedBlobs.has(sha))
+      continue;
+    countedBlobs.add(sha);
+    hiddenMergeLines += lines;
+  }
   return {
     now: now.reading,
     previous: before.reading,
