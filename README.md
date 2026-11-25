@@ -403,7 +403,7 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
 The research-only [`caveman-ai/blocks` pin](research/sources/caveman-blocks-verified-blocks.md) records the procedure-detection donor and its licence and trademark limits; no donor executable is shipped.
-Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
+These MIT donors make up the engineering lifecycle (pinned 2026-09-18):
 `EveryInc/compound-engineering-plugin`, `obra/superpowers`, `mattpocock/skills`,
 `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`, `Yeachan-Heo/oh-my-codex`.
 `BuilderIO/skills` (MIT, pinned at its 2026-09-30 commit) is the source of `visual-edit`.

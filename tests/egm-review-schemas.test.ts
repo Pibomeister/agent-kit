@@ -1,5 +1,7 @@
 /**
+ * ak-egm-begin
  * Schema contract for the EGM 1b review settings and cold-read record.
+ * ak-egm-end
  *
  * These cases compile the shipped schemas. They pin: missing review object
  * equals off, off/shadow/on are the only modes, existing review documents stay
@@ -27,8 +29,11 @@ if (
   validateReview === undefined ||
   validateTicket === undefined ||
   validateColdRead === undefined
-)
+) {
+  // ak-egm-begin-compile
   throw new Error("EGM 1b schemas did not compile");
+  // ak-egm-end-compile
+}
 
 function example(name: string): JsonValue {
   return parseJson(readFileSync(join(ROOT, "templates", name), "utf8"));

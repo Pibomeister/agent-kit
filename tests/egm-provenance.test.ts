@@ -1,16 +1,23 @@
 /**
- * Provenance-only files are pinned by sha256 of the raw bytes. Mixed files wrap
- * claims in begin/end markers that must appear once, outside any code fence;
- * the test hashes the block after CRLF folds to LF. A fenced copy cannot
- * satisfy a pin. A split rewrite of the live block changes the hash. Overlay
- * copies must equal source bytes. The lock is YAML. One loader walks donors,
- * rejects duplicate ids, coerces a Date commit_date, and asserts the egm
- * commit, commit_date, license, copyright, license_file, path, url, and repo.
- * Duplicate-id rejection lives in this test, not in loadDonors. Every egm
- * adaptation source commit must equal the lock pin. Free-text claims
- * elsewhere are review's job.
+ * Provenance-only files are pinned by sha256 of the raw bytes: NOTICE,
+ * GAP-PROBE.md, research/dossiers/egm.md (any dossier edit needs a re-pin),
+ * comprehension-seat.yaml, and the EGM donor snapshot that uses the word EGM.
+ * Mixed files wrap claims in begin/end markers that must appear once on both
+ * the unmasked text and the fence-masked text; the test hashes the block after
+ * CRLF folds to LF. Overlay copies must equal source bytes. The lock is YAML.
+ * One loader walks donors, rejects duplicate ids, coerces a Date commit_date,
+ * and asserts the egm commit, commit_date, license, copyright, license_file,
+ * path, url, and repo. Duplicate-id rejection lives in this test, not in
+ * loadDonors. Every egm adaptation source commit must equal the lock pin.
+ * Identity strings (elephant-goldfish, 403d8881, GAP-PROBE, GAP-MASTRA, the
+ * word EGM) may appear only in those hashed files, in a live marker block that
+ * has a BLOCK_PINS row, in a byte-checked overlay copy, or in the allowlist:
+ * this test, generated .cursor/bin/ak.js and .cursor/bin/ak-gate.mjs
+ * (packaging inlines NOTICE), and generated provenance/adaptations.yaml
+ * (checkAdaptationsSync). Catalog donor-count words come from catalog.yaml.
  */
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -19,7 +26,12 @@ import { parse, stringify } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
 import { DENY_TERMS, matchTerms } from "../src/denylist.ts";
-import { loadAdaptationFragments, loadDonors, parseDonorSource } from "../src/validation/provenance.ts";
+import {
+  checkAdaptationsSync,
+  loadAdaptationFragments,
+  loadDonors,
+  parseDonorSource,
+} from "../src/validation/provenance.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -65,7 +77,28 @@ const FILE_HASHES: Array<{ file: string; sha256: string }> = [
     file: "provenance/adaptations.d/comprehension-seat.yaml",
     sha256: "478be32d48f0c566370b3f8af8d6f196330e6811e3b615aa0c7abd1b8a1608f0",
   },
+  {
+    file: "provenance/donor-snapshots/egm@403d8881d620/tests/integration/test_codex.py",
+    sha256: "684f722839ec7e5520b6923da606a62d5719b4d1f08944368c52121b706f7cc7",
+  },
 ];
+
+const IDENTITY_ALLOWLIST: Array<{ file: string; reason: string }> = [
+  { file: "tests/egm-provenance.test.ts", reason: "the pin test names the identity strings it scans" },
+  {
+    file: ".cursor/bin/ak.js",
+    reason: "generated; packaging inlines NOTICE and cursor-packaging checks the file",
+  },
+  { file: ".cursor/bin/ak-gate.mjs", reason: "generated; packaging inlines NOTICE" },
+  {
+    file: "provenance/adaptations.yaml",
+    reason: "generated from fragments; checkAdaptationsSync is the pin",
+  },
+];
+
+const IDENTITY_NEEDLES = ["elephant-goldfish", "403d8881", "GAP-PROBE", "GAP-MASTRA"] as const;
+const EGM_WORD = /(?:^|[^A-Za-z0-9_])EGM(?=[^A-Za-z0-9_]|$)/g;
+const CATALOG_COUNT_CLAIM = /\b(?:twelve|eleven|thirteen)\s+(?:catalog\s+)?donors\b/i;
 
 const LOCK_ENTRY_SHA256 = "1f48385ba3ca27a065fa1448af81d6b8aa5cd05dc545d3d76ab605fbbd03da77";
 const FINGERPRINT_DESC_SHA256 = "7df2fe33f96517c13e3756bdb727912f1f9d7a1a8bc61fdcda8fdb7f737581ff";
@@ -114,6 +147,102 @@ const BLOCK_PINS: BlockPin[] = [
     begin: "<!-- ak-egm-begin -->",
     end: "<!-- ak-egm-end -->",
     sha256: "c5d858d91739c6c72bb1be77e055c23e3879295995d023d5db851eb8d4b2fafc",
+  },
+  {
+    file: "AGENTS.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "e90a630811147b1e366d62184298cbaab005c72a5c5f3dd39450503e5cec796d",
+  },
+  {
+    file: "src/review-isolation-probe/children.ts",
+    begin: " * ak-egm-begin",
+    end: " * ak-egm-end",
+    sha256: "c01c584069b6998d1e2639817457603c955d9ee17b11f4a6332f8c794ba9cdee",
+  },
+  {
+    file: "adapters/cursor/CONTRACT.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "767aaaf92a127a9a9d3ec8fcd39e04675ea9943431407922f44878e8c98c6320",
+  },
+  {
+    file: "skills/doc-review/SKILL.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "049efe6b95a2a9e229bbd982b6d0277e6ea6c78171b9b0010923d28b7c0d1cd7",
+  },
+  {
+    file: ".cursor/skills/doc-review/SKILL.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "7cd5d10440b4fdcaf8ace61c1a44bdc2f060c234a57a43edc12ffd58f554e443",
+  },
+  {
+    file: "tests/docrules.test.ts",
+    begin: "// ak-egm-begin",
+    end: "// ak-egm-end",
+    sha256: "5a76e328bf0e910041f3f6826461937229bf2e9f14127a3598ebec3343ad78c4",
+  },
+  {
+    file: "tests/egm-review-schemas.test.ts",
+    begin: " * ak-egm-begin",
+    end: " * ak-egm-end",
+    sha256: "04a16c8b254836a5241af8110fc8a36f04187c10567dc834dc22f1cd825463a6",
+  },
+  {
+    file: "tests/egm-review-schemas.test.ts",
+    begin: "  // ak-egm-begin-compile",
+    end: "  // ak-egm-end-compile",
+    sha256: "c422ebe978c232dfa3b3647ec3b3740e878aa21bbbe669e0f00368c550607b5e",
+  },
+  {
+    file: "tests/egm-gap-status.md",
+    begin: "<!-- ak-egm-begin -->",
+    end: "<!-- ak-egm-end -->",
+    sha256: "e2c87d64a63e471355b6c6ebd00c4479c5479184a48acd54c5baf167859b914c",
+  },
+  {
+    file: "tests/packaging.test.ts",
+    begin: "/* ak-egm-begin */",
+    end: "/* ak-egm-end */",
+    sha256: "5c9cff071423f4905ff0647550ea3bccaaab4e36bd31051923ffffa09d99f6ae",
+  },
+  {
+    file: "provenance/adaptations.d/define.yaml",
+    begin: "# ak-egm-begin-bound",
+    end: "# ak-egm-end-bound",
+    sha256: "0af6dbffaa991ac58fb6b2118a7b6cb1383b71bcc476c00c57fafd5173da79a1",
+  },
+  {
+    file: "provenance/adaptations.d/define.yaml",
+    begin: "# ak-egm-begin-doc-review",
+    end: "# ak-egm-end-doc-review",
+    sha256: "f959332f7e254ed167023c477b617fb5384332c1ba92a5144a371ce7ca9f73b9",
+  },
+  {
+    file: "provenance/adaptations.d/review-isolation-probe.yaml",
+    begin: "# ak-egm-begin",
+    end: "# ak-egm-end",
+    sha256: "eb01c0b1acd1935d1fb569117b898c5ab16caca0a141f59d63f03657447e6c63",
+  },
+  {
+    file: "provenance/adaptations.d/review-routing.yaml",
+    begin: "# ak-egm-begin",
+    end: "# ak-egm-end",
+    sha256: "6ae0493bfa7407b9e59c877dedfdfb7a1122bfc35d944656b2f2b971eb2431ae",
+  },
+  {
+    file: "skills/doc-review/skill.yaml",
+    begin: "# ak-egm-begin",
+    end: "# ak-egm-end",
+    sha256: "782366d688fc022aa16901bf084c3b509480cd0dae69c750ace79012dbd762ea",
+  },
+  {
+    file: "skills/super-bound/skill.yaml",
+    begin: "# ak-egm-begin",
+    end: "# ak-egm-end",
+    sha256: "eeb2cdbba8509f480ac88607cbf87c08ce0e9bfc43e6bb1f896655ae1b8cf71c",
   },
 ];
 
@@ -325,12 +454,65 @@ function extractPinnedBlock(text: string, pin: BlockPin): string {
   const visible = maskFences(folded);
   const begins = indicesOf(visible, pin.begin);
   const ends = indicesOf(visible, pin.end);
+  const unmaskedBegins = indicesOf(folded, pin.begin);
+  const unmaskedEnds = indicesOf(folded, pin.end);
+  expect(unmaskedBegins.length, `${pin.file} unmasked begin matches=${unmaskedBegins.length}`).toBe(1);
+  expect(unmaskedEnds.length, `${pin.file} unmasked end matches=${unmaskedEnds.length}`).toBe(1);
   expect(begins.length, `${pin.file} begin matches=${begins.length}`).toBe(1);
   expect(ends.length, `${pin.file} end matches=${ends.length}`).toBe(1);
   const start = (begins[0] ?? 0) + pin.begin.length;
   const stop = ends[0] ?? 0;
   expect(start <= stop, `${pin.file} inverted markers`).toBe(true);
   return folded.slice(start, stop);
+}
+
+function trackedTextFiles(): string[] {
+  const listed = spawnSync("git", ["ls-files", "-z"], { cwd: REPO, encoding: "buffer" });
+  expect(listed.status, "git ls-files").toBe(0);
+  const files: string[] = [];
+  for (const raw of listed.stdout.toString("utf8").split("\0")) {
+    if (raw === "" || raw.includes("node_modules/")) continue;
+    const bytes = readFileSync(join(REPO, raw));
+    if (bytes.includes(0)) continue;
+    files.push(raw);
+  }
+  return files;
+}
+
+function identityOffsets(text: string): number[] {
+  const hits: number[] = [];
+  for (const needle of IDENTITY_NEEDLES) hits.push(...indicesOf(text, needle));
+  for (const match of text.matchAll(EGM_WORD)) {
+    const at = match.index ?? 0;
+    hits.push(match[0].startsWith("E") ? at : at + 1);
+  }
+  return hits;
+}
+
+function coveredRanges(file: string, folded: string): Array<[number, number]> {
+  if (FILE_HASHES.some((pin) => pin.file === file)) return [[0, folded.length]];
+  if (OVERLAY_COPIES.some((copy) => copy.dest === file)) return [[0, folded.length]];
+  if (IDENTITY_ALLOWLIST.some((entry) => entry.file === file)) return [[0, folded.length]];
+  if (file === LOCK) {
+    const entry = lockEntry(folded);
+    const start = folded.indexOf(entry);
+    return [[start, start + entry.length]];
+  }
+  const ranges: Array<[number, number]> = [];
+  for (const pin of BLOCK_PINS.filter((row) => row.file === file)) {
+    const visible = maskFences(folded);
+    const begins = indicesOf(visible, pin.begin);
+    const ends = indicesOf(visible, pin.end);
+    const beginAt = begins[0];
+    const endAt = ends[0];
+    if (beginAt === undefined || endAt === undefined || begins.length !== 1 || ends.length !== 1) continue;
+    ranges.push([beginAt + pin.begin.length, endAt]);
+  }
+  return ranges;
+}
+
+function offsetCovered(offset: number, ranges: Array<[number, number]>): boolean {
+  return ranges.some(([start, stop]) => offset >= start && offset < stop);
 }
 
 function lockEntry(text: string): string {
@@ -453,14 +635,57 @@ describe("EGM provenance (GS-004f)", () => {
     const { catalog: loaded } = loadCatalog(REPO);
     const description = loaded?.package.description ?? "";
     expect(description.length, "catalog.yaml package.description").toBeGreaterThan(0);
-    expect(description).toContain(countWord(catalog.size));
-    expect(description).toContain(countWord([...catalog.values()].filter((license) => license === "MIT").length));
-    expect(description).toContain(
-      countWord([...catalog.values()].filter((license) => license === "Apache-2.0").length),
-    );
+    const total = countWord(catalog.size);
+    const mit = countWord([...catalog.values()].filter((license) => license === "MIT").length);
+    const apache = countWord([...catalog.values()].filter((license) => license === "Apache-2.0").length);
+    expect(description).toContain(total);
+    expect(description).toContain(mit);
+    expect(description).toContain(apache);
     expect(contractPluginDescription(readFileSync(join(REPO, "adapters/claude-code/CONTRACT.md"), "utf8"))).toBe(
       description,
     );
+    const countLies: string[] = [];
+    for (const file of trackedTextFiles()) {
+      const folded = readFileSync(join(REPO, file), "utf8").replaceAll("\r\n", "\n").toLowerCase();
+      if (!CATALOG_COUNT_CLAIM.test(folded)) continue;
+      if (!folded.includes(total) || !folded.includes(mit) || !folded.includes(apache)) countLies.push(file);
+    }
+    expect(countLies).toEqual([]);
+  });
+
+  test("identity strings live only in pinned regions or the allowlist", () => {
+    for (const entry of IDENTITY_ALLOWLIST) {
+      expect(existsSync(join(REPO, entry.file)), entry.reason).toBe(true);
+      expect(entry.reason.length, entry.file).toBeGreaterThan(0);
+    }
+    const uncovered: string[] = [];
+    for (const file of trackedTextFiles()) {
+      const folded = readFileSync(join(REPO, file), "utf8").replaceAll("\r\n", "\n");
+      const ranges = coveredRanges(file, folded);
+      for (const offset of identityOffsets(folded)) {
+        if (!offsetCovered(offset, ranges)) uncovered.push(`${file}:${folded.slice(0, offset).split("\n").length}`);
+      }
+    }
+    expect(uncovered).toEqual([]);
+  });
+
+  test("generated adaptations.yaml matches the fragments", () => {
+    const { catalog } = loadCatalog(REPO);
+    expect(catalog).not.toBeNull();
+    if (catalog === null) return;
+    expect(checkAdaptationsSync({ root: REPO, catalog }).filter((issue) => issue.severity === "error")).toEqual([]);
+  });
+
+  test("cursor CONTRACT isolation row is the docs-only row", () => {
+    const text = readFileSync(join(REPO, "adapters/cursor/CONTRACT.md"), "utf8");
+    const row = text.split("\n").find((line) => line.startsWith("| `isolated-review-context` |"));
+    expect(row, "isolation row").toBeDefined();
+    if (row === undefined) return;
+    expect(row).toContain("Docs only, not session-tested");
+    const pin = BLOCK_PINS.find((entry) => entry.file === "adapters/cursor/CONTRACT.md");
+    expect(pin).toBeDefined();
+    if (pin === undefined) return;
+    expect(extractPinnedBlock(text, pin)).toContain("Docs only, not session-tested");
   });
 
   test("every egm adaptation source commit matches the lock pin", () => {

@@ -5,8 +5,10 @@
  * Agent/Task tool_use in the parent stream, Codex spawn_agent / SubAgentActivity
  * started events. Self-authored resume/fork fields are not evidence.
  *
+ * ak-egm-begin
  * Adapted from EGM tests/integration/test_claude.py and test_codex.py at
  * elephant-goldfish-model@403d8881d62022490637d740657b33f01e321ea8.
+ * ak-egm-end
  */
 import { readdirSync, readFileSync, type Dirent } from "node:fs";
 import { basename, join } from "node:path";
