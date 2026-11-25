@@ -325,9 +325,12 @@ The first follow-up above is closed this way:
   a gate with no record and does not read `review-delta` for that refusal. A `review-delta` at the
   head makes an earlier `review-full` record count at `e2cab1b6` (`src/lifecycle/gate.ts:1174-1178`).
   The current step 12 wording is enforced by `tests/super-review-wording.test.ts`.
-  That test holds a whitespace-collapsed canonical string of the live step. A
-  deliberate rewording updates the canonical string in the same commit. Reflow
-  and CRLF still pass.
+  That test locks the live step 12 bytes after CRLF-to-LF only. A deliberate
+  rewording of the step updates the canonical string in the same commit. The
+  two-phrase denylist is a tripwire. A reworded approved-only sentence
+  elsewhere is out of its scope and is caught in review. `SKILL.md` may
+  contain U+2014 EM DASH, which `origin/main` already has. Any other
+  non-ASCII character fails.
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the

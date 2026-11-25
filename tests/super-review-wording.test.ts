@@ -2,10 +2,11 @@
  * Super-review workflow step 12: a changes-requested full review is recorded with
  * `--verdict changes-requested`. The 0.1.37 wording recorded the gate only on approved.
  *
- * The body is NFKC-normalized. Fenced blocks and HTML comments are stripped. Headings
- * are case-exact (`## Workflow`, `## Hard gates`). STEP12 is the whitespace-collapsed
- * lock of the live step. A deliberate rewording updates STEP12 in the same commit.
- * Reflow and CRLF still pass.
+ * The lock reads the skill bytes after CRLF-to-LF only. STEP12 is the
+ * whitespace-collapsed live step. A deliberate rewording updates STEP12 in the
+ * same commit. Reflow, CRLF, and a newline or tab after `12.` still pass. The
+ * two-phrase denylist is a tripwire. Headings are found case-insensitively.
+ * SKILL.md may contain U+2014 EM DASH. Any other non-ASCII character fails.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,11 +15,6 @@ import { describe, expect, test } from "bun:test";
 
 const REPO = join(import.meta.dir, "..");
 const collapse = (s: string): string => s.replace(/\s+/g, " ").trim();
-const visible = (s: string): string =>
-  s
-    .normalize("NFKC")
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
 
 /** Collapsed skills/super-review/SKILL.md workflow step 12. */
 const STEP12 =
@@ -26,21 +22,22 @@ const STEP12 =
 
 describe("super-review wording", () => {
   test("step 12 records a changes-requested full review with --verdict changes-requested", () => {
-    const body = visible(readFileSync(join(REPO, "skills/super-review/SKILL.md"), "utf8"));
-    const numbered = [...body.matchAll(/^12\. /gm)];
-    const headings = [...body.matchAll(/^## (?:Workflow|Hard gates)\s*$/gm)];
+    const raw = readFileSync(join(REPO, "skills/super-review/SKILL.md"), "utf8").replace(/\r\n/g, "\n");
+    expect(raw.replace(/[\t\n\x20-\x7E\u2014]/g, "")).toBe("");
+    const workflows = [...raw.matchAll(/^## workflow\s*$/gim)];
+    const hards = [...raw.matchAll(/^## hard gates\s*$/gim)];
+    const numbered = [...raw.matchAll(/^12\.[ \t\n]/gm)];
+    expect(workflows.length).toBe(1);
+    expect(hards.length).toBe(1);
     expect(numbered.length).toBe(1);
-    expect(headings.length).toBe(2);
-    const firstHeading = headings[0];
-    const secondHeading = headings[1];
+    const workflow = workflows[0];
+    const hard = hards[0];
     const stepMatch = numbered[0];
-    if (firstHeading === undefined || secondHeading === undefined || stepMatch === undefined) {
+    if (workflow === undefined || hard === undefined || stepMatch === undefined) {
       throw new Error("heading or step 12 match is missing");
     }
-    expect(firstHeading[0].trimEnd()).toBe("## Workflow");
-    expect(secondHeading[0].trimEnd()).toBe("## Hard gates");
-    const workflowAt = firstHeading.index;
-    const hardAt = secondHeading.index;
+    const workflowAt = workflow.index;
+    const hardAt = hard.index;
     const stepAt = stepMatch.index;
     if (workflowAt === undefined || hardAt === undefined || stepAt === undefined) {
       throw new Error("heading or step 12 match has no index");
@@ -48,12 +45,15 @@ describe("super-review wording", () => {
     expect(hardAt).toBeGreaterThan(workflowAt);
     expect(stepAt).toBeGreaterThan(workflowAt);
     expect(stepAt).toBeLessThan(hardAt);
-    const step = collapse(body.slice(stepAt, hardAt));
-    const outside = collapse(body.slice(0, stepAt) + "\n" + body.slice(hardAt)).toLowerCase();
+    const between = raw.slice(workflowAt, hardAt);
+    expect(between).not.toContain("```");
+    expect(between).not.toContain("~~~");
+    expect(between).not.toContain("<!--");
+    const outside = collapse(raw.slice(0, stepAt) + "\n" + raw.slice(hardAt)).toLowerCase();
     expect(outside).not.toContain("and only then");
     expect(outside).not.toContain("do not record --verdict changes-requested");
     try {
-      expect(step).toBe(STEP12);
+      expect(collapse(raw.slice(stepAt, hardAt))).toBe(STEP12);
     } catch (cause) {
       throw new Error("issue #147: step 12 must tell reviewers to record a changes-requested full review", { cause });
     }
