@@ -7,14 +7,22 @@
 # the bundle would be published (a first publish or changed content), a release tag v<version>
 # that is missing or points at a commit other than HEAD, the merged commit being published; the
 # tag is read locally first, then on origin. An unchanged bundle publishes nothing and needs no tag.
-# Usage, from the repository root: tools/publish/version-gate.sh <built-dist> [--require-release-tag]
+# With --create-release-tag (the push to main) it applies the same checks, except that a missing
+# tag is created at HEAD and pushed to origin, once HEAD is confirmed on origin/main. A tag that
+# already exists at another commit still refuses, and a failed tag push refuses.
+# Usage, from the repository root:
+#   tools/publish/version-gate.sh <built-dist> [--require-release-tag | --create-release-tag]
 set -eu
 current="$1"
 require_release_tag=0
+create_release_tag=0
 if [ "${2:-}" = "--require-release-tag" ]; then
   require_release_tag=1
+elif [ "${2:-}" = "--create-release-tag" ]; then
+  require_release_tag=1
+  create_release_tag=1
 elif [ -n "${2:-}" ]; then
-  echo "refused: unknown argument $2; expected --require-release-tag" >&2
+  echo "refused: unknown argument $2; expected --require-release-tag or --create-release-tag" >&2
   exit 1
 fi
 manifest=claude-code/.claude-plugin/plugin.json
@@ -63,6 +71,26 @@ if (currentVersion !== packagedVersion) {
 console.log(currentVersion);
 JS
 )"
+create_release_tag_at_head() {
+  if ! git fetch -q origin +refs/heads/main:refs/remotes/origin/main; then
+    echo "refused: cannot read origin/main, so release tag $release_tag is not created" >&2
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "$merged_commit" refs/remotes/origin/main; then
+    echo "refused: the merged commit $merged_commit is not on main, so release tag $release_tag is not created" >&2
+    exit 1
+  fi
+  if ! git tag "$release_tag" "$merged_commit"; then
+    echo "refused: cannot create release tag $release_tag at the merged commit $merged_commit" >&2
+    exit 1
+  fi
+  if ! git push -q origin "refs/tags/$release_tag:refs/tags/$release_tag"; then
+    git tag -d "$release_tag" >/dev/null 2>&1 || true
+    echo "refused: cannot push release tag $release_tag to origin" >&2
+    exit 1
+  fi
+  echo "Created release tag $release_tag at the merged commit $merged_commit"
+}
 require_release_tag_at_head() {
   [ "$require_release_tag" -eq 1 ] || return 0
   release_tag="v$current_version"
@@ -78,6 +106,10 @@ require_release_tag_at_head() {
     if [ -z "$tagged_commit" ]; then
       tagged_commit="$(printf '%s\n' "$remote_tags" | awk 'NF { print $1; exit }')"
     fi
+  fi
+  if [ -z "$tagged_commit" ] && [ "$create_release_tag" -eq 1 ]; then
+    create_release_tag_at_head
+    return 0
   fi
   if [ -z "$tagged_commit" ]; then
     echo "refused: release tag $release_tag is missing; create it at the merged commit $merged_commit before publishing" >&2

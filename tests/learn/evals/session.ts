@@ -45,15 +45,20 @@ export function option(argv: readonly string[], name: string): string | undefine
 /**
  * The process basics, the variables explicitly declared by one subject adapter, and the names the
  * operator lists in `$AK_EVAL_PASS_ENV` (whitespace-separated, as `scripts/eval-local.sh` reads it).
+ * Read from `source`, defaulting to `process.env`; tests can supply a map without changing
+ * the process environment.
  * A `CLAUDE_CODE_*` or `EVAL_*` name cannot be opted in: `runSubject` strips those prefixes with
  * `withoutParentSession` after this, keeping only its auth and provider-routing names.
  */
-export function cleanEnv(subjectEnv: readonly string[]): Record<string, string> {
-  const optIn = (process.env.AK_EVAL_PASS_ENV ?? "").split(/\s+/).filter((name) => name !== "");
+export function cleanEnv(
+  subjectEnv: readonly string[],
+  source: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const optIn = (source.AK_EVAL_PASS_ENV ?? "").split(/\s+/).filter((name) => name !== "");
   const allowed = new Set([...PROCESS_ENV, ...subjectEnv, ...optIn]);
   const env: Record<string, string> = {};
-  for (const key of [...allowed, ...Object.keys(process.env).filter((name) => name.startsWith("LC_"))]) {
-    const value = process.env[key];
+  for (const key of [...allowed, ...Object.keys(source).filter((name) => name.startsWith("LC_"))]) {
+    const value = source[key];
     if (value !== undefined && !NESTED_SESSION_VARS.has(key)) env[key] = value;
   }
   return env;
