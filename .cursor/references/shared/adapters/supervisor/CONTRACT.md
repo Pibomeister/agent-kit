@@ -138,11 +138,11 @@ never waits: every outcome is immediate.
 
 Final ship reads the worker's repository, which the worker can write. Its reads of the head, its descent and
 the commits after the shipped revision, and its read of the policy from the default-branch ref, run with the
-options that `FINAL_SHIP_GIT` in `src/lifecycle/gate.ts` names. They turn off lazy fetch, replace refs and
-signature display. So a missing object runs no promisor remote's program, replace refs cannot change the
-history the checks see, and no `gpg.program` runs in the supervisor's process. A git older than 2.44 rejects
-`--no-lazy-fetch`, and final ship refuses. Any other program-valued key that git reads in the worker's
-repository is outside this guarantee. Only OS user separation between the worker and the supervisor closes it.
+options that `FINAL_SHIP_GIT` in `src/lifecycle/gate.ts` names, plus `GIT_NO_LAZY_FETCH=1`. They turn off
+lazy fetch, replace refs and signature display. So a missing object runs no promisor remote's program, replace
+refs cannot change the history the checks see, and no `gpg.program` runs in the supervisor's process. Any
+other program-valued key that git reads in the worker's repository is outside this guarantee. Only OS user
+separation between the worker and the supervisor closes it.
 A fetch that the supervisor runs in the worker's repository reads that configuration too.
 
 ## What agent-kit checks and what it does not

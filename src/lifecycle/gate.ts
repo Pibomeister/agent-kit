@@ -273,11 +273,12 @@ export function gitMustPrint(cwd: string, args: readonly string[], env?: NodeJS.
 }
 
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
-  const head = gitMustPrint(project, ["rev-parse", "HEAD"]);
+  const env = envWithoutRedirectingGit();
+  const head = gitMustPrint(project, ["rev-parse", "HEAD"], env);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
-  const indexPath = gitMustPrint(project, ["rev-parse", "--git-path", "index"]);
+  const indexPath = gitMustPrint(project, ["rev-parse", "--git-path", "index"], env);
   // An empty path joins back to the project directory, and copying that directory throws.
   if (indexPath.code !== 0 || indexPath.text === "")
     return indexPath.stderr === ""
@@ -293,7 +294,7 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       const { atime, mtime } = statSync(index);
       utimesSync(temp, atime, mtime);
     }
-    const env = { ...process.env, GIT_INDEX_FILE: temp };
+    env.GIT_INDEX_FILE = temp;
     const untracked = git(project, ["ls-files", "--others", "--exclude-standard", "-z"], env);
     if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
     const paths = untracked.text
@@ -310,7 +311,7 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
     if (diff.code !== 0) return `cannot diff ${project} against ${head.text}: ${diff.stderr}`;
     const digest = createHash("sha256").update(diff.stdout).digest("hex");
 
-    const remote = git(project, ["config", "--get", "remote.origin.url"]);
+    const remote = git(project, ["config", "--get", "remote.origin.url"], env);
     return {
       repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
       revision: head.text,
@@ -2336,7 +2337,7 @@ function repoOf(project: string): { common: string; writable: string[] } | { err
 // The supervisor files' containment has its own helpers. `within`, `realOr` and `repoOf` above also serve the
 // bypass grant, which stays as it is (ticket non-goal); the three defects they carry for these files are fixed here.
 
-/** Variables that redirect which repository git reads. A worker controls its environment, so none is trusted. */
+/** Variables that redirect which repository git reads, or rewrite the objects and history it sees. A worker controls its environment, so none is trusted. */
 const REDIRECTING_GIT_ENV = [
   "GIT_DIR",
   "GIT_COMMON_DIR",
@@ -2344,13 +2345,24 @@ const REDIRECTING_GIT_ENV = [
   "GIT_INDEX_FILE",
   "GIT_OBJECT_DIRECTORY",
   "GIT_CEILING_DIRECTORIES",
+  "GIT_GRAFT_FILE",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 ] as const;
+
+function envWithoutRedirectingGit(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of REDIRECTING_GIT_ENV) Reflect.deleteProperty(env, name);
+  return env;
+}
 
 /** Git's stdout for `args` in `dir` with every redirecting variable removed, or undefined when git refuses. */
 function placeGit(dir: string, args: readonly string[]): string | undefined {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of REDIRECTING_GIT_ENV) Reflect.deleteProperty(env, name);
-  const run = spawnSync("git", [...args], { cwd: dir, env, encoding: "utf8", maxBuffer: 1 << 26 });
+  const run = spawnSync("git", [...args], {
+    cwd: dir,
+    env: envWithoutRedirectingGit(),
+    encoding: "utf8",
+    maxBuffer: 1 << 26,
+  });
   return run.error === undefined && run.status === 0 ? run.stdout.trim() : undefined;
 }
 
@@ -3030,26 +3042,16 @@ const RECOVERY =
 
 /**
  * How final ship reads objects in the worker's repository, which the worker can write, here and in the policy read:
- * no lazy fetch, so a missing object runs no promisor remote's program; no replace refs; and no signature display, so
- * no `gpg.program` runs in the supervisor's process. The call drops GIT_GRAFT_FILE and the git-directory redirect
- * variables, the same stance placeGit takes. A git older than 2.44 rejects `--no-lazy-fetch`, and the call's
- * failure refuses. Any other program-valued key git reads in the worker's repository is outside this guarantee: only
- * OS user separation closes it.
+ * GIT_NO_LAZY_FETCH=1, so a missing object runs no promisor remote's program; no replace refs; and no signature display, so
+ * no `gpg.program` runs in the supervisor's process. The call drops the same redirecting variables placeGit does.
+ * `--no-lazy-fetch` is not on the argv. git 2.43 exits 129 for that option. Any other program-valued key git reads in
+ * the worker's repository is outside this guarantee: only OS user separation closes it.
  */
-const FINAL_SHIP_GIT = ["--no-lazy-fetch", "--no-replace-objects", "-c", "log.showSignature=false"] as const;
-const FINAL_SHIP_UNSET_ENV = [
-  "GIT_GRAFT_FILE",
-  "GIT_DIR",
-  "GIT_COMMON_DIR",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-] as const;
+const FINAL_SHIP_GIT = ["--no-replace-objects", "-c", "log.showSignature=false"] as const;
 
 function finalShipEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of FINAL_SHIP_UNSET_ENV) Reflect.deleteProperty(env, name);
+  const env = envWithoutRedirectingGit();
+  env.GIT_NO_LAZY_FETCH = "1";
   return env;
 }
 
@@ -3181,8 +3183,14 @@ function shipUnattended(
   const authors = review.authors;
   if (authors.includes(reviewer))
     return deny(`reviewer ${reviewer} is among the authors; the review is not independent`, false);
-  if (gitFinal(project, ["cat-file", "-e", `${head}^{commit}`]).code !== 0)
-    return deny(`commit ${head} is not in this repository; fetch it, then record again`, false);
+  const present = gitFinal(project, ["cat-file", "-e", `${head}^{commit}`]);
+  if (present.code !== 0)
+    return deny(
+      present.stderr === ""
+        ? `commit ${head} is not in this repository; fetch it, then record again`
+        : `cannot read commit ${head}: ${present.stderr}; fetch it, then record again`,
+      false,
+    );
   const grafts = graftsRefusal(project);
   if (grafts !== undefined) return deny(grafts, false);
   const shippedRevision = shipped.snapshot.revision;

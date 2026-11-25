@@ -1637,6 +1637,28 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
+  test("ship-preflight refuses a dirty tree when GIT_WORK_TREE names a clean clone", () => {
+    const { cwd, run } = ready();
+    writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+    const before = runState(cwd, run);
+    const dirty = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(dirty.code).toBe(1);
+    expect(dirty.err).toContain("uncommitted changes");
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+    const clean = join(outsideDir(), "clean");
+    git(cwd, "clone", "-q", cwd, clean);
+    setEnv({ GIT_WORK_TREE: clean });
+    try {
+      const redirected = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(redirected.code).toBe(1);
+      expect(redirected.err).toContain("uncommitted changes");
+    } finally {
+      setEnv({ GIT_WORK_TREE: undefined });
+    }
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
   test("ship-preflight refuses a tree whose only difference is an untracked file, naming untracked files", () => {
     const cwd = repo();
     declareSupervisor();
@@ -2141,7 +2163,8 @@ describe("final ship (AC-5)", () => {
     Bun.spawnSync(["rm", "-f", marker]);
     const r = finalShip(s.cwd, files(attestationOf(ghost)).flags);
     expect(r.code).toBe(1);
-    expect(r.err).toContain("is not in this repository");
+    expect(r.err).toContain(`cannot read commit ${ghost}`);
+    expect(r.err).not.toContain("is not in this repository");
     expect(existsSync(marker)).toBe(false);
     expect(entriesOf(s)).toEqual(["supervisor"]);
   });
@@ -2149,7 +2172,7 @@ describe("final ship (AC-5)", () => {
   test("final ship refuses a head over a commit missing between the shipped revision and the head", () => {
     const s = shipped();
     // A partial clone, where a commit can be missing. git 2.50.1 does not lazy-fetch on this walk even without
-    // --no-lazy-fetch, so this test holds the refusal only; the missing-head and policy-read tests hold the switch.
+    // GIT_NO_LAZY_FETCH=1, so this test holds the refusal only; the missing-head and policy-read tests hold the switch.
     promisorMarker(s.cwd);
     const middle = missingCommit(s.cwd, s.head, "middle, never written");
     const tree = git(s.cwd, "rev-parse", `${s.head}^{tree}`);
