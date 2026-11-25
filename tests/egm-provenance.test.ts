@@ -7,12 +7,17 @@
  * description. OVERLAY_COPIES must equal source bytes. IDENTITY_ALLOWLIST
  * is the only other place identity tokens may appear. Tokens
  * (elephant-goldfish, a ≥7-char prefix of the pin SHA, GAP-PROBE,
- * GAP-MASTRA, the word EGM) match after NFKC, stripping format and
- * Default_Ignorable characters, and case-fold. Small-caps ᴇɢᴍ does not
+ * GAP-MASTRA, the word EGM) match after NFKC, stripping format,
+ * Default_Ignorable, and NUL characters, and case-fold. Files decode as
+ * UTF-8, non-fatal. A hex run is identity when its first ≥7 characters
+ * equal the pin's prefix of the same length. The word EGM skips only
+ * the exact BLOCK_PINS marker strings. Small-caps ᴇɢᴍ does not
  * NFKC-fold and is out of scope. A free-text claim with no identity token
  * is review's job. Donor-count clauses in the README lede, package.json,
- * and marketplace.json are parsed as digits or English count words and
- * must equal the catalog.yaml totals.
+ * and marketplace.json are parsed as digits or English count words;
+ * every MIT and Apache count token in the clause window must equal the
+ * catalog.yaml totals. The cursor isolation row is unique after
+ * whitespace fold and includes its status cell.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -512,13 +517,12 @@ function foldIdentity(text: string): string {
   return text
     .normalize("NFKC")
     .replaceAll(/\p{Cf}|\p{Default_Ignorable_Code_Point}/gu, "")
+    .replaceAll("\0", "")
     .toLowerCase();
 }
 
 function readTracked(file: string): string {
-  const bytes = readFileSync(join(REPO, file));
-  if (bytes.includes(0)) return bytes.toString("latin1").replaceAll("\r\n", "\n");
-  return bytes.toString("utf8").replaceAll("\r\n", "\n");
+  return new TextDecoder("utf-8", { fatal: false }).decode(readFileSync(join(REPO, file))).replaceAll("\r\n", "\n");
 }
 
 function trackedTextFiles(): string[] {
@@ -538,36 +542,53 @@ function parseCountToken(raw: string): number | null {
   return mapped === undefined ? null : mapped;
 }
 
-function donorCountClauses(text: string): Array<{ total: number; mit: number | null; apache: number | null }> {
+function donorCountClauses(
+  text: string,
+): Array<{ total: number; mits: Array<number | null>; apaches: Array<number | null> }> {
   const donorRe = new RegExp(`\\b(${COUNT_TOKEN})\\s+(?:catalog\\s+)?donors\\b`, "gi");
-  const clauses: Array<{ total: number; mit: number | null; apache: number | null }> = [];
+  const clauses: Array<{ total: number; mits: Array<number | null>; apaches: Array<number | null> }> = [];
   for (const match of text.matchAll(donorRe)) {
     const total = parseCountToken(match[1] ?? "");
     if (total === null) continue;
     const window = text.slice(match.index ?? 0, (match.index ?? 0) + 180);
-    const mitMatch = new RegExp(`\\b(${COUNT_TOKEN})\\s+MIT\\b`, "i").exec(window);
-    const apacheMatch = new RegExp(`\\b(${COUNT_TOKEN})\\s+Apache\\b`, "i").exec(window);
     clauses.push({
       total,
-      mit: mitMatch === null ? null : parseCountToken(mitMatch[1] ?? ""),
-      apache: apacheMatch === null ? null : parseCountToken(apacheMatch[1] ?? ""),
+      mits: [...window.matchAll(new RegExp(`\\b(${COUNT_TOKEN})\\s+MIT\\b`, "gi"))].map((hit) =>
+        parseCountToken(hit[1] ?? ""),
+      ),
+      apaches: [...window.matchAll(new RegExp(`\\b(${COUNT_TOKEN})\\s+Apache\\b`, "gi"))].map((hit) =>
+        parseCountToken(hit[1] ?? ""),
+      ),
     });
   }
   return clauses;
+}
+
+function isExactMarkerEgm(folded: string, at: number): boolean {
+  for (const pin of BLOCK_PINS) {
+    for (const raw of [pin.begin, pin.end]) {
+      const marker = foldIdentity(raw);
+      const egmAt = marker.indexOf("egm");
+      if (egmAt < 0) continue;
+      const start = at - egmAt;
+      if (start >= 0 && folded.startsWith(marker, start)) return true;
+    }
+  }
+  return false;
 }
 
 function identityOffsets(folded: string): number[] {
   const hits: number[] = [];
   for (const needle of FOLDED_NEEDLES) hits.push(...indicesOf(folded, needle));
   const pin = EGM_COMMIT.toLowerCase();
-  for (const match of folded.matchAll(/[0-9a-f]{7,40}/g)) {
-    if (pin.startsWith(match[0])) hits.push(match.index ?? 0);
+  for (const match of folded.matchAll(/[0-9a-f]{7,}/g)) {
+    const n = Math.min(match[0].length, pin.length);
+    if (n >= 7 && match[0].slice(0, n) === pin.slice(0, n)) hits.push(match.index ?? 0);
+    else if (match[0].slice(0, 7) === pin.slice(0, 7)) hits.push(match.index ?? 0);
   }
   for (const match of folded.matchAll(/(?<![a-z0-9_])egm(?![a-z0-9_])/g)) {
     const at = match.index ?? 0;
-    const before = folded.slice(Math.max(0, at - 3), at);
-    const after = folded.slice(at + 3, at + 9);
-    if (before.endsWith("ak-") && after.startsWith("-")) continue;
+    if (isExactMarkerEgm(folded, at)) continue;
     hits.push(at);
   }
   return hits;
@@ -738,8 +759,10 @@ describe("EGM provenance (GS-004f)", () => {
       const clauses = donorCountClauses(readTracked(file));
       if (clauses.length === 0) countLies.push(`${file}:missing-clause`);
       for (const clause of clauses) {
-        if (clause.total !== catalog.size || clause.mit !== mitCount || clause.apache !== apacheCount) {
-          countLies.push(`${file}:${clause.total}/${clause.mit}/${clause.apache}`);
+        const mitOk = clause.mits.length > 0 && clause.mits.every((n) => n === mitCount);
+        const apacheOk = clause.apaches.length > 0 && clause.apaches.every((n) => n === apacheCount);
+        if (clause.total !== catalog.size || !mitOk || !apacheOk) {
+          countLies.push(`${file}:${clause.total}/${clause.mits.join(",")}/${clause.apaches.join(",")}`);
         }
       }
     }
@@ -771,11 +794,17 @@ describe("EGM provenance (GS-004f)", () => {
 
   test("cursor CONTRACT isolation row is the docs-only row", () => {
     const text = readFileSync(join(REPO, "adapters/cursor/CONTRACT.md"), "utf8");
-    const rows = text.split("\n").filter((line) => line.startsWith("| `isolated-review-context` |"));
+    const rows = text
+      .split("\n")
+      .filter((line) => line.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` |"));
     expect(rows.length, "isolation rows").toBe(1);
     const row = rows[0];
     expect(row, "isolation row").toBeDefined();
     if (row === undefined) return;
+    expect(
+      row.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` | `partial` |"),
+      "isolation status",
+    ).toBe(true);
     expect(row).toContain("Docs only, not session-tested");
     const pin = BLOCK_PINS.find((entry) => entry.file === "adapters/cursor/CONTRACT.md");
     expect(pin).toBeDefined();
