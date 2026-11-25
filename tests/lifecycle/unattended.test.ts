@@ -1723,7 +1723,7 @@ describe("binding at open and ship-preflight (AC-4)", () => {
       expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
       const before = runState(cwd, run);
       const r = ak(cwd, "record", "--gate", "ship-preflight");
-      expectShipDirt(r, "src/a.js", cwd);
+      expectShipDirt(r, kind === "clean-filter" ? ".gitattributes" : "src/a.js", cwd);
       expect(runState(cwd, run)).toEqual(before);
       expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     },
@@ -1799,6 +1799,78 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     const before = runState(cwd, run);
     const r = ak(cwd, "record", "--gate", "ship-preflight");
     expectShipDirt(r, " foo", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses an untracked :(exclude)* pathspec plus secret.txt, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, ":(exclude)*"), "magic\n");
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, ":(exclude)*", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses an untracked :!secret.txt pathspec plus secret.txt, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, ":!secret.txt"), "magic\n");
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, ":!secret.txt", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses an untracked :(icase)TRACKED.TXT next to a tracked tracked.txt, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, "tracked.txt"), "tracked\n");
+    git(cwd, "add", "tracked.txt");
+    git(cwd, "commit", "-q", "-m", "tracked");
+    writeFileSync(join(cwd, ":(icase)TRACKED.TXT"), "untracked\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, ":(icase)TRACKED.TXT", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses secret.txt hidden only by .git/info/exclude, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, ".git", "info", "exclude"), "secret.txt\n");
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "secret.txt", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses an untracked self-hiding .gitignore, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, ".gitignore"), ".gitignore\nsecret.txt\n");
+    writeFileSync(join(cwd, "secret.txt"), "secret\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, ".gitignore", cwd);
     expect(runState(cwd, run)).toEqual(before);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });

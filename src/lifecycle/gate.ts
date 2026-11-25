@@ -284,6 +284,39 @@ export function gitMustPrint(cwd: string, args: readonly string[], env?: NodeJS.
 /** The same guard `FINAL_SHIP_GIT` uses: replace refs cannot rewrite the objects a snapshot reads. */
 const NO_REPLACE_OBJECTS = ["--no-replace-objects"] as const;
 
+function nulPaths(stdout: Uint8Array): string[] {
+  return new TextDecoder()
+    .decode(stdout)
+    .split("\0")
+    .filter((path) => path !== "");
+}
+
+/**
+ * Untracked paths that ship-preflight treats as dirt: committed `.gitignore` still excludes, but
+ * `.git/info/exclude` does not, and an untracked `.gitignore` is listed even when it hides itself.
+ */
+function untrackedWorktreePaths(
+  list: (args: readonly string[]) => GitResult,
+  ignoreUntrackedDirs: readonly string[] = [],
+): { ok: true; paths: string[] } | { ok: false; stderr: string } {
+  const keep = (path: string) => !ignoreUntrackedDirs.some((dir) => path === dir || path.startsWith(`${dir}/`));
+  const untracked = list(["ls-files", "--others", "--exclude-per-directory=.gitignore", "-z"]);
+  if (untracked.code !== 0) return { ok: false, stderr: untracked.stderr };
+  const others = list(["ls-files", "--others", "-z"]);
+  if (others.code !== 0) return { ok: false, stderr: others.stderr };
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const path of [
+    ...nulPaths(untracked.stdout),
+    ...nulPaths(others.stdout).filter((entry) => basename(entry) === ".gitignore"),
+  ]) {
+    if (!keep(path) || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  return { ok: true, paths };
+}
+
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
   const env = boundWorkTreeEnv(project);
   const workTree = env.GIT_WORK_TREE ?? project;
@@ -328,17 +361,11 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       if (cleared.code !== 0)
         return `cannot clear skip-worktree and assume-unchanged bits in ${project}: ${cleared.stderr}`;
     }
-    const untracked = raw(["ls-files", "--others", "--exclude-standard", "-z"]);
-    if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
-    const paths = new TextDecoder()
-      .decode(untracked.stdout)
-      .split("\0")
-      .filter(
-        (path) =>
-          path !== "" && !(options.ignoreUntrackedDirs ?? []).some((dir) => path === dir || path.startsWith(`${dir}/`)),
-      );
+    const listed = untrackedWorktreePaths(raw, options.ignoreUntrackedDirs ?? []);
+    if (!listed.ok) return `cannot list untracked files in ${project}: ${listed.stderr}`;
+    const paths = listed.paths;
     if (paths.length > 0) {
-      const add = raw(["add", "--intent-to-add", "--", ...paths]);
+      const add = raw(["add", "--force", "--intent-to-add", "--", ...paths]);
       if (add.code !== 0) return `cannot mark untracked files in ${project}: ${add.stderr}`;
     }
     const diff = raw(["diff", "--no-ext-diff", "--no-textconv", "--binary", head.text]);
@@ -379,15 +406,8 @@ function shipDirtReason(project: string): string {
   const env = boundWorkTreeEnv(project);
   const workTree = env.GIT_WORK_TREE ?? project;
   const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
-  const untracked = git(workTree, isolate(["ls-files", "--others", "--exclude-standard", "-z"]), env);
-  const firstUntracked =
-    untracked.code === 0
-      ? new TextDecoder()
-          .decode(untracked.stdout)
-          .split("\0")
-          .map(shipDirtPath)
-          .find((path) => path !== undefined)
-      : undefined;
+  const listed = untrackedWorktreePaths((args) => git(workTree, isolate(args), env));
+  const firstUntracked = listed.ok ? listed.paths.map(shipDirtPath).find((path) => path !== undefined) : undefined;
   const tree = git(workTree, isolate(["ls-tree", "-r", "-z", "HEAD"]), env);
   const vsHead = tree.code === 0 ? unfilteredTrackedDirt(workTree, lsTreeToStageZ(tree.stdout)) : undefined;
   const at = firstUntracked ?? shipDirtPath(vsHead?.path) ?? "the working tree";

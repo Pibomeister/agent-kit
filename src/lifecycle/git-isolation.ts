@@ -14,6 +14,8 @@ export function isolationArgs(project: string): string[] {
     "core.hooksPath=/dev/null",
     "-c",
     "core.excludesFile=/dev/null",
+    // Untracked listings use --exclude-per-directory=.gitignore, not --exclude-standard, so
+    // .git/info/exclude cannot hide dirt. An untracked .gitignore is itself dirt.
     "-c",
     "diff.relative=false",
     "-c",
@@ -28,9 +30,9 @@ export function isolationArgs(project: string): string[] {
   ];
 }
 
-/** Isolated git argv: worker-owned config is ignored, including the commit graph. */
+/** Isolated git argv: worker-owned config is ignored, including the commit graph. Pathspecs are literal. */
 export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
-  return [...isolationArgs(project), ...args];
+  return ["--literal-pathspecs", ...isolationArgs(project), ...args];
 }
 
 /** In-process blob id. git 2.43 `hash-object --stdin-paths` has no `-z` and follows symlinks. */

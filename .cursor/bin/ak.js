@@ -42370,7 +42370,7 @@ function isolationArgs(project) {
   ];
 }
 function isolatedGitArgv(project, args) {
-  return [...isolationArgs(project), ...args];
+  return ["--literal-pathspecs", ...isolationArgs(project), ...args];
 }
 function gitBlobId(bytes, blob) {
   const algorithm = blob.length === 64 ? "sha256" : "sha1";
