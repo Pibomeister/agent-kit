@@ -44844,7 +44844,7 @@ async function collectDetached(child, live, timeoutMs, what) {
     live.delete(child.pid);
   }
 }
-async function launchSeat(seat2, payload, options, spawn2) {
+async function launchSeat(seat2, payload, options, spawn2, approve) {
   const attempts = [];
   for (const launcher2 of seat2.chain) {
     const attempt = { actor: launcher2.actor, model_requested: launcher2.requested ?? UNSPECIFIED };
@@ -44853,9 +44853,8 @@ async function launchSeat(seat2, payload, options, spawn2) {
       const child = await spawn2(launcher2, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
-      const text5 = child.stdout.toString();
       try {
-        const value = JSON.parse(text5);
+        const value = JSON.parse(child.stdout.toString());
         if (!isCouncilAnswer(value))
           throw new Error("launcher returned an invalid answer");
         if (!options.includes(value.choice))
@@ -44863,8 +44862,9 @@ async function launchSeat(seat2, payload, options, spawn2) {
         return { ok: true, launcher: launcher2, answer: value, attempts };
       } catch (cause) {
         if (cause instanceof SyntaxError) {
+          const text5 = child.stdout.toString();
           const verdict = failClosedAdversarialVerdict(text5);
-          if (verdict === "REJECT" && parseAdversarialVerdict(text5).ok && options.includes(verdict))
+          if (verdict === "REJECT" && parseAdversarialVerdict(text5).ok && options.includes(verdict) && verdict !== approve)
             return {
               ok: true,
               launcher: launcher2,
@@ -45016,8 +45016,9 @@ async function dispatchVeto(runner, runId, cardId, council, activeChildren) {
     });
     return;
   }
-  const options = runner.status(runId).cards[cardId]?.options ?? [];
-  const result2 = await launchSeat(council.veto, packet, options, (launcher2, stdin) => spawnPiped(launcher2.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS));
+  const card = runner.status(runId).cards[cardId];
+  const options = card?.options ?? [];
+  const result2 = await launchSeat(council.veto, packet, options, (launcher2, stdin) => spawnPiped(launcher2.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS), card?.approve ?? "");
   if (!result2.ok) {
     runner.veto(runId, cardId, {
       status: "unavailable",
@@ -45758,12 +45759,12 @@ ${entry.text}` }))
       process.once(signal, stop);
     try {
       const spawn2 = spawner(scratch, live);
-      const results = await Promise.all(pair.map((seat2) => launchSeat(seat2, payload, card.options, spawn2)));
+      const results = await Promise.all(pair.map((seat2) => launchSeat(seat2, payload, card.options, spawn2, card.approve)));
       seats.push(...pair.map((seat2, i) => seatEntry("primary", seat2, results[i] ?? { ok: false, attempts: [] })));
       const choices = seats.map((entry) => entry.choice);
       let veto;
       if (choices.every((choice) => choice === card.approve)) {
-        const result2 = await launchSeat(config.veto, payload, card.options, spawn2);
+        const result2 = await launchSeat(config.veto, payload, card.options, spawn2, card.approve);
         const entry = seatEntry("veto", config.veto, result2);
         seats.push(entry);
         veto = entry.choice;

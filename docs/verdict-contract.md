@@ -40,16 +40,22 @@ are the shared parser for review and adversarial transcripts.
 `ak council run` reads a seat through `launchSeat`. A JSON council
 answer whose `choice` is one of the card's exact options still stands.
 The JSON path is `toString` then `JSON.parse`, identical to main.
-Non-JSON stdout always fails closed. `launchSeat` never approves
-`WORTHY` from a transcript. On `JSON.parse` `SyntaxError` it calls
-`failClosedAdversarialVerdict`. A well-formed final `VERDICT: REJECT`
-whose value is a card option is a recorded rejection. Every other
-non-JSON stdout, including `VERDICT: WORTHY`, YAML, TOML, CSV, a
-prefixed scalar, an indented second `VERDICT` line, base64, and
-`&#x7b` without a semicolon, leaves the seat unavailable. The
-substitute chain continues. A yes/no card is not answered by a
-`VERDICT` field. Garbage, an empty transcript, a missing field, or a
-value outside the card options is not an answer, so an exhausted
+On `JSON.parse` `SyntaxError` it calls `failClosedAdversarialVerdict`.
+A well-formed final `VERDICT: REJECT` whose value is a card option and
+is not `card.approve` is a recorded rejection. A well-formed `VERDICT`
+equal to `card.approve`, including a card whose approve option is
+`REJECT`, leaves the seat unavailable, as main does for every
+non-JSON stdout. `VERDICT: WORTHY` is never recorded from a
+transcript, even when `REJECT` is the approve option. Mixed JSON
+followed by a final `VERDICT: REJECT` is a recorded `REJECT` when
+`REJECT` is not approve. A well-formed recorded `REJECT` stops the
+substitute chain. Every other non-JSON
+stdout, including `VERDICT: WORTHY` on a WORTHY-approve card, YAML,
+TOML, CSV, a prefixed scalar, an indented second `VERDICT` line,
+base64, and `&#x7b` without a semicolon, leaves the seat unavailable
+and the substitute chain continues. A yes/no card is not answered by
+a `VERDICT` field. Garbage, an empty transcript, a missing field, or
+a value outside the card options is not an answer, so an exhausted
 chain escalates rather than approves. Seats that want to approve must
 emit the JSON answer.
 

@@ -111,6 +111,13 @@ export const MIXED_JSON_PLUS_VERDICT: ReadonlyArray<readonly [string, string]> =
   ["tab prose", "Careful\treview.\nVERDICT: WORTHY\n"],
 ];
 
+export const MIXED_ENDING_REJECT: ReadonlyArray<readonly [string, string]> = [
+  ["JSON WORTHY then VERDICT REJECT", `${JSON.stringify({ choice: "WORTHY", rationale: "x" })}\nVERDICT: REJECT\n`],
+  ["prose then VERDICT REJECT", "Careful review.\nVERDICT: REJECT\n"],
+  ["fenced then VERDICT REJECT", `\`\`\`json\n${REJECT}\n\`\`\`\nVERDICT: REJECT\n`],
+  ["INFO prefix then VERDICT REJECT", `INFO: ${REJECT}\nVERDICT: REJECT\n`],
+];
+
 /** Raw stdout Buffers the transcript path must refuse. toString() would hide these. */
 export const MIXED_RAW_STDOUT: ReadonlyArray<readonly [string, Buffer]> = [
   ["8-bit CSI 0x9B", Buffer.concat([Buffer.from([0x9b]), Buffer.from("32mnote\nVERDICT: WORTHY\n")])],

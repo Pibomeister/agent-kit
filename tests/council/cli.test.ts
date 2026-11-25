@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { runCouncil } from "../../src/council/cli.ts";
 import { parseJson, updated, type JsonValue } from "../helpers/json.ts";
-import { MIXED_JSON_PLUS_VERDICT } from "../helpers/mixed-stdout.ts";
+import { MIXED_ENDING_REJECT, MIXED_JSON_PLUS_VERDICT } from "../helpers/mixed-stdout.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 const transcriptLauncher = (actor: string, body: string) => ({
@@ -278,6 +278,55 @@ describe("ak council run", () => {
       seats: [
         { seat: "primary-a", choice: "REJECT" },
         { seat: "primary-b", choice: "REJECT" },
+      ],
+    });
+  });
+
+  test("mixed stdout ending VERDICT: REJECT declines as REJECT", async () => {
+    for (const [name, body] of MIXED_ENDING_REJECT) {
+      const { result, out } = await runTranscriptCouncil(body);
+      expect(result.code, name).toBe(0);
+      expect(record(out), name).toMatchObject({
+        outcome: "decline",
+        choice: "REJECT",
+        seats: [
+          { seat: "primary-a", choice: "REJECT" },
+          { seat: "primary-b", choice: "REJECT" },
+        ],
+      });
+    }
+  });
+
+  test("a transcript WORTHY when REJECT is the card approve option escalates", async () => {
+    const { result, out } = await runTranscriptCouncil(worthyTranscript, {
+      id: "q2",
+      question: "Merge it?",
+      options: ["WORTHY", "REJECT"],
+      approve: "REJECT",
+    });
+    expect(result.code).toBe(1);
+    expect(record(out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      causes: ["a primary seat was unavailable"],
+    });
+  });
+
+  test("a transcript REJECT when REJECT is the card approve option escalates", async () => {
+    const { result, out } = await runTranscriptCouncil(rejectTranscript, {
+      id: "q2",
+      question: "Merge it?",
+      options: ["WORTHY", "REJECT"],
+      approve: "REJECT",
+    });
+    expect(result.code).toBe(1);
+    expect(record(out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      causes: ["a primary seat was unavailable"],
+      seats: [
+        { seat: "primary-a", choice: null },
+        { seat: "primary-b", choice: null },
       ],
     });
   });
