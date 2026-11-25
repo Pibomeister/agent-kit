@@ -38,8 +38,13 @@ Lock comment: catalog donor, no EGM plugin, probe plus comprehension and
 cold read. Count those files with the catalog donors, not with the
 research-only pins (`tester-army-e2e`, `blocks`).
 
-The GS-004f provenance test pins named claim-bearing strings byte-exact
-(CRLF folded to LF). Free-text claims elsewhere are review's job.
+The GS-004f provenance test pins each living-doc claim as one whole line.
+After CRLF folds to LF, the trimmed expected line must occur exactly once,
+and no other line may contain the locator. A second mention of a locator in
+a pinned file is forbidden. The fix for a new honest mention is to update
+the pin. Rewrapping a pinned line is in scope and turns red. Dated host-facts
+files are pinned by sha256 of the raw bytes. Free-text claims elsewhere are
+review's job.
 
 ---
 
