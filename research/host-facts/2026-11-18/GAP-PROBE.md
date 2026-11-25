@@ -7,7 +7,7 @@ not run. They need a host login nobody granted. No credential was copied, read,
 or used.
 
 This note is the same shape as GAP-MASTRA in
-`src/review-isolation-probe/hosts.ts`: recorded rather than scored as a pass.
+`src/review-isolation-probe/hosts.ts`: recorded, not a pass.
 Fixture arms in `tests/review-isolation-probe.test.ts` still run. They are not
 a live host result.
 

@@ -34,10 +34,9 @@ file still does not copy them.
 | Clone | `.donors/google_elephant-goldfish-model`, full history, written by `tools/donors/clone.sh` |
 | Snapshots | `provenance/donor-snapshots/egm@403d8881d620/` holds every path an adaptations row cites |
 
-Lock comment: research pin. The review-isolation probe adapts child-session
-joining. No EGM plugin ships. Catalog files are also adapted from it. Count
-those files with the catalog donors, not with the research-only pins
-(`tester-army-e2e`, `blocks`).
+Lock comment: catalog donor, no EGM plugin, probe plus comprehension and
+cold read. Count those files with the catalog donors, not with the
+research-only pins (`tester-army-e2e`, `blocks`).
 
 ---
 
