@@ -99,11 +99,17 @@ a charter that omits the cap supplies no retry budget, so the first loop failure
 names `audit-failed` until a later tick succeeds. When the charter sets
 `limits.outage_backoff_seconds` (minimum 300, maximum 86400), a transient loop-probe
 or event-delivery failure retries with exponential delay starting at 5 seconds and doubling, capped
-by the time left in that window. The window is a wall-clock bound. Status names `audit-failed` or
+by the time left in that window. The window is a wall-clock bound, and elapsed is a high-water mark against the file clock and a
+monotonic clock, so a clock step back cannot un-name a visible failure. Status names `audit-failed` or
 `event-delivery-failed` once the failure has lasted at least that many seconds from the first
 failure in the streak, even while `limits.delegate_replacements` is unspent and the audit is still
-retrying. Cap exhaustion can still halt earlier. A later success clears the streak. The streak is in
-memory. A serve restart starts a new window. Auth failures, bundle drift, and a refused `auditTick`
+retrying. Cap exhaustion can still halt earlier. A later success clears the streak. The naming window
+is in memory; a serve restart starts a new one. While `limits.outage_backoff_seconds` is set, the
+last audit-adapter failure is persisted on the run, restored before listen, and cleared only after a
+successful tick, so `decide` stays refused across restart until that tick. When that field is set,
+`decide` is refused with `event delivery retry in progress` while a delivery is in flight or not
+healthy and `event-delivery-failed` is not yet named, until the next successful ack. Once `audit-failed` is named,
+`decide` is the guided-mode refusal, not `audit retry in progress`. Auth failures, bundle drift, and a refused `auditTick`
 still go guided on the first failure. A charter that omits the field keeps the first-failure
 behavior above. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list

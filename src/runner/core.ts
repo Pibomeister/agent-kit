@@ -306,6 +306,11 @@ export class Runner {
           properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } },
         },
         behavior: { type: "object" },
+        audit_adapter_failure: {
+          type: "object",
+          required: ["started_at", "real_started_at"],
+          properties: { started_at: { type: "number" }, real_started_at: { type: "number" } },
+        },
       },
     });
     const policySchema = schemas.ajv.compile<InvocationPolicy>({
@@ -1875,16 +1880,33 @@ export class Runner {
     return replacement;
   }
 
-  recordAuditAdapterFailure(id: string) {
+  recordAuditAdapterFailure(id: string, streak?: { startedAt: number; realStartedAt: number }) {
     const run = this.load(id);
     const cap = run.charter.limits.delegate_replacements;
-    if (cap === undefined) return { cap, spent: 0, exhausted: true };
+    const backoff = run.charter.limits.outage_backoff_seconds;
+    if (backoff !== undefined) {
+      run.audit_adapter_failure = {
+        started_at: streak?.startedAt ?? Date.now(),
+        real_started_at: streak?.realStartedAt ?? Date.now(),
+      };
+    }
+    if (cap === undefined) {
+      if (backoff !== undefined) this.save(run);
+      return { cap, spent: 0, exhausted: true };
+    }
     const current = run.budget_consumption["delegate_replacements"] ?? 0;
     if (!Number.isSafeInteger(current) || current < 0) throw new Error("delegate replacement count is corrupt");
     const spent = current + 1;
     run.budget_consumption["delegate_replacements"] = spent;
     this.save(run);
     return { cap, spent, exhausted: spent >= cap };
+  }
+
+  clearAuditAdapterFailure(id: string): void {
+    const run = this.load(id);
+    if (run.audit_adapter_failure === undefined) return;
+    delete run.audit_adapter_failure;
+    this.save(run);
   }
 
   finishDelegate(id: string, delegateId: string): void {

@@ -43212,7 +43212,12 @@ class Runner {
           required: ["by", "rationale", "at"],
           properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } }
         },
-        behavior: { type: "object" }
+        behavior: { type: "object" },
+        audit_adapter_failure: {
+          type: "object",
+          required: ["started_at", "real_started_at"],
+          properties: { started_at: { type: "number" }, real_started_at: { type: "number" } }
+        }
       }
     });
     const policySchema = schemas.ajv.compile({
@@ -44504,11 +44509,21 @@ class Runner {
     this.save(run2);
     return replacement;
   }
-  recordAuditAdapterFailure(id) {
+  recordAuditAdapterFailure(id, streak) {
     const run2 = this.load(id);
     const cap = run2.charter.limits.delegate_replacements;
-    if (cap === undefined)
+    const backoff = run2.charter.limits.outage_backoff_seconds;
+    if (backoff !== undefined) {
+      run2.audit_adapter_failure = {
+        started_at: streak?.startedAt ?? Date.now(),
+        real_started_at: streak?.realStartedAt ?? Date.now()
+      };
+    }
+    if (cap === undefined) {
+      if (backoff !== undefined)
+        this.save(run2);
       return { cap, spent: 0, exhausted: true };
+    }
     const current = run2.budget_consumption["delegate_replacements"] ?? 0;
     if (!Number.isSafeInteger(current) || current < 0)
       throw new Error("delegate replacement count is corrupt");
@@ -44516,6 +44531,13 @@ class Runner {
     run2.budget_consumption["delegate_replacements"] = spent;
     this.save(run2);
     return { cap, spent, exhausted: spent >= cap };
+  }
+  clearAuditAdapterFailure(id) {
+    const run2 = this.load(id);
+    if (run2.audit_adapter_failure === undefined)
+      return;
+    delete run2.audit_adapter_failure;
+    this.save(run2);
   }
   finishDelegate(id, delegateId) {
     const run2 = this.load(id);
@@ -45084,7 +45106,7 @@ function workerRun(run2) {
     decisions: run2.decisions.map((decision) => ({ ...decision, card: workerCard(decision.card) }))
   };
 }
-async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable, auditRetryOpen) {
+async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable, auditRetryOpen, deliveryRetryOpen) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken))
     throw new Error("unauthorized runner request");
@@ -45183,6 +45205,8 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
       if (charter.audit_cadence_seconds !== undefined && (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery"))) {
         if (auditRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
           throw new Error("audit retry in progress; checkpoint not approved; retry decide after the next tick");
+        if (deliveryRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
+          throw new Error("event delivery retry in progress; checkpoint not approved; retry decide after the next ack");
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
       }
       const cardId = str4(a, "card_id");
@@ -45215,6 +45239,9 @@ function isEventIntegrityFailure(cause) {
 }
 function wallNow() {
   return Date.now();
+}
+function monotonicNow() {
+  return performance.now();
 }
 function outageRetryDelayMs(attempts, elapsedMs, windowMs) {
   const remaining = windowMs - elapsedMs;
@@ -45382,7 +45409,7 @@ async function serve(argv, io) {
     if (clockPath === undefined)
       return new Promise((done) => setTimeout(done, ms));
     const fileStart = now();
-    const realStart = wallNow();
+    const realStart = monotonicNow();
     return new Promise((done) => {
       const poll = () => {
         if (!open) {
@@ -45395,7 +45422,7 @@ async function serve(argv, io) {
           done();
           return;
         }
-        if (read2.now - fileStart >= ms || wallNow() - realStart >= ms) {
+        if (read2.now - fileStart >= ms || monotonicNow() - realStart >= ms) {
           done();
           return;
         }
@@ -45408,24 +45435,28 @@ async function serve(argv, io) {
   let deliveryOutage = null;
   const outageElapsedMs = (streak) => {
     const fileElapsed = now() - streak.startedAt;
-    const realElapsed = wallNow() - streak.realStartedAt;
-    return fileElapsed > realElapsed ? fileElapsed : realElapsed;
+    const realElapsed = monotonicNow() - streak.realStartedAt;
+    const observed = fileElapsed > realElapsed ? fileElapsed : realElapsed;
+    const elapsed = observed > streak.elapsedHighWater ? observed : streak.elapsedHighWater;
+    streak.elapsedHighWater = elapsed;
+    return elapsed;
   };
   const outageDue = (streak) => {
     const fileDue = now() >= streak.retryAt;
-    const realDue = wallNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
+    const realDue = monotonicNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
     return fileDue || realDue;
   };
   const outageRemainingMs = (streak) => {
     const fileLeft = streak.retryAt - now();
-    const realLeft = streak.retryAt - streak.startedAt - (wallNow() - streak.realStartedAt);
+    const realLeft = streak.retryAt - streak.startedAt - (monotonicNow() - streak.realStartedAt);
     return fileLeft < realLeft ? fileLeft : realLeft;
   };
   const startOutage = () => ({
     startedAt: now(),
-    realStartedAt: wallNow(),
+    realStartedAt: monotonicNow(),
     attempts: 0,
-    retryAt: 0
+    retryAt: 0,
+    elapsedHighWater: 0
   });
   const outageWindow = () => {
     try {
@@ -45677,6 +45708,9 @@ async function serve(argv, io) {
         auditTimer = null;
         auditBlock = "ok";
         auditOutage = null;
+        try {
+          runner.clearAuditAdapterFailure(runId);
+        } catch {}
         return;
       }
       try {
@@ -45713,13 +45747,19 @@ async function serve(argv, io) {
         }
         auditBlock = "ok";
         auditOutage = null;
+        try {
+          runner.clearAuditAdapterFailure(runId);
+        } catch {}
       } catch (cause) {
         if (isRefusedAuditTick(cause) && haltAuditWithoutRecord(cause))
           return;
         if (auditOutage === null)
           auditOutage = startOutage();
         try {
-          const outcome = runner.recordAuditAdapterFailure(runId);
+          const outcome = runner.recordAuditAdapterFailure(runId, {
+            startedAt: auditOutage.startedAt,
+            realStartedAt: auditOutage.realStartedAt
+          });
           if (outcome.cap !== undefined && !outcome.exhausted)
             auditBlock = "retry";
           else if (outcome.cap !== undefined)
@@ -45767,9 +45807,11 @@ async function serve(argv, io) {
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
-        const adaptersReady = eventCommand !== null && loopCommand !== null && !deliveryFailedVisible();
-        const auditRetryOpen = adaptersReady && (auditBlock === "retry" || auditBlock === "failed" && !auditFailedVisible() && !auditHalted);
-        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && auditBlock === "ok", auditRetryOpen);
+        const adaptersPresent = eventCommand !== null && loopCommand !== null;
+        const adaptersReady = adaptersPresent && !deliveryFailedVisible();
+        const deliveryRetryOpen = adaptersPresent && outageWindow() !== undefined && (delivering || !deliveryHealthy) && !deliveryFailedVisible();
+        const auditRetryOpen = adaptersReady && !auditFailedVisible() && (auditBlock === "retry" || auditBlock === "failed" && !auditHalted);
+        const result2 = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, adaptersReady && !deliveryRetryOpen && auditBlock === "ok", auditRetryOpen, deliveryRetryOpen);
         const missing2 = [
           eventCommand === null ? "event-adapter" : null,
           deliveryFailedVisible() ? "event-delivery-failed" : null,
@@ -45811,6 +45853,27 @@ async function serve(argv, io) {
       respond(body.slice(0, newline));
     });
   });
+  const restorePersistedAudit = () => {
+    applyPersistedCap();
+    if (auditHalted)
+      return;
+    if (outageWindow() === undefined)
+      return;
+    try {
+      if (runner.status(runId).audit_adapter_failure === undefined)
+        return;
+    } catch {
+      return;
+    }
+    if (auditOutage === null)
+      auditOutage = startOutage();
+    const { cap } = recoveryBudget();
+    if (cap !== undefined)
+      auditBlock = "retry";
+    else
+      auditBlock = "failed";
+  };
+  restorePersistedAudit();
   server.listen(socketPath, () => {
     chmodSync4(socketPath, Number.parseInt(mode, 8));
     io.out(`ak runner: listening on ${socketPath}`);

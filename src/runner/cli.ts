@@ -304,6 +304,7 @@ async function execute(
   activeChildren: Set<number>,
   autonomousAvailable: boolean,
   auditRetryOpen: boolean,
+  deliveryRetryOpen: boolean,
 ) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
@@ -426,6 +427,8 @@ async function execute(
       ) {
         if (auditRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
           throw new Error("audit retry in progress; checkpoint not approved; retry decide after the next tick");
+        if (deliveryRetryOpen && charter.allowed_capabilities.includes("event-delivery"))
+          throw new Error("event delivery retry in progress; checkpoint not approved; retry decide after the next ack");
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
       }
       const cardId = str(a, "card_id");
@@ -476,6 +479,10 @@ function isEventIntegrityFailure(cause: unknown): boolean {
 
 function wallNow(): number {
   return Date.now();
+}
+
+function monotonicNow(): number {
+  return performance.now();
 }
 
 function outageRetryDelayMs(attempts: number, elapsedMs: number, windowMs: number): number {
@@ -641,7 +648,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const wait = (ms: number): Promise<void> => {
     if (clockPath === undefined) return new Promise((done) => setTimeout(done, ms));
     const fileStart = now();
-    const realStart = wallNow();
+    const realStart = monotonicNow();
     return new Promise((done) => {
       const poll = () => {
         if (!open) {
@@ -654,7 +661,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           done();
           return;
         }
-        if (read.now - fileStart >= ms || wallNow() - realStart >= ms) {
+        if (read.now - fileStart >= ms || monotonicNow() - realStart >= ms) {
           done();
           return;
         }
@@ -663,29 +670,39 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       poll();
     });
   };
-  type OutageStreak = { startedAt: number; realStartedAt: number; attempts: number; retryAt: number };
+  type OutageStreak = {
+    startedAt: number;
+    realStartedAt: number;
+    attempts: number;
+    retryAt: number;
+    elapsedHighWater: number;
+  };
   let auditOutage: OutageStreak | null = null;
   let deliveryOutage: OutageStreak | null = null;
   const outageElapsedMs = (streak: OutageStreak): number => {
     const fileElapsed = now() - streak.startedAt;
-    const realElapsed = wallNow() - streak.realStartedAt;
-    return fileElapsed > realElapsed ? fileElapsed : realElapsed;
+    const realElapsed = monotonicNow() - streak.realStartedAt;
+    const observed = fileElapsed > realElapsed ? fileElapsed : realElapsed;
+    const elapsed = observed > streak.elapsedHighWater ? observed : streak.elapsedHighWater;
+    streak.elapsedHighWater = elapsed;
+    return elapsed;
   };
   const outageDue = (streak: OutageStreak): boolean => {
     const fileDue = now() >= streak.retryAt;
-    const realDue = wallNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
+    const realDue = monotonicNow() - streak.realStartedAt >= streak.retryAt - streak.startedAt;
     return fileDue || realDue;
   };
   const outageRemainingMs = (streak: OutageStreak): number => {
     const fileLeft = streak.retryAt - now();
-    const realLeft = streak.retryAt - streak.startedAt - (wallNow() - streak.realStartedAt);
+    const realLeft = streak.retryAt - streak.startedAt - (monotonicNow() - streak.realStartedAt);
     return fileLeft < realLeft ? fileLeft : realLeft;
   };
   const startOutage = (): OutageStreak => ({
     startedAt: now(),
-    realStartedAt: wallNow(),
+    realStartedAt: monotonicNow(),
     attempts: 0,
     retryAt: 0,
+    elapsedHighWater: 0,
   });
   const outageWindow = (): number | undefined => {
     try {
@@ -927,6 +944,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         auditTimer = null;
         auditBlock = "ok";
         auditOutage = null;
+        try {
+          runner.clearAuditAdapterFailure(runId);
+        } catch {
+          // The run may have been cancelled while the tick was in flight.
+        }
         return;
       }
       try {
@@ -973,11 +995,19 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         }
         auditBlock = "ok";
         auditOutage = null;
+        try {
+          runner.clearAuditAdapterFailure(runId);
+        } catch {
+          // The run may have been cancelled while the tick was in flight.
+        }
       } catch (cause) {
         if (isRefusedAuditTick(cause) && haltAuditWithoutRecord(cause)) return;
         if (auditOutage === null) auditOutage = startOutage();
         try {
-          const outcome = runner.recordAuditAdapterFailure(runId);
+          const outcome = runner.recordAuditAdapterFailure(runId, {
+            startedAt: auditOutage.startedAt,
+            realStartedAt: auditOutage.realStartedAt,
+          });
           if (outcome.cap !== undefined && !outcome.exhausted) auditBlock = "retry";
           else if (outcome.cap !== undefined) haltAudit("cap");
           else auditBlock = "failed";
@@ -1023,10 +1053,17 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         const questionDeadline = request.verb === "question" ? runner.questionDeadline(runId) : null;
-        const adaptersReady = eventCommand !== null && loopCommand !== null && !deliveryFailedVisible();
+        const adaptersPresent = eventCommand !== null && loopCommand !== null;
+        const adaptersReady = adaptersPresent && !deliveryFailedVisible();
+        const deliveryRetryOpen =
+          adaptersPresent &&
+          outageWindow() !== undefined &&
+          (delivering || !deliveryHealthy) &&
+          !deliveryFailedVisible();
         const auditRetryOpen =
           adaptersReady &&
-          (auditBlock === "retry" || (auditBlock === "failed" && !auditFailedVisible() && !auditHalted));
+          !auditFailedVisible() &&
+          (auditBlock === "retry" || (auditBlock === "failed" && !auditHalted));
         const result = await execute(
           runner,
           request,
@@ -1039,8 +1076,9 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           effectAdapters,
           decisions,
           activeChildren,
-          adaptersReady && auditBlock === "ok",
+          adaptersReady && !deliveryRetryOpen && auditBlock === "ok",
           auditRetryOpen,
+          deliveryRetryOpen,
         );
         const missing = [
           eventCommand === null ? "event-adapter" : null,
@@ -1089,6 +1127,21 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       void respond(body.slice(0, newline));
     });
   });
+  const restorePersistedAudit = () => {
+    applyPersistedCap();
+    if (auditHalted) return;
+    if (outageWindow() === undefined) return;
+    try {
+      if (runner.status(runId).audit_adapter_failure === undefined) return;
+    } catch {
+      return;
+    }
+    if (auditOutage === null) auditOutage = startOutage();
+    const { cap } = recoveryBudget();
+    if (cap !== undefined) auditBlock = "retry";
+    else auditBlock = "failed";
+  };
+  restorePersistedAudit();
   server.listen(socketPath, () => {
     chmodSync(socketPath, Number.parseInt(mode, 8));
     io.out(`ak runner: listening on ${socketPath}`);
