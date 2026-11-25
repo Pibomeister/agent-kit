@@ -89,6 +89,22 @@ describe("judge continuity", () => {
     expect(f.rows()).toHaveLength(2);
   });
 
+  test("an availability failure retries the same binding when no fallback is configured", () => {
+    const dir = scratch();
+    const seen = join(dir, "seen");
+    const f = fixture(
+      `if [ ! -f '${seen}' ]; then echo x > '${seen}'; echo 'service unavailable' >&2; exit 1; fi\necho '{"memory":"kept"}'`,
+      [],
+    );
+    expect(f.config.judgeFallbackCommands).toEqual([]);
+    expect(f.judge("prompt", CONTEXT)).toEqual({ memory: "kept" });
+    const rows = f.rows();
+    expect(rows.map((row) => row.outcome)).toEqual(["error", "ok"]);
+    expect(rows.map((row) => row.judge_index)).toEqual([0, 0]);
+    expect(rows.map((row) => row.attempt)).toEqual([1, 2]);
+    expect(existsSync(join(dir, "input-1"))).toBe(false);
+  });
+
   test("an error envelope with exit zero is a failure, never a usable judgement", () => {
     const f = fixture('echo \'{"is_error":true,"result":"quota exhausted"}\'');
     expect(f.judge("prompt", CONTEXT)).toEqual({ memory: "kept" });

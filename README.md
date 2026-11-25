@@ -75,12 +75,14 @@ ticket, so that skill needs a current `ak` on `PATH`
 ([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
 ([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green run for a merged commit. Publication
-requires the release tag `v<version>` at the merged commit on `main`, so the run for the push to
-`main` refuses a changed bundle. Pushing that tag runs the workflow at the tagged commit, which it
+requires the release tag `v<version>` at the merged commit on `main`. The run for the push to `main`
+creates a missing tag at the merged commit before it publishes, and refuses when the tag already
+exists at another commit. Pushing that tag by hand runs the workflow at the tagged commit, which it
 builds and publishes once it confirms the commit is on `main`. To retry, dispatch the workflow with
 the tag as its ref; a dispatch at the tip of `main` refuses once `main` has moved past the tagged
-commit. On the first merge, tag the merged commit, wait for that workflow to complete, then use the
-commands above. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
+commit. On the first merge, wait for the push-to-main run of publish-bundle to complete, then use
+the commands above. Later bundle changes require a new matching version in `catalog.yaml` and
+`package.json`;
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
@@ -93,8 +95,9 @@ service availability failure, missing executable or timeout. For example:
 `["/opt/judges/secondary --json", "/opt/judges/reserve --json"]`. Commands use the primary's
 quote splitting rules, with no shell expansion. Every command receives the same prompt on stdin
 and must return the same JSON object on stdout. Ordinary failures and malformed replies retain
-one retry; a role's `unavailable` reply ends the call. Exhaustion returns no judgement and writes
-no learned content. `judge-calls.jsonl` records each attempt's outcome, `judge_index` (primary 0)
+one retry. With no fallback configured, a quota, service availability or missing-executable
+failure keeps that same retry, and a timeout still returns at once. A role's `unavailable` reply
+ends the call. Exhaustion returns no judgement and writes no learned content. `judge-calls.jsonl` records each attempt's outcome, `judge_index` (primary 0)
 and `judge_command_sha256` (SHA256 of the configured argv as JSON), identifying the answering binding
 without storing its arguments. No alternatives run unless configured.
 
@@ -267,6 +270,14 @@ exit status; `isCouncilConfig`, `rosterProblems` and `isCouncilAnswer` in `src/c
 owner-only roster and a launcher's answer. The record grants no authority.
 [ADR-0015](docs/decisions/0015-council-blind-veto.md) owns the rule and the outbound gate;
 [`adapters/runner-contract/CLI.md`](adapters/runner-contract/CLI.md) owns the runner's `--council-config`.
+
+**The convergence ledger is optional.** `ak review ledger add --ledger <ledger.jsonl> --event <file|->` appends what
+seats, the author and a gate reported for one pull request, `ak review ledger show --ledger <ledger.jsonl>` prints the
+state the lines fold to, and `ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n>` prints the verdict for
+one exact head: `approved`, `blocked` or `incomplete`, with one next action. `runReview` in `src/review/cli.ts` defines
+the flags, the records and the exit status; `decide` in `src/review/converge.ts` is the rule, and it reads no file,
+clock or model. The record grants no authority. [ADR-0018](docs/decisions/0018-review-convergence.md) owns the
+evidence bar, the round cap and the stop rule.
 
 **Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
 a grant from its own home with `node <bundle>/bin/ak-gate.mjs bypass grant`, and the worker checks it before
