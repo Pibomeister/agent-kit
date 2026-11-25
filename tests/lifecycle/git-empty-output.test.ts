@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { isolatedGitArgv } from "../../src/lifecycle/git-isolation.ts";
 import {
   checkGates,
   defaultEvidenceDir,
@@ -57,7 +58,7 @@ function withSilentGit<T>(silent: readonly string[], body: () => T): T {
   const realGit = Bun.which("git");
   if (realGit === null) throw new Error("git is not on PATH");
   const shim = makeTree({}, { provenance: false });
-  const match = silent.map((arg, i) => `[ "$${i + 1}" = '${arg}' ]`).join(" && ");
+  const match = silent.map((arg, i) => `[ "\${${i + 1}}" = ${JSON.stringify(arg)} ]`).join(" && ");
   writeFileSync(join(shim, "git"), `#!/bin/sh\nif ${match}; then exit 0; fi\nexec "${realGit}" "$@"\n`);
   chmodSync(join(shim, "git"), 0o755);
   const path = process.env.PATH;
@@ -87,15 +88,19 @@ describe("a must-print git call that exits 0 silently", () => {
 
   test("takeSnapshot refuses a silent rev-parse HEAD, naming the command", () => {
     const dir = repo();
-    const text = refusal(withSilentGit(["--no-replace-objects", "rev-parse", "HEAD"], () => takeSnapshot(dir)));
-    expect(text).toContain("git --no-replace-objects rev-parse HEAD");
+    const argv = ["--no-replace-objects", ...isolatedGitArgv(dir, ["rev-parse", "HEAD"])];
+    const text = refusal(withSilentGit(argv, () => takeSnapshot(dir)));
+    expect(text).toContain(`git ${argv.join(" ")}`);
     expect(text).toContain("no output");
   });
 
   test("takeSnapshot refuses a silent rev-parse --git-path index, naming the command", () => {
     const dir = repo();
-    const text = refusal(withSilentGit(["--no-replace-objects", "rev-parse", "--git-path"], () => takeSnapshot(dir)));
-    expect(text).toContain("git --no-replace-objects rev-parse --git-path index");
+    const prefix = ["--no-replace-objects", ...isolatedGitArgv(dir, ["rev-parse", "--git-path"])];
+    const text = refusal(withSilentGit(prefix, () => takeSnapshot(dir)));
+    expect(text).toContain(
+      `git ${["--no-replace-objects", ...isolatedGitArgv(dir, ["rev-parse", "--git-path", "index"])].join(" ")}`,
+    );
     expect(text).toContain("no output");
   });
 

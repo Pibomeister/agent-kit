@@ -1,0 +1,88 @@
+/** Isolated git `-c` flags: worker fsmonitor, hooks, filters and the commit graph cannot steer a snapshot. */
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+export function isolationArgs(project: string): string[] {
+  const directory = existsSync(project) ? realpathSync(project) : resolve(project);
+  return [
+    "-c",
+    `safe.directory=${directory}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.excludesFile=/dev/null",
+    "-c",
+    "diff.relative=false",
+    "-c",
+    "core.commitGraph=false",
+    "-c",
+    "advice.graftFileDeprecated=false",
+    // Defense-in-depth: throwaway GIT_DIR already ignores worker merge config.
+    "-c",
+    "merge.default=",
+    "-c",
+    "merge.renormalize=false",
+  ];
+}
+
+/** Isolated git argv: worker-owned config is ignored, including the commit graph. */
+export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
+  return [...isolationArgs(project), ...args];
+}
+
+/** In-process blob id. git 2.43 `hash-object --stdin-paths` has no `-z` and follows symlinks. */
+export function gitBlobId(bytes: Uint8Array, blob: string): string {
+  const algorithm = blob.length === 64 ? "sha256" : "sha1";
+  return createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+}
+
+/**
+ * Hex digest of tracked worktree bytes that do not match the index blob. Undefined when every
+ * regular file and symlink matches. Nested gitlinks are skipped: submodule.ignore=all is outside
+ * the ship-preflight gate.
+ */
+export function unfilteredTrackedDirt(workTree: string, lsFilesStageZ: Uint8Array): string | undefined {
+  const digest = createHash("sha256");
+  let dirty = false;
+  for (const row of new TextDecoder().decode(lsFilesStageZ).split("\0")) {
+    if (row === "") continue;
+    const tab = row.indexOf("\t");
+    if (tab < 0) continue;
+    const [mode, blob, stage] = row.slice(0, tab).split(" ");
+    const path = row.slice(tab + 1);
+    if (mode === undefined || blob === undefined || stage === undefined || path === "") continue;
+    if (stage !== "0" || mode === "160000") continue;
+    const at = join(workTree, path);
+    try {
+      const stat = lstatSync(at);
+      let bytes: Uint8Array;
+      if (mode === "120000") {
+        if (!stat.isSymbolicLink()) {
+          digest.update(path);
+          dirty = true;
+          continue;
+        }
+        bytes = Buffer.from(readlinkSync(at));
+      } else if (mode === "100644" || mode === "100755") {
+        if (!stat.isFile()) {
+          digest.update(path);
+          dirty = true;
+          continue;
+        }
+        bytes = readFileSync(at);
+      } else continue;
+      if (gitBlobId(bytes, blob) !== blob) {
+        digest.update(path);
+        digest.update(bytes);
+        dirty = true;
+      }
+    } catch {
+      digest.update(path);
+      dirty = true;
+    }
+  }
+  return dirty ? digest.digest("hex") : undefined;
+}

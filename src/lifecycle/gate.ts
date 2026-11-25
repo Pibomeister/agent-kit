@@ -64,6 +64,7 @@ import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { artifactHash } from "../util/hash.ts";
+import { isolatedGitArgv, unfilteredTrackedDirt } from "./git-isolation.ts";
 import { defaultMarkersPath, runPublishScan } from "./publish-scan.ts";
 import {
   type Json,
@@ -222,7 +223,10 @@ export function unknownSelector(kind: string, input: string, candidates: readonl
  * the index; a copy stamped "now" would make a same-size edit made in the second of the last index
  * write look clean, and the snapshot would miss it.
  *
- * Nested-submodule dirt hidden by submodule.ignore=all is outside this snapshot, so ship-preflight does not see it.
+ * Snapshot git calls reuse `isolatedGitArgv`: fsmonitor, hooks and excludes are off, skip-worktree
+ * and assume-unchanged bits are cleared on the index copy, and attr.tree is the empty tree so clean
+ * and smudge filters do not run. Nested-submodule dirt hidden by submodule.ignore=all is outside
+ * this snapshot, so ship-preflight does not see it.
  */
 export interface Snapshot {
   repo: string;
@@ -242,10 +246,11 @@ export interface GitResult {
   stderr: string;
 }
 
-export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): GitResult {
+export function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv, input?: Uint8Array): GitResult {
   const proc = spawnSync("git", [...args], {
     cwd,
     env: env ?? envWithoutRedirectingGit(),
+    input,
     maxBuffer: 1 << 30,
   });
   if (proc.error !== undefined) {
@@ -279,17 +284,19 @@ const NO_REPLACE_OBJECTS = ["--no-replace-objects"] as const;
 
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
   const env = boundWorkTreeEnv(project);
-  const head = gitMustPrint(project, [...NO_REPLACE_OBJECTS, "rev-parse", "HEAD"], env);
+  const workTree = env.GIT_WORK_TREE ?? project;
+  const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
+  const head = gitMustPrint(workTree, isolate(["rev-parse", "HEAD"]), env);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
-  const indexPath = gitMustPrint(project, [...NO_REPLACE_OBJECTS, "rev-parse", "--git-path", "index"], env);
-  // An empty path joins back to the project directory, and copying that directory throws.
+  const indexPath = gitMustPrint(workTree, isolate(["rev-parse", "--git-path", "index"]), env);
+  // An empty path joins back to the work tree, and copying that directory throws.
   if (indexPath.code !== 0 || indexPath.text === "")
     return indexPath.stderr === ""
       ? `cannot locate the index of ${project}`
       : `cannot locate the index of ${project}: ${indexPath.stderr}`;
-  const index = isAbsolute(indexPath.text) ? indexPath.text : join(project, indexPath.text);
+  const index = isAbsolute(indexPath.text) ? indexPath.text : join(workTree, indexPath.text);
 
   const scratch = mkdtempSync(join(tmpdir(), "ak-index-"));
   const temp = join(scratch, "index");
@@ -300,7 +307,26 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       utimesSync(temp, atime, mtime);
     }
     env.GIT_INDEX_FILE = temp;
-    const untracked = git(project, [...NO_REPLACE_OBJECTS, "ls-files", "--others", "--exclude-standard", "-z"], env);
+    const empty = git(workTree, isolate(["hash-object", "-t", "tree", "--stdin"]), env, new Uint8Array());
+    if (empty.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(empty.text))
+      return `cannot resolve the empty tree in ${project}: ${empty.stderr || empty.text}`;
+    const raw = (args: readonly string[], input?: Uint8Array) =>
+      git(workTree, isolate(["-c", `attr.tree=${empty.text}`, ...args]), env, input);
+    const bits = raw(["update-index", "--no-fsmonitor"]);
+    if (bits.code !== 0) return `cannot isolate the index of ${project}: ${bits.stderr}`;
+    const tracked = raw(["ls-files", "-z"]);
+    if (tracked.code !== 0) return `cannot list tracked files in ${project}: ${tracked.stderr}`;
+    const trackedPaths = new TextDecoder()
+      .decode(tracked.stdout)
+      .split("\0")
+      .filter((path) => path !== "");
+    for (let i = 0; i < trackedPaths.length; i += 200) {
+      const chunk = trackedPaths.slice(i, i + 200);
+      const cleared = raw(["update-index", "--no-skip-worktree", "--no-assume-unchanged", "--", ...chunk]);
+      if (cleared.code !== 0)
+        return `cannot clear skip-worktree and assume-unchanged bits in ${project}: ${cleared.stderr}`;
+    }
+    const untracked = raw(["ls-files", "--others", "--exclude-standard", "-z"]);
     if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
     const paths = untracked.text
       .split("\0")
@@ -309,14 +335,20 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
           path !== "" && !(options.ignoreUntrackedDirs ?? []).some((dir) => path === dir || path.startsWith(`${dir}/`)),
       );
     if (paths.length > 0) {
-      const add = git(project, [...NO_REPLACE_OBJECTS, "add", "--intent-to-add", "--", ...paths], env);
+      const add = raw(["add", "--intent-to-add", "--", ...paths]);
       if (add.code !== 0) return `cannot mark untracked files in ${project}: ${add.stderr}`;
     }
-    const diff = git(project, [...NO_REPLACE_OBJECTS, "diff", "--no-ext-diff", "--binary", head.text], env);
+    const diff = raw(["diff", "--no-ext-diff", "--no-textconv", "--binary", head.text]);
     if (diff.code !== 0) return `cannot diff ${project} against ${head.text}: ${diff.stderr}`;
-    const digest = createHash("sha256").update(diff.stdout).digest("hex");
+    let digest = createHash("sha256").update(diff.stdout).digest("hex");
+    if (diff.stdout.length === 0) {
+      const staged = raw(["ls-files", "-s", "-z"]);
+      if (staged.code !== 0) return `cannot list tracked files in ${project}: ${staged.stderr}`;
+      const hidden = unfilteredTrackedDirt(workTree, staged.stdout);
+      if (hidden !== undefined) digest = hidden;
+    }
 
-    const remote = git(project, [...NO_REPLACE_OBJECTS, "config", "--get", "remote.origin.url"], env);
+    const remote = git(workTree, isolate(["config", "--get", "remote.origin.url"]), env);
     return {
       repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
       revision: head.text,
@@ -2362,10 +2394,25 @@ function envWithoutRedirectingGit(): NodeJS.ProcessEnv {
   return env;
 }
 
-/** After the strip, bind the work tree to the project so `core.worktree` cannot point git at another tree. */
+/** Walk up from `start` to the directory that holds a `.git` entry. Does not ask git, so `core.worktree` cannot redirect it. */
+function workTreeHoldingGit(start: string): string {
+  let dir = existsSync(start) ? realpathSync(start) : resolve(start);
+  for (;;) {
+    try {
+      lstatSync(join(dir, ".git"));
+      return dir;
+    } catch {
+      const parent = dirname(dir);
+      if (parent === dir) return dir;
+      dir = parent;
+    }
+  }
+}
+
+/** After the strip, bind the work tree to the directory that holds `.git`, so `core.worktree` cannot point git at another tree. */
 function boundWorkTreeEnv(project: string): NodeJS.ProcessEnv {
   const env = envWithoutRedirectingGit();
-  env.GIT_WORK_TREE = existsSync(project) ? realpathSync(project) : resolve(project);
+  env.GIT_WORK_TREE = workTreeHoldingGit(project);
   return env;
 }
 

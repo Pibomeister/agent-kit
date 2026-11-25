@@ -14,8 +14,11 @@ import {
 } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { gitBlobId, isolationArgs, isolatedGitArgv } from "../lifecycle/git-isolation.ts";
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
 import { relativeInsideRoot, workerControlledPath, workerFreePath } from "./path.ts";
+
+export { isolatedGitArgv };
 
 export interface RunnerGitContext {
   binary: string;
@@ -266,35 +269,6 @@ function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
     GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C",
   };
-}
-
-function isolationArgs(project: string): string[] {
-  return [
-    "-c",
-    `safe.directory=${realpathSync(project)}`,
-    "-c",
-    "core.fsmonitor=false",
-    "-c",
-    "core.hooksPath=/dev/null",
-    "-c",
-    "core.excludesFile=/dev/null",
-    "-c",
-    "diff.relative=false",
-    "-c",
-    "core.commitGraph=false",
-    "-c",
-    "advice.graftFileDeprecated=false",
-    // Defense-in-depth: throwaway GIT_DIR already ignores worker merge config.
-    "-c",
-    "merge.default=",
-    "-c",
-    "merge.renormalize=false",
-  ];
-}
-
-/** Isolated git argv: worker-owned config is ignored, including the commit graph. */
-export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
-  return [...isolationArgs(project), ...args];
 }
 
 const emptyTrees = new Map<string, string>();
@@ -551,12 +525,6 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-}
-
-function gitBlobId(bytes: Uint8Array, blob: string): string {
-  // In-process: git 2.43 hash-object --stdin-paths has no -z and follows symlinks.
-  const algorithm = blob.length === 64 ? "sha256" : "sha1";
-  return createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
 function escapesWorktree(path: string, rel: string): boolean {

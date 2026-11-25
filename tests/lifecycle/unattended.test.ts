@@ -1434,6 +1434,27 @@ function coverDirty(cwd: string) {
   return { head, cover };
 }
 
+/** Porcelain `git diff HEAD` is empty; the worktree bytes still differ from HEAD. */
+function hideTrackedEdit(cwd: string, kind: "skip-worktree" | "assume-unchanged" | "fsmonitor" | "clean-filter"): void {
+  if (kind === "fsmonitor") {
+    const monitor = join(outsideDir(), "fsmonitor.sh");
+    writeFileSync(monitor, "#!/bin/sh\nprintf 'token\\0'\n");
+    chmodSync(monitor, 0o700);
+    git(cwd, "config", "core.fsmonitor", monitor);
+    git(cwd, "status", "--porcelain");
+  } else if (kind === "clean-filter") {
+    const clean = join(outsideDir(), "clean.sh");
+    writeFileSync(clean, "#!/bin/sh\nprintf 'export const a = 1;\\n'\n");
+    chmodSync(clean, 0o700);
+    writeFileSync(join(cwd, ".gitattributes"), "src/a.js filter=lie\n");
+    writeFileSync(join(cwd, ".git", "info", "exclude"), ".gitattributes\n");
+    git(cwd, "config", "filter.lie.clean", clean);
+  }
+  writeFileSync(join(cwd, "src", "a.js"), "export const a = 2;\n");
+  if (kind === "skip-worktree") git(cwd, "update-index", "--skip-worktree", "src/a.js");
+  if (kind === "assume-unchanged") git(cwd, "update-index", "--assume-unchanged", "src/a.js");
+}
+
 /** An unattended run with every gate recorded, ready for ship-preflight under the declaration `declare` wrote. */
 function ready(name = "firstmate") {
   const cwd = repo();
@@ -1687,6 +1708,28 @@ describe("binding at open and ship-preflight (AC-4)", () => {
       expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
     },
   );
+
+  test.each(["skip-worktree", "assume-unchanged", "fsmonitor", "clean-filter"] as const)(
+    "ship-preflight refuses a dirty tree hidden by %s",
+    (kind) => {
+      const { cwd, run } = ready();
+      hideTrackedEdit(cwd, kind);
+      expect(git(cwd, "diff", "--no-ext-diff", "--binary", "HEAD")).toBe("");
+      const before = runState(cwd, run);
+      const r = ak(cwd, "record", "--gate", "ship-preflight");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("uncommitted changes");
+      expect(runState(cwd, run)).toEqual(before);
+      expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+    },
+  );
+
+  test("ship-preflight accepts a clean tree when invoked from a subdirectory", () => {
+    const { cwd, run } = ready();
+    const r = ak(join(cwd, "src"), "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
+  });
 
   test("ship-preflight refuses a dirty tree when git replace covers HEAD with a matching tree", () => {
     const { cwd, run } = ready();
