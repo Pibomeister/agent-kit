@@ -24183,7 +24183,16 @@ function loadKbBinding(projectRoot, revision, gitFn, workingFile = true) {
 }
 function findKbProjectRoot(start, revision, gitFn) {
   const from = realpathSync4(start);
-  const ceiling = workTreeTop(from) ?? from;
+  let ceiling = from;
+  if (gitFn !== undefined) {
+    const top = gitFn(from, ["rev-parse", "--show-toplevel"]);
+    if (top.status !== 0 || top.stdout.trim() === "")
+      throw new Error("cannot locate committed knowledgebase binding");
+    ceiling = realpathSync4(top.stdout.trim());
+    if (!isInside(from, ceiling))
+      throw new Error("cannot locate committed knowledgebase binding");
+  } else
+    ceiling = workTreeTop(from) ?? from;
   const explicit = revision !== undefined && revision !== "";
   const run = gitForRevision(revision, gitFn);
   for (let dir = from;; dir = dirname3(dir)) {
@@ -38819,7 +38828,7 @@ var import__202015 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync7 } from "child_process";
 import { existsSync as existsSync42, readFileSync as readFileSync44, realpathSync as realpathSync20 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename23, isAbsolute as isAbsolute18, join as join55, relative as relative16 } from "path";
+import { basename as basename24, isAbsolute as isAbsolute17, join as join55, relative as relative16 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -41841,14 +41850,14 @@ init_hash();
 import { timingSafeEqual } from "crypto";
 import { chmodSync as chmodSync4, existsSync as existsSync40, readFileSync as readFileSync36, realpathSync as realpathSync17, unlinkSync as unlinkSync2 } from "fs";
 import { createConnection, createServer } from "net";
-import { dirname as dirname24, isAbsolute as isAbsolute16, relative as relative14, resolve as resolve17 } from "path";
+import { dirname as dirname25, isAbsolute as isAbsolute15, relative as relative14, resolve as resolve17 } from "path";
 
 // src/runner/core.ts
 init_dist();
 init_hash();
 import { createHash as createHash12 } from "crypto";
 import { existsSync as existsSync39, mkdirSync as mkdirSync25, readFileSync as readFileSync33, realpathSync as realpathSync13, renameSync as renameSync6, writeFileSync as writeFileSync16 } from "fs";
-import { basename as basename20, dirname as dirname22, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
+import { basename as basename21, dirname as dirname23, isAbsolute as isAbsolute14, join as join46, relative as relative12, resolve as resolve16 } from "path";
 
 // src/lifecycle/design-report.ts
 function isNonArrayObject(value) {
@@ -42055,6 +42064,40 @@ class PrivateFileEvidenceStore {
 // src/runner/lineage.ts
 function sharesLineage(a, b) {
   return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+}
+
+// src/runner/path.ts
+import { lstatSync as lstatSync5, realpathSync as realpathSync11 } from "fs";
+import { delimiter as delimiter4, dirname as dirname21, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14, sep as sep8 } from "path";
+function relativeInsideRoot(rel) {
+  return rel === "" || rel !== ".." && !rel.startsWith(`..${sep8}`) && !isAbsolute12(rel);
+}
+function workerControlledPath(path, workerRoot) {
+  if (!isAbsolute12(path))
+    return true;
+  let existing = resolve14(path);
+  for (;; ) {
+    try {
+      lstatSync5(existing);
+      break;
+    } catch (cause) {
+      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
+        return true;
+      const parent = dirname21(existing);
+      if (parent === existing)
+        return true;
+      existing = parent;
+    }
+  }
+  try {
+    return relativeInsideRoot(relative10(workerRoot, realpathSync11(existing)));
+  } catch {
+    return true;
+  }
+}
+function workerFreePath(path, workerRoot) {
+  const entries = (path ?? "").split(delimiter4).filter((entry) => entry.length > 0 && !workerControlledPath(entry, workerRoot));
+  return entries.length > 0 ? entries.join(delimiter4) : "/usr/bin:/bin";
 }
 
 // src/council/rule.ts
@@ -42295,51 +42338,233 @@ var isEffectConfig = ajv6.compile({
 // src/runner/snapshot.ts
 import { spawnSync as spawnSync5 } from "child_process";
 import { createHash as createHash11 } from "crypto";
-import { accessSync, constants, existsSync as existsSync38, lstatSync as lstatSync6, readFileSync as readFileSync32, readlinkSync as readlinkSync3, realpathSync as realpathSync12 } from "fs";
-import { delimiter as delimiter5, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
-
-// src/runner/path.ts
-import { lstatSync as lstatSync5, realpathSync as realpathSync11 } from "fs";
-import { delimiter as delimiter4, dirname as dirname21, isAbsolute as isAbsolute12, relative as relative10, resolve as resolve14 } from "path";
-function workerControlledPath(path, workerRoot) {
-  if (!isAbsolute12(path))
-    return true;
-  let existing = resolve14(path);
-  for (;; ) {
+import {
+  accessSync,
+  constants,
+  existsSync as existsSync38,
+  lstatSync as lstatSync6,
+  mkdtempSync as mkdtempSync3,
+  readFileSync as readFileSync32,
+  readlinkSync as readlinkSync3,
+  realpathSync as realpathSync12,
+  rmSync as rmSync14
+} from "fs";
+import { basename as basename20, delimiter as delimiter5, dirname as dirname22, isAbsolute as isAbsolute13, join as join45, relative as relative11, resolve as resolve15 } from "path";
+var LAYOUT_CHANGED = "git layout changed since start";
+var REALPATH_HOPS = 32;
+function parseGitFile(filePath) {
+  const pointer = /^gitdir: (.+)$/.exec(readFileSync32(filePath, "utf8").trim())?.[1];
+  if (pointer === undefined)
+    return;
+  return isAbsolute13(pointer) ? pointer : resolve15(dirname22(filePath), pointer);
+}
+function boundedResolve(path) {
+  let current = path;
+  const seen = new Set;
+  for (let hop = 0;hop < REALPATH_HOPS; hop++) {
+    if (seen.has(current))
+      return;
+    seen.add(current);
+    let stat;
     try {
-      lstatSync5(existing);
-      break;
-    } catch (cause) {
-      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
-        return true;
-      const parent = dirname21(existing);
-      if (parent === existing)
-        return true;
-      existing = parent;
+      stat = lstatSync6(current);
+    } catch {
+      return;
+    }
+    if (!stat.isSymbolicLink()) {
+      try {
+        return realpathSync12(current);
+      } catch {
+        return;
+      }
+    }
+    const next = readlinkSync3(current);
+    current = isAbsolute13(next) ? next : resolve15(dirname22(current), next);
+  }
+  return;
+}
+function workTreeOf(gitDir, foundAt, gitfile) {
+  if (!gitfile)
+    return realpathSync12(foundAt);
+  try {
+    const pointed = readFileSync32(join45(gitDir, "gitdir"), "utf8").trim();
+    if (pointed !== "") {
+      const marker = isAbsolute13(pointed) ? pointed : resolve15(gitDir, pointed);
+      return realpathSync12(dirname22(marker));
+    }
+  } catch {}
+  try {
+    readFileSync32(join45(gitDir, "commondir"), "utf8");
+    return realpathSync12(foundAt);
+  } catch {
+    if (basename20(gitDir) === ".git")
+      return realpathSync12(dirname22(gitDir));
+    return realpathSync12(foundAt);
+  }
+}
+function layoutAt(dir) {
+  const entryPath = join45(dir, ".git");
+  let entry;
+  try {
+    entry = lstatSync6(entryPath);
+  } catch {
+    return;
+  }
+  if (entry.isFIFO() || entry.isSocket())
+    return;
+  let gitDir;
+  let gitfile = false;
+  if (entry.isSymbolicLink()) {
+    const target = boundedResolve(entryPath);
+    if (target === undefined)
+      return;
+    let dest;
+    try {
+      dest = lstatSync6(target);
+    } catch {
+      return;
+    }
+    if (dest.isDirectory())
+      gitDir = realpathSync12(target);
+    else if (dest.isFile() && dest.size <= 4096) {
+      const pointer = parseGitFile(target);
+      if (pointer === undefined)
+        return;
+      gitDir = realpathSync12(pointer);
+      gitfile = true;
+    } else
+      return;
+  } else if (entry.isDirectory())
+    gitDir = realpathSync12(entryPath);
+  else if (entry.isFile() && entry.size <= 4096) {
+    const pointer = parseGitFile(entryPath);
+    if (pointer === undefined)
+      return;
+    gitDir = realpathSync12(pointer);
+    gitfile = true;
+  } else
+    return;
+  return { gitDir, workTree: workTreeOf(gitDir, dir, gitfile) };
+}
+function ownsDirectory(layout, dir) {
+  try {
+    return layout.workTree === realpathSync12(dir);
+  } catch {
+    return false;
+  }
+}
+function resolveLayout(start) {
+  let dir = realpathSync12(start);
+  for (;; ) {
+    const layout = layoutAt(dir);
+    if (layout !== undefined && ownsDirectory(layout, dir))
+      return layout;
+    const parent = dirname22(dir);
+    if (parent === dir)
+      return;
+    dir = parent;
+  }
+}
+function repoCommonDir(gitDir) {
+  try {
+    const text5 = readFileSync32(join45(gitDir, "commondir"), "utf8").trim();
+    if (text5 !== "")
+      return realpathSync12(isAbsolute13(text5) ? text5 : resolve15(gitDir, text5));
+  } catch {}
+  return gitDir;
+}
+function isAbsorbedGitlink(context, gitDir) {
+  if (context.gitDir === undefined)
+    return false;
+  const modules = join45(repoCommonDir(context.gitDir), "modules");
+  return gitDir === modules || relativeInsideRoot(relative11(modules, gitDir));
+}
+function selectedRepo(context, project, extraEnv) {
+  if (extraEnv?.GIT_DIR !== undefined && extraEnv.GIT_DIR !== "")
+    return;
+  if (context.gitDir === undefined || context.workTree === undefined)
+    return;
+  let dir;
+  try {
+    dir = realpathSync12(project);
+  } catch {
+    return;
+  }
+  const inside = dir === context.workTree || relativeInsideRoot(relative11(context.workTree, dir));
+  if (!inside) {
+    const own = layoutAt(dir);
+    if (own !== undefined && ownsDirectory(own, dir))
+      return own;
+    return;
+  }
+  if (dir !== context.workTree) {
+    const own = layoutAt(dir);
+    if (own !== undefined && own.gitDir !== context.gitDir) {
+      let gitDirectory = false;
+      try {
+        gitDirectory = lstatSync6(join45(dir, ".git")).isDirectory();
+      } catch {
+        gitDirectory = false;
+      }
+      if (gitDirectory || isAbsorbedGitlink(context, own.gitDir))
+        return own;
     }
   }
+  return { gitDir: context.gitDir, workTree: context.workTree };
+}
+function repoPin(context, project, extraEnv) {
+  const repo = selectedRepo(context, project, extraEnv);
+  if (repo === undefined)
+    return [];
+  return ["--git-dir", repo.gitDir, "--work-tree", repo.workTree];
+}
+function pinnedGitKind(workTree) {
   try {
-    const rel = relative10(workerRoot, realpathSync11(existing));
-    return rel === "" || !rel.startsWith("..") && !isAbsolute12(rel);
+    const entry = lstatSync6(join45(workTree, ".git"));
+    if (entry.isSymbolicLink())
+      return "symlink";
+    if (entry.isDirectory())
+      return "directory";
+    if (entry.isFile())
+      return "file";
+    return "missing";
   } catch {
-    return true;
+    return "missing";
   }
 }
-function workerFreePath(path, workerRoot) {
-  const entries = (path ?? "").split(delimiter4).filter((entry) => entry.length > 0 && !workerControlledPath(entry, workerRoot));
-  return entries.length > 0 ? entries.join(delimiter4) : "/usr/bin:/bin";
+function assertPinnedLayout(context) {
+  if (context.gitDir === undefined || context.workTree === undefined)
+    throw new Error("git layout is not pinned");
+  const now = layoutAt(context.workerRoot);
+  if (now !== undefined && now.gitDir !== context.gitDir)
+    throw new Error(LAYOUT_CHANGED);
+  try {
+    const entry = lstatSync6(join45(context.workTree, ".git"));
+    if ((entry.isSymbolicLink() || entry.isFile()) && context.pinnedGitKind === "directory")
+      throw new Error(LAYOUT_CHANGED);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message === LAYOUT_CHANGED)
+      throw cause;
+  }
 }
-
-// src/runner/snapshot.ts
 function resolveRunnerGit(workerRoot) {
   const path = workerFreePath(process.env["PATH"], workerRoot);
+  const layout = resolveLayout(workerRoot);
   for (const directory of path.split(delimiter5)) {
     const candidate = join45(directory, "git");
     try {
       accessSync(candidate, constants.X_OK);
       const binary = realpathSync12(candidate);
       if (!workerControlledPath(binary, workerRoot))
-        return { binary, path, workerRoot, home: "/dev/null" };
+        return {
+          binary,
+          path,
+          workerRoot,
+          home: "/dev/null",
+          gitDir: layout?.gitDir,
+          workTree: layout?.workTree,
+          pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree)
+        };
     } catch {}
   }
   throw new Error("runner cannot find a trusted git executable outside the worker root");
@@ -42347,25 +42572,8 @@ function resolveRunnerGit(workerRoot) {
 function failedGit(stderr) {
   return { code: -1, stdout: new Uint8Array, text: "", stderr };
 }
-function isolatedGitArgv(project, args) {
-  return [
-    "-c",
-    `safe.directory=${realpathSync12(project)}`,
-    "-c",
-    "core.fsmonitor=false",
-    "-c",
-    "core.hooksPath=/dev/null",
-    "-c",
-    "core.excludesFile=/dev/null",
-    "-c",
-    "core.commitGraph=false",
-    "-c",
-    "advice.graftFileDeprecated=false",
-    ...args
-  ];
-}
-function gitProcess(context, project, args, timeoutMs = 1e4, input) {
-  const env = {
+function gitEnv2(context) {
+  return {
     PATH: context.path,
     HOME: context.home,
     XDG_CONFIG_HOME: context.home,
@@ -42376,9 +42584,69 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
     GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C"
   };
-  const proc = spawnSync5(context.binary, isolatedGitArgv(project, args), {
+}
+function isolationArgs(project) {
+  return [
+    "-c",
+    `safe.directory=${realpathSync12(project)}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.excludesFile=/dev/null",
+    "-c",
+    "diff.relative=false",
+    "-c",
+    "core.commitGraph=false",
+    "-c",
+    "advice.graftFileDeprecated=false",
+    "-c",
+    "merge.default=",
+    "-c",
+    "merge.renormalize=false"
+  ];
+}
+function isolatedGitArgv(project, args) {
+  return [...isolationArgs(project), ...args];
+}
+var emptyTrees = new Map;
+function emptyTreeId(context, project, timeoutMs) {
+  const key = realpathSync12(project);
+  const cached = emptyTrees.get(key);
+  if (cached !== undefined)
+    return { code: 0, stdout: new Uint8Array, text: cached, stderr: "" };
+  const proc = spawnSync5(context.binary, [...repoPin(context, project), ...isolatedGitArgv(project, ["hash-object", "-t", "tree", "--stdin"])], {
     cwd: project,
-    env,
+    env: gitEnv2(context),
+    input: new Uint8Array,
+    maxBuffer: 1 << 30,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL"
+  });
+  if (proc.error !== undefined) {
+    if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
+      return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
+    return failedGit(`cannot run isolated git: ${proc.error.message}`);
+  }
+  const stdout = proc.stdout ?? new Uint8Array;
+  const text5 = new TextDecoder().decode(stdout).trim();
+  if ((proc.status ?? -1) !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(text5))
+    return failedGit(`cannot resolve empty tree: ${(proc.stderr ?? "").toString().trim() || text5}`);
+  emptyTrees.set(key, text5);
+  return { code: 0, stdout, text: text5, stderr: "" };
+}
+function gitProcess(context, project, args, timeoutMs = 1e4, input, extraEnv, attrTree) {
+  let tree = attrTree;
+  if (tree === undefined) {
+    const empty = emptyTreeId(context, project, timeoutMs);
+    if (empty.code !== 0)
+      return empty;
+    tree = empty.text;
+  }
+  const proc = spawnSync5(context.binary, [...repoPin(context, project, extraEnv), ...isolatedGitArgv(project, ["-c", `attr.tree=${tree}`, ...args])], {
+    cwd: project,
+    env: { ...gitEnv2(context), ...extraEnv },
     input,
     maxBuffer: 1 << 30,
     timeout: timeoutMs,
@@ -42398,20 +42666,29 @@ function gitProcess(context, project, args, timeoutMs = 1e4, input) {
   };
 }
 function checkGitControls(context, project) {
+  const pinned = selectedRepo(context, project);
   const entryPath = join45(project, ".git");
   let paths2;
   try {
-    const entry = lstatSync6(entryPath);
-    if (entry.isDirectory())
-      paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
-    else if (entry.isFile() && entry.size <= 4096) {
-      const pointer = /^gitdir: (.+)$/.exec(readFileSync32(entryPath, "utf8").trim())?.[1];
-      if (pointer === undefined)
-        return failedGit("runner git directory pointer is invalid");
-      const gitDir = isAbsolute13(pointer) ? pointer : resolve15(project, pointer);
-      paths2 = [join45(gitDir, "index"), join45(gitDir, "HEAD")];
-    } else
-      return failedGit("runner git directory entry is not regular");
+    if (pinned !== undefined)
+      paths2 = [join45(pinned.gitDir, "index"), join45(pinned.gitDir, "HEAD")];
+    else {
+      const entry = lstatSync6(entryPath);
+      if (entry.isDirectory())
+        paths2 = [join45(entryPath, "index"), join45(entryPath, "HEAD")];
+      else if (entry.isFile() && entry.size <= 4096) {
+        const pointer = parseGitFile(entryPath);
+        if (pointer === undefined)
+          return failedGit("runner git directory pointer is invalid");
+        paths2 = [join45(pointer, "index"), join45(pointer, "HEAD")];
+      } else {
+        const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2000);
+        if (controls.code !== 0)
+          return controls;
+        paths2 = controls.text.split(`
+`);
+      }
+    }
   } catch (cause) {
     if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
       return failedGit("runner cannot inspect git directory entry");
@@ -42445,39 +42722,209 @@ function runnerGit(context, project, args, input) {
   return gitProcess(context, project, args, 1e4, input);
 }
 function patchIdentity(context, project, baseRef, head) {
+  assertPinnedLayout(context);
   const base2 = runnerGit(context, project, ["merge-base", baseRef, head]);
   if (base2.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(base2.text))
     throw new Error(`cannot resolve verdict base: ${base2.stderr || base2.text}`);
-  const diff = runnerGit(context, project, ["diff", "--binary", base2.text, head, "--"]);
+  const diff = runnerGit(context, project, [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-relative",
+    "--binary",
+    "--ignore-submodules=none",
+    "--submodule=short",
+    base2.text,
+    head,
+    "--"
+  ]);
   if (diff.code !== 0)
     throw new Error(`cannot read committed patch: ${diff.stderr}`);
   if (diff.stdout.length === 0)
     return null;
   const patch = gitProcess(context, project, ["patch-id", "--stable"], 1e4, diff.stdout);
   const patchId = patch.text.split(" ")[0];
-  if (patch.code !== 0 || patchId === undefined || !/^[0-9a-f]{40}$/.test(patchId))
+  if (patch.code !== 0 || patchId === undefined || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(patchId))
     throw new Error(`cannot compute stable patch-id: ${patch.stderr || patch.text}`);
   return patchId;
 }
 function ciConfigDrift(context, project, oldBase, newBase) {
   if (oldBase === newBase)
     return false;
-  const changed = runnerGit(context, project, ["diff", "--name-only", "-z", oldBase, newBase, "--"]);
+  assertPinnedLayout(context);
+  const converterGuard = ["--no-ext-diff", "--no-textconv", "--no-relative"];
+  const changed = runnerGit(context, project, [
+    "diff",
+    ...converterGuard,
+    "--ignore-submodules=none",
+    "--submodule=short",
+    "--no-renames",
+    "--name-only",
+    "-z",
+    oldBase,
+    newBase,
+    "--"
+  ]);
   if (changed.code !== 0)
     throw new Error(`cannot compare CI configuration: ${changed.stderr}`);
-  return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path.startsWith(".github/workflows/") || path.startsWith(".github/actions/") || path.startsWith(".circleci/") || path.startsWith(".buildkite/") || [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"].includes(path));
+  const converters = runnerGit(context, project, [
+    "diff",
+    ...converterGuard,
+    "--ignore-submodules=none",
+    "--submodule=short",
+    "--exit-code",
+    oldBase,
+    newBase,
+    "--"
+  ]);
+  if (converters.code > 1)
+    throw new Error(`cannot compare CI configuration: ${converters.stderr}`);
+  const ciRoots = [".github/workflows", ".github/actions", ".circleci", ".buildkite"];
+  const ciFiles = [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"];
+  return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path !== "" && (ciFiles.includes(path) || ciRoots.some((root) => path === root || path.startsWith(`${root}/`) || root.startsWith(`${path}/`))));
 }
 function mergeTreeClean(context, project, baseRef, head) {
-  const result2 = runnerGit(context, project, ["merge-tree", "--write-tree", baseRef, head]);
-  if (result2.code > 1)
-    throw new Error(`cannot inspect merge tree: ${result2.stderr}`);
-  return result2.code === 0;
+  assertPinnedLayout(context);
+  const left = resolvedRevision(context, project, baseRef);
+  const right = resolvedRevision(context, project, head);
+  const mergeBase = runnerGit(context, project, ["merge-base", left, right]);
+  if (mergeBase.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(mergeBase.text))
+    throw new Error(`cannot inspect merge tree: ${mergeBase.stderr || mergeBase.text}`);
+  const attrTree = runnerGit(context, project, ["rev-parse", `${mergeBase.text}^{tree}`]);
+  if (attrTree.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(attrTree.text))
+    throw new Error(`cannot inspect merge tree: ${attrTree.stderr || attrTree.text}`);
+  const objectFormat = runnerGit(context, project, ["rev-parse", "--show-object-format"]);
+  if (objectFormat.code !== 0 || objectFormat.text !== "sha1" && objectFormat.text !== "sha256")
+    throw new Error(`cannot inspect merge tree: ${objectFormat.stderr || objectFormat.text}`);
+  const objects2 = runnerGit(context, project, ["rev-parse", "--git-path", "objects"]);
+  if (objects2.code !== 0 || objects2.text === "")
+    throw new Error(`cannot inspect merge tree: ${objects2.stderr || objects2.text}`);
+  let objectDir;
+  try {
+    objectDir = realpathSync12(isAbsolute13(objects2.text) ? objects2.text : resolve15(project, objects2.text));
+  } catch {
+    throw new Error("cannot inspect merge tree: cannot resolve object directory");
+  }
+  const scratch = mkdtempSync3(join45(context.home, "ak-merge-"));
+  try {
+    const init = spawnSync5(context.binary, [...isolationArgs(scratch), "init", "--bare", "-q", `--object-format=${objectFormat.text}`], {
+      cwd: scratch,
+      env: gitEnv2(context),
+      timeout: 1e4,
+      killSignal: "SIGKILL"
+    });
+    if (init.error !== undefined) {
+      if ("code" in init.error && init.error.code === "ETIMEDOUT")
+        throw new Error("cannot inspect merge tree: runner git timed out after 10 seconds");
+      throw new Error(`cannot inspect merge tree: ${init.error.message}`);
+    }
+    if ((init.status ?? -1) !== 0)
+      throw new Error(`cannot inspect merge tree: ${(init.stderr ?? "").toString().trim() || "init failed"}`);
+    const extraEnv = {
+      GIT_DIR: scratch,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir
+    };
+    const inspect = (tree) => gitProcess(context, project, ["merge-tree", "--write-tree", left, right], 1e4, undefined, extraEnv, tree);
+    const mergeBaseRun = inspect(attrTree.text);
+    if (mergeBaseRun.code > 1)
+      throw new Error(`cannot inspect merge tree: ${mergeBaseRun.stderr}`);
+    if (mergeBaseRun.code !== 0)
+      return false;
+    const emptyRun = inspect();
+    if (emptyRun.code > 1)
+      throw new Error(`cannot inspect merge tree: ${emptyRun.stderr}`);
+    return emptyRun.code === 0;
+  } finally {
+    rmSync14(scratch, { recursive: true, force: true });
+  }
+}
+function gitBlobId(bytes, blob) {
+  const algorithm = blob.length === 64 ? "sha256" : "sha1";
+  return createHash11(algorithm).update(`blob ${bytes.length}\x00`).update(bytes).digest("hex");
+}
+function escapesWorktree(path, rel) {
+  return path === "" || isAbsolute13(path) || rel === "" || !relativeInsideRoot(rel);
 }
 function cleanCommittedTree(context, project) {
-  const status2 = runnerGit(context, project, ["status", "--porcelain", "-z", "--untracked-files=all"]);
-  if (status2.code !== 0)
-    throw new Error(`cannot inspect committed worktree: ${status2.stderr}`);
-  return status2.stdout.length === 0;
+  assertPinnedLayout(context);
+  return treeIsClean(context, project, new Set);
+}
+function treeIsClean(context, project, seen) {
+  let root;
+  try {
+    root = realpathSync12(project);
+  } catch {
+    return false;
+  }
+  if (seen.has(root))
+    return true;
+  seen.add(root);
+  const untracked = runnerGit(context, project, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (untracked.code !== 0)
+    throw new Error(`cannot inspect committed worktree: ${untracked.stderr}`);
+  if (untracked.stdout.length > 0)
+    return false;
+  const cached = runnerGit(context, project, ["diff-index", "--cached", "--quiet", "HEAD", "--"]);
+  if (cached.code > 1)
+    throw new Error(`cannot inspect committed worktree: ${cached.stderr}`);
+  if (cached.code !== 0)
+    return false;
+  const tracked = runnerGit(context, project, ["ls-files", "-s", "-z"]);
+  if (tracked.code !== 0)
+    throw new Error(`cannot inspect committed worktree: ${tracked.stderr}`);
+  for (const row of new TextDecoder().decode(tracked.stdout).split("\x00")) {
+    if (row === "")
+      continue;
+    const tab = row.indexOf("\t");
+    if (tab < 0)
+      throw new Error("cannot inspect committed worktree: invalid index entry");
+    const [mode, blob, stage2] = row.slice(0, tab).split(" ");
+    const path = row.slice(tab + 1);
+    if (mode === undefined || blob === undefined || stage2 === undefined || path === "")
+      throw new Error("cannot inspect committed worktree: invalid index entry");
+    if (stage2 !== "0")
+      return false;
+    const at = resolve15(project, path);
+    const rel = relative11(root, at);
+    if (escapesWorktree(path, rel))
+      return false;
+    try {
+      const stat = lstatSync6(at);
+      if (mode === "160000") {
+        if (!stat.isDirectory())
+          return false;
+        const head = runnerGit(context, at, ["rev-parse", "--verify", "HEAD"]);
+        if (head.code !== 0 || head.text !== blob)
+          return false;
+        if (!treeIsClean(context, at, seen))
+          return false;
+        continue;
+      }
+      let bytes;
+      if (mode === "120000") {
+        if (!stat.isSymbolicLink())
+          return false;
+        bytes = Buffer.from(readlinkSync3(at));
+      } else if (mode === "100644" || mode === "100755") {
+        const executable = (stat.mode & 73) !== 0;
+        if (!stat.isFile() || executable !== (mode === "100755"))
+          return false;
+        bytes = readFileSync32(at);
+      } else
+        return false;
+      if (gitBlobId(bytes, blob) !== blob)
+        return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+function resolvedRevision(context, project, ref) {
+  const result2 = runnerGit(context, project, ["rev-parse", "--verify", ref]);
+  if (result2.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(result2.text))
+    throw new Error(`cannot resolve revision ${ref}: ${result2.stderr || result2.text}`);
+  return result2.text;
 }
 function rawFile(context, project, path) {
   try {
@@ -42546,7 +42993,7 @@ function treeHash(context, project, ignoreUntrackedDirs) {
   for (const path of [...paths2.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
     const at = resolve15(project, path);
     const rel = relative11(root, at);
-    if (path === "" || isAbsolute13(path) || rel === "" || rel.startsWith("..") || isAbsolute13(rel))
+    if (escapesWorktree(path, rel))
       return "runner index contains a path outside the worker root";
     digest.update(JSON.stringify([path, paths2.get(path)?.toSorted(), rawFile(context, project, path)]));
     digest.update(`
@@ -42627,15 +43074,14 @@ var ACTION_FOR = new Map([
   ["ship-pr", "open-pr"]
 ]);
 function inside(path, root) {
-  const rel = relative12(root, path);
-  return rel === "" || !rel.startsWith("..") && !isAbsolute14(rel);
+  return relativeInsideRoot(relative12(root, path));
 }
 function canonicalFuturePath(path) {
   let existing = resolve16(path);
   const missing2 = [];
   while (!existsSync39(existing)) {
-    missing2.unshift(basename20(existing));
-    existing = dirname22(existing);
+    missing2.unshift(basename21(existing));
+    existing = dirname23(existing);
   }
   return join46(realpathSync13(existing), ...missing2);
 }
@@ -43443,6 +43889,8 @@ class Runner {
     const run2 = this.load(id);
     if (STOPPED.has(run2.run_state))
       throw new Error("run is stopped; revision cannot advance");
+    if (run2.verdict !== undefined)
+      cleanCommittedTree(this.gitContext, this.workerRoot);
     const observed = this.observedSnapshot();
     if (observed !== null && observed.revision !== revision)
       throw new Error("revision differs from worker checkout");
@@ -44235,7 +44683,7 @@ function readCouncilConfig(path) {
 // src/council/outbound.ts
 init_secrets();
 import { realpathSync as realpathSync15 } from "fs";
-import { basename as basename21 } from "path";
+import { basename as basename22 } from "path";
 var DEFAULT_MAX_BYTES = 262144;
 var BUILT_IN_DENY = [
   ".env",
@@ -44269,7 +44717,7 @@ function segmentPattern(entry) {
 }
 function deniedSegment(path) {
   const segments = path.split(/[\\/]+/).filter((segment) => segment.length > 0);
-  const name = basename21(path);
+  const name = basename22(path);
   for (const entry of BUILT_IN_DENY) {
     const pattern = segmentPattern(entry);
     if (pattern.test(name) || segments.some((segment) => pattern.test(segment)))
@@ -44388,18 +44836,16 @@ function chainFailures(seat2, attempts) {
 
 // src/runner/token.ts
 import { readFileSync as readFileSync35, realpathSync as realpathSync16, statSync as statSync19 } from "fs";
-import { dirname as dirname23, isAbsolute as isAbsolute15, relative as relative13 } from "path";
+import { dirname as dirname24, relative as relative13 } from "path";
 function readAdminToken(path, forbiddenRoot) {
   const at = realpathSync16(path);
   const root = realpathSync16(forbiddenRoot);
-  const rel = relative13(root, at);
-  const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute15(rel);
-  const probe = gitProcess(resolveRunnerGit(root), dirname23(at), [
+  const probe = gitProcess(resolveRunnerGit(root), dirname24(at), [
     "rev-parse",
     "--is-inside-work-tree",
     "--is-inside-git-dir"
   ]);
-  if (underRoot || probe.code === 0 && probe.text.includes("true"))
+  if (relativeInsideRoot(relative13(root, at)) || probe.code === 0 && probe.text.includes("true"))
     throw new Error("runner admin token file must live outside the Firstmate home, the worker root and any git checkout");
   if ((statSync19(at).mode & 63) !== 0)
     throw new Error("runner admin token file must be mode 0600");
@@ -44716,7 +45162,7 @@ async function serve(argv, io) {
   const workerRoot = realpathSync17(worker);
   const socketPath = resolve17(socket);
   const relativeSocket = relative14(workerRoot, socketPath);
-  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute16(relativeSocket))
+  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute15(relativeSocket))
     throw new Error("runner socket is inside worker root");
   if (existsSync40(socketPath)) {
     const live = await new Promise((done, fail2) => {
@@ -44737,9 +45183,9 @@ async function serve(argv, io) {
     if (existsSync40(socketPath))
       unlinkSync2(socketPath);
   }
-  const socketParent = realpathSync17(dirname24(socketPath));
+  const socketParent = realpathSync17(dirname25(socketPath));
   const relativeParent = relative14(workerRoot, socketParent);
-  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute16(relativeParent))
+  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute15(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
   const entry = process.argv[1];
   const kitRoot = kitRootFlag ?? (entry === undefined ? resolve17(import.meta.dir, "..", "..") : resolve17(realpathSync17(entry), "..", ".."));
@@ -45132,9 +45578,9 @@ async function runRunner(argv, io) {
 // src/council/cli.ts
 var import__202013 = __toESM(require_2020(), 1);
 import { createHash as createHash13 } from "crypto";
-import { mkdtempSync as mkdtempSync3, readFileSync as readFileSync37, rmSync as rmSync14, writeFileSync as writeFileSync17 } from "fs";
+import { mkdtempSync as mkdtempSync4, readFileSync as readFileSync37, rmSync as rmSync15, writeFileSync as writeFileSync17 } from "fs";
 import { tmpdir as tmpdir3 } from "os";
-import { basename as basename22, join as join47 } from "path";
+import { basename as basename23, join as join47 } from "path";
 var USAGE4 = "usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]";
 var isCouncilCard = new import__202013.default({ strict: false }).compile({
   type: "object",
@@ -45230,7 +45676,7 @@ async function run2(args, io) {
   const card = cardValue;
   if (!card.options.includes(card.approve))
     throw new Error("the card's approving option is not one of its options");
-  const context = args.context.map((path) => ({ path, name: basename22(path), text: readFileSync37(path, "utf8") }));
+  const context = args.context.map((path) => ({ path, name: basename23(path), text: readFileSync37(path, "utf8") }));
   const items2 = [
     { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}
@@ -45245,12 +45691,12 @@ ${entry.text}` }))
   const seats = [];
   let decided = null;
   if (refusals.length === 0) {
-    const scratch = mkdtempSync3(join47(tmpdir3(), "ak-council-"));
+    const scratch = mkdtempSync4(join47(tmpdir3(), "ak-council-"));
     const live = new Set;
     const stopOn = (code) => () => {
       for (const pid of live)
         killGroup(pid);
-      rmSync14(scratch, { recursive: true, force: true });
+      rmSync15(scratch, { recursive: true, force: true });
       process.exit(code);
     };
     const stops = [
@@ -45276,7 +45722,7 @@ ${entry.text}` }))
     } finally {
       for (const [signal, stop] of stops)
         process.off(signal, stop);
-      rmSync14(scratch, { recursive: true, force: true });
+      rmSync15(scratch, { recursive: true, force: true });
     }
   }
   const disclosed = decided === null ? { card: { id: card.id } } : {
@@ -46041,7 +46487,7 @@ var import__202014 = __toESM(require_2020(), 1);
 var import_ajv_formats5 = __toESM(require_dist(), 1);
 import { createHash as createHash14 } from "crypto";
 import { appendFileSync as appendFileSync4, existsSync as existsSync41, readFileSync as readFileSync38, realpathSync as realpathSync18, statSync as statSync20 } from "fs";
-import { join as join48, sep as sep8 } from "path";
+import { join as join48, sep as sep9 } from "path";
 // schemas/review-ledger.schema.json
 var review_ledger_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -46600,7 +47046,7 @@ function snapshotText(snapshot, file) {
   if (!existsSync41(target))
     return null;
   const real = realpathSync18(target);
-  if (!real.startsWith(`${root}${sep8}`))
+  if (!real.startsWith(`${root}${sep9}`))
     throw new Error(`${file} resolves outside the snapshot`);
   return statSync20(real).isFile() ? readFileSync38(real, "utf8") : null;
 }
@@ -47317,7 +47763,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 // src/semantic-lint/input.ts
 init_proc();
 import { lstatSync as lstatSync8, readFileSync as readFileSync42, realpathSync as realpathSync19 } from "fs";
-import { isAbsolute as isAbsolute17, join as join51, relative as relative15, resolve as resolve18 } from "path";
+import { isAbsolute as isAbsolute16, join as join51, relative as relative15, resolve as resolve18 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
 var TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
@@ -47356,7 +47802,7 @@ function collectInput(cwd) {
       try {
         const stat = lstatSync8(absolute);
         const rel = relative15(root, realpathSync19(absolute));
-        if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute17(rel) || !stat.isFile())
+        if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute16(rel) || !stat.isFile())
           reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
           reason2 = "size-limit";
@@ -47972,7 +48418,7 @@ function checkLinearis(root, backend) {
 async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute18(root)) {
+    if (isAbsolute17(root)) {
       const value = parseJson3(readFileSync44(join55(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
@@ -47986,7 +48432,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
       return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return { value: null, failure: { reason: isAbsolute18(root) ? "missing" : "network" } };
+    return { value: null, failure: { reason: isAbsolute17(root) ? "missing" : "network" } };
   }
 }
 function checkSemanticLint(keyFile, flag3) {
@@ -48068,11 +48514,11 @@ function checkMaintenanceCommand(current2, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename23(path) !== "ak")
+  if (!path || basename24(path) !== "ak")
     return null;
   try {
     const current2 = readFileSync44(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync44(join55(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const published = isAbsolute17(ROOT) ? readFileSync44(join55(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
