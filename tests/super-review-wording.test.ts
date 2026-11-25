@@ -9,9 +9,10 @@
  * parsed with CommonMark (parser only). Raw HTML is refused except a node that
  * is exactly one HTML comment. A heading may contain only text, code, emphasis,
  * strong, softbreak and linebreak. A heading with a link, image or html child
- * is refused. A heading whose text, or any softbreak or linebreak-separated
- * segment, equals `workflow` after NFKC, stripping `\p{Cf}` and
- * `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused.
+ * is refused. A heading whose text, or any segment separated by a softbreak, a
+ * linebreak, or any line terminator, equals `workflow` after NFKC, stripping
+ * `\p{Cf}` and `\p{Default_Ignorable_Code_Point}`, trim and lowercase is
+ * refused.
  * A heading whose text contains a bidi control (U+200E, U+200F, U+202A-U+202E,
  * U+2066-U+2069) is refused.
  * Homoglyph confusables, U+2800 braille blank, GFM strikethrough, and tables
@@ -51,7 +52,21 @@ function firstSentinelAt(raw: string): number {
 
 const parser = new Parser();
 const HEADING_OK = new Set(["heading", "text", "code", "emph", "strong", "softbreak", "linebreak"]);
-const BIDI = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+const LINE_TERMINATOR = /[\n\r\v\f\u0085\u2028\u2029]/;
+const BIDI_CHARS = [
+  "\u200E",
+  "\u200F",
+  "\u202A",
+  "\u202B",
+  "\u202C",
+  "\u202D",
+  "\u202E",
+  "\u2066",
+  "\u2067",
+  "\u2068",
+  "\u2069",
+];
+const BIDI = new RegExp(`[${BIDI_CHARS.join("")}]`, "u");
 
 function fold(text: string): string {
   return text
@@ -81,7 +96,11 @@ function headingForbidden(node: Node): boolean {
       if (event.node.type === "softbreak" || event.node.type === "linebreak") {
         segments.push("");
       } else if (event.node.type === "text" || event.node.type === "code") {
-        segments[segments.length - 1] += event.node.literal ?? "";
+        const parts = (event.node.literal ?? "").split(LINE_TERMINATOR);
+        segments[segments.length - 1] += parts[0] ?? "";
+        for (const part of parts.slice(1)) {
+          segments.push(part);
+        }
       }
     }
     event = walker.next();
@@ -194,7 +213,14 @@ const RED_FIXTURES: string[] = [
   "Work\nflow\n--------",
   "Workflow\nTail\n--------",
   "foo\nWorkflow\nbar\n--------",
-  "## \u202EwolfkroW",
+  "## Workflow\u2028Tail",
+  "Workflow\u2028Tail\n--------",
+  "## Workflow\u2029Tail",
+  "Workflow\u2029Tail\n--------",
+  "## Work\u2028flow",
+  "Work\u2028flow\n--------",
+  "## Workflow&#10;Tail",
+  ...BIDI_CHARS.map((c) => `## ${c}x`),
 ];
 
 const GREEN_FIXTURES: string[] = [

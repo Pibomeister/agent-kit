@@ -334,9 +334,10 @@ The first follow-up above is closed this way:
   parsed with CommonMark (parser only). Raw HTML is refused except a node that
   is exactly one HTML comment. A heading may contain only text, code, emphasis,
   strong, softbreak and linebreak. A heading with a link, image or html child
-  is refused. A heading whose text, or any softbreak or linebreak-separated
-  segment, equals `workflow` after NFKC, stripping `\p{Cf}` and
-  `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused.
+  is refused. A heading whose text, or any segment separated by a softbreak, a
+  linebreak, or any line terminator, equals `workflow` after NFKC, stripping
+  `\p{Cf}` and `\p{Default_Ignorable_Code_Point}`, trim and lowercase is
+  refused.
   A heading whose text contains a bidi control (U+200E, U+200F, U+202A-U+202E,
   U+2066-U+2069) is refused.
   Homoglyph confusables, U+2800 braille blank, GFM strikethrough, and tables
