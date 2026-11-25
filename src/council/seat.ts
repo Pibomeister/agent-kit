@@ -6,6 +6,7 @@
  * the card; the first valid answer ends it.
  */
 
+import { failClosedAdversarialVerdict, parseAdversarialVerdict } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
 export interface ChildOutput {
@@ -92,6 +93,7 @@ export async function launchSeat(
   payload: string,
   options: readonly string[],
   spawn: Spawn,
+  approve: string,
 ): Promise<SeatResult> {
   const attempts: Attempt[] = [];
   for (const launcher of seat.chain) {
@@ -101,10 +103,30 @@ export async function launchSeat(
       const child = await spawn(launcher, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
-      const value: unknown = JSON.parse(child.stdout.toString());
-      if (!isCouncilAnswer(value)) throw new Error("launcher returned an invalid answer");
-      if (!options.includes(value.choice)) throw new Error(`launcher chose ${value.choice}, which is not an option`);
-      return { ok: true, launcher, answer: value, attempts };
+      try {
+        const value: unknown = JSON.parse(child.stdout.toString());
+        if (!isCouncilAnswer(value)) throw new Error("launcher returned an invalid answer");
+        if (!options.includes(value.choice)) throw new Error(`launcher chose ${value.choice}, which is not an option`);
+        return { ok: true, launcher, answer: value, attempts };
+      } catch (cause) {
+        if (cause instanceof SyntaxError) {
+          const text = child.stdout.toString();
+          const verdict = failClosedAdversarialVerdict(text);
+          if (
+            verdict === "REJECT" &&
+            parseAdversarialVerdict(text).ok &&
+            options.includes(verdict) &&
+            verdict !== approve
+          )
+            return {
+              ok: true,
+              launcher,
+              answer: { choice: verdict, rationale: "structured final verdict field" },
+              attempts,
+            };
+        }
+        throw cause instanceof Error ? cause : new Error("launcher returned an invalid answer");
+      }
     } catch (cause) {
       attempt.error = reason(cause);
     }

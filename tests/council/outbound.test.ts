@@ -96,10 +96,16 @@ describe("council seats", () => {
 
   test("bounded retry does not replace an unfavorable seat answer", async () => {
     const launched: string[] = [];
-    const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
-      launched.push(launcher.actor);
-      return Promise.resolve(ok(launcher.actor === "v1" ? "no" : "yes"));
-    });
+    const result = await launchSeat(
+      seat,
+      "{}",
+      ["yes", "no"],
+      (launcher) => {
+        launched.push(launcher.actor);
+        return Promise.resolve(ok(launcher.actor === "v1" ? "no" : "yes"));
+      },
+      "yes",
+    );
     expect(launched).toEqual(["v1"]);
     expect(result).toMatchObject({ ok: true, launcher: { actor: "v1" }, answer: { choice: "no" } });
     expect(result.ok ? result.attempts : []).toEqual([{ actor: "v1", model_requested: "unspecified" }]);
@@ -108,17 +114,23 @@ describe("council seats", () => {
   test("a seat whose descendant holds the pipes times out on time and the substitute answers", async () => {
     const live = new Set<number>();
     const started = Date.now();
-    const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
-      if (launcher.actor === "v2") return Promise.resolve(ok("yes"));
-      const hang =
-        "const keeper=Number(process.argv[1]);const deadline=Date.now()+30000;setInterval(()=>{if(Date.now()>deadline)process.exit(0);try{process.kill(keeper,0)}catch{process.exit(0)}},200)";
-      const child = Bun.spawn(["sh", "-c", `node -e ${JSON.stringify(hang)} ${process.pid} & wait`], {
-        stdout: "pipe",
-        stderr: "pipe",
-        detached: true,
-      });
-      return collectDetached(child, live, 500, "launcher");
-    });
+    const result = await launchSeat(
+      seat,
+      "{}",
+      ["yes", "no"],
+      (launcher) => {
+        if (launcher.actor === "v2") return Promise.resolve(ok("yes"));
+        const hang =
+          "const keeper=Number(process.argv[1]);const deadline=Date.now()+30000;setInterval(()=>{if(Date.now()>deadline)process.exit(0);try{process.kill(keeper,0)}catch{process.exit(0)}},200)";
+        const child = Bun.spawn(["sh", "-c", `node -e ${JSON.stringify(hang)} ${process.pid} & wait`], {
+          stdout: "pipe",
+          stderr: "pipe",
+          detached: true,
+        });
+        return collectDetached(child, live, 500, "launcher");
+      },
+      "yes",
+    );
     expect(Date.now() - started).toBeLessThan(20_000);
     expect(live.size).toBe(0);
     expect(result).toMatchObject({
@@ -129,8 +141,12 @@ describe("council seats", () => {
   });
 
   test("a choice outside the options moves to the substitute", async () => {
-    const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) =>
-      Promise.resolve(ok(launcher.actor === "v1" ? "maybe" : "yes")),
+    const result = await launchSeat(
+      seat,
+      "{}",
+      ["yes", "no"],
+      (launcher) => Promise.resolve(ok(launcher.actor === "v1" ? "maybe" : "yes")),
+      "yes",
     );
     expect(result).toMatchObject({ ok: true, launcher: { actor: "v2" }, attempts: [{ actor: "v1" }, { actor: "v2" }] });
     expect(JSON.stringify(result)).toContain("not an option");
@@ -151,10 +167,16 @@ describe("council seats", () => {
     };
     for (const [kind, first] of Object.entries(fail)) {
       const launched: string[] = [];
-      const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
-        launched.push(launcher.actor);
-        return Promise.resolve(launcher.actor === "v1" ? first : ok("yes"));
-      });
+      const result = await launchSeat(
+        seat,
+        "{}",
+        ["yes", "no"],
+        (launcher) => {
+          launched.push(launcher.actor);
+          return Promise.resolve(launcher.actor === "v1" ? first : ok("yes"));
+        },
+        "yes",
+      );
       expect(launched, kind).toEqual(["v1", "v2"]);
       expect(result, kind).toMatchObject({
         ok: true,
@@ -176,14 +198,20 @@ describe("council seats", () => {
       ],
     };
     const launched: string[] = [];
-    const result = await launchSeat(long, "{}", ["yes", "no"], (launcher) => {
-      launched.push(launcher.actor);
-      return Promise.resolve({
-        exitCode: 1,
-        stdout: Buffer.from(""),
-        stderr: Buffer.from("transport"),
-      });
-    });
+    const result = await launchSeat(
+      long,
+      "{}",
+      ["yes", "no"],
+      (launcher) => {
+        launched.push(launcher.actor);
+        return Promise.resolve({
+          exitCode: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("transport"),
+        });
+      },
+      "yes",
+    );
     expect(launched).toEqual(["v1", "v2", "v3"]);
     expect(result).toMatchObject({
       ok: false,

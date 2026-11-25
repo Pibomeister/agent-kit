@@ -197,12 +197,14 @@ async function run(args: RunArgs, io: Io): Promise<number> {
     for (const [signal, stop] of stops) process.once(signal, stop);
     try {
       const spawn = spawner(scratch, live);
-      const results = await Promise.all(pair.map((seat) => launchSeat(seat, payload, card.options, spawn)));
+      const results = await Promise.all(
+        pair.map((seat) => launchSeat(seat, payload, card.options, spawn, card.approve)),
+      );
       seats.push(...pair.map((seat, i) => seatEntry("primary", seat, results[i] ?? { ok: false, attempts: [] })));
       const choices = seats.map((entry) => entry.choice);
       let veto: string | null | undefined;
       if (choices.every((choice) => choice === card.approve)) {
-        const result = await launchSeat(config.veto, payload, card.options, spawn);
+        const result = await launchSeat(config.veto, payload, card.options, spawn, card.approve);
         const entry = seatEntry("veto", config.veto, result);
         seats.push(entry);
         veto = entry.choice;
