@@ -1,23 +1,27 @@
 /**
  * FILE_HASHES pin provenance-only files by sha256 of the raw bytes (any
  * dossier edit needs a re-pin). BLOCK_PINS hash mixed-file marker interiors
- * after CRLF folds to LF; begin and end must appear once on unmasked and
- * fence-masked text. LOCK_ENTRY_SHA256 is the lock egm entry, an
- * identity-covered region. FINGERPRINT_DESC_SHA256 pins the fingerprint
+ * after CRLF folds to LF; begin and end must appear once as exact bytes on
+ * unmasked and fence-masked text. LOCK_ENTRY_SHA256 is the lock egm entry,
+ * an identity-covered region. FINGERPRINT_DESC_SHA256 pins the fingerprint
  * description. OVERLAY_COPIES must equal source bytes. IDENTITY_ALLOWLIST
  * is the only other place identity tokens may appear. Tokens
  * (elephant-goldfish, a ≥7-char prefix of the pin SHA, GAP-PROBE,
- * GAP-MASTRA, the word EGM) match after NFKC, stripping format,
- * Default_Ignorable, and NUL characters, and case-fold. Files decode as
- * UTF-8, fatal; a decode failure is red unless the path is in
- * BINARY_ALLOWLIST. A hex run is identity when the pin's 7-character
- * prefix appears anywhere inside it. Hex split across non-hex characters
- * is out of scope. The word EGM skips only the exact BLOCK_PINS marker
- * strings in that pin's file. Small-caps ᴇɢᴍ does not
- * NFKC-fold and is out of scope. A free-text claim with no identity token
- * is review's job. The README lede and package.json donor sentences are
- * pinned byte-exact. The cursor isolation row, including its status cell,
- * is the adapters/cursor/CONTRACT.md BLOCK_PINS interior.
+ * GAP-MASTRA, the word EGM) match after NFKD, stripping marks, format,
+ * Default_Ignorable, and other controls (\p{M}, \p{Cf},
+ * \p{Default_Ignorable_Code_Point}, \p{Cc}), then case-fold. Files decode
+ * as UTF-8, fatal; a decode failure is red unless the path is in
+ * BINARY_ALLOWLIST, which must be empty. A hex run is identity when the
+ * pin's 7-character prefix appears anywhere inside it. Hex split across
+ * non-hex characters is out of scope. The word EGM skips only one
+ * exact-byte BLOCK_PINS marker pair in that pin's file. Lookalike or
+ * case-changed markers are plain text. Small-caps ᴇɢᴍ does not NFKD-fold
+ * and is out of scope. A free-text claim with no identity token is
+ * review's job. Every SENTENCE_PINS and BLOCK_PINS pin occurs exactly
+ * once in exact bytes in its file. package.json has one "description"
+ * key whose parsed value equals the pin. The isolation-review-context
+ * table row occurs once after whitespace fold and lies inside the
+ * adapters/cursor/CONTRACT.md hashed interior.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -122,14 +126,22 @@ const IDENTITY_ALLOWLIST: Array<{ file: string; reason: string }> = [
 const FOLDED_NEEDLES = ["elephant-goldfish", "gap-probe", "gap-mastra"] as const;
 const EGM_PIN7 = EGM_COMMIT.slice(0, 7);
 const BINARY_ALLOWLIST: string[] = [];
-const SENTENCE_PINS: Array<{ file: string; text: string }> = [
+const PACKAGE_DESCRIPTION =
+  "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.";
+type SentencePin = { file: string; text: string; jsonKey?: string };
+const SENTENCE_PINS: SentencePin[] = [
   {
     file: "README.md",
     text: "One engineering lifecycle, amalgamated from twelve donors (ten MIT-licensed, two Apache-2.0) into a single installable",
   },
   {
     file: "package.json",
-    text: '"description": "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.",',
+    text: `"description": "${PACKAGE_DESCRIPTION}",`,
+    jsonKey: "description",
+  },
+  {
+    file: ".claude-plugin/marketplace.json",
+    text: '"description": "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0), installable under /ak:."',
   },
 ];
 const OVERLONG_UTF8 = new Uint8Array([0xc0, 0x80]);
@@ -502,10 +514,13 @@ function extractPinnedBlock(text: string, pin: BlockPin): string {
 
 function foldIdentity(text: string): string {
   return text
-    .normalize("NFKC")
-    .replaceAll(/\p{Cf}|\p{Default_Ignorable_Code_Point}/gu, "")
-    .replaceAll("\0", "")
+    .normalize("NFKD")
+    .replaceAll(/\p{M}|\p{Cf}|\p{Default_Ignorable_Code_Point}|\p{Cc}/gu, "")
     .toLowerCase();
+}
+
+function foldOffset(original: string, at: number): number {
+  return foldIdentity(original.slice(0, at)).length;
 }
 
 function decodeTracked(file: string, bytes: Uint8Array): string {
@@ -517,32 +532,40 @@ function readTracked(file: string): string {
   return decodeTracked(file, readFileSync(join(REPO, file)));
 }
 
+function skipTrackedPath(raw: string): boolean {
+  return raw.split("/").includes("node_modules");
+}
+
 function trackedTextFiles(): string[] {
   const listed = spawnSync("git", ["ls-files", "-z"], { cwd: REPO, encoding: "buffer" });
   expect(listed.status, "git ls-files").toBe(0);
   const files: string[] = [];
   for (const raw of listed.stdout.toString("utf8").split("\0")) {
-    if (raw === "" || raw.includes("node_modules/")) continue;
+    if (raw === "" || skipTrackedPath(raw)) continue;
     files.push(raw);
   }
   return files;
 }
 
-function isExactMarkerEgm(file: string, folded: string, at: number): boolean {
-  for (const pin of BLOCK_PINS) {
-    if (pin.file !== file) continue;
-    for (const raw of [pin.begin, pin.end]) {
-      const marker = foldIdentity(raw);
-      const egmAt = marker.indexOf("egm");
-      if (egmAt < 0) continue;
-      const start = at - egmAt;
-      if (start >= 0 && folded.startsWith(marker, start)) return true;
-    }
+function exactMarkerRanges(file: string, original: string) {
+  const skip: Array<[number, number]> = [];
+  const cover: Array<[number, number]> = [];
+  for (const pin of BLOCK_PINS.filter((row) => row.file === file)) {
+    const begins = indicesOf(original, pin.begin);
+    const ends = indicesOf(original, pin.end);
+    const beginAt = begins[0];
+    const endAt = ends[0];
+    if (beginAt === undefined || endAt === undefined || begins.length !== 1 || ends.length !== 1) continue;
+    skip.push([foldOffset(original, beginAt), foldOffset(original, beginAt + pin.begin.length)]);
+    skip.push([foldOffset(original, endAt), foldOffset(original, endAt + pin.end.length)]);
+    cover.push([foldOffset(original, beginAt + pin.begin.length), foldOffset(original, endAt)]);
   }
-  return false;
+  return { skip, cover };
 }
 
-function identityOffsets(file: string, folded: string): number[] {
+function identityOffsets(file: string, original: string): number[] {
+  const folded = foldIdentity(original);
+  const skip = exactMarkerRanges(file, original).skip;
   const hits: number[] = [];
   for (const needle of FOLDED_NEEDLES) hits.push(...indicesOf(folded, needle));
   for (const match of folded.matchAll(/[0-9a-f]{7,}/g)) {
@@ -550,37 +573,61 @@ function identityOffsets(file: string, folded: string): number[] {
   }
   for (const match of folded.matchAll(/(?<![a-z0-9_])egm(?![a-z0-9_])/g)) {
     const at = match.index ?? 0;
-    if (isExactMarkerEgm(file, folded, at)) continue;
+    if (offsetCovered(at, skip)) continue;
     hits.push(at);
   }
   return hits;
 }
 
-function coveredRanges(file: string, folded: string): Array<[number, number]> {
-  if (FILE_HASHES.some((pin) => pin.file === file)) return [[0, folded.length]];
-  if (OVERLAY_COPIES.some((copy) => copy.dest === file)) return [[0, folded.length]];
-  if (IDENTITY_ALLOWLIST.some((entry) => entry.file === file)) return [[0, folded.length]];
+function coveredRanges(file: string, original: string): Array<[number, number]> {
+  const foldedLen = foldIdentity(original).length;
+  if (FILE_HASHES.some((pin) => pin.file === file)) return [[0, foldedLen]];
+  if (OVERLAY_COPIES.some((copy) => copy.dest === file)) return [[0, foldedLen]];
+  if (IDENTITY_ALLOWLIST.some((entry) => entry.file === file)) return [[0, foldedLen]];
   if (file === LOCK) {
-    const startNeedle = foldIdentity("  # Catalog donor, no EGM plugin, probe plus comprehension and cold read.");
-    const start = folded.indexOf(startNeedle);
-    const endNeedle = "\n# ---------------------------------------------------------------------------";
-    const end = folded.indexOf(endNeedle, start);
+    const startNeedle = "  # Catalog donor, no EGM plugin, probe plus comprehension and cold read.";
+    const start = original.indexOf(startNeedle);
+    const end = original.indexOf(
+      "\n# ---------------------------------------------------------------------------",
+      start,
+    );
     if (start < 0 || end < 0) return [];
-    return [[start, end]];
+    return [[foldOffset(original, start), foldOffset(original, end)]];
   }
-  const ranges: Array<[number, number]> = [];
-  for (const pin of BLOCK_PINS.filter((row) => row.file === file)) {
-    const begin = foldIdentity(pin.begin);
-    const end = foldIdentity(pin.end);
-    const visible = maskFences(folded);
-    const begins = indicesOf(visible, begin);
-    const ends = indicesOf(visible, end);
-    const beginAt = begins[0];
-    const endAt = ends[0];
-    if (beginAt === undefined || endAt === undefined || begins.length !== 1 || ends.length !== 1) continue;
-    ranges.push([beginAt + begin.length, endAt]);
+  return exactMarkerRanges(file, original).cover;
+}
+
+function isolationRowLines(text: string): string[] {
+  return text
+    .split("\n")
+    .filter((line) => line.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` |"));
+}
+
+function assertSentencePins(): void {
+  expect(BINARY_ALLOWLIST).toEqual([]);
+  expect(SENTENCE_PINS).toHaveLength(3);
+  for (const pin of SENTENCE_PINS) {
+    const raw = readFileSync(join(REPO, pin.file), "utf8");
+    expect(indicesOf(raw, pin.text).length, pin.file).toBe(1);
+    if (pin.jsonKey === undefined) continue;
+    expect(indicesOf(raw, `"${pin.jsonKey}"`).length, `${pin.file} ${pin.jsonKey}`).toBe(1);
+    const parsed: unknown = JSON.parse(raw);
+    expect(isPluginExample(parsed), pin.file).toBe(true);
+    if (!isPluginExample(parsed)) continue;
+    expect(parsed.description).toBe(PACKAGE_DESCRIPTION);
   }
-  return ranges;
+}
+
+function assertIsolationPin(): void {
+  const pin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
+  expect(pin).toBeDefined();
+  if (pin === undefined) return;
+  const text = readFileSync(join(REPO, pin.file), "utf8").replaceAll("\r\n", "\n");
+  const rows = isolationRowLines(text);
+  expect(rows.length, "isolation rows").toBe(1);
+  const interior = extractPinnedBlock(text, pin);
+  expect(isolationRowLines(interior)).toEqual(rows);
+  expect(textSha256(interior)).toBe(pin.sha256);
 }
 
 function offsetCovered(offset: number, ranges: Array<[number, number]>): boolean {
@@ -638,45 +685,66 @@ function yamlItemBlock(text: string, idLine: string): string {
 describe("EGM provenance guards", () => {
   test("hex pin prefix inside a run is identity", () => {
     const file = "package.json";
-    expect(identityOffsets(file, foldIdentity("403d888zzzz")).length).toBeGreaterThan(0);
-    expect(identityOffsets(file, foldIdentity("403d888.")).length).toBeGreaterThan(0);
-    expect(identityOffsets(file, foldIdentity("aaaaaaa"))).toEqual([]);
-    expect(identityOffsets(file, foldIdentity(`aa${EGM_COMMIT}`)).length).toBeGreaterThan(0);
-    expect(identityOffsets(file, foldIdentity(`${EGM_COMMIT}aa`)).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "403d888zzzz").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "403d888.").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "aaaaaaa")).toEqual([]);
+    expect(identityOffsets(file, `aa${EGM_COMMIT}`).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, `${EGM_COMMIT}aa`).length).toBeGreaterThan(0);
   });
 
-  test("NUL folds to identity", () => {
+  test("controls and combining marks fold to identity", () => {
     const file = "package.json";
-    expect(identityOffsets(file, foldIdentity("E\0GM")).length).toBeGreaterThan(0);
-    expect(identityOffsets(file, foldIdentity("\0ＥＧＭ")).length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "E\0GM").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "\0ＥＧＭ").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "E\u0301GM").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "E\rGM").length).toBeGreaterThan(0);
   });
 
   test("overlong UTF-8 on a non-allowlisted path is red", () => {
     expect(() => decodeTracked("README.md", OVERLONG_UTF8)).toThrow();
   });
 
-  test("marker skip is file-scoped", () => {
+  test("marker skip is exact-byte and file-scoped", () => {
     const file = "package.json";
-    expect(identityOffsets(file, foldIdentity("ak-egm-smuggle")).length).toBeGreaterThan(0);
-    expect(identityOffsets(file, foldIdentity("<!-- ak-egm-begin -->")).length).toBeGreaterThan(0);
-    expect(identityOffsets(file, foldIdentity(" egm ")).length).toBeGreaterThan(0);
-    expect(identityOffsets("README.md", foldIdentity("<!-- ak-egm-begin -->"))).toEqual([]);
+    expect(identityOffsets(file, "ak-egm-smuggle").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, "<!-- ak-egm-begin -->").length).toBeGreaterThan(0);
+    expect(identityOffsets(file, " egm ").length).toBeGreaterThan(0);
+    expect(identityOffsets("README.md", "<!-- ak-egm-begin -->\n<!-- ak-egm-end -->")).toEqual([]);
+    expect(identityOffsets("README.md", "<!-- AK-EGM-BEGIN -->\n<!-- AK-EGM-END -->").length).toBeGreaterThan(0);
+  });
+
+  test("node_modules skip is a path segment", () => {
+    expect(skipTrackedPath("src/node_modules/x.ts")).toBe(true);
+    expect(skipTrackedPath("node_modules/x.ts")).toBe(true);
+    expect(skipTrackedPath("not_node_modules/x.ts")).toBe(false);
   });
 
   test("one-byte change to pinned sentences or isolation row is red", () => {
-    expect(SENTENCE_PINS).toHaveLength(2);
+    assertSentencePins();
+    assertIsolationPin();
     for (const pin of SENTENCE_PINS) {
-      const text = readFileSync(join(REPO, pin.file), "utf8");
-      expect(text).toContain(pin.text);
-      expect(text).not.toContain(`${pin.text.slice(0, 1)}X${pin.text.slice(2)}`);
+      const path = join(REPO, pin.file);
+      const original = readFileSync(path, "utf8");
+      const mid = Math.floor(pin.text.length / 2);
+      const lie = `${pin.text.slice(0, mid)}X${pin.text.slice(mid + 1)}`;
+      try {
+        writeFileSync(path, original.replace(pin.text, lie));
+        expect(indicesOf(readFileSync(path, "utf8"), pin.text).length, pin.file).not.toBe(1);
+      } finally {
+        writeFileSync(path, original);
+      }
     }
-    const contractPin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
-    expect(contractPin).toBeDefined();
-    if (contractPin === undefined) return;
-    const interior = extractPinnedBlock(readFileSync(join(REPO, contractPin.file), "utf8"), contractPin);
-    expect(interior).toContain("| `isolated-review-context` | `partial` |");
-    expect(textSha256(interior)).toBe(contractPin.sha256);
-    expect(textSha256(interior.replace("`partial`", "`full`"))).not.toBe(contractPin.sha256);
+    const pin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
+    expect(pin).toBeDefined();
+    if (pin === undefined) return;
+    const path = join(REPO, pin.file);
+    const original = readFileSync(path, "utf8");
+    try {
+      writeFileSync(path, original.replace("`partial`", "`partiaX`"));
+      expect(textSha256(extractPinnedBlock(readFileSync(path, "utf8"), pin))).not.toBe(pin.sha256);
+    } finally {
+      writeFileSync(path, original);
+    }
   });
 });
 
@@ -761,9 +829,8 @@ describe("EGM provenance (GS-004f)", () => {
       description,
     );
     expect(readFileSync(join(REPO, ".cursor/catalog.yaml"), "utf8")).toContain(description);
-    for (const pin of SENTENCE_PINS) {
-      expect(readFileSync(join(REPO, pin.file), "utf8")).toContain(pin.text);
-    }
+    assertSentencePins();
+    assertIsolationPin();
   });
 
   test("identity strings live only in pinned regions or the allowlist", () => {
@@ -782,10 +849,9 @@ describe("EGM provenance (GS-004f)", () => {
         decodeLies.push(file);
         continue;
       }
-      const folded = foldIdentity(text);
-      const ranges = coveredRanges(file, folded);
-      for (const offset of identityOffsets(file, folded)) {
-        if (!offsetCovered(offset, ranges)) uncovered.push(`${file}:${folded.slice(0, offset).split("\n").length}`);
+      const ranges = coveredRanges(file, text);
+      for (const offset of identityOffsets(file, text)) {
+        if (!offsetCovered(offset, ranges)) uncovered.push(`${file}:${offset}`);
       }
     }
     expect(decodeLies).toEqual([]);
