@@ -20,6 +20,8 @@
  * A record grants no authority. It is evidence a gate or an owner may read; it
  * approves no checkpoint, ticket, merge or deploy. The ledger is what its
  * writer says happened: the engine does not check who appended a line.
+ * `ak review decide` trusts those lines, so the ledger file must sit outside
+ * author write.
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -50,10 +52,11 @@ export interface ReviewIo {
 }
 
 const USAGE = [
-  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
+  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--previous <scope.json>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
   "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
   "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--ticket <file>] [--project <file>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
   "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]",
+  "       The ledger must sit outside author write. ak review decide trusts its lines.",
 ];
 
 const NOTE = "This record grants no authority. It approves no checkpoint, ticket, merge or deploy.";
@@ -62,7 +65,7 @@ const NOTE = "This record grants no authority. It approves no checkpoint, ticket
 const REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
 
 const FLAGS = {
-  add: ["--ledger", "--event", "--repo", "--snapshot", "--max-rounds", "--out"],
+  add: ["--ledger", "--event", "--repo", "--previous", "--snapshot", "--max-rounds", "--out"],
   show: ["--ledger", "--out"],
   scope: [
     "--ledger",
@@ -175,7 +178,7 @@ function validateCarryScope(): ValidateFunction<CarryScope> {
       schema: { const: "review-scope" },
       outcome: { const: "carry" },
       head: COMMIT,
-      base: { type: "string" },
+      base: COMMIT,
       previous: { type: "object", required: ["head"], properties: { head: COMMIT } },
       delta: { type: "object", required: ["empty"], properties: { empty: { const: true } } },
       event: {
@@ -189,10 +192,12 @@ function validateCarryScope(): ValidateFunction<CarryScope> {
 }
 
 /** A carry line is admitted only from a scope record whose delta is empty against the last reviewed head. */
-function carryFromScope(record: CarryScope, covered: string | null, repo: string): InputItem {
+function carryFromScope(record: CarryScope, covered: string | null, repo: string, pinnedBase: string): InputItem {
   if (record.event.head !== record.head) throw new Error("a carry line needs a scope record of the carried head");
   if (record.previous.head !== covered)
     throw new Error("a carry line needs a scope record whose previous.head is the last reviewed head");
+  if (record.base !== pinnedBase && record.base === record.event.head)
+    throw new Error("a carry line needs the pinned base of the last reviewed scope record");
   const reading = readDelta(repo, record.base, record.previous.head, record.event.head);
   if (!reading.delta.empty) throw new Error("a carry line needs a scope record whose delta is empty against that head");
   const item = { kind: "carry", head: record.event.head };
@@ -216,7 +221,14 @@ function add(flags: Flags, io: ReviewIo): number {
   let items: InputItem[];
   if (asScope(parsed)) {
     if (!asCarry(parsed)) throw new Error("a carry line needs a scope record whose outcome is carry");
-    items = [carryFromScope(parsed, fold(before.events, DEFAULT_POLICY).covered_head, repo)];
+    const covered = fold(before.events, DEFAULT_POLICY).covered_head;
+    const previousPath = flags.one.get("--previous");
+    if (previousPath === undefined || covered === null)
+      throw new UsageError(
+        "--previous is required: a carry line needs the last reviewed scope record, whose base is the pin",
+      );
+    const pinned = readBaseline(previousPath, covered);
+    items = [carryFromScope(parsed, covered, repo, pinned.base)];
   } else {
     items = parseInput(text);
     if (items.some((item) => item.kind === "carry"))
@@ -299,6 +311,8 @@ function decideCommand(flags: Flags, io: ReviewIo): number {
 /** What a later `scope` run reads back from the record of the last reviewed round. */
 interface ScopeBaseline {
   head: string;
+  /** The resolved comparison base pinned when that round was scoped. */
+  base: string;
   class: keyof typeof CLASS_RANK | null;
   intent: string | null;
   criteria: string | null;
@@ -313,11 +327,12 @@ let baselineValidator: ValidateFunction<ScopeBaseline> | null = null;
 function validateBaseline(): ValidateFunction<ScopeBaseline> {
   baselineValidator ??= new Ajv2020({ strict: false }).compile<ScopeBaseline>({
     type: "object",
-    required: ["schema", "schema_version", "head", "class", "intent", "criteria", "review_surface_changed"],
+    required: ["schema", "schema_version", "head", "base", "class", "intent", "criteria", "review_surface_changed"],
     properties: {
       schema: { const: "review-scope" },
       schema_version: { const: 1 },
       head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+      base: COMMIT,
       class: { enum: [...Object.keys(CLASS_RANK), null] },
       intent: DIGEST,
       criteria: DIGEST,

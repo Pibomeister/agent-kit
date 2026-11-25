@@ -17,6 +17,7 @@
 
 import { spawnSync } from "node:child_process";
 
+import { isolatedGitEnv } from "../runner/snapshot.ts";
 import { linesNotIn, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
 
 const DIFF = [
@@ -116,8 +117,9 @@ function pathIdentity(before: Map<string, TreeEntry>, now: Map<string, TreeEntry
 
 /** Run git in `repo` and return what it printed. A status outside `statuses` is an error. */
 function git(repo: string, args: readonly string[], statuses: readonly number[] = [0]) {
-  const run = spawnSync("git", ["-c", "core.quotePath=false", ...args], {
+  const run = spawnSync("git", ["--no-replace-objects", "-C", repo, "-c", "core.quotePath=false", ...args], {
     cwd: repo,
+    env: isolatedGitEnv(),
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 1024,
   });
@@ -241,6 +243,14 @@ export interface DeltaReading {
  * last reviewed head. All three revisions are full commit ids.
  */
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
+  if (previous !== head) {
+    const fromPrevious = mergeBase(repo, base, previous);
+    const fromHead = mergeBase(repo, base, head);
+    if (fromPrevious === previous && fromHead === head)
+      throw new Error(
+        `base ${base} is reachable from ${previous} and from ${head}: it is not a comparison base of this pull request`,
+      );
+  }
   const before = headPatch(repo, base, previous);
   const now = headPatch(repo, base, head);
   const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));

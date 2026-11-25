@@ -313,10 +313,11 @@ describe("usage", () => {
     expect({ code, out }).toEqual({ code: 2, out: [] });
     if (message !== null) expect(err[0]).toBe(`ak review: ${message}`);
     expect(err.slice(message === null ? 0 : 1)).toEqual([
-      "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
+      "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--previous <scope.json>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
       "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
       "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--ticket <file>] [--project <file>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
       "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]",
+      "       The ledger must sit outside author write. ak review decide trusts its lines.",
     ]);
   });
 });

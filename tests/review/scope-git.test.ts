@@ -93,14 +93,18 @@ function fixture() {
   const add = (...events: JsonValue[]): void => {
     const only = events.length === 1 ? (events[0] ?? null) : null;
     const payload = member(only, "schema") === "review-scope" && only !== null ? only : events;
+    const previous =
+      member(only, "schema") === "review-scope" && reviewedKeep !== null ? ["--previous", reviewedKeep.path] : [];
     const added = review(
-      ["ledger", "add", "--ledger", ledger, "--event", "-", "--repo", root],
+      ["ledger", "add", "--ledger", ledger, "--event", "-", "--repo", root, ...previous],
       JSON.stringify(payload),
     );
     if (added.code !== 0) throw new Error(added.err.join("\n"));
   };
   /** The scope record a caller last kept, and its head. */
   let kept: { path: string; at: string } | null = null;
+  /** The scope record of the last closed round, whose base is the pin. */
+  let reviewedKeep: { path: string; at: string } | null = null;
   const scope = (at: string, ...flags: string[]): Run =>
     review(["scope", "--ledger", ledger, "--repo", root, "--base", "main", "--head", at, ...flags]);
   /** The record of a run that must exit 0. Without `--previous`, it passes the record kept last. */
@@ -120,13 +124,36 @@ function fixture() {
   /** Record one closed round of review at `at`, keeping the scope record of `at` first unless one is kept. */
   const round = (at: string): void => {
     if (kept?.at !== at) keep(`scope-${at}.json`, at);
+    reviewedKeep = kept;
     add({ kind: "round-open", head: at }, { kind: "verdict", seat: "a", word: "approve" }, { kind: "round-close" });
   };
+  const decide = (at: string): Run => review(["decide", "--ledger", ledger, "--head", at, "--seats", "1"]);
   const file = (name: string, text: string): string => {
     writeFileSync(join(dir, name), text);
     return join(dir, name);
   };
-  return { dir, root, ledger, head, git, tryGit, write, commit, numstat, add, round, scope, record, keep, file };
+  return {
+    dir,
+    root,
+    ledger,
+    head,
+    git,
+    tryGit,
+    write,
+    commit,
+    numstat,
+    add,
+    round,
+    scope,
+    record,
+    keep,
+    file,
+    decide,
+    reviewed: (): { path: string; at: string } => {
+      if (reviewedKeep === null) throw new Error("no reviewed scope record");
+      return reviewedKeep;
+    },
+  };
 }
 
 describe("ak review scope before round 1", () => {
@@ -292,7 +319,7 @@ describe("ak review scope: later-round tree identity", () => {
     expect({ code: forged.code, out: forged.out }).toEqual({ code: 2, out: [] });
     expect(forged.err.join("\n")).toContain("a carry line needs a scope record whose outcome is carry");
     const claimed = review(
-      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root],
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root, "--previous", f.reviewed().path],
       JSON.stringify({
         schema: "review-scope",
         outcome: "carry",
@@ -319,6 +346,7 @@ describe("ak review scope: later-round tree identity", () => {
         schema: "review-scope",
         schema_version: 1,
         head: f.head,
+        base: f.git("rev-parse", "main"),
         class: null,
         intent: null,
         criteria: null,
@@ -331,6 +359,90 @@ describe("ak review scope: later-round tree identity", () => {
       delta: { empty: false },
       event: null,
     });
+  });
+
+  test("FORGE-carry-base-equals-dirty-head: a carry whose base is the dirty head is refused", () => {
+    const f = fixture();
+    const pin = f.git("rev-parse", "main");
+    f.round(f.head);
+    const dirty = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    expect(member(parseJson(readFileSync(f.reviewed().path, "utf8")), "base")).toBe(pin);
+    const forged = review(
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root, "--previous", f.reviewed().path],
+      JSON.stringify({
+        schema: "review-scope",
+        outcome: "carry",
+        head: dirty,
+        base: dirty,
+        previous: { head: f.head },
+        delta: { empty: true },
+        event: { kind: "carry", head: dirty },
+      }),
+    );
+    expect({ code: forged.code, out: forged.out }).toEqual({ code: 2, out: [] });
+    expect(forged.err.join("\n")).toContain("a carry line needs the pinned base of the last reviewed scope record");
+  });
+
+  test("MB-force-pushed-base-branch: a base branch force-moved to the dirty tip is refused", () => {
+    const f = fixture();
+    f.round(f.head);
+    const dirty = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    f.git("update-ref", "refs/heads/main", dirty);
+    expect(f.git("rev-parse", "main")).toBe(dirty);
+    const run = f.scope(dirty, "--previous", f.reviewed().path);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("is not a comparison base of this pull request");
+  });
+
+  test("FU-replace-decide: a replace ref cannot make a dirty head carry", () => {
+    const f = fixture();
+    const pin = f.git("rev-parse", "main");
+    f.round(f.head);
+    const dirty = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    f.git("replace", dirty, f.head);
+    expect(f.record(dirty)).toMatchObject({
+      outcome: "closure",
+      delta: { empty: false },
+      event: null,
+    });
+    const claimed = review(
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root, "--previous", f.reviewed().path],
+      JSON.stringify({
+        schema: "review-scope",
+        outcome: "carry",
+        head: dirty,
+        base: pin,
+        previous: { head: f.head },
+        delta: { empty: true },
+        event: { kind: "carry", head: dirty },
+      }),
+    );
+    expect({ code: claimed.code, out: claimed.out }).toEqual({ code: 2, out: [] });
+    expect(claimed.err.join("\n")).toContain(
+      "a carry line needs a scope record whose delta is empty against that head",
+    );
+  });
+
+  test("FU-decide-dirty-head-after-forged-carry: decide does not approve a dirty head after a refused carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const dirty = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const forged = review(
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root],
+      JSON.stringify({
+        schema: "review-scope",
+        outcome: "carry",
+        head: dirty,
+        base: dirty,
+        previous: { head: f.head },
+        delta: { empty: true },
+        event: { kind: "carry", head: dirty },
+      }),
+    );
+    expect(forged.code).toBe(2);
+    const decided = f.decide(dirty);
+    expect(decided.code).toBe(1);
+    expect(parseJson(decided.out[0] ?? "")).toMatchObject({ verdict: "incomplete" });
   });
 });
 
@@ -906,6 +1018,7 @@ describe("ak review scope refuses", () => {
         schema: "review-scope",
         schema_version: 1,
         head: absent,
+        base: f.git("rev-parse", "main"),
         class: null,
         intent: null,
         criteria: null,

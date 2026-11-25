@@ -42619,11 +42619,11 @@ function resolveRunnerGit(workerRoot) {
 function failedGit(stderr) {
   return { code: -1, stdout: new Uint8Array, text: "", stderr };
 }
-function gitEnv2(context) {
+function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/dev/null") {
   return {
-    PATH: context.path,
-    HOME: context.home,
-    XDG_CONFIG_HOME: context.home,
+    PATH: path,
+    HOME: home,
+    XDG_CONFIG_HOME: home,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
@@ -42631,6 +42631,9 @@ function gitEnv2(context) {
     GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C"
   };
+}
+function gitEnv2(context) {
+  return isolatedGitEnv(context.path, context.home);
 }
 function isolationArgs(project) {
   return [
@@ -46752,8 +46755,9 @@ function pathIdentity(before, now) {
   return [...hits].toSorted();
 }
 function git4(repo, args, statuses = [0]) {
-  const run3 = spawnSync6("git", ["-c", "core.quotePath=false", ...args], {
+  const run3 = spawnSync6("git", ["--no-replace-objects", "-C", repo, "-c", "core.quotePath=false", ...args], {
     cwd: repo,
+    env: isolatedGitEnv(),
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 1024
   });
@@ -46828,6 +46832,12 @@ function conflictPaths(repo, base2, previous, head) {
   return [...conflicted].toSorted();
 }
 function readDelta(repo, base2, previous, head) {
+  if (previous !== head) {
+    const fromPrevious = mergeBase(repo, base2, previous);
+    const fromHead = mergeBase(repo, base2, head);
+    if (fromPrevious === previous && fromHead === head)
+      throw new Error(`base ${base2} is reachable from ${previous} and from ${head}: it is not a comparison base of this pull request`);
+  }
   const before = headPatch(repo, base2, previous);
   const now = headPatch(repo, base2, head);
   const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));
@@ -47666,15 +47676,16 @@ function addEvents(existing, items2, options) {
 
 // src/review/cli.ts
 var USAGE5 = [
-  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
+  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--previous <scope.json>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
   "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
   "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--ticket <file>] [--project <file>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
-  "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]"
+  "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]",
+  "       The ledger must sit outside author write. ak review decide trusts its lines."
 ];
 var NOTE = "This record grants no authority. It approves no checkpoint, ticket, merge or deploy.";
 var REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
 var FLAGS = {
-  add: ["--ledger", "--event", "--repo", "--snapshot", "--max-rounds", "--out"],
+  add: ["--ledger", "--event", "--repo", "--previous", "--snapshot", "--max-rounds", "--out"],
   show: ["--ledger", "--out"],
   scope: [
     "--ledger",
@@ -47766,7 +47777,7 @@ function validateCarryScope() {
       schema: { const: "review-scope" },
       outcome: { const: "carry" },
       head: COMMIT,
-      base: { type: "string" },
+      base: COMMIT,
       previous: { type: "object", required: ["head"], properties: { head: COMMIT } },
       delta: { type: "object", required: ["empty"], properties: { empty: { const: true } } },
       event: {
@@ -47778,11 +47789,13 @@ function validateCarryScope() {
   });
   return carryValidator;
 }
-function carryFromScope(record, covered, repo) {
+function carryFromScope(record, covered, repo, pinnedBase) {
   if (record.event.head !== record.head)
     throw new Error("a carry line needs a scope record of the carried head");
   if (record.previous.head !== covered)
     throw new Error("a carry line needs a scope record whose previous.head is the last reviewed head");
+  if (record.base !== pinnedBase && record.base === record.event.head)
+    throw new Error("a carry line needs the pinned base of the last reviewed scope record");
   const reading = readDelta(repo, record.base, record.previous.head, record.event.head);
   if (!reading.delta.empty)
     throw new Error("a carry line needs a scope record whose delta is empty against that head");
@@ -47809,7 +47822,12 @@ function add(flags, io) {
   if (asScope(parsed)) {
     if (!asCarry(parsed))
       throw new Error("a carry line needs a scope record whose outcome is carry");
-    items2 = [carryFromScope(parsed, fold(before.events, DEFAULT_POLICY).covered_head, repo)];
+    const covered = fold(before.events, DEFAULT_POLICY).covered_head;
+    const previousPath = flags.one.get("--previous");
+    if (previousPath === undefined || covered === null)
+      throw new UsageError("--previous is required: a carry line needs the last reviewed scope record, whose base is the pin");
+    const pinned = readBaseline(previousPath, covered);
+    items2 = [carryFromScope(parsed, covered, repo, pinned.base)];
   } else {
     items2 = parseInput(text5);
     if (items2.some((item) => item.kind === "carry"))
@@ -47883,11 +47901,12 @@ var baselineValidator = null;
 function validateBaseline() {
   baselineValidator ??= new import__202015.default({ strict: false }).compile({
     type: "object",
-    required: ["schema", "schema_version", "head", "class", "intent", "criteria", "review_surface_changed"],
+    required: ["schema", "schema_version", "head", "base", "class", "intent", "criteria", "review_surface_changed"],
     properties: {
       schema: { const: "review-scope" },
       schema_version: { const: 1 },
       head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+      base: COMMIT,
       class: { enum: [...Object.keys(CLASS_RANK), null] },
       intent: DIGEST,
       criteria: DIGEST,

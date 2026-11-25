@@ -252,13 +252,16 @@ function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
 }
 
-function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
-  // Residue: a partial or blobless clone may still promisor-fetch through worker
-  // core.sshCommand / credential.helper in the repository config. No refusal.
+/**
+ * Env for a git child that cannot follow replace refs, grafts, or GIT_DIR
+ * redirects. `ak review scope` uses the same isolation. Redirecting GIT_*
+ * names are omitted, not copied from the process.
+ */
+export function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/dev/null"): NodeJS.ProcessEnv {
   return {
-    PATH: context.path,
-    HOME: context.home,
-    XDG_CONFIG_HOME: context.home,
+    PATH: path,
+    HOME: home,
+    XDG_CONFIG_HOME: home,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
@@ -266,6 +269,12 @@ function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
     GIT_GRAFT_FILE: "/dev/null",
     LC_ALL: "C",
   };
+}
+
+function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
+  // Residue: a partial or blobless clone may still promisor-fetch through worker
+  // core.sshCommand / credential.helper in the repository config. No refusal.
+  return isolatedGitEnv(context.path, context.home);
 }
 
 function isolationArgs(project: string): string[] {

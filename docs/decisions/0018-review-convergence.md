@@ -201,7 +201,9 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 ## Consequences and limits
 
 - The ledger is single-writer evidence that a gate holds. The engine does not check who appended a
-  line, and a record of any of the three commands grants no authority.
+  line, and a record of any of the three commands grants no authority. `ak review decide` trusts
+  those lines as coverage, so the ledger file must sit outside author write. A hand-written carry
+  line is coverage if it is in the file. There is no provenance check on a line.
 - The tool runs no reproduction. The caller runs it and records the exit status at the head and at
   the merge base.
 - The symbol rule reads no grammar. A language with no column-one declarations anchors a finding
@@ -211,7 +213,10 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   change.
 - `ak review scope` needs git 2.38 or later for `git merge-tree`. Repeating a merge writes its
   objects into the object store as unreachable objects. No work tree, index or ref changes.
-- The scope command trusts its inputs as the ledger does. It does not check that a merge-stage
-  record was computed at the head it is given for.
+- The scope command refuses a `--record` whose `head` is not `--head`. Round 1 records the resolved
+  `--base` SHA. A later `ledger add` of a carry needs that last reviewed record as `--previous`.
+  The comparison SHA is the one `ak review scope` resolved, not a branch name from the event JSON.
+  A carry whose base is the carried head is refused, and so is a base that is reachable from both
+  the last reviewed head and the new head while those heads differ.
 - The mutation check in `tests/review/mutation.test.ts` breaks each rule once and expects a red
   test. A rule added to the engine needs a mutant there.
