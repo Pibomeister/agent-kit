@@ -40,24 +40,33 @@ are the shared parser for review and adversarial transcripts.
 `ak council run` reads a seat through `launchSeat`. A JSON council
 answer whose `choice` is one of the card's exact options still stands.
 Stdout that is not JSON is read through `adversarialChoiceFromTranscript`,
-the `launchSeat` fallback. Mixed stdout returns null first. Otherwise
-`failClosedAdversarialVerdict` yields `WORTHY` or `REJECT`. A well-formed
-final `VERDICT: WORTHY` or `VERDICT: REJECT` is the seat's choice when
-that value is one of the card options. A yes/no card is not answered by a
-`VERDICT` field. Mixed JSON-plus-transcript stdout is unavailable. The
-substitute chain continues and no REJECT is synthesized.
-The transcript path does not parse JSON and does not strip or rewrite
-stdout. Raw stdout is mixed when it contains any of these.
-A C0 control other than tab, line feed, or carriage return. DEL. A C1
-control in 0x80 to 0x9f. Any escape sequence is mixed.
-After NFKC normalisation, a character in Unicode general category Ps
-or Pe other than ASCII `(` and `)`. A lone `{` or `[` is Ps, so it is
-mixed. There is no lone-brace exception.
-A triple-backtick or `~~~` fence anywhere, including a later fence or a
-fenced JSON scalar.
-A `\u` or `\x` escape followed by hex digits.
-Seats must not put brackets, braces, fences, escapes, or control bytes
-before the final `VERDICT` line.
+the `launchSeat` fallback, which receives the raw stdout Buffer. The
+JSON path is `toString` then `JSON.parse` and is unchanged. The
+transcript path approves only when every one of these holds.
+The Buffer is valid UTF-8. `TextDecoder` with `fatal: true` succeeds.
+Every byte is printable ASCII 0x20-0x7E, or tab, line feed, or
+carriage return. Any other byte refuses. That includes C1 controls,
+8-bit CSI 0x9B, a BOM, non-ASCII lookalikes, fullwidth characters,
+and Unicode quotes.
+Outside the `VERDICT` line, none of these ASCII characters appear.
+
+```text
+{ } [ ] < > ` ~ \
+```
+
+The text has no HTML entity matching `&#?[a-z0-9]+;` and no
+percent-escape matching `%[0-9a-f]{2}`.
+The remainder is stdout without the `VERDICT` line, trimmed. It does
+not `JSON.parse` to any value, scalars included. `true`, `1`, `"x"`,
+`null`, and `false` plus `VERDICT` are refused.
+Markdown links, non-ASCII prose, inline code in backticks, and angle
+brackets are fail-closed. Seats that want rich output must emit the
+JSON answer.
+A well-formed final `VERDICT: WORTHY` or `VERDICT: REJECT` is the
+seat's choice when that value is one of the card options. A yes/no
+card is not answered by a `VERDICT` field. Mixed stdout is
+unavailable. The substitute chain continues and no REJECT is
+synthesized.
 Garbage, an empty transcript, a missing field, or a value outside the
 card options is not an answer, so the substitute chain moves on and an
 exhausted chain leaves the seat unavailable, which escalates rather

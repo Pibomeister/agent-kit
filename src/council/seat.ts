@@ -110,7 +110,7 @@ export async function launchSeat(
         return { ok: true, launcher, answer: value, attempts };
       } catch (cause) {
         if (cause instanceof SyntaxError) {
-          const choice = adversarialChoiceFromTranscript(text, options);
+          const choice = adversarialChoiceFromTranscript(child.stdout, options);
           if (choice !== null)
             return {
               ok: true,

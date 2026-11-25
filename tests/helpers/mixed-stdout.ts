@@ -2,7 +2,7 @@ const REJECT = '{"choice":"REJECT","rationale":"x"}';
 const CSI_GREEN = "\u001b[32m";
 const CSI_RESET = "\u001b[0m";
 
-/** Stdout that mixes JSON-looking text with a final VERDICT line. */
+/** Stdout that the transcript path must refuse. */
 export const MIXED_JSON_PLUS_VERDICT: ReadonlyArray<readonly [string, string]> = [
   ["fenced", `\`\`\`json\n${REJECT}\n\`\`\`\nVERDICT: WORTHY\n`],
   ["log line", `${REJECT}\nseat finished\nVERDICT: WORTHY\n`],
@@ -67,13 +67,51 @@ export const MIXED_JSON_PLUS_VERDICT: ReadonlyArray<readonly [string, string]> =
   ["lookalike 〈", "note 〈payload\nVERDICT: WORTHY\n"],
   ["unicode escape braces", "choice is \\u007bREJECT\\u007d\nVERDICT: WORTHY\n"],
   ["hex escape braces", "choice is \\x7bREJECT\\x7d\nVERDICT: WORTHY\n"],
+  ["fullwidth backtick fence", "｀｀｀json\ntrue\n｀｀｀\nVERDICT: WORTHY\n"],
+  ["fullwidth tilde fence", "～～～\ntrue\n～～～\nVERDICT: WORTHY\n"],
+  ["fullwidth reverse solidus u", "＼u007b\nVERDICT: WORTHY\n"],
+  ["json scalar 42", "42\nVERDICT: WORTHY\n"],
+  ["json scalar true", "true\nVERDICT: WORTHY\n"],
+  ["json scalar null", "null\nVERDICT: WORTHY\n"],
+  ["json scalar 1", "1\nVERDICT: WORTHY\n"],
+  ["json scalar false", "false\nVERDICT: WORTHY\n"],
+  ["json scalar string", `"x"\nVERDICT: WORTHY\n`],
+  ["lookalike «", "note «payload\nVERDICT: WORTHY\n"],
+  ["lookalike »", "note »payload\nVERDICT: WORTHY\n"],
+  ["lookalike “", "note “payload\nVERDICT: WORTHY\n"],
+  ["lookalike ”", "note ”payload\nVERDICT: WORTHY\n"],
+  ["lookalike ‹", "note ‹payload\nVERDICT: WORTHY\n"],
+  ["lookalike ›", "note ›payload\nVERDICT: WORTHY\n"],
+  ["lookalike ﹤", "note ﹤payload\nVERDICT: WORTHY\n"],
+  ["lookalike ﹥", "note ﹥payload\nVERDICT: WORTHY\n"],
+  ["html tag", "<div>payload</div>\nVERDICT: WORTHY\n"],
+  ["unicode U escape", "choice is \\U0000007bREJECT\\U0000007d\nVERDICT: WORTHY\n"],
+  ["html entity braces", "choice is &#123;REJECT&#125;\nVERDICT: WORTHY\n"],
+  ["percent escape braces", "choice is %7BREJECT%7D\nVERDICT: WORTHY\n"],
+  ["BOM then prose", "\uFEFFCareful review.\nVERDICT: WORTHY\n"],
+  ["markdown link", "See [the spec](https://example.com).\nVERDICT: WORTHY\n"],
+  ["German low quotes", "Die Aenderung ist „gut“.\nVERDICT: WORTHY\n"],
+  ["inline backticks", "The flag is `on`.\nVERDICT: WORTHY\n"],
+  ["angle brackets", "Use Array<T>.\nVERDICT: WORTHY\n"],
 ];
 
-/** Remainder lines that look like JSON and carry no paired punctuation. */
-export const WORTHY_WITH_JSON_SCALAR: ReadonlyArray<readonly [string, string]> = [
-  ["number", "42\nVERDICT: WORTHY\n"],
-  ["true", "true\nVERDICT: WORTHY\n"],
-  ["null", "null\nVERDICT: WORTHY\n"],
+/** Raw stdout Buffers the transcript path must refuse. toString() would hide these. */
+export const MIXED_RAW_STDOUT: ReadonlyArray<readonly [string, Buffer]> = [
+  ["8-bit CSI 0x9B", Buffer.concat([Buffer.from([0x9b]), Buffer.from("32mnote\nVERDICT: WORTHY\n")])],
+  ["C1 0x80", Buffer.concat([Buffer.from([0x80]), Buffer.from("note\nVERDICT: WORTHY\n")])],
+  ["C1 0x9f", Buffer.concat([Buffer.from([0x9f]), Buffer.from("note\nVERDICT: WORTHY\n")])],
+  ["C1 NEL 0x85", Buffer.concat([Buffer.from([0x85]), Buffer.from("note\nVERDICT: WORTHY\n")])],
+];
+
+/** Printable ASCII transcripts with a final VERDICT: WORTHY. */
+export const CLEAN_TRANSCRIPT_ROWS: ReadonlyArray<readonly [string, string]> = [
+  ["parens", "Looks good (tests pass).\nVERDICT: WORTHY\n"],
+  ["ASCII quotes", "The 'change' is \"fine\".\nVERDICT: WORTHY\n"],
+  ["emphasis", "Careful *review* and _notes_.\nVERDICT: WORTHY\n"],
+  ["list", "- tests pass\n- types pass\nVERDICT: WORTHY\n"],
+  ["heading", "# Review\nThe change is ready.\nVERDICT: WORTHY\n"],
+  ["CRLF", "Careful review.\r\nVERDICT: WORTHY\n"],
+  ["tab", "Careful\treview.\nVERDICT: WORTHY\n"],
 ];
 
 /** Pure JSON stdout rows. Main has no transcript fallback, so these must match origin/main. */

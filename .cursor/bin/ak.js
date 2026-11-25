@@ -44805,35 +44805,9 @@ function parseFinalVerdict(text5, allowed) {
 function parseAdversarialVerdict(text5) {
   return parseFinalVerdict(text5, ADVERSARIAL_VERDICTS);
 }
-function failClosedAdversarialVerdict(text5) {
-  const parsed = parseAdversarialVerdict(text5);
-  return parsed.ok ? parsed.verdict : "REJECT";
-}
-function hasForbiddenControl(text5) {
-  for (let i = 0;i < text5.length; i++) {
-    const c = text5.charCodeAt(i);
-    if (c <= 31 && c !== 9 && c !== 10 && c !== 13)
-      return true;
-    if (c === 127 || c >= 128 && c <= 159)
-      return true;
-  }
-  return false;
-}
-function hasFence(text5) {
-  return text5.includes("```") || text5.includes("~~~");
-}
-function hasUnicodeOrHexEscape(text5) {
-  return /\\u[0-9a-fA-F]|\\x[0-9a-fA-F]/.test(text5);
-}
-function hasDisallowedPairedPunctuation(text5) {
-  for (const ch of text5.normalize("NFKC")) {
-    if (ch === "(" || ch === ")")
-      continue;
-    if (/\p{Ps}|\p{Pe}/u.test(ch))
-      return true;
-  }
-  return false;
-}
+var FORBIDDEN_REMAINDER_ASCII = new Set(["{", "}", "[", "]", "<", ">", "`", "~", "\\"]);
+var HTML_ENTITY = /&#?[a-z0-9]+;/i;
+var PERCENT_ESCAPE = /%[0-9a-f]{2}/i;
 function remainderAfterFinalVerdictLine(text5) {
   const lines = text5.split(/\r\n|\r|\n/);
   let last = lines.length - 1;
@@ -44846,18 +44820,50 @@ function remainderAfterFinalVerdictLine(text5) {
   return lines.slice(0, last).join(`
 `);
 }
-function mixedJsonAndTranscript(text5) {
-  if (remainderAfterFinalVerdictLine(text5) === undefined)
-    return false;
-  return hasForbiddenControl(text5) || hasFence(text5) || hasUnicodeOrHexEscape(text5) || hasDisallowedPairedPunctuation(text5);
+function decodePrintableAscii(stdout) {
+  for (const byte of stdout) {
+    if (byte === 9 || byte === 10 || byte === 13)
+      continue;
+    if (byte < 32 || byte > 126)
+      return null;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(stdout);
+  } catch {
+    return null;
+  }
 }
-function adversarialChoiceFromTranscript(text5, options) {
-  if (mixedJsonAndTranscript(text5))
+function remainderHasForbiddenAscii(remainder) {
+  for (const ch of remainder)
+    if (FORBIDDEN_REMAINDER_ASCII.has(ch))
+      return true;
+  return false;
+}
+function remainderParsesAsJson(remainder) {
+  try {
+    JSON.parse(remainder.trim());
+    return true;
+  } catch {
+    return false;
+  }
+}
+function adversarialChoiceFromTranscript(stdout, options) {
+  const text5 = decodePrintableAscii(stdout);
+  if (text5 === null)
     return null;
-  const verdict = failClosedAdversarialVerdict(text5);
-  if (!parseAdversarialVerdict(text5).ok || !options.includes(verdict))
+  const remainder = remainderAfterFinalVerdictLine(text5);
+  if (remainder === undefined)
     return null;
-  return verdict;
+  if (remainderHasForbiddenAscii(remainder))
+    return null;
+  if (HTML_ENTITY.test(text5) || PERCENT_ESCAPE.test(text5))
+    return null;
+  if (remainderParsesAsJson(remainder))
+    return null;
+  const parsed = parseAdversarialVerdict(text5);
+  if (!parsed.ok || !options.includes(parsed.verdict))
+    return null;
+  return parsed.verdict;
 }
 
 // src/council/seat.ts
@@ -44913,7 +44919,7 @@ async function launchSeat(seat2, payload, options, spawn2) {
         return { ok: true, launcher: launcher2, answer: value, attempts };
       } catch (cause) {
         if (cause instanceof SyntaxError) {
-          const choice = adversarialChoiceFromTranscript(text5, options);
+          const choice = adversarialChoiceFromTranscript(child.stdout, options);
           if (choice !== null)
             return {
               ok: true,

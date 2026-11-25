@@ -76,30 +76,9 @@ export function failClosedAdversarialVerdict(text: string): AdversarialVerdict {
   return parsed.ok ? parsed.verdict : "REJECT";
 }
 
-function hasForbiddenControl(text: string): boolean {
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (c <= 0x1f && c !== 0x09 && c !== 0x0a && c !== 0x0d) return true;
-    if (c === 0x7f || (c >= 0x80 && c <= 0x9f)) return true;
-  }
-  return false;
-}
-
-function hasFence(text: string): boolean {
-  return text.includes("```") || text.includes("~~~");
-}
-
-function hasUnicodeOrHexEscape(text: string): boolean {
-  return /\\u[0-9a-fA-F]|\\x[0-9a-fA-F]/.test(text);
-}
-
-function hasDisallowedPairedPunctuation(text: string): boolean {
-  for (const ch of text.normalize("NFKC")) {
-    if (ch === "(" || ch === ")") continue;
-    if (/\p{Ps}|\p{Pe}/u.test(ch)) return true;
-  }
-  return false;
-}
+const FORBIDDEN_REMAINDER_ASCII = new Set(["{", "}", "[", "]", "<", ">", "`", "~", "\\"]);
+const HTML_ENTITY = /&#?[a-z0-9]+;/i;
+const PERCENT_ESCAPE = /%[0-9a-f]{2}/i;
 
 /**
  * The text before the final non-empty line when that line starts with
@@ -116,32 +95,55 @@ function remainderAfterFinalVerdictLine(text: string): string | undefined {
 }
 
 /**
- * True when stdout mixes JSON-looking text with a final VERDICT line.
- * The transcript path does not parse JSON and does not strip controls.
- * Raw stdout is mixed when it has a forbidden control, a ``` or ~~~
- * fence, a \\u or \\x hex escape, or, after NFKC, any Ps or Pe mark
- * other than ASCII ( and ). The lone `{` or `[` remainder exception
- * is dropped. Those characters are Ps, so class (b) already refuses
- * them.
+ * Decode stdout only when every byte is printable ASCII 0x20-0x7E or
+ * tab, line feed, or carriage return, and TextDecoder utf-8 fatal
+ * succeeds. Otherwise null. Callers pass the raw stdout Buffer, not
+ * the string from toString().
  */
-function mixedJsonAndTranscript(text: string): boolean {
-  if (remainderAfterFinalVerdictLine(text) === undefined) return false;
-  return (
-    hasForbiddenControl(text) || hasFence(text) || hasUnicodeOrHexEscape(text) || hasDisallowedPairedPunctuation(text)
-  );
+function decodePrintableAscii(stdout: Buffer): string | null {
+  for (const byte of stdout) {
+    if (byte === 0x09 || byte === 0x0a || byte === 0x0d) continue;
+    if (byte < 0x20 || byte > 0x7e) return null;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(stdout);
+  } catch {
+    return null;
+  }
+}
+
+function remainderHasForbiddenAscii(remainder: string): boolean {
+  for (const ch of remainder) if (FORBIDDEN_REMAINDER_ASCII.has(ch)) return true;
+  return false;
+}
+
+function remainderParsesAsJson(remainder: string): boolean {
+  try {
+    JSON.parse(remainder.trim());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * A non-JSON transcript's adversarial choice, or null when stdout has
- * no well-formed final VERDICT field whose value is in `options`. Mixed
- * JSON-plus-VERDICT stdout returns null first. Otherwise the choice is
- * `failClosedAdversarialVerdict`: WORTHY only from a valid field.
- * Callers that already parsed JSON must not use this as a fallback for
- * a malformed object.
+ * A non-JSON transcript's adversarial choice, or null when the raw
+ * stdout Buffer is not an allowlisted transcript. The seat is approved
+ * only when the Buffer is printable ASCII UTF-8, the remainder has none
+ * of { } [ ] < > ` ~ \, the text has no HTML entity or percent-escape,
+ * the trimmed remainder does not JSON.parse, and a well-formed final
+ * VERDICT field names a value in `options`. Callers that already parsed
+ * JSON must not use this as a fallback for a malformed object.
  */
-export function adversarialChoiceFromTranscript(text: string, options: readonly string[]): AdversarialVerdict | null {
-  if (mixedJsonAndTranscript(text)) return null;
-  const verdict = failClosedAdversarialVerdict(text);
-  if (!parseAdversarialVerdict(text).ok || !options.includes(verdict)) return null;
-  return verdict;
+export function adversarialChoiceFromTranscript(stdout: Buffer, options: readonly string[]): AdversarialVerdict | null {
+  const text = decodePrintableAscii(stdout);
+  if (text === null) return null;
+  const remainder = remainderAfterFinalVerdictLine(text);
+  if (remainder === undefined) return null;
+  if (remainderHasForbiddenAscii(remainder)) return null;
+  if (HTML_ENTITY.test(text) || PERCENT_ESCAPE.test(text)) return null;
+  if (remainderParsesAsJson(remainder)) return null;
+  const parsed = parseAdversarialVerdict(text);
+  if (!parsed.ok || !options.includes(parsed.verdict)) return null;
+  return parsed.verdict;
 }

@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { isCouncilAnswer } from "../src/council/config.ts";
 import { launchSeat, type Spawn } from "../src/council/seat.ts";
-import { JSON_STDOUT_ROWS, MIXED_JSON_PLUS_VERDICT, WORTHY_WITH_JSON_SCALAR } from "./helpers/mixed-stdout.ts";
+import {
+  CLEAN_TRANSCRIPT_ROWS,
+  JSON_STDOUT_ROWS,
+  MIXED_JSON_PLUS_VERDICT,
+  MIXED_RAW_STDOUT,
+} from "./helpers/mixed-stdout.ts";
 import {
   ADVERSARIAL_VERDICTS,
   failClosedAdversarialVerdict,
@@ -53,8 +58,12 @@ describe("parseFinalVerdict", () => {
 });
 
 const spawnWith =
-  (stdout: string): Spawn =>
-  async () => ({ exitCode: 0, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) });
+  (stdout: string | Buffer): Spawn =>
+  async () => ({
+    exitCode: 0,
+    stdout: Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout),
+    stderr: Buffer.alloc(0),
+  });
 
 const spawnSequence = (outputs: string[]): Spawn => {
   let i = 0;
@@ -186,12 +195,40 @@ describe("council seat verdict consumption", () => {
     }
   });
 
-  test("a JSON scalar remainder still admits a final VERDICT: WORTHY", async () => {
-    for (const [name, stdout] of WORTHY_WITH_JSON_SCALAR) {
+  test("raw C1 stdout is unavailable before toString", async () => {
+    for (const [name, stdout] of MIXED_RAW_STDOUT) {
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(false);
+      expect(result.attempts, name).toHaveLength(1);
+      expect(JSON.stringify(result), name).not.toContain("structured final verdict field");
+    }
+  });
+
+  test("true, 42 and null plus VERDICT are refused", async () => {
+    for (const [name, stdout] of [
+      ["true", "true\nVERDICT: WORTHY\n"],
+      ["42", "42\nVERDICT: WORTHY\n"],
+      ["null", "null\nVERDICT: WORTHY\n"],
+    ] as const) {
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(false);
+      expect(result.attempts, name).toHaveLength(1);
+    }
+  });
+
+  test("printable ASCII transcripts with a final VERDICT: WORTHY are approved", async () => {
+    for (const [name, stdout] of CLEAN_TRANSCRIPT_ROWS) {
       const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
       expect(result.ok, name).toBe(true);
       expect(result).toMatchObject({ answer: { choice: "WORTHY" } });
     }
+  });
+
+  test("a 512k printable ASCII transcript still admits VERDICT: WORTHY", async () => {
+    const stdout = `${"a".repeat(512 * 1024)}\nVERDICT: WORTHY\n`;
+    const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ answer: { choice: "WORTHY" } });
   });
 
   test("pure JSON stdout matches origin/main on every json row", async () => {
