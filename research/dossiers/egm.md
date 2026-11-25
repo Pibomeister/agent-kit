@@ -115,7 +115,7 @@ not against an older README.
 
 Lock donors: 15. Research-only Apache pins with no catalog adaptation:
 `tester-army-e2e`, `blocks`. Semantic-hook MIT pin that is not a catalog donor:
-`jev-lint`.
+the mizchi lint hook recorded in the lock.
 
 Catalog donors with at least one adaptation under `skills/`, `roles/`,
 `packs/`, `protocols/`, `references/`, `policies/`, or `adapters/`:

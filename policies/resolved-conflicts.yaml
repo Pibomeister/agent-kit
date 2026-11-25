@@ -1456,6 +1456,7 @@ conflicts:
       roles: [doc-review/comprehension]
       policies: [review]
       schemas: [finding]
+      references: [delegation]
     scenario: 9
     coverage: indirect
     note: >-

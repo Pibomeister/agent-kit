@@ -78,8 +78,8 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95983,
-      "tokens": 23967
+      "bytes": 96014,
+      "tokens": 23975
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -153,8 +153,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27281,
-      "tokens": 6815
+      "bytes": 27323,
+      "tokens": 6825
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -953,8 +953,8 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95983,
-      "tokens": 23967
+      "bytes": 96014,
+      "tokens": 23975
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1028,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27281,
-      "tokens": 6815
+      "bytes": 27323,
+      "tokens": 6825
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1828,8 +1828,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 96007,
-      "tokens": 23973
+      "bytes": 96038,
+      "tokens": 23981
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1903,8 +1903,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27353,
-      "tokens": 6833
+      "bytes": 27395,
+      "tokens": 6843
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2703,8 +2703,8 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95983,
-      "tokens": 23967
+      "bytes": 96014,
+      "tokens": 23975
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -2778,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27281,
-      "tokens": 6815
+      "bytes": 27323,
+      "tokens": 6825
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3578,8 +3578,8 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95983,
-      "tokens": 23967
+      "bytes": 96014,
+      "tokens": 23975
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -3653,8 +3653,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27281,
-      "tokens": 6815
+      "bytes": 27323,
+      "tokens": 6825
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4453,8 +4453,8 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 95983,
-      "tokens": 23967
+      "bytes": 96014,
+      "tokens": 23975
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -4528,8 +4528,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27281,
-      "tokens": 6815
+      "bytes": 27323,
+      "tokens": 6825
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
