@@ -90,8 +90,13 @@ function fixture() {
         const [added, removed] = row.split("\t");
         return sum + Number(added) + Number(removed);
       }, 0);
-  const add = (...events: object[]): void => {
-    const added = review(["ledger", "add", "--ledger", ledger, "--event", "-"], JSON.stringify(events));
+  const add = (...events: JsonValue[]): void => {
+    const only = events.length === 1 ? (events[0] ?? null) : null;
+    const payload = member(only, "schema") === "review-scope" && only !== null ? only : events;
+    const added = review(
+      ["ledger", "add", "--ledger", ledger, "--event", "-", "--repo", root],
+      JSON.stringify(payload),
+    );
     if (added.code !== 0) throw new Error(added.err.join("\n"));
   };
   /** The scope record a caller last kept, and its head. */
@@ -170,6 +175,146 @@ describe("ak review scope before round 1", () => {
   });
 });
 
+describe("ak review scope: later-round tree identity", () => {
+  test("a mode-only change after round 1 is closure with at least one added line", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("update-index", "--chmod=+x", "src/a.ts");
+    f.git("commit", "-m", "chmod +x");
+    const next = f.git("rev-parse", "HEAD");
+    const scoped = f.record(next);
+    expect(scoped).toMatchObject({ outcome: "closure", triggers: [], delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
+  });
+
+  test("moving added lines above unchanged base lines is closure, not carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reordered = f.commit({ "src/a.ts": lines("first", 30) + lines("a", 10) }, "reorder");
+    expect(f.record(reordered)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { empty: false },
+      event: null,
+    });
+  });
+
+  test("a gitlink bump after round 1 opens a new scope", () => {
+    const f = fixture();
+    const pin = f.git("rev-parse", "main");
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`);
+    f.git("commit", "-m", "add gitlink");
+    const linked = f.git("rev-parse", "HEAD");
+    f.round(linked);
+    f.git("update-index", "--cacheinfo", `160000,${f.head},vendor/lib`);
+    f.git("commit", "-m", "bump gitlink");
+    const bumped = f.git("rev-parse", "HEAD");
+    expect(f.record(bumped)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["path-identity"],
+      delta: { empty: false, added_lines: 1 },
+      event: { kind: "scope-open", trigger: "path-identity", head: bumped },
+    });
+  });
+
+  test("replacing a reviewed file with a gitlink opens a new scope", () => {
+    const f = fixture();
+    f.round(f.head);
+    const pin = f.git("rev-parse", "main");
+    f.git("rm", "-q", "src/a.ts");
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},src/a.ts`);
+    f.git("commit", "-m", "file to gitlink");
+    const replaced = f.git("rev-parse", "HEAD");
+    expect(f.record(replaced)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["path-identity"],
+      event: { kind: "scope-open", trigger: "path-identity", head: replaced },
+    });
+  });
+
+  test("a two-line git mv after round 1 opens a new scope and matches --numstat", () => {
+    const f = fixture();
+    f.round(f.head);
+    const small = f.commit({ "src/small.ts": "only\n" }, "add a one-line file");
+    f.round(small);
+    f.git("mv", "src/small.ts", "src/small-moved.ts");
+    f.git("commit", "-m", "git mv");
+    const moved = f.git("rev-parse", "HEAD");
+    expect(f.numstat(small, moved)).toBe(2);
+    expect(f.record(moved)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["path-identity"],
+      delta: { empty: false, added_lines: 1 },
+    });
+  });
+
+  test("a git mv of a pull-request file after round 1 opens a new scope and matches --numstat", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("mv", "src/a.ts", "src/moved.ts");
+    f.git("commit", "-m", "git mv a.ts");
+    const moved = f.git("rev-parse", "HEAD");
+    expect(f.numstat(f.head, moved)).toBe(80);
+    expect(f.record(moved)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["path-identity", "scope-growth"],
+      delta: { empty: false, added_lines: 50 },
+    });
+  });
+
+  test("a forged carry for a dirty head is refused", () => {
+    const f = fixture();
+    f.round(f.head);
+    const dirty = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const forged = review(
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root],
+      JSON.stringify({ kind: "carry", head: dirty }),
+    );
+    expect({ code: forged.code, out: forged.out }).toEqual({ code: 2, out: [] });
+    expect(forged.err.join("\n")).toContain("a carry line needs a scope record whose outcome is carry");
+    const claimed = review(
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root],
+      JSON.stringify({
+        schema: "review-scope",
+        outcome: "carry",
+        head: dirty,
+        base: f.git("rev-parse", "main"),
+        previous: { head: f.head },
+        delta: { empty: true },
+        event: { kind: "carry", head: dirty },
+      }),
+    );
+    expect({ code: claimed.code, out: claimed.out }).toEqual({ code: 2, out: [] });
+    expect(claimed.err.join("\n")).toContain(
+      "a carry line needs a scope record whose delta is empty against that head",
+    );
+  });
+
+  test("a hand-written --previous of the last reviewed head does not make a dirty head carry", () => {
+    const f = fixture();
+    f.round(f.head);
+    const dirty = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const previous = f.file(
+      "forged-previous.json",
+      JSON.stringify({
+        schema: "review-scope",
+        schema_version: 1,
+        head: f.head,
+        class: null,
+        intent: null,
+        criteria: null,
+        review_surface_changed: null,
+      }),
+    );
+    expect(f.record(dirty, "--previous", previous)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      delta: { empty: false },
+      event: null,
+    });
+  });
+});
+
 describe("ak review scope: what is not a trigger", () => {
   test("a fix commit gets a closure round", () => {
     const f = fixture();
@@ -216,7 +361,7 @@ describe("ak review scope: what is not a trigger", () => {
       delta: { empty: true, added_lines: 0, removed_lines: 0, rewritten_lines: 0 },
       event: { kind: "carry", head: rebased },
     });
-    f.add(Object(member(scoped, "event")));
+    f.add(Object(scoped));
     expect(f.record(rebased)).toMatchObject({ reviewed: rebased, outcome: "carry", event: null });
   });
 
@@ -579,6 +724,7 @@ function delegationFixture() {
   };
   f.file("ticket.json", JSON.stringify(validTicket));
   f.file("project.json", JSON.stringify(project));
+  const classFlags = ["--ticket", join(f.dir, "ticket.json"), "--project", join(f.dir, "project.json")];
   /** Run `ak delegation --stage merge` at `at` and keep the record it prints. */
   const merge = (name: string, at: string, ...flags: string[]): string => {
     const out: string[] = [];
@@ -602,7 +748,7 @@ function delegationFixture() {
     expect({ code, err }).toEqual({ code: 0, err: [] });
     return f.file(name, out.join("\n"));
   };
-  return { ...f, merge };
+  return { ...f, merge, classFlags };
 }
 
 describe("ak review scope: risk tier and review surface", () => {
@@ -618,7 +764,7 @@ describe("ak review scope: risk tier and review surface", () => {
     // The merge-stage command is the oracle for the class and for the surface.
     expect([member(before, "class"), member(now, "class")]).toEqual(["yellow-agent", "red"]);
     expect(member(now, "review_surface_changed")).toBe(true);
-    expect(f.record(touched, "--previous", kept, "--record", second)).toMatchObject({
+    expect(f.record(touched, "--previous", kept, "--record", second, ...f.classFlags)).toMatchObject({
       outcome: "new-scope",
       triggers: ["risk-tier-rise", "surface-changed"],
       unevaluated: [{ trigger: "scope-growth" }, { trigger: "requirement-change" }],
@@ -635,7 +781,7 @@ describe("ak review scope: risk tier and review surface", () => {
     f.round(f.head);
     const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
     const second = f.merge("merge-2.json", fix, "--previous", first);
-    expect(f.record(fix, "--previous", kept, "--record", second)).toMatchObject({
+    expect(f.record(fix, "--previous", kept, "--record", second, ...f.classFlags)).toMatchObject({
       outcome: "closure",
       triggers: [],
       class: "yellow-agent",
@@ -650,7 +796,7 @@ describe("ak review scope: risk tier and review surface", () => {
     f.round(f.head);
     const touched = f.commit({ "src/shared/util.ts": lines("shared", 2) }, "touch the shared helper");
     const alone = f.merge("merge-2.json", touched);
-    expect(f.record(touched, "--previous", kept, "--record", alone)).toMatchObject({
+    expect(f.record(touched, "--previous", kept, "--record", alone, ...f.classFlags)).toMatchObject({
       triggers: ["risk-tier-rise"],
       unevaluated: [{ trigger: "surface-changed" }, { trigger: "scope-growth" }, { trigger: "requirement-change" }],
       review_surface_changed: null,
@@ -772,6 +918,33 @@ describe("ak review scope refuses", () => {
     expect(run.err.join("\n")).toContain(`the last reviewed head is ${second}`);
   });
 
+  test("a --record whose head is not --head", () => {
+    const f = delegationFixture();
+    const first = f.merge("merge-1.json", f.head);
+    const kept = f.keep("round-1.json", f.head, "--record", first);
+    f.round(f.head);
+    const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const run = f.scope(fix, "--previous", kept, "--record", first, ...f.classFlags);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain(`--record is the record of ${f.head}`);
+  });
+
+  test("a previous.class that does not match merge-stage scoring at the last reviewed head", () => {
+    const f = delegationFixture();
+    const first = f.merge("merge-1.json", f.head);
+    const kept = f.keep("round-1.json", f.head, "--record", first);
+    f.round(f.head);
+    const edited = parseJson(readFileSync(kept, "utf8"));
+    const object = edited instanceof Object && !Array.isArray(edited) ? edited : {};
+    object.class = "red";
+    writeFileSync(kept, JSON.stringify(object));
+    const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const second = f.merge("merge-2.json", fix, "--previous", first);
+    const run = f.scope(fix, "--previous", kept, "--record", second, ...f.classFlags);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("--previous class is red");
+  });
+
   test("a file that is not a scope record as the last round's record", () => {
     const f = fixture();
     f.round(f.head);
@@ -808,7 +981,7 @@ describe("ak review scope refuses", () => {
     f.round(f.head);
     const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
     const second = f.merge("merge-2.json", fix, "--previous", first);
-    const kept = f.keep("round-2.json", fix, "--previous", one, "--record", second);
+    const kept = f.keep("round-2.json", fix, "--previous", one, "--record", second, ...f.classFlags);
     f.round(fix);
     const touched = f.commit({ "src/shared/util.ts": lines("shared", 2) }, "touch the shared helper");
     const run = f.scope(touched, "--previous", kept, "--record", f.merge("merge-3.json", touched));

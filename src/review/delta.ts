@@ -6,7 +6,9 @@
  * Every diff here has no context lines, so a change beside the pull request's
  * lines on the base branch is not a change to the pull request. Renames are
  * not detected, user diff drivers do not run and the algorithm is fixed, so two
- * machines read the same patch from the same commits.
+ * machines read the same patch from the same commits. Empty is the raw tree:
+ * the same path, mode and blob at both heads. The changed-line patch id is
+ * only for rewritten-commit matching.
  *
  * This file changes no work tree, index or ref. `git merge-tree` writes the
  * objects of each merge it repeats into the object store, as unreachable
@@ -28,6 +30,87 @@ const DIFF = [
   "--src-prefix=a/",
   "--dst-prefix=b/",
 ];
+
+const RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index"] as const;
+const RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
+
+interface TreeEntry {
+  mode: string;
+  sha: string;
+}
+
+interface RawRow {
+  srcMode: string;
+  dstMode: string;
+  srcSha: string;
+  dstSha: string;
+  status: string;
+  path: string;
+}
+
+function rawRows(repo: string, from: string, to: string): RawRow[] {
+  const rows: RawRow[] = [];
+  for (const line of git(repo, ["diff", ...RAW, from, to]).out.split("\n")) {
+    if (line === "") continue;
+    const match = RAW_ROW.exec(line);
+    if (match === null) continue;
+    const [, srcMode, dstMode, srcSha, dstSha, status, path] = match;
+    if (
+      srcMode === undefined ||
+      dstMode === undefined ||
+      srcSha === undefined ||
+      dstSha === undefined ||
+      status === undefined ||
+      path === undefined
+    )
+      continue;
+    rows.push({ srcMode, dstMode, srcSha, dstSha, status, path });
+  }
+  return rows;
+}
+
+/** The resulting path, mode and blob of a pull request diff. Deleted paths are absent. */
+function treeOf(rows: readonly RawRow[]): Map<string, TreeEntry> {
+  const tree = new Map<string, TreeEntry>();
+  for (const row of rows) {
+    if (row.status.startsWith("D")) tree.delete(row.path);
+    else tree.set(row.path, { mode: row.dstMode, sha: row.dstSha });
+  }
+  return tree;
+}
+
+function sameTree(left: Map<string, TreeEntry>, right: Map<string, TreeEntry>): boolean {
+  if (left.size !== right.size) return false;
+  for (const [path, entry] of left) {
+    const other = right.get(path);
+    if (other === undefined || other.mode !== entry.mode || other.sha !== entry.sha) return false;
+  }
+  return true;
+}
+
+/** Paths that changed as a gitlink, or as a same-blob add and delete, between two result trees. */
+function pathIdentity(before: Map<string, TreeEntry>, now: Map<string, TreeEntry>): string[] {
+  const paths = new Set([...before.keys(), ...now.keys()]);
+  const hits = new Set<string>();
+  for (const path of paths) {
+    const left = before.get(path);
+    const right = now.get(path);
+    const gitlink = left?.mode === "160000" || right?.mode === "160000";
+    if (gitlink && (left?.mode !== right?.mode || left?.sha !== right?.sha)) hits.add(path);
+  }
+  const gone = [...before.entries()].filter(([path]) => !now.has(path));
+  const came = [...now.entries()].filter(([path]) => !before.has(path));
+  for (const [from, left] of gone) {
+    if (left.sha === "0".repeat(left.sha.length)) continue;
+    for (const [to, right] of came) {
+      if (left.sha === right.sha) {
+        hits.add(from);
+        hits.add(to);
+      }
+    }
+  }
+  return [...hits].toSorted();
+}
 
 /** Run git in `repo` and return what it printed. A status outside `statuses` is an error. */
 function git(repo: string, args: readonly string[], statuses: readonly number[] = [0]) {
@@ -158,16 +241,19 @@ export interface DeltaReading {
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
   const before = headPatch(repo, base, previous);
   const now = headPatch(repo, base, head);
+  const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));
+  const nowTree = treeOf(rawRows(repo, now.reading.merge_base, head));
   return {
     now: now.reading,
     previous: before.reading,
     delta: {
-      empty: before.patch.id === now.patch.id,
+      empty: sameTree(beforeTree, nowTree),
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
       rewritten_lines: linesRewritten(repo, base, before, now.reading, head),
       conflict_paths: conflictPaths(repo, base, previous, head),
+      path_identity: pathIdentity(beforeTree, nowTree),
     },
   };
 }

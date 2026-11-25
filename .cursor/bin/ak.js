@@ -39454,7 +39454,11 @@ function readMergeRecord(input, cwd, label) {
     const schema = {
       $id: ticket_schema_default.$id,
       ...block,
-      properties: { ...block.properties, review_surface_changed: { type: "boolean" } },
+      properties: {
+        ...block.properties,
+        review_surface_changed: { type: "boolean" },
+        head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+      },
       $defs: ticket_schema_default.$defs
     };
     printedValidator = makeValidation().compile(schema);
@@ -39473,12 +39477,16 @@ function readMergeRecord(input, cwd, label) {
     throw new Error(`${label} ${input} is not a merge-stage record`);
   return parsed;
 }
+function resolveRevision(cwd, revision) {
+  const check = spawnSync2("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+  const id = (check.stdout ?? "").trim();
+  if (check.status !== 0 || id === "")
+    throw new Error(`cannot resolve revision ${revision}`);
+  return id;
+}
 function gitChangedPaths(cwd, base, head) {
-  for (const revision of [base, head]) {
-    const check = spawnSync2("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
-    if (check.status !== 0)
-      throw new Error(`cannot resolve revision ${revision}`);
-  }
+  for (const revision of [base, head])
+    resolveRevision(cwd, revision);
   const range = `${base}...${head}`;
   const diff = spawnSync2("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
   if (diff.status !== 0)
@@ -39499,8 +39507,12 @@ function delegationRunProblem(run) {
 function scoreDelegationRun(run, cwd) {
   if (run.stage === "merge" && run.base !== undefined) {
     const previous = run.previous === undefined ? undefined : readMergeRecord(run.previous, cwd, "previous record");
-    const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
-    const record = scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+    const headRev = run.head ?? "HEAD";
+    const paths = gitChangedPaths(cwd, run.base, headRev);
+    const record = {
+      ...scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd),
+      head: resolveRevision(cwd, headRev)
+    };
     return previous === undefined ? record : { ...record, review_surface_changed: reviewSurfaceChanged(record, previous) };
   }
   return scoreDelegationFiles(run.ticket, run.project, cwd);
@@ -45375,6 +45387,7 @@ import { existsSync as existsSync42, readFileSync as readFileSync39, writeFileSy
 var UNRESOLVED = ["open", "disputed", "addressed"];
 var SCOPE_TRIGGERS = [
   "large-rebase",
+  "path-identity",
   "risk-tier-rise",
   "surface-changed",
   "scope-growth",
@@ -46085,6 +46098,7 @@ import { spawnSync as spawnSync6 } from "child_process";
 // src/review/scope.ts
 import { createHash as createHash14 } from "crypto";
 var MODE = /^(old mode|new mode|new file mode|deleted file mode) /;
+var GITLINK_MODE = / 160000$/;
 function readPatch(diff) {
   const hash = createHash14("sha256");
   const counts = new Map;
@@ -46092,6 +46106,9 @@ function readPatch(diff) {
   let file = "";
   let blob = "";
   let inHunk = false;
+  let gitlink = false;
+  let oldMode = false;
+  let newMode = false;
   const changed = (text5) => {
     hash.update(`${text5}
 `);
@@ -46100,17 +46117,27 @@ function readPatch(diff) {
 ${text5}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   };
+  const flushMode = () => {
+    if (oldMode && newMode)
+      changed("mode");
+    oldMode = false;
+    newMode = false;
+  };
   for (const line of diff.split(`
 `)) {
     if (line.startsWith("diff --git ")) {
+      flushMode();
       file = line;
       blob = "";
       inHunk = false;
+      gitlink = false;
       hash.update(`${line}
 `);
     } else if (line.startsWith("@@")) {
       inHunk = true;
     } else if (inHunk) {
+      if (gitlink)
+        continue;
       if (line.startsWith("+") || line.startsWith("-"))
         changed(line);
       else if (line.startsWith("\\"))
@@ -46118,13 +46145,30 @@ ${text5}`;
 `);
     } else if (line.startsWith("index ")) {
       blob = line.slice("index ".length).split("..")[1]?.split(" ")[0] ?? "";
+      if (GITLINK_MODE.test(line))
+        gitlink = true;
+      if (gitlink)
+        changed(`gitlink ${blob}`);
     } else if (line.startsWith("Binary files ") || line === "GIT binary patch") {
       changed(`binary ${blob}`);
+    } else if (line === "new file mode 160000" || line === "deleted file mode 160000") {
+      hash.update(`${line}
+`);
+      gitlink = true;
+    } else if (line.startsWith("old mode ")) {
+      hash.update(`${line}
+`);
+      oldMode = true;
+    } else if (line.startsWith("new mode ")) {
+      hash.update(`${line}
+`);
+      newMode = true;
     } else if (MODE.test(line)) {
       hash.update(`${line}
 `);
     }
   }
+  flushMode();
   return { id: `sha256:${hash.digest("hex")}`, lines, counts };
 }
 function linesNotIn(patch, other) {
@@ -46145,6 +46189,8 @@ function scopeTriggers(facts, policy) {
     reason2.set("large-rebase", `a merge resolved a conflict in ${delta.conflict_paths.join(", ")}`);
   else if (!delta.empty && delta.rewritten_lines * 100 > limits.rebase_rewritten_percent * delta.pr_lines)
     reason2.set("large-rebase", `rewritten commits changed ${delta.rewritten_lines} lines against the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`);
+  if (delta.path_identity.length > 0)
+    reason2.set("path-identity", `a gitlink or same-blob add and delete changed ${delta.path_identity.join(", ")}`);
   if (facts.class_rose === null)
     unevaluated.push({ trigger: "risk-tier-rise", needs: "a merge-stage record at this round and the last" });
   else if (facts.class_rose)
@@ -46195,6 +46241,68 @@ var DIFF = [
   "--src-prefix=a/",
   "--dst-prefix=b/"
 ];
+var RAW = ["--raw", "--no-renames", "--no-ext-diff", "--full-index"];
+var RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
+function rawRows(repo, from, to) {
+  const rows2 = [];
+  for (const line of git4(repo, ["diff", ...RAW, from, to]).out.split(`
+`)) {
+    if (line === "")
+      continue;
+    const match = RAW_ROW.exec(line);
+    if (match === null)
+      continue;
+    const [, srcMode, dstMode, srcSha, dstSha, status2, path] = match;
+    if (srcMode === undefined || dstMode === undefined || srcSha === undefined || dstSha === undefined || status2 === undefined || path === undefined)
+      continue;
+    rows2.push({ srcMode, dstMode, srcSha, dstSha, status: status2, path });
+  }
+  return rows2;
+}
+function treeOf(rows2) {
+  const tree = new Map;
+  for (const row of rows2) {
+    if (row.status.startsWith("D"))
+      tree.delete(row.path);
+    else
+      tree.set(row.path, { mode: row.dstMode, sha: row.dstSha });
+  }
+  return tree;
+}
+function sameTree(left, right) {
+  if (left.size !== right.size)
+    return false;
+  for (const [path, entry] of left) {
+    const other = right.get(path);
+    if (other === undefined || other.mode !== entry.mode || other.sha !== entry.sha)
+      return false;
+  }
+  return true;
+}
+function pathIdentity(before, now) {
+  const paths2 = new Set([...before.keys(), ...now.keys()]);
+  const hits = new Set;
+  for (const path of paths2) {
+    const left = before.get(path);
+    const right = now.get(path);
+    const gitlink = left?.mode === "160000" || right?.mode === "160000";
+    if (gitlink && (left?.mode !== right?.mode || left?.sha !== right?.sha))
+      hits.add(path);
+  }
+  const gone = [...before.entries()].filter(([path]) => !now.has(path));
+  const came = [...now.entries()].filter(([path]) => !before.has(path));
+  for (const [from, left] of gone) {
+    if (left.sha === "0".repeat(left.sha.length))
+      continue;
+    for (const [to, right] of came) {
+      if (left.sha === right.sha) {
+        hits.add(from);
+        hits.add(to);
+      }
+    }
+  }
+  return [...hits].toSorted();
+}
 function git4(repo, args, statuses = [0]) {
   const run3 = spawnSync6("git", ["-c", "core.quotePath=false", ...args], {
     cwd: repo,
@@ -46274,16 +46382,19 @@ function conflictPaths(repo, base2, previous, head) {
 function readDelta(repo, base2, previous, head) {
   const before = headPatch(repo, base2, previous);
   const now = headPatch(repo, base2, head);
+  const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));
+  const nowTree = treeOf(rawRows(repo, now.reading.merge_base, head));
   return {
     now: now.reading,
     previous: before.reading,
     delta: {
-      empty: before.patch.id === now.patch.id,
+      empty: sameTree(beforeTree, nowTree),
       pr_lines: before.patch.lines,
       added_lines: linesNotIn(now.patch, before.patch),
       removed_lines: linesNotIn(before.patch, now.patch),
       rewritten_lines: linesRewritten(repo, base2, before, now.reading, head),
-      conflict_paths: conflictPaths(repo, base2, previous, head)
+      conflict_paths: conflictPaths(repo, base2, previous, head),
+      path_identity: pathIdentity(beforeTree, nowTree)
     }
   };
 }
@@ -46402,7 +46513,14 @@ var review_ledger_schema_default = {
         kind: { const: "scope-open" },
         scope: { type: "integer", minimum: 2 },
         trigger: {
-          enum: ["large-rebase", "risk-tier-rise", "surface-changed", "scope-growth", "requirement-change"]
+          enum: [
+            "large-rebase",
+            "path-identity",
+            "risk-tier-rise",
+            "surface-changed",
+            "scope-growth",
+            "requirement-change"
+          ]
         },
         head: { $ref: "#/$defs/head" }
       }
@@ -47100,17 +47218,29 @@ function addEvents(existing, items2, options) {
 
 // src/review/cli.ts
 var USAGE5 = [
-  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
+  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
   "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
-  "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
+  "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--ticket <file>] [--project <file>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
   "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]"
 ];
 var NOTE = "This record grants no authority. It approves no checkpoint, ticket, merge or deploy.";
 var REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
 var FLAGS = {
-  add: ["--ledger", "--event", "--snapshot", "--max-rounds", "--out"],
+  add: ["--ledger", "--event", "--repo", "--snapshot", "--max-rounds", "--out"],
   show: ["--ledger", "--out"],
-  scope: ["--ledger", "--base", "--head", "--repo", "--previous", "--record", "--intent", "--criteria", "--out"],
+  scope: [
+    "--ledger",
+    "--base",
+    "--head",
+    "--repo",
+    "--previous",
+    "--record",
+    "--ticket",
+    "--project",
+    "--intent",
+    "--criteria",
+    "--out"
+  ],
   decide: ["--ledger", "--head", "--seats", "--missing-evidence", "--integrity-failure", "--out"]
 };
 function commandOf(argv) {
@@ -47169,11 +47299,54 @@ function maxRounds(flags, policy) {
     throw new UsageError(`--max-rounds is 2 or ${policy.max_rounds}`);
   return Number(given);
 }
+var COMMIT = { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" };
+var scopeRecordValidator = null;
+var carryValidator = null;
+function validateScopeRecord() {
+  scopeRecordValidator ??= new import__202015.default({ strict: false }).compile({
+    type: "object",
+    required: ["schema"],
+    properties: { schema: { const: "review-scope" } }
+  });
+  return scopeRecordValidator;
+}
+function validateCarryScope() {
+  carryValidator ??= new import__202015.default({ strict: false }).compile({
+    type: "object",
+    required: ["schema", "outcome", "head", "base", "previous", "delta", "event"],
+    properties: {
+      schema: { const: "review-scope" },
+      outcome: { const: "carry" },
+      head: COMMIT,
+      base: { type: "string" },
+      previous: { type: "object", required: ["head"], properties: { head: COMMIT } },
+      delta: { type: "object", required: ["empty"], properties: { empty: { const: true } } },
+      event: {
+        type: "object",
+        required: ["kind", "head"],
+        properties: { kind: { const: "carry" }, head: COMMIT }
+      }
+    }
+  });
+  return carryValidator;
+}
+function carryFromScope(record, covered, repo) {
+  if (record.event.head !== record.head)
+    throw new Error("a carry line needs a scope record of the carried head");
+  if (record.previous.head !== covered)
+    throw new Error("a carry line needs a scope record whose previous.head is the last reviewed head");
+  const reading = readDelta(repo, record.base, record.previous.head, record.event.head);
+  if (!reading.delta.empty)
+    throw new Error("a carry line needs a scope record whose delta is empty against that head");
+  const item = { kind: "carry", head: record.event.head };
+  return item;
+}
 function add(flags, io) {
   const path = required(flags, "--ledger");
   const source = required(flags, "--event");
   const cap = maxRounds(flags, DEFAULT_POLICY);
   const snapshot = flags.one.get("--snapshot");
+  const repo = flags.one.get("--repo") ?? process.cwd();
   const text5 = source === "-" ? (io.stdin ?? (() => readFileSync39(0, "utf8")))() : readFileSync39(source, "utf8");
   const before = readLedger(path);
   const options = { policy: DEFAULT_POLICY };
@@ -47181,7 +47354,20 @@ function add(flags, io) {
     options.snapshot = snapshot;
   if (cap !== undefined)
     options.maxRounds = cap;
-  const result2 = addEvents(before.events, parseInput(text5), options);
+  const parsed = JSON.parse(text5);
+  const asScope = validateScopeRecord();
+  const asCarry = validateCarryScope();
+  let items2;
+  if (asScope(parsed)) {
+    if (!asCarry(parsed))
+      throw new Error("a carry line needs a scope record whose outcome is carry");
+    items2 = [carryFromScope(parsed, fold(before.events, DEFAULT_POLICY).covered_head, repo)];
+  } else {
+    items2 = parseInput(text5);
+    if (items2.some((item) => item.kind === "carry"))
+      throw new Error("a carry line needs a scope record whose outcome is carry");
+  }
+  const result2 = addEvents(before.events, items2, options);
   appendLedger(path, result2.appended, before.unterminated);
   const after = readLedger(path);
   const record = {
@@ -47315,12 +47501,23 @@ function scopeCommand(flags, io) {
   if (reviewed !== null && previousPath === undefined)
     throw new UsageError(`--previous is required: the ledger holds a reviewed round at ${reviewed}, so give the scope record of that head`);
   const before = reviewed === null || previousPath === undefined ? null : readBaseline(previousPath, reviewed);
+  if (merge !== null && merge.head !== head)
+    throw new UsageError(`--record is the record of ${merge.head ?? "no head"}, and --head is ${head}: give the merge-stage record of this head`);
   if (before !== null) {
     requireAgain(flags, "--record", before.class);
     requireAgain(flags, "--intent", before.intent);
     requireAgain(flags, "--criteria", before.criteria);
     if (before.review_surface_changed !== null && merge?.review_surface_changed === undefined)
       throw new UsageError("--record must state review_surface_changed: the record of the last reviewed round holds its value, so run ak delegation --stage merge with --previous");
+    if (before.class !== null && reviewed !== null) {
+      const ticket = flags.one.get("--ticket");
+      const project = flags.one.get("--project");
+      if (ticket === undefined || project === undefined)
+        throw new UsageError("--ticket and --project are required: the record of the last reviewed round holds a class, so score ak delegation --stage merge at that head");
+      const scored = scoreDelegationRun({ ticket, project, stage: "merge", base: revisions.base, head: reviewed }, repo);
+      if (scored.class !== before.class)
+        throw new UsageError(`--previous class is ${before.class}, and merge-stage scoring at ${reviewed} is ${scored.class}`);
+    }
   }
   const reading = reviewed === null ? null : readDelta(repo, base2, resolveCommit(repo, reviewed, "the last reviewed head"), head);
   const facts = reading === null ? null : {
@@ -47341,6 +47538,7 @@ function scopeCommand(flags, io) {
     policy: DEFAULT_POLICY,
     scope: state.scope,
     reviewed,
+    base: base2,
     head,
     outcome,
     triggers: triggers?.fired ?? [],

@@ -78,11 +78,13 @@ next review covers.
     for the owner. An always-block row skips the council.
 12. **A new review scope restarts the round count and invalidates the approvals.** The rows stay.
     A pull request opens one new scope. A further one holds it for a split-or-replan decision.
-13. **Five triggers open a new scope, and nothing else does.** `ak review scope` compares the pull
+13. **Six triggers open a new scope, and nothing else does.** `ak review scope` compares the pull
     request at a head with the pull request at the last reviewed head, which the ledger names.
     - `large-rebase`: the patch changed and the rewritten commits changed lines amounting to more
       than 30% of the pull request's changed lines, or a merge resolved a conflict in a path of
       the pull request.
+    - `path-identity`: a path changed as a gitlink (mode 160000), or a same-blob add and delete
+      pair appears, which is a rename when rename detection is off.
     - `risk-tier-rise`: the merge-stage class is above the class of the last reviewed round.
     - `surface-changed`: `review_surface_changed` is true in the merge-stage record.
       `ak delegation --stage merge --previous <record>` prints that field.
@@ -90,9 +92,10 @@ next review covers.
       than 400 lines, or the intent file changed.
     - `requirement-change`: the digest of the ticket's acceptance criteria changed.
 
-    A fix commit, a reached cap and a rebase that leaves the patches unchanged open nothing.
-14. **An unchanged patch calls no seat.** When the patch of the pull request has the id it had at
-    the last reviewed head, the outcome is `carry` and the earlier verdict covers the new head.
+    A fix commit, a reached cap and a rebase that leaves the blobs unchanged open nothing.
+14. **An unchanged tree calls no seat.** When every path of the pull request has the same mode and
+    blob it had at the last reviewed head, the outcome is `carry` and the earlier verdict covers
+    the new head. The changed-line patch id is only for rewritten-commit matching.
 
 `DEFAULT_POLICY` in `src/review/types.ts` holds the cap, the scope count, the always-block
 categories, the blocking severities and the trigger thresholds. The tools compare these values and
@@ -107,7 +110,7 @@ interpret none. `policies/review.yaml` `convergence` records the same values as 
   reports it too.
 - **Review depth.** ADR-0017 selects the seats of the first pass. This record does not select a
   seat. The caller tells `decide` how many seats the tier requires and which evidence is missing.
-  `policies/review.yaml` `pass_1.depth.evidence_by_class` records the evidence and the seat count
+  `policies/review.yaml` `convergence.evidence_by_class` records the evidence and the seat count
   of each class as data. No skill or protocol reads that map yet.
 - **The delegation class.** `scoreMergeStage` scores as before. `review_surface_changed` compares
   two printed records and changes no class, and the ticket's delegation block never holds it.
@@ -144,7 +147,9 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 - **The patch id is this package's own.** It is the digest of the changed lines of a diff with no
   context lines, in order, with the file headers and without the hunk headers. Whitespace counts,
   so an indentation change is a change. `git patch-id` ignores whitespace and reads context lines,
-  so a change beside the pull request's lines on the base branch would change it.
+  so a change beside the pull request's lines on the base branch would change it. An old-mode and
+  new-mode pair counts as one changed line. A gitlink counts as one SHA line. Empty is not this
+  id: it is the raw tree, path, mode and blob.
 - **A rewritten commit is one whose patch no commit of the new head has.** This is the exact-match
   rule of `git range-diff`, applied to patches with no context. A reworded message is not a
   rewrite. With no rewritten commit the share is zero. Otherwise it is read from the pull request

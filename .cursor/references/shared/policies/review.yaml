@@ -194,59 +194,6 @@ pass_1:
       - selecting a shallower depth to save tokens
       - dropping an activated seat at any depth
       - treating the class as a finding
-    # The evidence each class requires at the head and the independent seats its review sits
-    # (ADR-0018). `depth` restates `by_class`. `evidence` adds to the class above it in this map,
-    # so each class requires every item of the lower ones. A caller checks each item with its
-    # command, exit status and revision, then gives `ak review decide` the seat count and each
-    # missing item. This map selects no reviewer and names no seat's holder.
-    evidence_by_class:
-      green:
-        depth: single
-        evidence:
-          - lint and the project's rules are green
-          - the full test suite is green
-          - for a bug fix, one test that is red before the fix and green after it
-        independent_seats: 1
-        later_rounds: closure by that seat, only while it holds an open finding
-        second_seat: dropped
-      yellow-agent:
-        depth: reduced
-        evidence:
-          - an acceptance receipt for each criterion, as `super-verify` writes it
-          - for each behaviour change, one test that is red before the change and green after it
-        independent_seats: 1
-        later_rounds: closure by the seat that holds the finding
-        second_seat: dropped
-        second_seat_kept_when:
-          - the diff exceeds 400 changed lines
-          - the diff matches a shared surface of the project record
-      yellow-owner:
-        depth: reduced
-        evidence:
-          - runtime proof of each behaviour a user or an operator sees
-          - a mutation check on the changed lines, where the project has a mutation tool
-        independent_seats: 2
-        later_rounds: closure by the seat that holds the finding, and no other seat
-        second_seat: kept for round 1 and dropped after it
-      red:
-        depth: full
-        evidence:
-          - property tests for each state machine or ledger the change adds or alters
-          - the specialist evidence each attached pack requires
-        independent_seats: 2
-        specialist_seat: each activated specialist seat sits round 1
-        later_rounds: >-
-          Closure by the seats that hold the findings. A specialist seat returns only for its own
-          open finding, as `delta.specialist_return` says.
-        second_seat: kept for round 1
-      missing_evidence: >-
-        Evidence replaces a seat only when it exists. A missing item is not waived. The review
-        requirement rises to the next class in this map, and the verdict names the missing item.
-      seat_never_dropped_when:
-        - the change touches a security surface
-        - an always-block finding is open
-        - a named human lowered the merge-stage class below the ticket-stage class
-      absent_class_evidence: full
     ruling: review-depth-follows-delegation-class
 
   not_a_seat:
@@ -488,22 +435,22 @@ delta:
   scope:
     boundary: affected behavior
     not: changed lines
+    seed: the changed hunks
     rule: >-
       The delta reviews the impact neighbourhood of the fix. A serious newly discovered issue in
       an untouched affected caller stays reportable; scope discipline is not a reason to suppress
       relevant evidence.
     # What "affected behavior" holds where a review keeps a convergence ledger (ADR-0018). A
-    # finding inside these three blocks; one outside them is recorded as an observation.
+    # finding inside these blocks; one outside them is recorded as an observation.
     mechanical:
       compared: the pull request at the head against the pull request at the last reviewed head
       holds:
-        - the changed hunks
         - the full body of every function a hunk touches
         - the direct callers of a function whose signature or exit behaviour changed
       empty_delta: >-
-        When the patch of the pull request is unchanged, no seat is called and the earlier
-        verdict carries to the new head. A rebase that changes no patch and a merge of the base
-        branch with no conflict in the pull request's paths are both empty.
+        When every path of the pull request has the same mode and blob as at the last reviewed
+        head, no seat is called and the earlier verdict carries. A rebase that changes no blob
+        and a merge of the base branch with no conflict in the pull request's paths are both empty.
       tool: ak review scope
     ruling: delta-scope-affected-behavior
     scenario: 8
@@ -594,6 +541,60 @@ convergence:
     max_scopes: 2
     new_scope: restarts the round count and invalidates the approvals. The findings stay
     second_trigger: holds the pull request for a split-or-replan decision by the lane's captain
+    ruling: delta-baseline-reset-not-third-loop
+  # The evidence each class requires at the head and the independent seats its review sits
+  # (ADR-0018). `depth` restates `pass_1.depth.by_class`. `evidence` adds to the class above it
+  # in this map, so each class requires every item of the lower ones. A caller checks each item
+  # with its command, exit status and revision, then gives `ak review decide` the seat count and
+  # each missing item. This map selects no reviewer and names no seat's holder.
+  evidence_by_class:
+    green:
+      depth: single
+      evidence:
+        - lint and the project's rules are green
+        - the full test suite is green
+        - for a bug fix, one test that is red before the fix and green after it
+      independent_seats: 1
+      later_rounds: closure by that seat, only while it holds an open finding
+      second_seat: dropped
+    yellow-agent:
+      depth: reduced
+      evidence:
+        - an acceptance receipt for each criterion, as `super-verify` writes it
+        - for each behaviour change, one test that is red before the change and green after it
+      independent_seats: 1
+      later_rounds: closure by the seat that holds the finding
+      second_seat: dropped
+      second_seat_kept_when:
+        - the diff exceeds 400 changed lines
+        - the diff matches a shared surface of the project record
+    yellow-owner:
+      depth: reduced
+      evidence:
+        - runtime proof of each behaviour a user or an operator sees
+        - a mutation check on the changed lines, where the project has a mutation tool
+      independent_seats: 2
+      later_rounds: closure by the seat that holds the finding, and no other seat
+      second_seat: kept for round 1 and dropped after it
+    red:
+      depth: full
+      evidence:
+        - property tests for each state machine or ledger the change adds or alters
+        - the specialist evidence each attached pack requires
+      independent_seats: 2
+      specialist_seat: each activated specialist seat sits round 1
+      later_rounds: >-
+        Closure by the seats that hold the findings. A specialist seat returns only for its own
+        open finding, as `delta.specialist_return` says.
+      second_seat: kept for round 1
+    missing_evidence: >-
+      Evidence replaces a seat only when it exists. A missing item is not waived. The review
+      requirement rises to the next class in this map, and the verdict names the missing item.
+    seat_never_dropped_when:
+      - the change touches a security surface
+      - an always-block finding is open
+      - a named human lowered the merge-stage class below the ticket-stage class
+    absent_class_evidence: full
   full_re_review:
     compared: the pull request at the head against the pull request at the last reviewed head
     triggers:
@@ -604,6 +605,10 @@ convergence:
             are more than `rewritten_percent` of the changed lines of the pull request.
           - a merge resolved a conflict in a path of the pull request
         rewritten_percent: 30
+      - id: path-identity
+        fires_when:
+          - a path of the pull request changed as a gitlink (mode 160000)
+          - a same-blob add and delete pair appears in the pull request, which is a rename with no rename detection
       - id: risk-tier-rise
         fires_when:
           - the merge-stage class at the head is above the class of the last reviewed round

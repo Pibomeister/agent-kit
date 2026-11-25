@@ -8,7 +8,9 @@
  * policy give the same triggers and the same outcome.
  *
  * - `readPatch` turns a zero-context diff into a patch id, a count of changed
- *   lines and the changed lines themselves.
+ *   lines and the changed lines themselves. A mode-only pair and a gitlink each
+ *   count as one changed line. The id is for rewritten-commit matching. Empty
+ *   is blob identity in `delta.ts`.
  * - `scopeTriggers` says which triggers fire, which could not be evaluated and
  *   why.
  * - `scopeOutcome` turns the triggers and the ledger's scope into one of
@@ -29,13 +31,16 @@ export interface Patch {
 }
 
 const MODE = /^(old mode|new mode|new file mode|deleted file mode) /;
+const GITLINK_MODE = / 160000$/;
 
 /**
  * Read a diff made with no context lines, no rename detection and full blob ids.
  *
  * The id keeps whitespace, so an indentation change is a change. It drops hunk
  * headers, so a patch that only moved keeps its id. A binary file counts as
- * one changed line, identified by the blob it becomes.
+ * one changed line, identified by the blob it becomes. An old-mode/new-mode
+ * pair counts as one changed line. A gitlink (mode 160000) counts as one SHA
+ * line, not the Subproject commit hunk.
  */
 export function readPatch(diff: string): Patch {
   const hash = createHash("sha256");
@@ -44,33 +49,56 @@ export function readPatch(diff: string): Patch {
   let file = "";
   let blob = "";
   let inHunk = false;
+  let gitlink = false;
+  let oldMode = false;
+  let newMode = false;
   const changed = (text: string): void => {
     hash.update(`${text}\n`);
     lines += 1;
     const key = `${file}\n${text}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   };
+  const flushMode = (): void => {
+    if (oldMode && newMode) changed("mode");
+    oldMode = false;
+    newMode = false;
+  };
   for (const line of diff.split("\n")) {
     if (line.startsWith("diff --git ")) {
+      flushMode();
       file = line;
       blob = "";
       inHunk = false;
+      gitlink = false;
       hash.update(`${line}\n`);
     } else if (line.startsWith("@@")) {
       // A changed line starts with `+`, `-` or `\`, so this is a hunk header wherever it stands.
       inHunk = true;
     } else if (inHunk) {
+      if (gitlink) continue;
       if (line.startsWith("+") || line.startsWith("-")) changed(line);
       // `\ No newline at end of file` is part of what changed.
       else if (line.startsWith("\\")) hash.update(`${line}\n`);
     } else if (line.startsWith("index ")) {
       blob = line.slice("index ".length).split("..")[1]?.split(" ")[0] ?? "";
+      if (GITLINK_MODE.test(line)) gitlink = true;
+      if (gitlink) changed(`gitlink ${blob}`);
     } else if (line.startsWith("Binary files ") || line === "GIT binary patch") {
       changed(`binary ${blob}`);
+    } else if (line === "new file mode 160000" || line === "deleted file mode 160000") {
+      hash.update(`${line}\n`);
+      gitlink = true;
+    } else if (line.startsWith("old mode ")) {
+      hash.update(`${line}\n`);
+      oldMode = true;
+    } else if (line.startsWith("new mode ")) {
+      hash.update(`${line}\n`);
+      newMode = true;
     } else if (MODE.test(line)) {
       hash.update(`${line}\n`);
     }
   }
+  flushMode();
   return { id: `sha256:${hash.digest("hex")}`, lines, counts };
 }
 
@@ -83,7 +111,10 @@ export function linesNotIn(patch: Patch, other: Patch): number {
 
 /** The pull request at the new head against the pull request at the last reviewed head. */
 export interface DeltaFacts {
-  /** The patch of the pull request has the id it had at the last reviewed head. */
+  /**
+   * The pull request at the new head has the same path, mode and blob as it
+   * had at the last reviewed head. The changed-line patch id is not this test.
+   */
   empty: boolean;
   /** Changed lines of the pull request at the last reviewed head. */
   pr_lines: number;
@@ -102,6 +133,11 @@ export interface DeltaFacts {
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */
   conflict_paths: readonly string[];
+  /**
+   * Paths whose tree entry changed as a gitlink (mode 160000) or as a same-blob
+   * add and delete. Either fires `path-identity`.
+   */
+  path_identity: readonly string[];
 }
 
 /** One value at the last reviewed round and now. Null where the caller did not supply it. */
@@ -162,6 +198,9 @@ export function scopeTriggers(facts: ScopeFacts, policy: ConvergencePolicy): Tri
       "large-rebase",
       `rewritten commits changed ${delta.rewritten_lines} lines against the ${delta.pr_lines} changed lines of the pull request, more than ${limits.rebase_rewritten_percent}%`,
     );
+
+  if (delta.path_identity.length > 0)
+    reason.set("path-identity", `a gitlink or same-blob add and delete changed ${delta.path_identity.join(", ")}`);
 
   if (facts.class_rose === null)
     unevaluated.push({ trigger: "risk-tier-rise", needs: "a merge-stage record at this round and the last" });

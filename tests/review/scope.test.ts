@@ -32,6 +32,7 @@ function facts(delta: Partial<DeltaFacts> = {}, rest: Partial<Omit<ScopeFacts, "
       removed_lines: 0,
       rewritten_lines: 0,
       conflict_paths: [],
+      path_identity: [],
       ...delta,
     },
     class_rose: false,
@@ -64,6 +65,7 @@ describe("scopeTriggers", () => {
     ["a delta that adds 400 lines to 1000", { pr_lines: 1000, added_lines: 400 }, []],
     ["a delta that adds 401 lines to 1000", { pr_lines: 1000, added_lines: 401 }, ["scope-growth"]],
     ["lines that left the patch", { added_lines: 0, removed_lines: 90 }, []],
+    ["a gitlink or same-blob add and delete", { path_identity: ["vendor/lib"] }, ["path-identity"]],
   ];
   test.each(deltaCases)("%s", (_name, delta, expected) => {
     expect(fired(facts(delta))).toEqual(expected);
@@ -82,7 +84,7 @@ describe("scopeTriggers", () => {
   test("several triggers fire in the order of the ledger's trigger list, each with one reason", () => {
     const all = scopeTriggers(
       facts(
-        { rewritten_lines: 80, added_lines: 500 },
+        { rewritten_lines: 80, added_lines: 500, path_identity: ["vendor/lib"] },
         { class_rose: true, surface_changed: true, criteria: { before: A, now: B } },
       ),
       DEFAULT_POLICY,
@@ -206,14 +208,28 @@ describe("readPatch", () => {
     expect(binary("3").id).not.toBe(binary("2").id);
   });
 
-  test("a mode change and a lost final newline change the id and count no line", () => {
+  test("a mode change and a lost final newline change the id, and the mode pair counts as one line", () => {
     const plain = readPatch(`${HEADER}@@ -3 +3 @@\n-old\n+new\n`);
     const mode = readPatch(
       `${HEADER.replace("index", "old mode 100644\nnew mode 100755\nindex")}@@ -3 +3 @@\n-old\n+new\n`,
     );
     const newline = readPatch(`${HEADER}@@ -3 +3 @@\n-old\n+new\n\\ No newline at end of file\n`);
-    expect([mode.lines, newline.lines]).toEqual([2, 2]);
+    expect([mode.lines, newline.lines]).toEqual([3, 2]);
     expect(new Set([plain.id, mode.id, newline.id]).size).toBe(3);
+  });
+
+  test("a mode-only pair with no hunk is one changed line", () => {
+    const patch = readPatch("diff --git a/src/a.ts b/src/a.ts\nold mode 100644\nnew mode 100755\n");
+    expect(patch.lines).toBe(1);
+  });
+
+  test("a gitlink bump is one SHA line", () => {
+    const old = "1".repeat(40);
+    const next = "2".repeat(40);
+    const patch = readPatch(
+      `diff --git a/vendor/lib b/vendor/lib\nindex ${old}..${next} 160000\n--- a/vendor/lib\n+++ b/vendor/lib\n@@ -1 +1 @@\n-Subproject commit ${old}\n+Subproject commit ${next}\n`,
+    );
+    expect(patch.lines).toBe(1);
   });
 });
 

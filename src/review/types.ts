@@ -32,6 +32,7 @@ export type RoundMode = (typeof ROUND_MODES)[number];
 
 export const SCOPE_TRIGGERS = [
   "large-rebase",
+  "path-identity",
   "risk-tier-rise",
   "surface-changed",
   "scope-growth",

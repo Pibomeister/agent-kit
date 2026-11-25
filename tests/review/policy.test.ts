@@ -71,16 +71,17 @@ describe("policies/review.yaml convergence", () => {
   });
 });
 
-describe("policies/review.yaml pass_1.depth.evidence_by_class", () => {
+describe("policies/review.yaml convergence.evidence_by_class", () => {
   /** The delegation classes from the lowest to the highest. */
   const classes = Object.entries(CLASS_RANK)
     .toSorted(([, left], [, right]) => left - right)
     .map(([name]) => name);
   const depth = at(review, "pass_1", "depth");
+  const map = at(review, "convergence", "evidence_by_class");
 
   test("gives every delegation class its evidence, and restates the depth of by_class", () => {
     for (const name of classes) {
-      const row = at(depth, "evidence_by_class", name);
+      const row = at(map, name);
       const evidence = at(row, "evidence");
       expect({ name, depth: at(row, "depth") }).toEqual({ name, depth: at(depth, "by_class", name) });
       expect({ name, items: Array.isArray(evidence) ? evidence.length > 0 : false }).toEqual({ name, items: true });
@@ -88,7 +89,7 @@ describe("policies/review.yaml pass_1.depth.evidence_by_class", () => {
   });
 
   test("sits one independent seat for the two lower classes and two for the two higher, as the plan's table says", () => {
-    expect(classes.map((name) => [name, at(depth, "evidence_by_class", name, "independent_seats")])).toEqual([
+    expect(classes.map((name) => [name, at(map, name, "independent_seats")])).toEqual([
       ["green", 1],
       ["yellow-agent", 1],
       ["yellow-owner", 2],
@@ -97,7 +98,13 @@ describe("policies/review.yaml pass_1.depth.evidence_by_class", () => {
   });
 
   test("absent class evidence is the full depth, as the depth block says", () => {
-    expect(at(depth, "evidence_by_class", "absent_class_evidence")).toBe("full");
+    expect(at(map, "absent_class_evidence")).toBe("full");
+  });
+
+  test("the depth block's ruling does not sit on the evidence map", () => {
+    expect(at(depth, "ruling")).toBe("review-depth-follows-delegation-class");
+    expect(at(depth, "evidence_by_class")).toBe(null);
+    expect(at(review, "convergence", "scope", "ruling")).toBe("delta-baseline-reset-not-third-loop");
   });
 });
 

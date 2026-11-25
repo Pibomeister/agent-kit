@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer, type AddressInfo } from "node:net";
-
-/** `address()` is a pipe path or a TCP address. A pipe is a string; a TCP port is on the object. */
-function isTcpAddress(address: string | AddressInfo | null): address is AddressInfo {
-  return address !== null && Object(address) === address;
-}
 import { join } from "node:path";
 import Ajv from "ajv";
 
@@ -27,6 +23,11 @@ import {
   parseBinding,
 } from "../src/maintenance/cli.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
+
+/** `address()` is a pipe path or a TCP address. A pipe is a string; a TCP port is on the object. */
+function isTcpAddress(address: string | AddressInfo | null): address is AddressInfo {
+  return address !== null && Object(address) === address;
+}
 
 const roots: string[] = [];
 afterEach(() => {
@@ -295,16 +296,21 @@ describe("ak doctor checks", () => {
   });
 
   test("published manifest fetch distinguishes 404 and times out", async () => {
-    const missing = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch: () => new Response("missing", { status: 404 }),
+    const missing = createHttpServer((_req, res) => {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("missing");
     });
     try {
-      const result = await fetchManifest("claude-code", `http://127.0.0.1:${missing.port}`, 500);
+      await new Promise<void>((resolve, reject) => {
+        missing.once("error", reject);
+        missing.listen(0, "127.0.0.1", () => resolve());
+      });
+      const address = missing.address();
+      if (!isTcpAddress(address)) throw new Error("404 server has no port");
+      const result = await fetchManifest("claude-code", `http://127.0.0.1:${address.port}`, 500);
       expect(result.failure).toEqual({ reason: "missing", status: 404 });
     } finally {
-      await missing.stop(true);
+      await new Promise<void>((resolve) => missing.close(() => resolve()));
     }
     // A handler that never resolves can still be answered by the server under load. A peer that
     // accepts and writes nothing cannot produce an HTTP status, so only the fetch timeout finishes it.

@@ -26,10 +26,19 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 
-import { CLASS_RANK, readMergeRecord } from "../delegation.ts";
+import { CLASS_RANK, readMergeRecord, scoreDelegationRun } from "../delegation.ts";
 import { decide, fold } from "./converge.ts";
 import { readDelta, readHead, resolveCommit } from "./delta.ts";
-import { addEvents, appendLedger, parseInput, readLedger, sha256, type AddOptions, type LedgerFile } from "./ledger.ts";
+import {
+  addEvents,
+  appendLedger,
+  parseInput,
+  readLedger,
+  sha256,
+  type AddOptions,
+  type InputItem,
+  type LedgerFile,
+} from "./ledger.ts";
 import { scopeOutcome, scopeTriggers, type ScopeFacts } from "./scope.ts";
 import { DEFAULT_POLICY, type ConvergencePolicy } from "./types.ts";
 
@@ -41,9 +50,9 @@ export interface ReviewIo {
 }
 
 const USAGE = [
-  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
+  "usage: ak review ledger add --ledger <ledger.jsonl> --event <file|-> [--repo <dir>] [--snapshot <dir>] [--max-rounds <2|3>] [--out <record.json>]",
   "       ak review ledger show --ledger <ledger.jsonl> [--out <record.json>]",
-  "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
+  "       ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev> [--repo <dir>] [--previous <scope.json>] [--record <merge-record.json>] [--ticket <file>] [--project <file>] [--intent <file>] [--criteria <file>] [--out <record.json>]",
   "       ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n> [--missing-evidence <item>]... [--integrity-failure <reason>]... [--out <record.json>]",
 ];
 
@@ -53,9 +62,21 @@ const NOTE = "This record grants no authority. It approves no checkpoint, ticket
 const REPEATED = new Set(["--missing-evidence", "--integrity-failure"]);
 
 const FLAGS = {
-  add: ["--ledger", "--event", "--snapshot", "--max-rounds", "--out"],
+  add: ["--ledger", "--event", "--repo", "--snapshot", "--max-rounds", "--out"],
   show: ["--ledger", "--out"],
-  scope: ["--ledger", "--base", "--head", "--repo", "--previous", "--record", "--intent", "--criteria", "--out"],
+  scope: [
+    "--ledger",
+    "--base",
+    "--head",
+    "--repo",
+    "--previous",
+    "--record",
+    "--ticket",
+    "--project",
+    "--intent",
+    "--criteria",
+    "--out",
+  ],
   decide: ["--ledger", "--head", "--seats", "--missing-evidence", "--integrity-failure", "--out"],
 };
 
@@ -122,17 +143,86 @@ function maxRounds(flags: Flags, policy: ConvergencePolicy): number | undefined 
   return Number(given);
 }
 
+const COMMIT = { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" };
+
+interface CarryScope {
+  schema: "review-scope";
+  outcome: "carry";
+  head: string;
+  base: string;
+  previous: { head: string };
+  delta: { empty: true };
+  event: { kind: "carry"; head: string };
+}
+
+let scopeRecordValidator: ValidateFunction<{ schema: "review-scope" }> | null = null;
+let carryValidator: ValidateFunction<CarryScope> | null = null;
+
+function validateScopeRecord(): ValidateFunction<{ schema: "review-scope" }> {
+  scopeRecordValidator ??= new Ajv2020({ strict: false }).compile<{ schema: "review-scope" }>({
+    type: "object",
+    required: ["schema"],
+    properties: { schema: { const: "review-scope" } },
+  });
+  return scopeRecordValidator;
+}
+
+function validateCarryScope(): ValidateFunction<CarryScope> {
+  carryValidator ??= new Ajv2020({ strict: false }).compile<CarryScope>({
+    type: "object",
+    required: ["schema", "outcome", "head", "base", "previous", "delta", "event"],
+    properties: {
+      schema: { const: "review-scope" },
+      outcome: { const: "carry" },
+      head: COMMIT,
+      base: { type: "string" },
+      previous: { type: "object", required: ["head"], properties: { head: COMMIT } },
+      delta: { type: "object", required: ["empty"], properties: { empty: { const: true } } },
+      event: {
+        type: "object",
+        required: ["kind", "head"],
+        properties: { kind: { const: "carry" }, head: COMMIT },
+      },
+    },
+  });
+  return carryValidator;
+}
+
+/** A carry line is admitted only from a scope record whose delta is empty against the last reviewed head. */
+function carryFromScope(record: CarryScope, covered: string | null, repo: string): InputItem {
+  if (record.event.head !== record.head) throw new Error("a carry line needs a scope record of the carried head");
+  if (record.previous.head !== covered)
+    throw new Error("a carry line needs a scope record whose previous.head is the last reviewed head");
+  const reading = readDelta(repo, record.base, record.previous.head, record.event.head);
+  if (!reading.delta.empty) throw new Error("a carry line needs a scope record whose delta is empty against that head");
+  const item = { kind: "carry", head: record.event.head };
+  return item;
+}
+
 function add(flags: Flags, io: ReviewIo): number {
   const path = required(flags, "--ledger");
   const source = required(flags, "--event");
   const cap = maxRounds(flags, DEFAULT_POLICY);
   const snapshot = flags.one.get("--snapshot");
+  const repo = flags.one.get("--repo") ?? process.cwd();
   const text = source === "-" ? (io.stdin ?? (() => readFileSync(0, "utf8")))() : readFileSync(source, "utf8");
   const before = readLedger(path);
   const options: AddOptions = { policy: DEFAULT_POLICY };
   if (snapshot !== undefined) options.snapshot = snapshot;
   if (cap !== undefined) options.maxRounds = cap;
-  const result = addEvents(before.events, parseInput(text), options);
+  const parsed: unknown = JSON.parse(text);
+  const asScope = validateScopeRecord();
+  const asCarry = validateCarryScope();
+  let items: InputItem[];
+  if (asScope(parsed)) {
+    if (!asCarry(parsed)) throw new Error("a carry line needs a scope record whose outcome is carry");
+    items = [carryFromScope(parsed, fold(before.events, DEFAULT_POLICY).covered_head, repo)];
+  } else {
+    items = parseInput(text);
+    if (items.some((item) => item.kind === "carry"))
+      throw new Error("a carry line needs a scope record whose outcome is carry");
+  }
+  const result = addEvents(before.events, items, options);
   appendLedger(path, result.appended, before.unterminated);
   const after = readLedger(path);
   const record = {
@@ -296,6 +386,10 @@ function scopeCommand(flags: Flags, io: ReviewIo): number {
       `--previous is required: the ledger holds a reviewed round at ${reviewed}, so give the scope record of that head`,
     );
   const before = reviewed === null || previousPath === undefined ? null : readBaseline(previousPath, reviewed);
+  if (merge !== null && merge.head !== head)
+    throw new UsageError(
+      `--record is the record of ${merge.head ?? "no head"}, and --head is ${head}: give the merge-stage record of this head`,
+    );
   if (before !== null) {
     requireAgain(flags, "--record", before.class);
     requireAgain(flags, "--intent", before.intent);
@@ -304,6 +398,22 @@ function scopeCommand(flags: Flags, io: ReviewIo): number {
       throw new UsageError(
         "--record must state review_surface_changed: the record of the last reviewed round holds its value, so run ak delegation --stage merge with --previous",
       );
+    if (before.class !== null && reviewed !== null) {
+      const ticket = flags.one.get("--ticket");
+      const project = flags.one.get("--project");
+      if (ticket === undefined || project === undefined)
+        throw new UsageError(
+          "--ticket and --project are required: the record of the last reviewed round holds a class, so score ak delegation --stage merge at that head",
+        );
+      const scored = scoreDelegationRun(
+        { ticket, project, stage: "merge", base: revisions.base, head: reviewed },
+        repo,
+      );
+      if (scored.class !== before.class)
+        throw new UsageError(
+          `--previous class is ${before.class}, and merge-stage scoring at ${reviewed} is ${scored.class}`,
+        );
+    }
   }
   const reading =
     reviewed === null ? null : readDelta(repo, base, resolveCommit(repo, reviewed, "the last reviewed head"), head);
@@ -336,6 +446,7 @@ function scopeCommand(flags: Flags, io: ReviewIo): number {
     policy: DEFAULT_POLICY,
     scope: state.scope,
     reviewed,
+    base,
     head,
     outcome,
     triggers: triggers?.fired ?? [],

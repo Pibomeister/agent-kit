@@ -30,6 +30,8 @@ export interface DelegationRecord {
    * {@link reviewSurfaceChanged}. It is a fact about one review round: a ticket's block never holds it.
    */
   review_surface_changed?: boolean;
+  /** The commit the merge-stage command scored. Ticket-stage records do not hold it. */
+  head?: string;
 }
 
 /** Merge-stage evidence: any of these keys may replace the ticket's, and the floor only grows. */
@@ -333,7 +335,11 @@ export function readMergeRecord(input: string, cwd: string, label: string): Dele
     const schema = {
       $id: ticketSchema.$id,
       ...block,
-      properties: { ...block.properties, review_surface_changed: { type: "boolean" } },
+      properties: {
+        ...block.properties,
+        review_surface_changed: { type: "boolean" },
+        head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+      },
       $defs: ticketSchema.$defs,
     };
     printedValidator = makeValidation().compile<DelegationRecord>(schema);
@@ -352,12 +358,17 @@ export function readMergeRecord(input: string, cwd: string, label: string): Dele
   return parsed;
 }
 
+/** The full id of `revision`, or an error the merge-stage command already uses for a missing commit. */
+export function resolveRevision(cwd: string, revision: string): string {
+  const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+  const id = (check.stdout ?? "").trim();
+  if (check.status !== 0 || id === "") throw new Error(`cannot resolve revision ${revision}`);
+  return id;
+}
+
 /** The merge-stage paths: the three-dot range from the base, with renames split so a move out of a surface counts. */
 export function gitChangedPaths(cwd: string, base: string, head: string): string[] {
-  for (const revision of [base, head]) {
-    const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
-    if (check.status !== 0) throw new Error(`cannot resolve revision ${revision}`);
-  }
+  for (const revision of [base, head]) resolveRevision(cwd, revision);
   const range = `${base}...${head}`;
   const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
   if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
@@ -394,8 +405,12 @@ export function scoreDelegationRun(run: DelegationRun, cwd: string): DelegationR
   if (run.stage === "merge" && run.base !== undefined) {
     // The previous record is read first: a file that cannot be compared is refused before any scoring.
     const previous = run.previous === undefined ? undefined : readMergeRecord(run.previous, cwd, "previous record");
-    const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
-    const record = scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+    const headRev = run.head ?? "HEAD";
+    const paths = gitChangedPaths(cwd, run.base, headRev);
+    const record = {
+      ...scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd),
+      head: resolveRevision(cwd, headRev),
+    };
     return previous === undefined
       ? record
       : { ...record, review_surface_changed: reviewSurfaceChanged(record, previous) };
