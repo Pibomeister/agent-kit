@@ -227,8 +227,9 @@ export function unknownSelector(kind: string, input: string, candidates: readonl
  * and assume-unchanged bits are cleared on the index copy, and attr.tree is the empty tree so clean
  * and smudge filters do not run. Ship-preflight then compares worktree bytes to HEAD blobs: eol
  * conversion, ident expansion, a sparse-missing path and an executable-bit mismatch count as dirt.
- * A byte-clean checkout is core.autocrlf=false, no ident, and a full checkout. Nested-submodule
- * dirt hidden by submodule.ignore=all is outside this snapshot, so ship-preflight does not see it.
+ * A byte-clean checkout is core.autocrlf=false, no ident, and a full checkout. Snapshot diffs pass
+ * `--ignore-submodules=none --submodule=short` so `diff.ignoreSubmodules=all` cannot hide a gitlink
+ * bump, a -dirty submodule, or an untracked nested repo.
  */
 export interface Snapshot {
   repo: string;
@@ -292,8 +293,52 @@ function nulPaths(stdout: Uint8Array): string[] {
 }
 
 /**
+ * Untracked `.gitignore` paths that a committed ignore rule already excludes. The check uses a
+ * throwaway tree of committed `.gitignore` files only, so an untracked self-hiding `.gitignore`
+ * cannot hide itself.
+ */
+function gitignoresExcludedByCommittedRules(
+  list: (args: readonly string[]) => GitResult,
+  extras: readonly string[],
+): Set<string> {
+  const dropped = new Set<string>();
+  if (extras.length === 0) return dropped;
+  const tracked = list(["ls-files", "-z"]);
+  if (tracked.code !== 0) return dropped;
+  const committed = nulPaths(tracked.stdout).filter((path) => basename(path) === ".gitignore");
+  if (committed.length === 0) return dropped;
+  const scratch = mkdtempSync(join(tmpdir(), "ak-cgi-"));
+  try {
+    if (git(scratch, ["init", "-q", "-b", "main"]).code !== 0) return dropped;
+    for (const rel of committed) {
+      const shown = list(["show", `HEAD:${rel}`]);
+      if (shown.code !== 0) continue;
+      const dest = join(scratch, rel);
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, shown.stdout);
+    }
+    for (const extra of extras) {
+      const check = git(scratch, [
+        "-c",
+        "core.excludesFile=/dev/null",
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        extra,
+      ]);
+      if (check.code === 0) dropped.add(extra);
+    }
+    return dropped;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
  * Untracked paths that ship-preflight treats as dirt: committed `.gitignore` still excludes, but
- * `.git/info/exclude` does not, and an untracked `.gitignore` is listed even when it hides itself.
+ * `.git/info/exclude` does not, and an untracked `.gitignore` is listed even when it hides itself
+ * unless a committed rule already excludes that path.
  */
 function untrackedWorktreePaths(
   list: (args: readonly string[]) => GitResult,
@@ -304,12 +349,11 @@ function untrackedWorktreePaths(
   if (untracked.code !== 0) return { ok: false, stderr: untracked.stderr };
   const others = list(["ls-files", "--others", "-z"]);
   if (others.code !== 0) return { ok: false, stderr: others.stderr };
+  const extras = nulPaths(others.stdout).filter((entry) => basename(entry) === ".gitignore");
+  const dropped = gitignoresExcludedByCommittedRules(list, extras);
   const seen = new Set<string>();
   const paths: string[] = [];
-  for (const path of [
-    ...nulPaths(untracked.stdout),
-    ...nulPaths(others.stdout).filter((entry) => basename(entry) === ".gitignore"),
-  ]) {
+  for (const path of [...nulPaths(untracked.stdout), ...extras.filter((entry) => !dropped.has(entry))]) {
     if (!keep(path) || seen.has(path)) continue;
     seen.add(path);
     paths.push(path);
@@ -364,11 +408,20 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
     const listed = untrackedWorktreePaths(raw, options.ignoreUntrackedDirs ?? []);
     if (!listed.ok) return `cannot list untracked files in ${project}: ${listed.stderr}`;
     const paths = listed.paths;
-    if (paths.length > 0) {
-      const add = raw(["add", "--force", "--intent-to-add", "--", ...paths]);
+    for (let i = 0; i < paths.length; i += 200) {
+      const chunk = paths.slice(i, i + 200);
+      const add = raw(["add", "--force", "--intent-to-add", "--", ...chunk]);
       if (add.code !== 0) return `cannot mark untracked files in ${project}: ${add.stderr}`;
     }
-    const diff = raw(["diff", "--no-ext-diff", "--no-textconv", "--binary", head.text]);
+    const diff = raw([
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--binary",
+      "--ignore-submodules=none",
+      "--submodule=short",
+      head.text,
+    ]);
     if (diff.code !== 0) return `cannot diff ${project} against ${head.text}: ${diff.stderr}`;
     let digest = createHash("sha256").update(diff.stdout).digest("hex");
     if (diff.stdout.length === 0) {
@@ -408,9 +461,20 @@ function shipDirtReason(project: string): string {
   const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
   const listed = untrackedWorktreePaths((args) => git(workTree, isolate(args), env));
   const firstUntracked = listed.ok ? listed.paths.map(shipDirtPath).find((path) => path !== undefined) : undefined;
+  const named = git(
+    workTree,
+    isolate(["diff", "--name-only", "-z", "--ignore-submodules=none", "--submodule=short", "HEAD"]),
+    env,
+  );
+  const firstDiff =
+    named.code === 0
+      ? nulPaths(named.stdout)
+          .map(shipDirtPath)
+          .find((path) => path !== undefined)
+      : undefined;
   const tree = git(workTree, isolate(["ls-tree", "-r", "-z", "HEAD"]), env);
   const vsHead = tree.code === 0 ? unfilteredTrackedDirt(workTree, lsTreeToStageZ(tree.stdout)) : undefined;
-  const at = firstUntracked ?? shipDirtPath(vsHead?.path) ?? "the working tree";
+  const at = firstUntracked ?? firstDiff ?? shipDirtPath(vsHead?.path) ?? "the working tree";
   return `the worktree bytes differ from HEAD at ${at}, which the shipped revision would not carry; use a byte-clean checkout (core.autocrlf=false, no ident, full checkout), commit what should ship, remove or git-ignore the rest, then record the gates again`;
 }
 
@@ -2446,7 +2510,7 @@ function repoOf(project: string): { common: string; writable: string[] } | { err
 // The supervisor files' containment has its own helpers. `within`, `realOr` and `repoOf` above also serve the
 // bypass grant, which stays as it is (ticket non-goal); the three defects they carry for these files are fixed here.
 
-/** Variables that redirect which repository git reads, or rewrite the objects and history it sees. A worker controls its environment, so none is trusted. */
+/** Variables that redirect which repository git reads, rewrite the objects and history it sees, or inject config that can hide dirt. A worker controls its environment, so none is trusted. */
 const REDIRECTING_GIT_ENV = [
   "GIT_DIR",
   "GIT_COMMON_DIR",
@@ -2458,11 +2522,16 @@ const REDIRECTING_GIT_ENV = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_REPLACE_REF_BASE",
   "GIT_NAMESPACE",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
 ] as const;
 
 function envWithoutRedirectingGit(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of REDIRECTING_GIT_ENV) Reflect.deleteProperty(env, name);
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("GIT_CONFIG_KEY_") || name.startsWith("GIT_CONFIG_VALUE_")) Reflect.deleteProperty(env, name);
+  }
   return env;
 }
 

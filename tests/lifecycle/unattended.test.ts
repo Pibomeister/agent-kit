@@ -1875,6 +1875,64 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
   });
 
+  test("ship-preflight refuses an untracked nested repo under diff.ignoreSubmodules=all, naming the path", () => {
+    const cwd = repo();
+    const nested = join(cwd, "nested");
+    mkdirSync(nested);
+    git(nested, "init", "-q", "-b", "main");
+    writeFileSync(join(nested, "secret.txt"), "secret\n");
+    git(nested, "add", "secret.txt");
+    git(nested, "commit", "-q", "-m", "secret");
+    git(cwd, "config", "diff.ignoreSubmodules", "all");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "nested/", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses a dirty tracked gitlink under GIT_CONFIG_COUNT ignoreSubmodules=all, naming the path", () => {
+    const cwd = repo();
+    const vendor = join(cwd, "vendor");
+    mkdirSync(vendor);
+    git(vendor, "init", "-q", "-b", "main");
+    writeFileSync(join(vendor, "mod.js"), "export const m = 1;\n");
+    git(vendor, "add", "mod.js");
+    git(vendor, "commit", "-q", "-m", "vendor");
+    git(cwd, "add", "vendor");
+    git(cwd, "commit", "-q", "-m", "gitlink");
+    writeFileSync(join(vendor, "mod.js"), "dirty\n");
+    declareSupervisor();
+    setEnv({
+      AK_LIFECYCLE_POLICY: "unattended",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "diff.ignoreSubmodules",
+      GIT_CONFIG_VALUE_0: "all",
+    });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "vendor", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
+  test("ship-preflight refuses an untracked self-hiding nested .gitignore, naming the path", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, "src", ".gitignore"), ".gitignore\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    const before = runState(cwd, run);
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expectShipDirt(r, "src/.gitignore", cwd);
+    expect(runState(cwd, run)).toEqual(before);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
   test("ship-preflight refuses a filemode-false chmod of a 100644 file, naming the path", () => {
     const { cwd, run } = ready();
     git(cwd, "config", "core.filemode", "false");
@@ -1950,6 +2008,34 @@ describe("binding at open and ship-preflight (AC-4)", () => {
     git(cwd, "commit", "-q", "-m", "ignore scratch");
     mkdirSync(join(cwd, ".lavish"));
     writeFileSync(join(cwd, ".lavish", "plan.html"), "<p>plan</p>\n");
+    const run = fullRun(cwd);
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
+  });
+
+  test("ship-preflight passes with an untracked dist/.gitignore already excluded by a committed rule", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, ".gitignore"), "dist/\n");
+    git(cwd, "add", ".gitignore");
+    git(cwd, "commit", "-q", "-m", "ignore dist");
+    mkdirSync(join(cwd, "dist"));
+    writeFileSync(join(cwd, "dist", ".gitignore"), "node_modules/\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);
+  });
+
+  test("ship-preflight passes with an untracked .lavish/.gitignore already excluded by a committed rule", () => {
+    const cwd = repo();
+    writeFileSync(join(cwd, ".gitignore"), ".lavish/\n");
+    git(cwd, "add", ".gitignore");
+    git(cwd, "commit", "-q", "-m", "ignore lavish");
+    mkdirSync(join(cwd, ".lavish"));
+    writeFileSync(join(cwd, ".lavish", ".gitignore"), "*\n");
+    declareSupervisor();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
     const run = fullRun(cwd);
     expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
     expect(recordsOf(cwd, run, "ship-preflight")).toHaveLength(1);

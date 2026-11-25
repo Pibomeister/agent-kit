@@ -44,8 +44,10 @@ export function gitBlobId(bytes: Uint8Array, blob: string): string {
 /**
  * Hex digest of tracked worktree bytes that do not match the index blob, plus the first relative
  * path. Undefined when every regular file and symlink matches, including the executable bit
- * (`executable !== (mode === "100755")`, any of owner/group/other). Nested gitlinks are skipped:
- * submodule.ignore=all is outside the ship-preflight gate.
+ * (`executable !== (mode === "100755")`, any of owner/group/other). A gitlink that is not a
+ * directory is dirt; gitlink contents are never walked (ADV-006). Callers pass
+ * `--ignore-submodules=none --submodule=short` on the snapshot diff so `diff.ignoreSubmodules=all`
+ * cannot hide a gitlink bump, a -dirty submodule, or an untracked nested repo.
  */
 export function unfilteredTrackedDirt(
   workTree: string,
@@ -67,10 +69,14 @@ export function unfilteredTrackedDirt(
     const [mode, blob, stage] = row.slice(0, tab).split(" ");
     const path = row.slice(tab + 1);
     if (mode === undefined || blob === undefined || stage === undefined || path === "") continue;
-    if (stage !== "0" || mode === "160000") continue;
+    if (stage !== "0") continue;
     const at = join(workTree, path);
     try {
       const stat = lstatSync(at);
+      if (mode === "160000") {
+        if (!stat.isDirectory()) mark(path);
+        continue;
+      }
       let bytes: Uint8Array;
       if (mode === "120000") {
         if (!stat.isSymbolicLink()) {
