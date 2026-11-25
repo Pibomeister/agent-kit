@@ -4,6 +4,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -2112,6 +2113,62 @@ function plantBoundChild(started: ReturnType<typeof startMandatory>, ticket: Jso
 }
 
 describe("worker-writable trust boundary at open", () => {
+  for (const silent of ["rev-parse --git-common-dir", "worktree list --porcelain"]) {
+    test(`a silent ${silent} cannot authorize a parent in the shared git directory`, () => {
+      const dir = repo();
+      const ticket = behaviorTicket(dir, "discovery-parent");
+      const started = startMandatory(dir, ticketPath(dir, "discovery-parent"), attachKb(dir, "on"));
+      const linked = join(processScratch("ak-bv-linked-"), "peer");
+      git(dir, "worktree", "add", "-b", "discovery-feature", linked, "HEAD");
+      plantBoundChild(started, ticket, "protected-child");
+      const control = sourceCli(
+        linked,
+        undefined,
+        "record",
+        "--dir",
+        started.evidence,
+        "--run",
+        "protected-child",
+        "--gate",
+        "ship-preflight",
+      );
+      expect(control.code, control.err).toBe(0);
+
+      const privateDir = join(dir, ".git", "worker-authority");
+      cpSync(started.privateDir, privateDir, { recursive: true });
+      const evidence = join(privateDir, "evidence");
+      plantBoundChild({ ...started, privateDir, evidence }, ticket, "worker-child");
+      const realGit = Bun.which("git");
+      if (realGit === null) throw new Error("git is not on PATH");
+      const shim = processScratch("ak-bv-silent-git-");
+      writeFileSync(
+        join(shim, "git"),
+        `#!/bin/sh\nif [ "$*" = '${silent}' ]; then exit 0; fi\nexec '${realGit.replaceAll("'", "'\\''")}' "$@"\n`,
+      );
+      chmodSync(join(shim, "git"), 0o755);
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          join(ROOT, "src/cli.ts"),
+          "lifecycle",
+          "record",
+          "--dir",
+          evidence,
+          "--run",
+          "worker-child",
+          "--gate",
+          "ship-preflight",
+        ],
+        { cwd: linked, env: { ...gitEnv(linked), PATH: `${shim}:${process.env.PATH ?? ""}` } },
+      );
+      expect(result.exitCode, result.stderr.toString()).toBe(1);
+      for (const gate of PRE_SHIP_GATES) {
+        expect(result.stderr.toString()).toContain(`gate ${gate} has no current evidence`);
+      }
+      expect(readRecords(evidence, "worker-child", "ship-preflight")).toEqual([]);
+    });
+  }
+
   for (const placement of ["project", "linked worktree"] as const) {
     for (const site of ["binding", "runner record", "charter", "evidence store", "output directory"] as const) {
       test(`refuses ${site} authority in the ${placement}`, () => {

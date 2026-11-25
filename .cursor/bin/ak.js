@@ -25511,8 +25511,12 @@ ${result.stdout}`) ? "auth" : null;
         if (outcome === "ok")
           return parsed;
         if (serviceUnavailable(result, outcome)) {
-          advance = true;
-          break;
+          if (config.judgeFallbackCommands.length > 0) {
+            advance = true;
+            break;
+          }
+          if (result.timedOut)
+            return null;
         }
       }
       if (!advance)
