@@ -859,6 +859,12 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     if (auditTimer !== null) clearInterval(auditTimer);
     auditTimer = null;
   };
+  const haltAuditWithoutRecord = (cause: unknown): boolean => {
+    if (outageWindow() === undefined) return false;
+    haltAudit("failed");
+    io.err(auditFailure(cause));
+    return true;
+  };
   const applyPersistedCap = () => {
     const { cap, spent } = recoveryBudget();
     if (cap !== undefined && spent > 0 && spent >= cap) haltAudit("cap");
@@ -935,9 +941,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         try {
           tick = runner.auditTick(runId);
         } catch (cause) {
-          haltAudit("failed");
-          io.err(auditFailure(cause));
-          return;
+          if (haltAuditWithoutRecord(cause)) return;
+          throw cause;
         }
         for (const delegate of tick.replace) {
           const key = sha256Hex(`${runId}\0replace\0${delegate}`);
@@ -956,22 +961,14 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           try {
             runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
           } catch (cause) {
-            if (isRefusedAuditTick(cause)) {
-              haltAudit("failed");
-              io.err(auditFailure(cause));
-              return;
-            }
+            if (isRefusedAuditTick(cause) && haltAuditWithoutRecord(cause)) return;
             throw cause;
           }
         }
         auditBlock = "ok";
         auditOutage = null;
       } catch (cause) {
-        if (isRefusedAuditTick(cause)) {
-          haltAudit("failed");
-          io.err(auditFailure(cause));
-          return;
-        }
+        if (isRefusedAuditTick(cause) && haltAuditWithoutRecord(cause)) return;
         if (auditOutage === null) auditOutage = startOutage();
         try {
           const outcome = runner.recordAuditAdapterFailure(runId);

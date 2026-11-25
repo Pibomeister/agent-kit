@@ -4023,6 +4023,64 @@ describe("runner guards", () => {
     }
   });
 
+  test("bundle drift after a successful probe spends the cap and stays autonomous when outage backoff is absent", async () => {
+    const f = procedureKit();
+    withAuditCadence(f, 30);
+    expect(f.charter.limits.outage_backoff_seconds).toBeUndefined();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 3_600);
+    const stamp = join(f.privateDir, "loop-stamp");
+    const mutate = join(f.privateDir, "mutate-kit");
+    writeFileSync(mutate, "1");
+    const skill = join(f.kit, "skills/autopilot/SKILL.md");
+    const script = [
+      "const fs=await import('node:fs');",
+      "const stamp=process.argv[1];",
+      "const skill=process.argv[2];",
+      "const mutate=stamp.replace('loop-stamp','mutate-kit');",
+      "fs.appendFileSync(stamp,'x');",
+      "if(fs.existsSync(mutate)){ fs.writeFileSync(skill, '# drifted\\n'); fs.unlinkSync(mutate); }",
+      "const x=JSON.parse(await Bun.stdin.text());",
+      "console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
+    ].join("");
+    const { socket, service, workerToken, request } = serveLoop(f, script, stamp, undefined, f.kit, [skill]);
+    try {
+      await waitForPath(socket, service);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      await waitUntil(
+        "the drifting probe to return",
+        () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1 && !existsSync(mutate),
+      );
+      await waitUntil(
+        "the refused tick to be recorded or halted",
+        () =>
+          (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1 ||
+          autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+      );
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBe(1);
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      await waitUntil(
+        "the next cadence's first auditTick to halt as audit-failed",
+        () => autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
+        2_000,
+      );
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+        mode: "guided",
+        missing: ["audit-failed"],
+      });
+      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBe(1);
+      const probes = readFileSync(stamp, "utf8").length;
+      await Bun.sleep(1_500);
+      expect(readFileSync(stamp, "utf8").length).toBe(probes);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
   test("outage backoff waits only the remaining window on the last retry", async () => {
     const f = fixture();
     withAuditCadence(f, undefined, 300);
