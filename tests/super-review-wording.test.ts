@@ -9,9 +9,10 @@
  * parsed with CommonMark (parser only). Raw HTML is refused except a node that
  * is exactly one HTML comment. A heading may contain only text, code, emphasis,
  * strong, softbreak and linebreak. A heading with a link, image or html child
- * is refused. A heading whose text equals `workflow` after NFKC, stripping
- * `\p{Cf}` and `\p{Default_Ignorable_Code_Point}`, trim and lowercase is
- * refused. Homoglyph confusables, U+2800 braille blank, and GFM strikethrough
+ * is refused. A heading whose text, or any softbreak or linebreak-separated
+ * segment, equals `workflow` after NFKC, stripping `\p{Cf}` and
+ * `\p{Default_Ignorable_Code_Point}`, trim and lowercase is refused.
+ * Homoglyph confusables, U+2800 braille blank, and GFM strikethrough
  * are out of scope. Otherwise Hard gates body prose is not pinned.
  * `- Workflow notes` and prose that mentions workflow stay green. Fenced,
  * indented and inline-code examples stay green. Editing anything above Hard
@@ -59,7 +60,7 @@ function fold(text: string): string {
 
 function isPlainComment(literal: string): boolean {
   const text = literal.trim();
-  if (!text.startsWith("<!--") || !text.endsWith("-->") || text.length < 7) {
+  if (!text.startsWith("<!--") || !text.endsWith("-->")) {
     return false;
   }
   return !text.slice(4, -3).includes("-->");
@@ -67,6 +68,7 @@ function isPlainComment(literal: string): boolean {
 
 function headingForbidden(node: Node): boolean {
   let text = "";
+  let segment = "";
   const walker = node.walker();
   let event = walker.next();
   while (event) {
@@ -74,13 +76,20 @@ function headingForbidden(node: Node): boolean {
       if (!HEADING_OK.has(event.node.type)) {
         return true;
       }
-      if (event.node.type === "text" || event.node.type === "code") {
-        text += event.node.literal ?? "";
+      if (event.node.type === "softbreak" || event.node.type === "linebreak") {
+        if (fold(segment) === "workflow") {
+          return true;
+        }
+        segment = "";
+      } else if (event.node.type === "text" || event.node.type === "code") {
+        const bit = event.node.literal ?? "";
+        text += bit;
+        segment += bit;
       }
     }
     event = walker.next();
   }
-  return fold(text) === "workflow";
+  return fold(text) === "workflow" || fold(segment) === "workflow";
 }
 
 function hasForbiddenWorkflowMarkup(suffix: string): boolean {
@@ -172,6 +181,8 @@ const RED_FIXTURES: string[] = [
   '## <span aria-label="Workflow"></span>',
   '## [](# "Workflow")',
   '<div data-role="heading">x</div>',
+  "The runner did not supply a cap.\nWorkflow\n--------",
+  "Work\nflow\n--------",
 ];
 
 const GREEN_FIXTURES: string[] = [
@@ -198,6 +209,9 @@ const GREEN_FIXTURES: string[] = [
   "<!-- headings h1-h6 stay in the prefix -->",
   "<!-- role=heading is refused in suffix HTML -->",
   "<!-- <h2>Workflow</h2> -->",
+  "<!-->",
+  "<!--->",
+  "Budget\nnotes\n--------",
 ];
 
 describe("super-review wording", () => {
