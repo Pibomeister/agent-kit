@@ -416,10 +416,7 @@ function scopeCommand(flags: Flags, io: ReviewIo): number {
         throw new UsageError(
           "--ticket and --project are required: the record of the last reviewed round holds a class, so score ak delegation --stage merge at that head",
         );
-      const scored = scoreDelegationRun(
-        { ticket, project, stage: "merge", base: revisions.base, head: reviewed },
-        repo,
-      );
+      const scored = scoreDelegationRun({ ticket, project, stage: "merge", base, head: reviewed }, repo);
       if (scored.class !== before.class)
         throw new UsageError(
           `--previous class is ${before.class}, and merge-stage scoring at ${reviewed} is ${scored.class}`,

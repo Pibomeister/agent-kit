@@ -112,8 +112,8 @@ reads it as a full-re-review trigger (ADR-0018). The field changes no class. A p
 is absent, not JSON, not a merge-stage record or not a delegation record is refused before scoring.
 
 Persist the command's JSON output as the ticket's `delegation` block, without
-`review_surface_changed`: that field is a fact about one review round, and the ticket schema
-refuses it. Cite the ticket and
+`review_surface_changed` and without `head`: those fields are facts about one review round, and
+the ticket schema refuses them. Cite the ticket and
 project artifact references used for the run wherever another artifact consumes the result. A body
 must not reproduce the formula, weights, cut points, floor table or lowering logic. A missing or
 failed scorer run leaves no delegation record and blocks the checkpoint.

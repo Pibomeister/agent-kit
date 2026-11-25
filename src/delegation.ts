@@ -10,6 +10,7 @@ import projectSchema from "../schemas/project.schema.json" with { type: "json" }
 import ticketSchema from "../schemas/ticket.schema.json" with { type: "json" };
 import verificationRecipeSchema from "../schemas/verification-recipe.schema.json" with { type: "json" };
 import type { DelegationClass } from "./lifecycle/gate.ts";
+import { isolatedGitEnv, resolveRunnerGit } from "./runner/snapshot.ts";
 import { globToRegExp } from "./util/glob.ts";
 
 export type DelegationFactorName = "reversibility" | "size" | "complexity" | "spec" | "verification";
@@ -358,9 +359,18 @@ export function readMergeRecord(input: string, cwd: string, label: string): Dele
   return parsed;
 }
 
+function isolatedGit(cwd: string, args: readonly string[]) {
+  const context = resolveRunnerGit(cwd);
+  return spawnSync(context.binary, ["--no-replace-objects", "-C", cwd, ...args], {
+    cwd,
+    env: isolatedGitEnv(context.path, context.home),
+    encoding: "utf8",
+  });
+}
+
 /** The full id of `revision`, or an error the merge-stage command already uses for a missing commit. */
 export function resolveRevision(cwd: string, revision: string): string {
-  const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
+  const check = isolatedGit(cwd, ["rev-parse", "--verify", "--end-of-options", `${revision}^{commit}`]);
   const id = (check.stdout ?? "").trim();
   if (check.status !== 0 || id === "") throw new Error(`cannot resolve revision ${revision}`);
   return id;
@@ -370,7 +380,7 @@ export function resolveRevision(cwd: string, revision: string): string {
 export function gitChangedPaths(cwd: string, base: string, head: string): string[] {
   for (const revision of [base, head]) resolveRevision(cwd, revision);
   const range = `${base}...${head}`;
-  const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
+  const diff = isolatedGit(cwd, ["diff", "--name-only", "--no-renames", "-z", "--end-of-options", range]);
   if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
   return (diff.stdout ?? "").split("\0").filter((path) => path.length > 0);
 }

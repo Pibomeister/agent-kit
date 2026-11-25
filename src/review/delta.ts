@@ -13,14 +13,16 @@
  * pull request's. The changed-line patch id is only for rewritten-commit
  * matching.
  *
- * This file changes no work tree, index or ref. `git merge-tree` writes the
- * objects of each merge it repeats into the object store, as unreachable
- * objects. It needs git 2.38 or later.
+ * This file changes no work tree, index or ref of the author's repository.
+ * Merge-tree runs in a throwaway GIT_DIR. It needs git 2.38 or later.
  */
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { isolatedGitEnv } from "../runner/snapshot.ts";
+import { gitProcess, isolatedGitEnv, resolveRunnerGit, withThrowawayObjectStore } from "../runner/snapshot.ts";
 import { linesNotIn, readPatch, type DeltaFacts, type Patch } from "./scope.ts";
 
 const DIFF = [
@@ -120,9 +122,10 @@ function pathIdentity(before: Map<string, TreeEntry>, now: Map<string, TreeEntry
 
 /** Run git in `repo` and return what it printed. A status outside `statuses` is an error. */
 function git(repo: string, args: readonly string[], statuses: readonly number[] = [0]) {
-  const run = spawnSync("git", ["--no-replace-objects", "-C", repo, "-c", "core.quotePath=false", ...args], {
+  const context = resolveRunnerGit(repo);
+  const run = spawnSync(context.binary, ["--no-replace-objects", "-C", repo, "-c", "core.quotePath=false", ...args], {
     cwd: repo,
-    env: isolatedGitEnv(),
+    env: isolatedGitEnv(context.path, context.home),
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 1024,
   });
@@ -134,7 +137,7 @@ function git(repo: string, args: readonly string[], statuses: readonly number[] 
 
 /** The full id of the commit `revision` names. `role` says what the revision is, for the error. */
 export function resolveCommit(repo: string, revision: string, role: string): string {
-  const run = git(repo, ["rev-parse", "--verify", "--quiet", `${revision}^{commit}`], [0, 1]);
+  const run = git(repo, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${revision}^{commit}`], [0, 1]);
   const id = run.out.trim();
   if (run.status !== 0 || id === "") throw new Error(`${role} ${revision} is not a commit in this repository`);
   return id;
@@ -255,6 +258,7 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
 function conflictPaths(repo: string, base: string, previous: string, head: string): string[] {
   const merges = git(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base}`]).out.split("\n");
   const conflicted = new Set<string>();
+  const pairs: [string, string][] = [];
   for (const merge of merges) {
     if (merge === "") continue;
     const parents = git(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
@@ -270,10 +274,31 @@ function conflictPaths(repo: string, base: string, previous: string, head: strin
       continue;
     }
     if (parents.length !== 2 || ours === undefined || theirs === undefined) continue;
-    const run = git(repo, ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs], [0, 1]);
-    if (run.status === 0) continue;
-    // The first field is the tree. The rest are the conflicted paths.
-    for (const path of run.out.split("\0").slice(1)) if (path !== "") conflicted.add(path);
+    pairs.push([ours, theirs]);
+  }
+  if (pairs.length === 0) return [...conflicted].toSorted();
+  const home = mkdtempSync(join(tmpdir(), "ak-review-"));
+  try {
+    const context = { ...resolveRunnerGit(repo), home };
+    for (const [ours, theirs] of pairs) {
+      const run = withThrowawayObjectStore(context, repo, (extraEnv) => {
+        const result = gitProcess(
+          context,
+          repo,
+          ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs],
+          10_000,
+          undefined,
+          extraEnv,
+        );
+        if (result.code > 1) throw new Error(`git merge-tree failed: ${result.stderr}`);
+        return { code: result.code, out: new TextDecoder().decode(result.stdout) };
+      });
+      if (run.code === 0) continue;
+      // The first field is the tree. The rest are the conflicted paths.
+      for (const path of run.out.split("\0").slice(1)) if (path !== "") conflicted.add(path);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
   return [...conflicted].toSorted();
 }

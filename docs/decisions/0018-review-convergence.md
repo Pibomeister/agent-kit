@@ -208,7 +208,7 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 ## Consequences and limits
 
 - The ledger is single-writer evidence that a gate holds. The engine does not check who appended a
-  line, and a record of any of the three commands grants no authority. `ak review decide` trusts
+  line, and a record of any of these commands grants no authority. `ak review decide` trusts
   those lines as coverage, so the ledger file must sit outside author write. A hand-written carry
   line is coverage if it is in the file. There is no provenance check on a line.
 - The tool runs no reproduction. The caller runs it and records the exit status at the head and at
@@ -219,7 +219,8 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   skill, protocol or gate calls them yet, so no review changes. The protocol wiring is a later
   change.
 - `ak review scope` needs git 2.38 or later for `git merge-tree`. Repeating a merge writes its
-  objects into the object store as unreachable objects. No work tree, index or ref changes.
+  objects into a throwaway GIT_DIR. No work tree, index or ref of the author's repository
+  changes.
 - The scope command refuses a `--record` whose `head` is not `--head`. A later `ledger add` of a
   carry needs that last reviewed record as `--previous`. `readDelta` refuses a `--base` that the
   last reviewed head is a strict ancestor of, so a commit sitting between the reviewed head and a

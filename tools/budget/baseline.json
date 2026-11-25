@@ -83,8 +83,8 @@
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 38872,
-      "tokens": 9704
+      "bytes": 39046,
+      "tokens": 9747
     },
     "bundle/claude-code:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -153,8 +153,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27902,
-      "tokens": 6970
+      "bytes": 27925,
+      "tokens": 6976
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -958,8 +958,8 @@
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 38872,
-      "tokens": 9704
+      "bytes": 39046,
+      "tokens": 9747
     },
     "bundle/codex:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1028,8 +1028,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27902,
-      "tokens": 6970
+      "bytes": 27925,
+      "tokens": 6976
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1833,8 +1833,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 38872,
-      "tokens": 9704
+      "bytes": 39046,
+      "tokens": 9747
     },
     "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1903,8 +1903,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27974,
-      "tokens": 6988
+      "bytes": 27997,
+      "tokens": 6994
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2708,8 +2708,8 @@
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 38872,
-      "tokens": 9704
+      "bytes": 39046,
+      "tokens": 9747
     },
     "bundle/droid:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -2778,8 +2778,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27902,
-      "tokens": 6970
+      "bytes": 27925,
+      "tokens": 6976
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3583,8 +3583,8 @@
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 38872,
-      "tokens": 9704
+      "bytes": 39046,
+      "tokens": 9747
     },
     "bundle/grok:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -3653,8 +3653,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27902,
-      "tokens": 6970
+      "bytes": 27925,
+      "tokens": 6976
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4458,8 +4458,8 @@
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 38872,
-      "tokens": 9704
+      "bytes": 39046,
+      "tokens": 9747
     },
     "bundle/kimi:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -4528,8 +4528,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 27902,
-      "tokens": 6970
+      "bytes": 27925,
+      "tokens": 6976
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",

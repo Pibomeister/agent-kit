@@ -449,8 +449,10 @@ delta:
         - the direct callers of a function whose signature or exit behaviour changed
       empty_delta: >-
         When every path of the pull request has the same mode and blob as at the last reviewed
-        head, no seat is called and the earlier verdict carries. A rebase that changes no blob
-        and a merge of the base branch with no conflict in the pull request's paths are both empty.
+        head, and every non-merge commit in previous..head excluding base is empty or matches a
+        reviewed own-commit patch or the reviewed pull request patch, no seat is called and the
+        earlier verdict carries. A rebase that changes no blob and a merge of the base branch with
+        no conflict in the pull request's paths still have to pass that test.
       tool: ak review scope
     ruling: delta-scope-affected-behavior
     scenario: 8

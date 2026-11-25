@@ -9,7 +9,7 @@
  * that builds the fixture.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -1004,6 +1004,53 @@ describe("ak review scope: large rebase", () => {
       delta: { empty: true, conflict_paths: ["src/a.ts"] },
     });
   });
+
+  test("RC-MERGE-DRIVER-HIDES-CONFLICT: a repo merge driver that exits 0 does not hide a conflict", () => {
+    const f = fixture();
+    const withAttr = f.commit({ ".gitattributes": "src/a.ts merge=lie\n" }, "merge attr");
+    f.round(withAttr);
+    f.git("checkout", "main");
+    f.commit({ "src/a.ts": lines("a", 10) + lines("theirs", 2) }, "main edits a.ts");
+    f.git("checkout", "pr");
+    const marker = join(f.dir, "merge-driver.marker");
+    const script = join(f.dir, "merge-driver.sh");
+    writeFileSync(script, `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexit 0\n`);
+    chmodSync(script, 0o700);
+    expect(f.tryGit("config", "merge.lie.driver", `${script} %O %A %B`).status).toBe(0);
+    f.git("merge", "-X", "ours", "--no-ff", "-m", "merge main taking ours", "main");
+    const H = f.git("rev-parse", "HEAD");
+    if (existsSync(marker)) unlinkSync(marker);
+    expect(f.record(H)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["large-rebase"],
+      delta: { empty: true, conflict_paths: ["src/a.ts"] },
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("RC-PATH-GIT-WRAPPER: a git wrapper first on PATH does not run", () => {
+    const f = fixture();
+    f.round(f.head);
+    const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const bin = join(f.root, "bin");
+    mkdirSync(bin);
+    const marker = join(f.dir, "path-git.marker");
+    const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\nprintf ran\\n > ${JSON.stringify(marker)}\nexec ${JSON.stringify(realGit)} "$@"\n`,
+    );
+    chmodSync(join(bin, "git"), 0o700);
+    const saved = process.env.PATH;
+    process.env.PATH = `${bin}:${saved ?? "/usr/bin"}`;
+    try {
+      expect(f.record(fix)).toMatchObject({ outcome: "closure", triggers: [] });
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      if (saved === undefined) Reflect.deleteProperty(process.env, "PATH");
+      else process.env.PATH = saved;
+    }
+  });
 });
 
 describe("ak review scope: scope growth", () => {
@@ -1152,6 +1199,58 @@ describe("ak review scope: risk tier and review surface", () => {
     const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
     const second = f.merge("merge-2.json", fix, "--previous", first);
     expect(f.record(fix, "--previous", kept, "--record", second, ...f.classFlags)).toMatchObject({
+      outcome: "closure",
+      triggers: [],
+      class: "yellow-agent",
+      review_surface_changed: false,
+    });
+  });
+
+  test("RC-GIT-DIR-CLASS: a foreign GIT_DIR does not change merge-stage scoring at the last reviewed head", () => {
+    const f = delegationFixture();
+    const first = f.merge("merge-1.json", f.head);
+    const kept = f.keep("round-1.json", f.head, "--record", first);
+    f.round(f.head);
+    const fix = f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "fix");
+    const second = f.merge("merge-2.json", fix, "--previous", first);
+    const foreign = join(f.dir, "foreign");
+    mkdirSync(foreign);
+    const init = spawnSync("git", ["-C", foreign, "init", "-b", "main", "."], { encoding: "utf8" });
+    expect(init.status).toBe(0);
+    spawnSync("git", ["-C", foreign, "config", "user.email", "t@example.invalid"]);
+    spawnSync("git", ["-C", foreign, "config", "user.name", "T"]);
+    mkdirSync(join(foreign, "src/shared"), { recursive: true });
+    writeFileSync(join(foreign, "src/shared/util.ts"), lines("shared", 2));
+    spawnSync("git", ["-C", foreign, "add", "-A"]);
+    spawnSync("git", ["-C", foreign, "commit", "-m", "shared"]);
+    const run = spawnSync(
+      process.execPath,
+      [
+        join(import.meta.dir, "../../src/cli.ts"),
+        "review",
+        "scope",
+        "--ledger",
+        f.ledger,
+        "--repo",
+        f.root,
+        "--base",
+        "main",
+        "--head",
+        fix,
+        "--previous",
+        kept,
+        "--record",
+        second,
+        ...f.classFlags,
+      ],
+      {
+        cwd: f.root,
+        encoding: "utf8",
+        env: { ...process.env, GIT_DIR: join(foreign, ".git") },
+      },
+    );
+    expect({ code: run.status, err: (run.stderr ?? "").trim() }).toEqual({ code: 0, err: "" });
+    expect(parseJson((run.stdout ?? "").trim())).toMatchObject({
       outcome: "closure",
       triggers: [],
       class: "yellow-agent",
