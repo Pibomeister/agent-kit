@@ -44361,13 +44361,22 @@ function failClosedAdversarialVerdict(text5) {
   const parsed = parseAdversarialVerdict(text5);
   return parsed.ok ? parsed.verdict : "REJECT";
 }
-function parsesAsJson(text5) {
+function parsesAsJsonObjectOrArray(text5) {
   try {
-    JSON.parse(text5);
-    return true;
+    const value = JSON.parse(text5);
+    return value instanceof Object;
   } catch {
     return false;
   }
+}
+function lineHasJsonObjectOrArraySuffix(line) {
+  for (let i = 0;i < line.length; i++) {
+    if (line[i] !== "{" && line[i] !== "[")
+      continue;
+    if (parsesAsJsonObjectOrArray(line.slice(i)))
+      return true;
+  }
+  return false;
 }
 function stripBom(text5) {
   return text5.charCodeAt(0) === 65279 ? text5.slice(1) : text5;
@@ -44389,17 +44398,18 @@ function mixedJsonAndTranscript(text5) {
   if (remainder === undefined)
     return false;
   const head = stripBom(text5).trimStart();
-  if (head.startsWith("{") || head.startsWith("[") || head.startsWith("```"))
+  const remainderTrim = stripBom(remainder).trim();
+  if (head.startsWith("```"))
     return true;
-  if (parsesAsJson(stripBom(remainder).trim()))
+  if ((head.startsWith("{") || head.startsWith("[")) && remainderTrim !== "{" && remainderTrim !== "[")
+    return true;
+  if (parsesAsJsonObjectOrArray(remainderTrim))
     return true;
   for (const line of remainder.split(/\r\n|\r|\n/)) {
-    if (line.trimStart().startsWith("```"))
-      continue;
     const trimmed = line.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("["))
+    if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1)
       return true;
-    if (parsesAsJson(trimmed))
+    if (lineHasJsonObjectOrArraySuffix(line))
       return true;
   }
   return false;

@@ -221,6 +221,21 @@ describe("ak council run", () => {
     }
   });
 
+  test("a 3-seat council with a prefixed JSON REJECT then VERDICT: WORTHY escalates", async () => {
+    const body = 'INFO: {"choice":"REJECT","rationale":"x"}\nVERDICT: WORTHY\n';
+    const { result, out } = await runTranscriptCouncil(body);
+    expect(result.code).toBe(1);
+    expect(record(out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      causes: ["a primary seat was unavailable"],
+      seats: [
+        { seat: "primary-a", choice: null },
+        { seat: "primary-b", choice: null },
+      ],
+    });
+  });
+
   test("a yes/no card with a well-formed VERDICT: WORTHY escalates rather than recording WORTHY", async () => {
     const { result, out } = await runTranscriptCouncil(worthyTranscript, {
       id: "q2",

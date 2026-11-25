@@ -76,13 +76,22 @@ export function failClosedAdversarialVerdict(text: string): AdversarialVerdict {
   return parsed.ok ? parsed.verdict : "REJECT";
 }
 
-function parsesAsJson(text: string): boolean {
+function parsesAsJsonObjectOrArray(text: string): boolean {
   try {
-    JSON.parse(text);
-    return true;
+    const value: unknown = JSON.parse(text);
+    return value instanceof Object;
   } catch {
     return false;
   }
+}
+
+/** True when some suffix of `line` that starts at `{` or `[` is a JSON object or array. */
+function lineHasJsonObjectOrArraySuffix(line: string): boolean {
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== "{" && line[i] !== "[") continue;
+    if (parsesAsJsonObjectOrArray(line.slice(i))) return true;
+  }
+  return false;
 }
 
 function stripBom(text: string): string {
@@ -105,30 +114,35 @@ function remainderAfterFinalVerdictLine(text: string): string | undefined {
 
 /**
  * True when stdout mixes JSON-looking text with a final VERDICT line.
- * A JSON value is never a transcript: fenced JSON, a leading { or [,
- * a remainder line that parses as JSON or starts with { or [, and a
- * remainder that is itself JSON, all refuse the transcript fallback.
+ * A JSON object or array is never a transcript. After a BOM and leading
+ * whitespace are stripped, a leading `{`, `[`, or triple backtick is
+ * mixed, except a remainder that is only `{` or `[`. Any suffix that
+ * starts at `{` or `[` on a remainder line, fence lines included, and
+ * parses as a JSON object or array is mixed. A remainder line that
+ * starts with `{` or `[` and holds more than that character is mixed
+ * even when it does not parse (truncated JSON). A JSON scalar is not.
  */
 function mixedJsonAndTranscript(text: string): boolean {
   const remainder = remainderAfterFinalVerdictLine(text);
   if (remainder === undefined) return false;
   const head = stripBom(text).trimStart();
-  if (head.startsWith("{") || head.startsWith("[") || head.startsWith("```")) return true;
-  if (parsesAsJson(stripBom(remainder).trim())) return true;
+  const remainderTrim = stripBom(remainder).trim();
+  if (head.startsWith("```")) return true;
+  if ((head.startsWith("{") || head.startsWith("[")) && remainderTrim !== "{" && remainderTrim !== "[") return true;
+  if (parsesAsJsonObjectOrArray(remainderTrim)) return true;
   for (const line of remainder.split(/\r\n|\r|\n/)) {
-    if (line.trimStart().startsWith("```")) continue;
     const trimmed = line.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) return true;
-    if (parsesAsJson(trimmed)) return true;
+    if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1) return true;
+    if (lineHasJsonObjectOrArraySuffix(line)) return true;
   }
   return false;
 }
 
 /**
  * A non-JSON transcript's adversarial choice, or null when stdout has
- * no well-formed final VERDICT field whose value is in `options`. The
- * choice is always `failClosedAdversarialVerdict`: WORTHY only from a
- * valid field. Mixed JSON-plus-VERDICT stdout is not a transcript.
+ * no well-formed final VERDICT field whose value is in `options`. Mixed
+ * JSON-plus-VERDICT stdout returns null first. Otherwise the choice is
+ * `failClosedAdversarialVerdict`: WORTHY only from a valid field.
  * Callers that already parsed JSON must not use this as a fallback for
  * a malformed object.
  */

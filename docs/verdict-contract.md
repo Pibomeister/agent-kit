@@ -39,17 +39,19 @@ Permission is never inferred from surrounding prose.
 are the shared parser for review and adversarial transcripts.
 `ak council run` reads a seat through `launchSeat`. A JSON council
 answer whose `choice` is one of the card's exact options still stands.
-Stdout that is not JSON is read through `failClosedAdversarialVerdict`,
-which only yields `WORTHY` or `REJECT`. A well-formed final
-`VERDICT: WORTHY` or `VERDICT: REJECT` is the seat's choice when that
-value is one of the card options. A yes/no card is not answered by a
+Stdout that is not JSON is read through `adversarialChoiceFromTranscript`,
+the `launchSeat` fallback. Mixed stdout returns null first. Otherwise
+`failClosedAdversarialVerdict` yields `WORTHY` or `REJECT`. A well-formed
+final `VERDICT: WORTHY` or `VERDICT: REJECT` is the seat's choice when
+that value is one of the card options. A yes/no card is not answered by a
 `VERDICT` field. Mixed JSON-plus-transcript stdout is unavailable. The
 substitute chain continues and no REJECT is synthesized. After a BOM
 and leading whitespace are stripped, stdout is mixed when it starts
-with `{` or `[` or a markdown fence, or when the remainder before the
-final `VERDICT` line has a line that parses as JSON or starts with `{`
-or `[` once fence markers are ignored. A JSON value is never a
-transcript.
+with `{` or `[` or a leading triple backtick, or when any suffix
+starting at `{` or `[` on a remainder line, fence lines included,
+parses as a JSON object or array. A remainder line that starts with
+`{` or `[` and holds more than that character is mixed even when it
+does not parse. A JSON object or array is never a transcript.
 Garbage, an empty transcript, a missing field, or a value outside the
 card options is not an answer, so the substitute chain moves on and an
 exhausted chain leaves the seat unavailable, which escalates rather

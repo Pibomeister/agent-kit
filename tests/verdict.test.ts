@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { launchSeat, type Spawn } from "../src/council/seat.ts";
-import { MIXED_JSON_PLUS_VERDICT } from "./helpers/mixed-stdout.ts";
+import { MIXED_JSON_PLUS_VERDICT, WORTHY_WITH_JSON_SCALAR } from "./helpers/mixed-stdout.ts";
 import {
   ADVERSARIAL_VERDICTS,
   failClosedAdversarialVerdict,
@@ -182,6 +182,14 @@ describe("council seat verdict consumption", () => {
       expect(result.ok, name).toBe(false);
       expect(result.attempts, name).toHaveLength(1);
       expect(JSON.stringify(result), name).not.toContain("structured final verdict field");
+    }
+  });
+
+  test("a JSON scalar or lone brace remainder still admits a final VERDICT: WORTHY", async () => {
+    for (const [name, stdout] of WORTHY_WITH_JSON_SCALAR) {
+      const result = await launchSeat(seat, "payload", options, spawnWith(stdout));
+      expect(result.ok, name).toBe(true);
+      expect(result).toMatchObject({ answer: { choice: "WORTHY" } });
     }
   });
 });
