@@ -213,8 +213,9 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
  * A merge is new when `head` reaches it and neither the last reviewed head nor
  * the base branch does. So the pull request's own history made it, and a path
  * that conflicts in it is one the pull request's commits changed. Each merge is
- * repeated from its two parents. A merge of more than two parents is skipped:
- * git makes one only where nothing conflicts.
+ * repeated from its two parents. A merge of more than two parents is treated as
+ * conflicted: a mixed tree can be written by hand even when git's octopus
+ * strategy would have refused.
  */
 function conflictPaths(repo: string, base: string, previous: string, head: string): string[] {
   const merges = git(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base}`]).out.split("\n");
@@ -223,6 +224,14 @@ function conflictPaths(repo: string, base: string, previous: string, head: strin
     if (merge === "") continue;
     const parents = git(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
     const [ours, theirs] = parents;
+    if (parents.length > 2) {
+      const first = parents[0];
+      if (first !== undefined) {
+        const names = git(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", first, merge]).out;
+        for (const path of names.split("\n")) if (path !== "") conflicted.add(path);
+      }
+      continue;
+    }
     if (parents.length !== 2 || ours === undefined || theirs === undefined) continue;
     const run = git(repo, ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs], [0, 1]);
     if (run.status === 0) continue;
@@ -243,14 +252,10 @@ export interface DeltaReading {
  * last reviewed head. All three revisions are full commit ids.
  */
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
-  if (previous !== head) {
-    const fromPrevious = mergeBase(repo, base, previous);
-    const fromHead = mergeBase(repo, base, head);
-    if (fromPrevious === previous && fromHead === head)
-      throw new Error(
-        `base ${base} is reachable from ${previous} and from ${head}: it is not a comparison base of this pull request`,
-      );
-  }
+  if (previous !== base && mergeBase(repo, base, previous) === previous)
+    throw new Error(
+      `the last reviewed head ${previous} is an ancestor of base ${base}: it is not a comparison base of this pull request`,
+    );
   const before = headPatch(repo, base, previous);
   const now = headPatch(repo, base, head);
   const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));

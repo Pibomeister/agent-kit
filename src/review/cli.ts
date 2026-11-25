@@ -192,12 +192,10 @@ function validateCarryScope(): ValidateFunction<CarryScope> {
 }
 
 /** A carry line is admitted only from a scope record whose delta is empty against the last reviewed head. */
-function carryFromScope(record: CarryScope, covered: string | null, repo: string, pinnedBase: string): InputItem {
+function carryFromScope(record: CarryScope, covered: string | null, repo: string): InputItem {
   if (record.event.head !== record.head) throw new Error("a carry line needs a scope record of the carried head");
   if (record.previous.head !== covered)
     throw new Error("a carry line needs a scope record whose previous.head is the last reviewed head");
-  if (record.base !== pinnedBase && record.base === record.event.head)
-    throw new Error("a carry line needs the pinned base of the last reviewed scope record");
   const reading = readDelta(repo, record.base, record.previous.head, record.event.head);
   if (!reading.delta.empty) throw new Error("a carry line needs a scope record whose delta is empty against that head");
   const item = { kind: "carry", head: record.event.head };
@@ -224,11 +222,9 @@ function add(flags: Flags, io: ReviewIo): number {
     const covered = fold(before.events, DEFAULT_POLICY).covered_head;
     const previousPath = flags.one.get("--previous");
     if (previousPath === undefined || covered === null)
-      throw new UsageError(
-        "--previous is required: a carry line needs the last reviewed scope record, whose base is the pin",
-      );
-    const pinned = readBaseline(previousPath, covered);
-    items = [carryFromScope(parsed, covered, repo, pinned.base)];
+      throw new UsageError("--previous is required: a carry line needs the last reviewed scope record");
+    readBaseline(previousPath, covered);
+    items = [carryFromScope(parsed, covered, repo)];
   } else {
     items = parseInput(text);
     if (items.some((item) => item.kind === "carry"))

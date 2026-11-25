@@ -103,7 +103,7 @@ function fixture() {
   };
   /** The scope record a caller last kept, and its head. */
   let kept: { path: string; at: string } | null = null;
-  /** The scope record of the last closed round, whose base is the pin. */
+  /** The scope record of the last closed round. */
   let reviewedKeep: { path: string; at: string } | null = null;
   const scope = (at: string, ...flags: string[]): Run =>
     review(["scope", "--ledger", ledger, "--repo", root, "--base", "main", "--head", at, ...flags]);
@@ -154,6 +154,18 @@ function fixture() {
       return reviewedKeep;
     },
   };
+}
+
+/** Reviewed R, dirty, then B, then an empty H whose tree is B's. */
+function between(f: ReturnType<typeof fixture>) {
+  f.round(f.head);
+  f.commit({ "src/a.ts": lines("a", 10) + lines("first", 30) + lines("fix", 1) }, "dirty");
+  const B = f.commit({ "src/extra.ts": "between\n" }, "B");
+  f.git("commit", "--allow-empty", "-m", "H empty on B");
+  const H = f.git("rev-parse", "HEAD");
+  expect(f.git("merge-base", B, f.head)).toBe(f.head);
+  expect(f.git("rev-parse", `${B}^{tree}`)).toBe(f.git("rev-parse", `${H}^{tree}`));
+  return { B, H };
 }
 
 describe("ak review scope before round 1", () => {
@@ -380,7 +392,7 @@ describe("ak review scope: later-round tree identity", () => {
       }),
     );
     expect({ code: forged.code, out: forged.out }).toEqual({ code: 2, out: [] });
-    expect(forged.err.join("\n")).toContain("a carry line needs the pinned base of the last reviewed scope record");
+    expect(forged.err.join("\n")).toContain("is an ancestor of base");
   });
 
   test("MB-force-pushed-base-branch: a base branch force-moved to the dirty tip is refused", () => {
@@ -391,7 +403,7 @@ describe("ak review scope: later-round tree identity", () => {
     expect(f.git("rev-parse", "main")).toBe(dirty);
     const run = f.scope(dirty, "--previous", f.reviewed().path);
     expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
-    expect(run.err.join("\n")).toContain("is not a comparison base of this pull request");
+    expect(run.err.join("\n")).toContain("is an ancestor of base");
   });
 
   test("FU-replace-decide: a replace ref cannot make a dirty head carry", () => {
@@ -443,6 +455,82 @@ describe("ak review scope: later-round tree identity", () => {
     const decided = f.decide(dirty);
     expect(decided.code).toBe(1);
     expect(parseJson(decided.out[0] ?? "")).toMatchObject({ verdict: "incomplete" });
+  });
+
+  test("BETWEEN-scope: --base B --head H after a dirty commit is refused", () => {
+    const f = fixture();
+    const { B, H } = between(f);
+    const run = review([
+      "scope",
+      "--ledger",
+      f.ledger,
+      "--repo",
+      f.root,
+      "--base",
+      B,
+      "--head",
+      H,
+      "--previous",
+      f.reviewed().path,
+    ]);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("is an ancestor of base");
+    expect(f.decide(H).code).toBe(1);
+  });
+
+  test("BETWEEN-forge: a carry JSON whose base is B is refused", () => {
+    const f = fixture();
+    const { B, H } = between(f);
+    const forged = review(
+      ["ledger", "add", "--ledger", f.ledger, "--event", "-", "--repo", f.root, "--previous", f.reviewed().path],
+      JSON.stringify({
+        schema: "review-scope",
+        outcome: "carry",
+        head: H,
+        base: B,
+        previous: { head: f.head },
+        delta: { empty: true },
+        event: { kind: "carry", head: H },
+      }),
+    );
+    expect({ code: forged.code, out: forged.out }).toEqual({ code: 2, out: [] });
+    expect(forged.err.join("\n")).toContain("is an ancestor of base");
+    expect(f.decide(H).code).toBe(1);
+  });
+
+  test("BETWEEN-edited-previous: editing --previous.base to B does not carry", () => {
+    const f = fixture();
+    const { B, H } = between(f);
+    const edited = parseJson(readFileSync(f.reviewed().path, "utf8"));
+    const object = edited instanceof Object && !Array.isArray(edited) ? edited : {};
+    object.base = B;
+    const previous = f.file("edited-previous.json", JSON.stringify(object));
+    const run = review([
+      "scope",
+      "--ledger",
+      f.ledger,
+      "--repo",
+      f.root,
+      "--base",
+      B,
+      "--head",
+      H,
+      "--previous",
+      previous,
+    ]);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("is an ancestor of base");
+    expect(f.decide(H).code).toBe(1);
+  });
+
+  test("BETWEEN-update-ref: force-moving main to B is refused", () => {
+    const f = fixture();
+    const { B, H } = between(f);
+    f.git("update-ref", "refs/heads/main", B);
+    const run = f.scope(H, "--previous", f.reviewed().path);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("is an ancestor of base");
+    expect(f.decide(H).code).toBe(1);
   });
 });
 
@@ -510,6 +598,27 @@ describe("ak review scope: what is not a trigger", () => {
       delta: { empty: true, conflict_paths: [] },
       event: { kind: "carry", head: merged },
     });
+  });
+
+  test("a criss-cross merge still exits 0", () => {
+    const f = fixture();
+    f.round(f.head);
+    f.git("checkout", "-b", "x", f.head);
+    const x1 = f.commit({ "src/x.ts": "x\n" }, "x1");
+    f.git("checkout", "-b", "y", f.head);
+    const y1 = f.commit({ "src/y.ts": "y\n" }, "y1");
+    f.git("checkout", "x");
+    f.git("merge", "--no-ff", "-m", "x2 merges y1", y1);
+    const x2 = f.git("rev-parse", "HEAD");
+    f.git("checkout", "y");
+    f.git("merge", "--no-ff", "-m", "y2 merges x1", x1);
+    const y2 = f.git("rev-parse", "HEAD");
+    f.git("checkout", "pr");
+    f.git("reset", "--hard", x2);
+    f.git("merge", "--no-ff", "-m", "pr merges y2", y2);
+    const head = f.git("rev-parse", "HEAD");
+    const run = f.scope(head, "--previous", f.reviewed().path);
+    expect(run.code).toBe(0);
   });
 
   test("the last round of the cap is a closure round like any other", () => {
@@ -763,6 +872,30 @@ describe("ak review scope: large rebase", () => {
       outcome: "closure",
       triggers: [],
       delta: { conflict_paths: [] },
+    });
+  });
+
+  test("a three-parent merge that mixed a conflicted path is a large-rebase", () => {
+    const f = fixture();
+    f.round(f.head);
+    const root = f.head;
+    const a = f.commit({ "src/mix.ts": "aaa\n" }, "a");
+    f.git("checkout", "-b", "side-b", root);
+    const b = f.commit({ "src/mix.ts": "bbb\n" }, "b");
+    f.git("checkout", "-b", "side-c", root);
+    const c = f.commit({ "src/mix.ts": "ccc\n" }, "c");
+    f.git("checkout", "pr");
+    f.write({ "src/mix.ts": "aaa\nbbb\nccc\n" });
+    f.git("add", "-A");
+    const tree = f.git("write-tree");
+    const mixed = f.git("commit-tree", tree, "-p", a, "-p", b, "-p", c, "-m", "octopus mix");
+    f.git("reset", "--hard", mixed);
+    expect(f.git("rev-list", "--parents", "-n", "1", mixed).split(" ")).toHaveLength(4);
+    expect(f.record(mixed)).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["large-rebase"],
+      delta: { conflict_paths: ["src/mix.ts"] },
+      event: { kind: "scope-open", trigger: "large-rebase", head: mixed },
     });
   });
 });

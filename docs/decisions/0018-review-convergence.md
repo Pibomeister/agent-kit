@@ -82,7 +82,7 @@ next review covers.
     request at a head with the pull request at the last reviewed head, which the ledger names.
     - `large-rebase`: the patch changed and the rewritten commits changed lines amounting to more
       than 30% of the pull request's changed lines, or a merge resolved a conflict in a path of
-      the pull request.
+      the pull request, or a non-empty merge has more than two parents.
     - `path-identity`: a path changed as a gitlink (mode 160000), or a same-blob add and delete
       pair appears, which is a rename when rename detection is off.
     - `risk-tier-rise`: the merge-stage class is above the class of the last reviewed round.
@@ -213,10 +213,9 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   change.
 - `ak review scope` needs git 2.38 or later for `git merge-tree`. Repeating a merge writes its
   objects into the object store as unreachable objects. No work tree, index or ref changes.
-- The scope command refuses a `--record` whose `head` is not `--head`. Round 1 records the resolved
-  `--base` SHA. A later `ledger add` of a carry needs that last reviewed record as `--previous`.
-  The comparison SHA is the one `ak review scope` resolved, not a branch name from the event JSON.
-  A carry whose base is the carried head is refused, and so is a base that is reachable from both
-  the last reviewed head and the new head while those heads differ.
+- The scope command refuses a `--record` whose `head` is not `--head`. A later `ledger add` of a
+  carry needs that last reviewed record as `--previous`. `readDelta` refuses a `--base` that the
+  last reviewed head is a strict ancestor of, so a commit sitting between the reviewed head and a
+  later empty head cannot empty the delta. An octopus merge that changes a path is a large-rebase.
 - The mutation check in `tests/review/mutation.test.ts` breaks each rule once and expects a red
   test. A rule added to the engine needs a mutant there.

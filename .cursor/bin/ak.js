@@ -46820,6 +46820,17 @@ function conflictPaths(repo, base2, previous, head) {
       continue;
     const parents = git4(repo, ["rev-list", "--parents", "-n", "1", merge]).out.trim().split(" ").slice(1);
     const [ours, theirs] = parents;
+    if (parents.length > 2) {
+      const first = parents[0];
+      if (first !== undefined) {
+        const names = git4(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", first, merge]).out;
+        for (const path of names.split(`
+`))
+          if (path !== "")
+            conflicted.add(path);
+      }
+      continue;
+    }
     if (parents.length !== 2 || ours === undefined || theirs === undefined)
       continue;
     const run3 = git4(repo, ["merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", ours, theirs], [0, 1]);
@@ -46832,12 +46843,8 @@ function conflictPaths(repo, base2, previous, head) {
   return [...conflicted].toSorted();
 }
 function readDelta(repo, base2, previous, head) {
-  if (previous !== head) {
-    const fromPrevious = mergeBase(repo, base2, previous);
-    const fromHead = mergeBase(repo, base2, head);
-    if (fromPrevious === previous && fromHead === head)
-      throw new Error(`base ${base2} is reachable from ${previous} and from ${head}: it is not a comparison base of this pull request`);
-  }
+  if (previous !== base2 && mergeBase(repo, base2, previous) === previous)
+    throw new Error(`the last reviewed head ${previous} is an ancestor of base ${base2}: it is not a comparison base of this pull request`);
   const before = headPatch(repo, base2, previous);
   const now = headPatch(repo, base2, head);
   const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));
@@ -47789,13 +47796,11 @@ function validateCarryScope() {
   });
   return carryValidator;
 }
-function carryFromScope(record, covered, repo, pinnedBase) {
+function carryFromScope(record, covered, repo) {
   if (record.event.head !== record.head)
     throw new Error("a carry line needs a scope record of the carried head");
   if (record.previous.head !== covered)
     throw new Error("a carry line needs a scope record whose previous.head is the last reviewed head");
-  if (record.base !== pinnedBase && record.base === record.event.head)
-    throw new Error("a carry line needs the pinned base of the last reviewed scope record");
   const reading = readDelta(repo, record.base, record.previous.head, record.event.head);
   if (!reading.delta.empty)
     throw new Error("a carry line needs a scope record whose delta is empty against that head");
@@ -47825,9 +47830,9 @@ function add(flags, io) {
     const covered = fold(before.events, DEFAULT_POLICY).covered_head;
     const previousPath = flags.one.get("--previous");
     if (previousPath === undefined || covered === null)
-      throw new UsageError("--previous is required: a carry line needs the last reviewed scope record, whose base is the pin");
-    const pinned = readBaseline(previousPath, covered);
-    items2 = [carryFromScope(parsed, covered, repo, pinned.base)];
+      throw new UsageError("--previous is required: a carry line needs the last reviewed scope record");
+    readBaseline(previousPath, covered);
+    items2 = [carryFromScope(parsed, covered, repo)];
   } else {
     items2 = parseInput(text5);
     if (items2.some((item) => item.kind === "carry"))
