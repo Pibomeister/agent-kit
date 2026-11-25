@@ -38,12 +38,14 @@ All times are America/Mexico_City.
 The shadow does not start until the owner settles these.
 
 1. **Observation method.** This is Planner B's captain call. The default shadow observation method
-   is a feed from Grokmate's side. Both planners recommend the feed. The owner may instead choose a
-   pairing link. A pairing link is a send path. Holding one before go-live needs the owner's own
-   quoted yes for that link, given before Day 1. That yes is separate from checklist item 15. Item
-   15 is the only go-live trigger. When the owner chose the feed, Hermes holds no pairing link
-   during the shadow, so it needs the feed to observe. The no-send claim then holds. If the owner
-   chose a pairing link, the shadow is then not a no-send shadow.
+   is a feed from Grokmate's side. Both planners recommend the feed. The owner may also choose a
+   pairing link in addition to the feed. A pairing link is a send path. The pre-Day-1 quoted yes
+   for that link authorizes holding it only, never sending. That yes is separate from checklist
+   item 15. Item 15 is the only go-live trigger. Until item 15, Hermes sends nothing, types into no
+   pane, submits nothing, writes no inbox note and sets no live-send flag. Any of those aborts
+   under section 5.1. Hermes may only read a pane through the held link, and that counts as
+   observation. Record that a link was held, with the owner's quoted yes, and without the URL.
+   Both paths are no-send shadows.
 2. **Feed and probe tooling.** The feed and the 5-minute script probe need new scripts on Grokmate's
    side (section 1.1). They are outside this plan. They need their own go-ahead, a named builder and
    a time estimate. Neither draft names a builder.
@@ -66,10 +68,13 @@ both), which captain goes first in the go-live ramp, any extra shadow day, and t
 
 ### 1.1 What Hermes can see
 
-When the owner chose the feed, Hermes holds no Orca pairing link during the shadow. It cannot read
-or type into a captain's pane. It reads a feed instead. With no link, Hermes has no path that can
-send. The no-send claim then holds. If the owner chose a pairing link, the shadow is then not a
-no-send shadow.
+Hermes always reads the feed. It holds no Orca pairing link during the shadow unless the owner
+chose one in addition to the feed. The pre-Day-1 quoted yes for that link authorizes holding it
+only, never sending. Until item 15, Hermes sends nothing, types into no pane, submits nothing,
+writes no inbox note and sets no live-send flag. Any of those aborts under section 5.1. Hermes may
+only read a pane through the held link, and that counts as observation. Record that a link was
+held, with the owner's quoted yes, and without the URL. With no held link, Hermes cannot read or
+type into a captain's pane. Both paths are no-send shadows.
 
 | Id | Feed item | Exists today |
 |---|---|---|
@@ -533,16 +538,19 @@ ready without the checklist result beside it.
 
 ### 5.1 Shadow rules, Days 1 to 3
 
-Until the owner says live, Hermes sends nothing, types into no pane, and writes no inbox note to any
-captain. It writes nothing to the forge, sends no bot-to-bot message, and messages no person. It
-writes only inside its own shadow directory.
+Until item 15, Hermes sends nothing, types into no pane, submits nothing, writes no inbox note to
+any captain and sets no live-send flag. It writes nothing to the forge, sends no bot-to-bot
+message, and messages no person. It writes only inside its own shadow directory. Any of those
+aborts under this section.
 
 These layers enforce the rule. None of them is Hermes' good behaviour.
 
-- When the owner chose the feed, Hermes holds no pairing link, so it has no path to a pane. The
-  no-send claim then holds. If the owner chose a pairing link, the shadow is then not a no-send
-  shadow.
+- Hermes holds no pairing link unless the owner chose one in addition to the feed. The pre-Day-1
+  quoted yes for that link authorizes holding it only, never sending. Hermes may only read a pane
+  through the held link, and that counts as observation. Record that a link was held, with the
+  owner's quoted yes, and without the URL. Both paths are no-send shadows.
 - Hermes holds no write credential for the supervisor's machine, the Macs, the forge or any inbox.
+  With a held pairing link, Hermes holds a link it is forbidden to use for writes until item 15.
 - Every outbound action in Hermes' shadow runtime points at a stub that refuses, writes nothing
   outside, and fails on any live-send flag. Planner B accepted this second layer from Planner A's
   draft.
@@ -578,10 +586,13 @@ A's daytime window: the ramp starts at a named time between 08:00 and 20:00.
 | L2 all in scope | Days 2 and 3 | Takes the remaining locks, one captain at a time, each with a confirmed pickup | Warm standby. Reads the send log. Steers nobody |
 | L3 steady | From day 4 | Normal duty | Stands down only when the owner says so |
 
-A stage advances only with zero misfires in the stage before it. When the owner chose the feed,
-Hermes held no pairing link in the shadow, so it cannot practise a real send. Stages L0 and L1 exist
-to cover that gap. If the owner chose a pairing link, the shadow was not a no-send shadow. Go-live
-still waits on item 15.
+A stage advances only with zero misfires in the stage before it. The pre-Day-1 quoted yes for a
+pairing link authorizes holding it only, never sending. Until item 15, Hermes sends nothing, types
+into no pane, submits nothing, writes no inbox note and sets no live-send flag. Any of those
+aborts under section 5.1. Hermes may only read a pane through the held link, and that counts as
+observation. Record that a link was held, with the owner's quoted yes, and without the URL. Neither
+path practises a real send. Both paths are no-send shadows. Stages L0 and L1 exist to cover that
+gap on both paths. Go-live still waits on item 15.
 
 After the owner's go-live yes, sends do not run in parallel. One send sequence runs at a time across
 the fleet. Hermes rediscovers the handle and re-reads the pane immediately before any send, so a
