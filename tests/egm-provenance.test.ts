@@ -1,9 +1,14 @@
 /**
  * FILE_HASHES pin provenance-only files by sha256 of the raw bytes (any
- * dossier edit needs a re-pin). BLOCK_PINS hash mixed-file marker interiors
- * after CRLF folds to LF; begin and end must appear once as exact bytes on
- * unmasked and fence-masked text. LOCK_ENTRY_SHA256 is the lock egm entry,
- * an identity-covered region. FINGERPRINT_DESC_SHA256 pins the fingerprint
+ * dossier edit needs a re-pin). PINNED_PATHS pins claims, and FILE_HASHES
+ * pin whole files; bytes outside a parsed claim (a catalog.yaml comment,
+ * an extra key in the schema) are not pinned. BLOCK_PINS hash mixed-file
+ * marker interiors of the unfolded text; begin and end must appear once as
+ * exact bytes on unmasked and fence-masked text. A CR byte in a pinned
+ * file is red. LOCK_ENTRY_SHA256 is the lock egm entry, an
+ * identity-covered region. This test owns only the EGM claim; other donors
+ * are pinned elsewhere, so the lock is not byte-pinned whole.
+ * FINGERPRINT_DESC_SHA256 pins the fingerprint
  * description. OVERLAY_COPIES must equal source bytes. IDENTITY_ALLOWLIST
  * is the only other place identity tokens may appear. Tokens
  * (elephant-goldfish, a ≥7-char prefix of the pin SHA, GAP-PROBE,
@@ -20,8 +25,11 @@
  * review's job. Every pin is checked by equality at its parsed location.
  * Every pinned byte is read by one reader from HEAD, the index, and the
  * worktree; the reader returns those agreed raw bytes. Any layer that
- * differs is red. FILE_HASHES hash the raw bytes. OVERLAY_COPIES compare
- * the raw bytes. Text pins decode from the same bytes. catalog.yaml
+ * differs is red. HEAD and the index must agree on mode 100644. FILE_HASHES
+ * hash the raw bytes. OVERLAY_COPIES compare the raw bytes. Text pins
+ * decode from the same bytes. Second readers (loadDonors, loadCatalog,
+ * existsSync, cpSync, identityScan) remain; they cannot turn a lie green
+ * because readPinned gates the same paths. catalog.yaml
  * `package.description` is parsed from the agreed bytes and must name
  * the twelve-donor counts; `.cursor/catalog.yaml` contains it. The
  * README file must start with exactly `# agent-kit\n`; the
@@ -544,12 +552,11 @@ function indicesOf(haystack: string, needle: string): number[] {
 }
 
 function extractPinnedBlock(text: string, pin: BlockPin): string {
-  const folded = text.replaceAll("\r\n", "\n");
-  const visible = maskFences(folded);
+  const visible = maskFences(text);
   const begins = indicesOf(visible, pin.begin);
   const ends = indicesOf(visible, pin.end);
-  const unmaskedBegins = indicesOf(folded, pin.begin);
-  const unmaskedEnds = indicesOf(folded, pin.end);
+  const unmaskedBegins = indicesOf(text, pin.begin);
+  const unmaskedEnds = indicesOf(text, pin.end);
   expect(unmaskedBegins.length, `${pin.file} unmasked begin matches=${unmaskedBegins.length}`).toBe(1);
   expect(unmaskedEnds.length, `${pin.file} unmasked end matches=${unmaskedEnds.length}`).toBe(1);
   expect(begins.length, `${pin.file} begin matches=${begins.length}`).toBe(1);
@@ -557,7 +564,7 @@ function extractPinnedBlock(text: string, pin: BlockPin): string {
   const start = (begins[0] ?? 0) + pin.begin.length;
   const stop = ends[0] ?? 0;
   expect(start <= stop, `${pin.file} inverted markers`).toBe(true);
-  return folded.slice(start, stop);
+  return text.slice(start, stop);
 }
 
 function foldIdentity(text: string): string {
@@ -576,7 +583,7 @@ function decodeTracked(file: string, bytes: Uint8Array): string {
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     throw new Error(`BOM ${file}`);
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replaceAll("\r\n", "\n");
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -589,6 +596,12 @@ function revBlob(root: string, spec: string): Uint8Array {
 
 const pinnedReads = new Set<string>();
 
+function gitMode(root: string, args: string[]): string {
+  const mode = git(root, args).trim().split(" ")[0];
+  expect(mode, args.join(" ")).toBeDefined();
+  return mode ?? "";
+}
+
 function readPinned(root: string, file: string): Uint8Array {
   pinnedReads.add(file);
   const head = revBlob(root, `HEAD:${file}`);
@@ -596,11 +609,17 @@ function readPinned(root: string, file: string): Uint8Array {
   const worktree = Uint8Array.from(readFileSync(join(root, file)));
   expect(bytesEqual(head, index), `${file} HEAD/index`).toBe(true);
   expect(bytesEqual(head, worktree), `${file} HEAD/worktree`).toBe(true);
+  const headMode = gitMode(root, ["ls-tree", "HEAD", "--", file]);
+  const indexMode = gitMode(root, ["ls-files", "-s", "--", file]);
+  expect(headMode, `${file} HEAD/index mode`).toBe(indexMode);
+  expect(headMode, `${file} mode`).toBe("100644");
   return head;
 }
 
 function pinnedText(root: string, file: string): string {
-  return decodeTracked(file, readPinned(root, file));
+  const bytes = readPinned(root, file);
+  if (bytes.includes(0x0d)) throw new Error(`CR ${file}`);
+  return decodeTracked(file, bytes);
 }
 
 function skipTrackedPath(raw: string): boolean {
@@ -1000,13 +1019,12 @@ function lockEntry(text: string): string {
 }
 
 function contractPluginDescription(text: string): string {
-  const folded = text.replaceAll("\r\n", "\n");
-  const start = folded.indexOf("```json\n");
+  const start = text.indexOf("```json\n");
   expect(start, "plugin.json example fence").toBeGreaterThanOrEqual(0);
   const body = start + "```json\n".length;
-  const end = folded.indexOf("\n```", body);
+  const end = text.indexOf("\n```", body);
   expect(end, "plugin.json example close").toBeGreaterThan(body);
-  const value: unknown = JSON.parse(folded.slice(body, end));
+  const value: unknown = JSON.parse(text.slice(body, end));
   expect(isPluginExample(value), "plugin.json example").toBe(true);
   if (!isPluginExample(value)) return "";
   return value.description;
@@ -1293,6 +1311,21 @@ describe("EGM provenance guards", () => {
     const root = scratchTracked([copy.src, copy.dest]);
     commitFile(root, copy.dest, lfToCrlf(readFileSync(join(root, copy.dest))));
     expect(() => assertOverlay(root, copy)).toThrow(copy.dest);
+  });
+
+  test("catalog.yaml as CRLF in all three layers", () => {
+    const file = "catalog.yaml";
+    const root = scratchTracked([file]);
+    commitFile(root, file, lfToCrlf(readFileSync(join(root, file))));
+    expect(() => catalogDescription(root)).toThrow(`CR ${file}`);
+  });
+
+  test("executable-bit NOTICE must be red", () => {
+    const file = "NOTICE";
+    const root = scratchTracked([file]);
+    git(root, ["update-index", "--chmod=+x", file]);
+    git(root, ["commit", "-q", "-m", "exec"]);
+    expect(() => assertFileHash(root, file)).toThrow(`${file} mode`);
   });
 });
 
