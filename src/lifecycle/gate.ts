@@ -94,11 +94,16 @@ import { isDesignReport } from "./design-report.ts";
 import {
   acquireLane,
   checkUnpublished,
+  DEFAULT_LANES_WAIT_MINUTES,
   formatStatus,
+  LANE_HOLDER_ENV,
+  laneHolderToken,
   laneIdentity,
   type LaneIdentity,
   laneStatus,
+  publishLane,
   releaseLane,
+  resolveLanesEnabled,
   resolveMaxAgeMinutes,
   resolvePool,
 } from "./gate-lanes.ts";
@@ -3056,8 +3061,8 @@ export const LIFECYCLE_USAGE = [
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--binding <file>] [--project-record <file>] [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--retain-only] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>] | --author-kind <kind> --host <id> --seat-id <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--retain-only] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>] | --author-kind <kind> --host <id> --seat-id <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>] [--lanes] [--pool <n>] [--timeout-minutes <n>]",
+  "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json] [--lanes] [--pool <n>] [--timeout-minutes <n>]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
   "  ak lifecycle publish-scan --repo <owner/name> [--visibility <v>] [--title <text>] [--body-file <file>] [--commits <range>] [--markers <file>] [--project <dir>]",
@@ -3067,17 +3072,24 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle lanes status [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle lanes release [--lane <name>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle lanes unpublished [--max-age-minutes <n>] [--project <dir>] [--json]",
+  "  ak lifecycle lanes publish [--project <dir>]",
   "  ak lifecycle human-step --kind <kind> --started-at <epoch-ms> --now <epoch-ms> [--overnight] [--escalated]",
   "    [--channel page|human-needed|morning-handoff] [--target pull-request|deploy] [--blocked-on <reason>]",
   "    [--prompt-held-open]",
   "",
-  "  Gate lanes (issue #194): `lanes run` is the supported entry point for a gate caller that wants one lock per",
-  "  worktree+branch; only callers that wrap their run in it are covered. --lane and --label only describe the holder.",
-  "  It queues visibly until the lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is free, runs the",
-  "  command, and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes unpublished` alerts",
-  "  when the oldest commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES",
-  "  (default 30); it reports only and never pushes, so publication still enters the configured pipeline promptly.",
-  "  It reads local origin-tracking refs and never fetches: run `git fetch origin` first for a current answer.",
+  "  Gate lanes (issue #194): `lanes run` wraps an arbitrary command in one lock per worktree+branch and exports",
+  "  AK_GATE_LANE_HOLDER so a child `check`/`record` reuses that live hold. `check` and `record` take the same lock when",
+  "  `--lanes` or `AK_GATE_LANES=1` is set; without it they do not wait. AK_GATE_LANES is read only when set and non-empty:",
+  "  1 on, 0 off, any other value refuses; unset or empty matches a checkout without the variable. --lane and --label only",
+  "  describe the holder. It queues visibly until the lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is",
+  "  free, runs, and releases. `check`/`record --lanes` wait at most --timeout-minutes (default 30) and then refuse naming",
+  "  the holder. `lanes status` names every holder and waiter with held/waiting time. `lanes publish` pushes HEAD to origin",
+  "  as the current branch without taking the lock, so commits can land while a gate is queued; it never force-pushes and",
+  "  it refuses main, master (any case), a refs/ name, origin's default branch, and an unnamed branch. If origin/HEAD is",
+  "  unset it refuses and asks for `git remote set-head origin -a`. `lanes unpublished` alerts when the oldest",
+  "  commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or",
+  "  AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES (default 30); it reports only. It reads local origin-tracking refs and never",
+  "  fetches: run `git fetch origin` first for a current answer.",
   "",
   "  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`",
   "  and the tool runs it. A supervisor declaration outside the checkout (AK_LIFECYCLE_SUPERVISOR_DECLARATION) binds the",
@@ -3137,8 +3149,11 @@ const FLAGS: Record<string, readonly string[]> = {
     "project",
     "attestation",
     "body-file",
+    "lanes",
+    "pool",
+    "timeout-minutes",
   ],
-  check: ["evidence", "gates", "run", "dir", "project", "json"],
+  check: ["evidence", "gates", "run", "dir", "project", "json", "lanes", "pool", "timeout-minutes"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
   "publish-scan": ["repo", "visibility", "title", "body-file", "commits", "markers", "project"],
@@ -3147,11 +3162,20 @@ const FLAGS: Record<string, readonly string[]> = {
   "lanes status": ["dir", "project", "json"],
   "lanes release": ["lane", "dir", "project"],
   "lanes unpublished": ["max-age-minutes", "project", "json"],
+  "lanes publish": ["project"],
   "human-step": HUMAN_STEP_FLAGS,
 };
 
 /** Flags that take no value. Presence is true. */
-const BOOLEAN_FLAGS = new Set(["retain-only", "json", "evidence", "overnight", "escalated", "prompt-held-open"]);
+const BOOLEAN_FLAGS = new Set([
+  "retain-only",
+  "json",
+  "evidence",
+  "overnight",
+  "escalated",
+  "prompt-held-open",
+  "lanes",
+]);
 
 const ESCALATION_CHANNELS = ["page", "human-needed", "morning-handoff"] as const;
 const SHIP_TARGETS = ["pull-request", "deploy"] as const;
@@ -3470,6 +3494,73 @@ function commandSummary(dir: string, run: string): string[] {
   });
 }
 
+/** Wait `check`/`record --lanes` uses. Absent `--timeout-minutes` is `DEFAULT_LANES_WAIT_MINUTES`, never unbounded. */
+export function holdLaneWaitMs(timeoutFlag: string | undefined): number {
+  if (timeoutFlag === undefined) return DEFAULT_LANES_WAIT_MINUTES * 60_000;
+  return Math.max(0, Number(timeoutFlag) * 60_000);
+}
+
+/** Take the per-lane lock for `check`/`record` when `--lanes` or `AK_GATE_LANES=1`. No-op otherwise. */
+function holdLane(
+  io: Io,
+  sub: "check" | "record",
+  project: string,
+  evidenceDir: string,
+  lanesFlag: boolean,
+  timeoutFlag: string | undefined,
+  poolFlag: string | undefined,
+): { ok: true; release: () => void } | { ok: false; code: number } {
+  const prefix = `ak lifecycle ${sub}`;
+  let enabled: boolean;
+  try {
+    enabled = resolveLanesEnabled(lanesFlag);
+  } catch (error) {
+    io.err(`${prefix}: ${error instanceof Error ? error.message : String(error)}`);
+    return { ok: false, code: 2 };
+  }
+  if (!enabled) return { ok: true, release: () => undefined };
+  if (timeoutFlag !== undefined && !Number.isFinite(Number(timeoutFlag))) {
+    io.err(`${prefix}: --timeout-minutes must be a number, got ${timeoutFlag}`);
+    return { ok: false, code: 2 };
+  }
+  const timeoutMs = holdLaneWaitMs(timeoutFlag);
+  let pool: number | undefined;
+  try {
+    pool = resolvePool(poolFlag);
+  } catch (error) {
+    io.err(`${prefix}: ${error instanceof Error ? error.message : String(error)}`);
+    return { ok: false, code: 2 };
+  }
+  let identity: LaneIdentity;
+  try {
+    identity = laneIdentity(project, undefined);
+  } catch (error) {
+    io.err(`${prefix}: ${error instanceof Error ? error.message : String(error)}`);
+    return { ok: false, code: 1 };
+  }
+  let announced = false;
+  const acquired = acquireLane(join(evidenceDir, "gate-lanes"), identity, {
+    pool,
+    timeoutMs,
+    onWait: (reason, waitedMs) => {
+      if (announced) return;
+      announced = true;
+      io.err(
+        `queued: lane ${identity.lane} (${identity.branch}) waiting: ${reason}; waited ${Math.floor(waitedMs / 1000)}s so far (see: ak lifecycle lanes status)`,
+      );
+    },
+  });
+  if (!acquired.ok) {
+    io.err(`${prefix}: refused: ${acquired.reason}; waited ${Math.floor(acquired.waited_ms / 1000)}s`);
+    return { ok: false, code: 1 };
+  }
+  if (acquired.waited_ms >= 1000)
+    io.err(
+      `acquired: lane ${identity.lane} (${identity.branch}) after ${Math.floor(acquired.waited_ms / 1000)}s in queue`,
+    );
+  return { ok: true, release: acquired.release };
+}
+
 export function main(
   argv: readonly string[],
   io: Io,
@@ -3576,6 +3667,16 @@ export function main(
       }
       return 0;
     }
+    if (sub === "lanes publish") {
+      try {
+        const published = publishLane(project);
+        io.out(`published ${published.sha.slice(0, 12)} on ${published.branch} to origin (gate lock not taken)`);
+        return 0;
+      } catch (error) {
+        io.err(`ak lifecycle lanes publish: ${error instanceof Error ? error.message : String(error)}`);
+        return 1;
+      }
+    }
     let dir: string;
     let identity: LaneIdentity | undefined;
     try {
@@ -3641,7 +3742,11 @@ export function main(
     try {
       const [program, ...rest] = command;
       if (program === undefined) return 2;
-      const child = spawnSync(program, rest, { cwd: project, stdio: "inherit" });
+      const child = spawnSync(program, rest, {
+        cwd: project,
+        stdio: "inherit",
+        env: { ...process.env, [LANE_HOLDER_ENV]: laneHolderToken(acquired.holder) },
+      });
       return child.status ?? 1;
     } finally {
       acquired.release();
@@ -4046,84 +4151,91 @@ export function main(
       );
       return 1;
     }
-    if (
-      opened?.closed_at !== undefined &&
-      !(policy !== undefined && gate === "ship-preflight" && flags.has("attestation"))
-    ) {
-      const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
-      // Under the policy only the final `--attestation` append may touch a closed run.
-      const closedHere =
-        policy === undefined &&
-        live !== undefined &&
-        typeof live !== "string" &&
-        readRecords(dir, run, "ship-preflight").some((r) => same(r.snapshot, live));
-      if (!closedHere) {
-        io.err("ak lifecycle record: run closed; open a new run");
-        return 1;
-      }
-    }
     let implementer: GateRecord["implementer"];
     if (authorKind !== undefined && host !== undefined) {
       implementer = { author_kind: authorKind, host };
       if (seatId !== undefined) implementer.seat_id = seatId;
     }
-    if (policy !== undefined && gate === "ship-preflight")
-      return shipUnattended(io, dir, run, project, policy, cwd, {
-        attestation: str("attestation"),
-        body: str("body-file"),
-      });
-    // The ship handoff itself judges the receipts, not only a `check` a caller remembered to run:
-    // an opened run whose ticket declares evidence may not record ship-preflight (and so may not
-    // close, merge or publish) until the pre-ship gates hold for the exact head. Runs with no
-    // task-bound record, and opened runs whose ticket declares no criteria or named verification,
-    // keep the routes they had.
-    // A Firstmate-bound run whose binding_run_id names a parent that passes Runner.start's
-    // charter checks, and whose child classifies as bound against that parent with a matching
-    // ticket hash, is audited by `firstmate status`; that audit, not this record, is its merge
-    // boundary. A forged or weaker parent is not a skip, so the re-check still runs.
-    if (
-      policy === undefined &&
-      gate === "ship-preflight" &&
-      ticketDeclaresEvidence(dir, run, opened) &&
-      !validatedBoundParent(opened, dir, project)
-    ) {
-      const pre = checkGates({ dir, run, gates: PRE_SHIP_GATES, project, forkBound });
-      if (!pre.ok) {
-        for (const refusal of pre.refusals) io.err(`ak lifecycle record: ${refusal}`);
+    const held = holdLane(io, "record", project, dir, flags.has("lanes"), str("timeout-minutes"), str("pool"));
+    if (!held.ok) return held.code;
+    try {
+      const openedNow = readRunRecord(dir, run);
+      if (
+        openedNow?.closed_at !== undefined &&
+        !(policy !== undefined && gate === "ship-preflight" && flags.has("attestation"))
+      ) {
+        const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
+        // Under the policy only the final `--attestation` append may touch a closed run.
+        const closedHere =
+          policy === undefined &&
+          live !== undefined &&
+          typeof live !== "string" &&
+          readRecords(dir, run, "ship-preflight").some((r) => same(r.snapshot, live));
+        if (!closedHere) {
+          io.err("ak lifecycle record: run closed; open a new run");
+          return 1;
+        }
+      }
+      if (policy !== undefined && gate === "ship-preflight")
+        return shipUnattended(io, dir, run, project, policy, cwd, {
+          attestation: str("attestation"),
+          body: str("body-file"),
+        });
+      // The ship handoff itself judges the receipts, not only a `check` a caller remembered to run:
+      // an opened run whose ticket declares evidence may not record ship-preflight (and so may not
+      // close, merge or publish) until the pre-ship gates hold for the exact head. Runs with no
+      // task-bound record, and opened runs whose ticket declares no criteria or named verification,
+      // keep the routes they had.
+      // A Firstmate-bound run whose binding_run_id names a parent that passes Runner.start's
+      // charter checks, and whose child classifies as bound against that parent with a matching
+      // ticket hash, is audited by `firstmate status`; that audit, not this record, is its merge
+      // boundary. A forged or weaker parent is not a skip, so the re-check still runs.
+      if (
+        policy === undefined &&
+        gate === "ship-preflight" &&
+        ticketDeclaresEvidence(dir, run, opened) &&
+        !validatedBoundParent(opened, dir, project)
+      ) {
+        const pre = checkGates({ dir, run, gates: PRE_SHIP_GATES, project, forkBound });
+        if (!pre.ok) {
+          for (const refusal of pre.refusals) io.err(`ak lifecycle record: ${refusal}`);
+          return 1;
+        }
+        for (const note of pre.notes) io.err(note);
+      }
+      const recordArgs: RecordArgs = {
+        dir,
+        run,
+        gate,
+        project,
+        receipts: receipts.map((path) => resolve(cwd, path)),
+        delegationClass,
+        implementer,
+        verdict,
+        bypass,
+        retainOnly: flags.get("retain-only") === true,
+      };
+      if (policy !== undefined) {
+        recordArgs.policy =
+          opened?.policy?.supervisor === undefined ? policy : { ...policy, supervisor: opened.policy.supervisor };
+        recordArgs.command = command;
+      }
+      const r = recordGate(recordArgs);
+      if (!r.ok) {
+        io.err(`ak lifecycle record: ${r.reason}`);
         return 1;
       }
-      for (const note of pre.notes) io.err(note);
+      if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
+      for (const line of r.skipped) io.err(`note: ${line}`);
+      io.out(`recorded ${gate} for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
+      if (r.failed === true) {
+        io.err(`failed evidence: ${JSON.stringify(command)} exited ${String(r.record.commands?.at(-1)?.exit_status)}`);
+        return 1;
+      }
+      return 0;
+    } finally {
+      held.release();
     }
-    const recordArgs: RecordArgs = {
-      dir,
-      run,
-      gate,
-      project,
-      receipts: receipts.map((path) => resolve(cwd, path)),
-      delegationClass,
-      implementer,
-      verdict,
-      bypass,
-      retainOnly: flags.get("retain-only") === true,
-    };
-    if (policy !== undefined) {
-      recordArgs.policy =
-        opened?.policy?.supervisor === undefined ? policy : { ...policy, supervisor: opened.policy.supervisor };
-      recordArgs.command = command;
-    }
-    const r = recordGate(recordArgs);
-    if (!r.ok) {
-      io.err(`ak lifecycle record: ${r.reason}`);
-      return 1;
-    }
-    if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
-    for (const line of r.skipped) io.err(`note: ${line}`);
-    io.out(`recorded ${gate} for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
-    if (r.failed === true) {
-      io.err(`failed evidence: ${JSON.stringify(command)} exited ${String(r.record.commands?.at(-1)?.exit_status)}`);
-      return 1;
-    }
-    return 0;
   }
 
   const runPolicy = readRunRecord(dir, run)?.policy;
@@ -4143,23 +4255,29 @@ export function main(
     );
     return 2;
   }
-  const result = checkGates({
-    dir,
-    run,
-    gates: names as Gate[],
-    project,
-    forkBound,
-    evidence: flags.get("evidence") === true,
-  });
-  if (result.ok) for (const note of result.notes) io.err(note);
-  if (flags.get("json") === true)
-    io.out(JSON.stringify(result.decision ?? { run, dir, gates: names, ...result }, null, 2));
-  else if (result.ok) io.out(`ok: run ${run} has current evidence for ${names.join(", ")} at ${short(result.head!)}`);
-  else for (const r of result.refusals) io.err(r);
-  // A named run the store has never heard of is more likely a typo than a run with nothing recorded yet.
-  if (!result.ok && explicitRun !== undefined && !knownRuns(dir).includes(safeRunId(run)))
-    io.err(`note: in ${dir}, ${unknownSelector("run", run, knownRuns(dir))}`);
-  return result.ok ? 0 : 1;
+  const held = holdLane(io, "check", project, dir, flags.has("lanes"), str("timeout-minutes"), str("pool"));
+  if (!held.ok) return held.code;
+  try {
+    const result = checkGates({
+      dir,
+      run,
+      gates: names as Gate[],
+      project,
+      forkBound,
+      evidence: flags.get("evidence") === true,
+    });
+    if (result.ok) for (const note of result.notes) io.err(note);
+    if (flags.get("json") === true)
+      io.out(JSON.stringify(result.decision ?? { run, dir, gates: names, ...result }, null, 2));
+    else if (result.ok) io.out(`ok: run ${run} has current evidence for ${names.join(", ")} at ${short(result.head!)}`);
+    else for (const r of result.refusals) io.err(r);
+    // A named run the store has never heard of is more likely a typo than a run with nothing recorded yet.
+    if (!result.ok && explicitRun !== undefined && !knownRuns(dir).includes(safeRunId(run)))
+      io.err(`note: in ${dir}, ${unknownSelector("run", run, knownRuns(dir))}`);
+    return result.ok ? 0 : 1;
+  } finally {
+    held.release();
+  }
 }
 
 const subdirectories = (at: string): string[] =>

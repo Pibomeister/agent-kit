@@ -5,10 +5,20 @@
  * unpublished for 80+ minutes, and reviews aimed at stale heads. The lock behind that
  * report, its owner and the caller that took it are not known from this repository,
  * and nothing here replaces or reconfigures it. What this module provides is
- * forward-looking: a supported entry point, `ak lifecycle lanes run -- <command>`
- * (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins), that a gate
- * caller wraps its run in to get per-lane exclusion and a visible queue. Only callers
- * that use it are covered.
+ * forward-looking: `ak lifecycle lanes run -- <command>` still wraps an arbitrary
+ * command, and `check` / `record` take the same lock when `--lanes` or `AK_GATE_LANES=1`
+ * is set (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins). Without
+ * that flag or env they do not wait. `AK_GATE_LANES` is read only when set and
+ * non-empty (`1` on, `0` off; any other value refuses); unset or empty matches a
+ * checkout without the variable. `lanes run` exports `AK_GATE_LANE_HOLDER` (pid,
+ * acquired_at, lane key, and a random nonce stored on the holder file) so a child
+ * `check`/`record` on the same live hold reuses it instead of waiting on the parent.
+ * That token is a cooperative local mutex, not a security boundary against a
+ * same-user process that reads the file. `lanes publish` pushes HEAD to origin as
+ * the current branch without taking the lock, so a commit can land while a gate is
+ * queued; it refuses main, master (case-insensitive), a `refs/` name, origin's
+ * default branch, and an unnamed branch. If `refs/remotes/origin/HEAD` is unset it
+ * refuses.
  *
  * - Mutual exclusion holds *within* one lane: two gate runs for the same worktree
  *   and branch cannot overlap. Different lanes hold different locks and run at once.
@@ -27,14 +37,15 @@
  *   canonical publication remote, does not hold yet (a gate remote such as
  *   `no-mistakes` never counts as published) and alerts when its age exceeds a configurable limit
  *   (`--max-age-minutes <n>` / `AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES`, default 30).
- *   It only reports: publication means entering the configured pipeline promptly,
- *   never bypassing it with a direct push from here. It reads the local
- *   `refs/remotes/origin/*` refs and never fetches, so its answer is only as fresh as
- *   the caller's last `git fetch origin`; it says so rather than guess.
+ *   It only reports. `lanes publish` is the push: origin, current branch, no force,
+ *   no lock. `unpublished` reads local `refs/remotes/origin/*` and never fetches, so
+ *   its answer is only as fresh as the caller's last `git fetch origin`; it says so
+ *   rather than guess.
  */
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -59,6 +70,11 @@ export interface LaneHolder extends LaneIdentity {
   host: string;
   acquired_at: string;
   label?: string;
+  /**
+   * Cooperative local mutex secret for child re-entry. Not a security boundary against a
+   * same-user process that reads the holder file. Never printed in status or logs.
+   */
+  nonce?: string;
 }
 
 export interface LaneWaiter extends LaneIdentity {
@@ -83,6 +99,8 @@ export interface AcquireOptions {
   host?: string;
   sleep?: (ms: number) => void;
   onWait?: (reason: string, waitedMs: number) => void;
+  /** `AK_GATE_LANE_HOLDER` from `lanes run`; a matching live holder is already held by this call chain. */
+  inherited?: string;
 }
 
 export type AcquireResult =
@@ -91,6 +109,12 @@ export type AcquireResult =
 
 const DEFAULT_POLL_MS = 250;
 const UNPARSEABLE_GRACE_MS = 30_000;
+
+/** Default wait for `check`/`record --lanes`, in minutes; the same number as the unpublished-age default. */
+export const DEFAULT_LANES_WAIT_MINUTES = 30;
+
+/** Exported by `lanes run` to children that share its live hold. The value includes a nonce that status never prints. */
+export const LANE_HOLDER_ENV = "AK_GATE_LANE_HOLDER";
 
 /** The canonical publication remote; a gate remote's refs never count as published. */
 const PUBLICATION_REMOTE = "origin";
@@ -144,6 +168,59 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+interface InheritedHolder {
+  pid: number;
+  acquired_at: string;
+  key: string;
+  nonce: string;
+}
+
+function holderNonce(holder: LaneHolder): string | undefined {
+  if (!("nonce" in holder) || !isString(holder.nonce) || holder.nonce === "") return undefined;
+  return holder.nonce;
+}
+
+/** Encode this hold for a child process; `acquireLane` reuses a matching live holder. */
+export function laneHolderToken(holder: LaneHolder): string {
+  const nonce = holderNonce(holder);
+  if (nonce === undefined) return `${holder.pid} ${holder.acquired_at} ${laneKey(holder)}`;
+  return `${holder.pid} ${holder.acquired_at} ${laneKey(holder)} ${nonce}`;
+}
+
+function parseLaneHolderToken(raw: string): InheritedHolder | undefined {
+  const match = /^(\d+) (\S+) (\S+) (\S+)$/.exec(raw);
+  if (
+    match === null ||
+    match[1] === undefined ||
+    match[2] === undefined ||
+    match[3] === undefined ||
+    match[4] === undefined
+  )
+    return undefined;
+  const pid = Number(match[1]);
+  if (!isPid(pid)) return undefined;
+  return { pid, acquired_at: match[2], key: match[3], nonce: match[4] };
+}
+
+/** A child of `lanes run` whose token matches this live holder; unrelated processes do not match. */
+function reenteredHolder(
+  path: string,
+  identityKey: string,
+  inheritedRaw: string | undefined,
+  host: string,
+): LaneHolder | undefined {
+  if (inheritedRaw === undefined || inheritedRaw === "") return undefined;
+  const inherited = parseLaneHolderToken(inheritedRaw);
+  if (inherited === undefined || inherited.key !== identityKey) return undefined;
+  const seen = readHolder(path);
+  if (seen === null) return undefined;
+  if (seen.value.pid !== inherited.pid || seen.value.acquired_at !== inherited.acquired_at) return undefined;
+  if (holderNonce(seen.value) !== inherited.nonce) return undefined;
+  if (seen.value.host !== host || !alive(seen.value.pid)) return undefined;
+  if (laneKey(seen.value) !== identityKey) return undefined;
+  return seen.value;
+}
+
 function isHolder(value: unknown): value is LaneHolder {
   if (!isNonArrayObject(value)) return false;
   if (
@@ -161,6 +238,7 @@ function isHolder(value: unknown): value is LaneHolder {
     !isString(value.acquired_at)
   )
     return false;
+  if ("nonce" in value && (!isString(value.nonce) || value.nonce === "")) return false;
   return !("label" in value) || isString(value.label);
 }
 
@@ -222,10 +300,15 @@ function listWaiters(dir: string): LaneWaiter[] {
  * A dead holder's record is renamed aside and re-checked before removal, so two
  * processes that both judge it stale cannot delete each other's fresh claim.
  */
+function writeHolderRecord(path: string, record: LaneHolder): void {
+  writeFileSync(path, JSON.stringify(record), { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
 function claim(path: string, record: LaneHolder, host: string): boolean {
   const own = `${path}.${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   try {
-    writeFileSync(own, JSON.stringify(record));
+    writeHolderRecord(own, record);
     try {
       linkSync(own, path);
       return true;
@@ -262,7 +345,7 @@ function claim(path: string, record: LaneHolder, host: string): boolean {
   }
   rmSync(aside, { force: true });
   try {
-    writeFileSync(own, JSON.stringify(record));
+    writeHolderRecord(own, record);
     linkSync(own, path);
     return true;
   } catch {
@@ -324,6 +407,20 @@ export function readWaiters(dir: string): LaneWaiter[] {
   return listWaiters(waitersDir(dir)).toSorted((a, b) => a.enqueued_at.localeCompare(b.enqueued_at));
 }
 
+/** Status never carries the re-entry nonce. */
+function publicHolder(holder: LaneHolder): LaneHolder {
+  const published: LaneHolder = {
+    lane: holder.lane,
+    branch: holder.branch,
+    worktree: holder.worktree,
+    pid: holder.pid,
+    host: holder.host,
+    acquired_at: holder.acquired_at,
+  };
+  if (holder.label !== undefined) published.label = holder.label;
+  return published;
+}
+
 /** Who holds, who waits, and for how long, at `nowMs`. */
 export function laneStatus(dir: string, nowMs: number, host: string = hostname()): LaneStatus {
   const live = (record: { pid: number; host: string }) => record.host !== host || alive(record.pid);
@@ -331,7 +428,7 @@ export function laneStatus(dir: string, nowMs: number, host: string = hostname()
     holders: readHolders(dir)
       .filter(live)
       .map((holder) => ({
-        ...holder,
+        ...publicHolder(holder),
         held_ms: Math.max(0, nowMs - Date.parse(holder.acquired_at)),
       })),
     waiters: readWaiters(dir)
@@ -355,10 +452,12 @@ export function acquireLane(dir: string, identity: LaneIdentity, options: Acquir
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
   const timeoutMs = options.timeoutMs ?? 0;
   const started = now();
-  mkdirSync(holdersDir(dir), { recursive: true });
-  mkdirSync(waitersDir(dir), { recursive: true });
   const key = laneKey(identity);
   const holderPath = join(holdersDir(dir), `${key}.json`);
+  const already = reenteredHolder(holderPath, key, options.inherited ?? process.env[LANE_HOLDER_ENV], host);
+  if (already !== undefined) return { ok: true, holder: already, waited_ms: 0, release: () => undefined };
+  mkdirSync(holdersDir(dir), { recursive: true });
+  mkdirSync(waitersDir(dir), { recursive: true });
   const waiterPath = join(waitersDir(dir), `${key}-${pid}.json`);
   let registered = false;
   const registerWaiter = (at: number) => {
@@ -375,7 +474,13 @@ export function acquireLane(dir: string, identity: LaneIdentity, options: Acquir
   try {
     for (;;) {
       const at = now();
-      const record: LaneHolder = { ...identity, pid, host, acquired_at: new Date(at).toISOString() };
+      const record: LaneHolder = {
+        ...identity,
+        pid,
+        host,
+        acquired_at: new Date(at).toISOString(),
+        nonce: randomBytes(16).toString("hex"),
+      };
       if (options.label !== undefined) record.label = options.label;
       const unlock = claimMutex(dir, record);
       if (unlock !== null) {
@@ -530,6 +635,65 @@ export function checkUnpublished(
     overdue: ageMinutes > maxAgeMinutes,
     basis: UNPUBLISHED_BASIS,
   };
+}
+
+/**
+ * Push HEAD to `origin` as this branch. Does not take the lane lock and never force-pushes.
+ * A gate remote is not the destination.
+ */
+export interface LanePublish {
+  branch: string;
+  sha: string;
+}
+
+const PUBLISH_BLOCKED = "lanes publish does not push main, master, a refs/ name, or origin's default branch";
+
+function publishBlockedName(branch: string): boolean {
+  const lower = branch.toLowerCase();
+  return lower === "main" || lower === "master" || branch.startsWith("refs/");
+}
+
+function originDefaultBranch(project: string, git: GitRunner): string | undefined {
+  const local = git(project, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (local.code !== 0 || !local.text.startsWith("refs/remotes/origin/")) return undefined;
+  const name = local.text.slice("refs/remotes/origin/".length);
+  return name === "" ? undefined : name;
+}
+
+export function publishLane(project: string, git: GitRunner = runGit): LanePublish {
+  const branchResult = git(project, ["branch", "--show-current"]);
+  if (branchResult.code !== 0 || branchResult.text === "")
+    throw new Error(`${project} is not on a named branch: ${branchResult.stderr}`);
+  const branch = branchResult.text;
+  if (publishBlockedName(branch)) throw new Error(`refusing to publish ${branch}: ${PUBLISH_BLOCKED}`);
+  const head = git(project, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.text === "") throw new Error(`${project} has no readable HEAD: ${head.stderr}`);
+  const origin = git(project, ["remote", "get-url", PUBLICATION_REMOTE]);
+  if (origin.code !== 0 || origin.text === "")
+    throw new Error(`${project} has no usable \`${PUBLICATION_REMOTE}\` remote: ${origin.stderr}`);
+  const originDefault = originDefaultBranch(project, git);
+  if (originDefault === undefined)
+    throw new Error(
+      `refusing to publish ${branch}: origin's default branch is unknown; set origin/HEAD (git remote set-head origin -a)`,
+    );
+  if (branch.toLowerCase() === originDefault.toLowerCase())
+    throw new Error(`refusing to publish ${branch}: ${PUBLISH_BLOCKED}`);
+  const pushed = git(project, ["push", "--", PUBLICATION_REMOTE, `${head.text}:refs/heads/${branch}`]);
+  if (pushed.code !== 0) throw new Error(`git push ${PUBLICATION_REMOTE} ${branch} failed: ${pushed.stderr}`);
+  return { branch, sha: head.text };
+}
+
+/**
+ * `--lanes` or `AK_GATE_LANES=1` opts a real gate command into the per-lane lock.
+ * Unset or empty is not parsed and leaves it off, matching a checkout without the variable.
+ * Any other set value refuses (fail closed).
+ */
+export function resolveLanesEnabled(flag: boolean, env: string | undefined = process.env.AK_GATE_LANES): boolean {
+  if (flag) return true;
+  if (env === undefined || env === "") return false;
+  if (env === "1") return true;
+  if (env === "0") return false;
+  throw new Error(`AK_GATE_LANES must be 1 or 0, got ${env}`);
 }
 
 /** Pool size from flag, then `AK_GATE_LANES_POOL`; absent or `0` means no cap, anything else invalid throws. */
