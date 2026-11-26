@@ -38900,7 +38900,7 @@ var import__202020 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync12 } from "child_process";
 import { existsSync as existsSync57, readFileSync as readFileSync57, realpathSync as realpathSync26 } from "fs";
 import { homedir as homedir7 } from "os";
-import { basename as basename26, isAbsolute as isAbsolute21, join as join73, relative as relative19 } from "path";
+import { basename as basename28, isAbsolute as isAbsolute21, join as join73, relative as relative19 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -46532,7 +46532,7 @@ async function runCouncil(argv, io) {
 
 // src/firstmate/cli.ts
 import { existsSync as existsSync54, readFileSync as readFileSync50 } from "fs";
-import { join as join64, resolve as resolve24 } from "path";
+import { basename as basename27, join as join64, resolve as resolve24 } from "path";
 
 // src/firstmate/audit.ts
 import { createHash as createHash20 } from "crypto";
@@ -47836,6 +47836,7 @@ var DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red"];
 var AUTHOR_KINDS = ["human", "agent"];
 var REVIEW_VERDICTS = ["changes-requested"];
 var BUNDLED_ADAPTER_IDS = [];
+var GATE_ENTRY = false;
 function adapterIds() {
   if (BUNDLED_ADAPTER_IDS.length > 0)
     return BUNDLED_ADAPTER_IDS;
@@ -50667,8 +50668,7 @@ function invokedDirectly() {
     const self = realpathSync19(new URL(import.meta.url));
     if (pathToFileURL(realpathSync19(script)).href !== pathToFileURL(self).href)
       return false;
-    const base2 = basename24(self);
-    return base2 === "ak-gate.mjs" || base2 === "gate.ts";
+    return GATE_ENTRY || basename24(self) === "gate.ts";
   } catch {
     return false;
   }
@@ -51638,7 +51638,7 @@ judgments before calling decide; do not poll for them.
 var import__202017 = __toESM(require_2020(), 1);
 import { createHash as createHash22 } from "crypto";
 import { existsSync as existsSync53, readFileSync as readFileSync49, readdirSync as readdirSync18, realpathSync as realpathSync23, writeFileSync as writeFileSync23 } from "fs";
-import { dirname as dirname31, isAbsolute as isAbsolute19, join as join63, relative as relative17 } from "path";
+import { basename as basename26, dirname as dirname31, isAbsolute as isAbsolute19, join as join63, relative as relative17 } from "path";
 var ajv8 = new import__202017.default({ strict: false });
 var seatPacket = ajv8.compile({
   type: "object",
@@ -51770,6 +51770,20 @@ Choose only an id from the frozen options. Report failure rather than guessing w
     throw new Error("seat reused the implementer worktree");
   return { task_id: args.taskId, run: packet.run, card_id: packet.card.id, brief, worktree, spawn: spawn2 };
 }
+function kitEntry(akRoot) {
+  const source = join63(akRoot, "src", "cli.ts");
+  if (existsSync53(source))
+    return source;
+  const running = process.argv[1];
+  if (running === undefined || !existsSync53(running)) {
+    throw new Error(`agent-kit CLI not found at ${source}`);
+  }
+  const entry = realpathSync23(running);
+  if (basename26(dirname31(entry)) !== "bin") {
+    throw new Error(`agent-kit CLI not found at ${source}`);
+  }
+  return entry;
+}
 function judgeSeat(args) {
   if (![args.taskId, args.seat, args.actor].every((id) => ID2.test(id)))
     throw new Error("invalid seat identity");
@@ -51803,7 +51817,7 @@ function judgeSeat(args) {
   delete env["AK_RUNNER_ADMIN_TOKEN"];
   const result2 = Bun.spawnSync([
     process.execPath,
-    join63(args.akRoot, "src", "cli.ts"),
+    kitEntry(args.akRoot),
     "runner",
     "call",
     "judge",
@@ -51928,8 +51942,11 @@ var str5 = (a, name) => {
   const v = a.flags.get(name);
   return typeof v === "string" ? v : undefined;
 };
+function kitRoot(dir) {
+  return resolve24(dir, ...basename27(dir) === "bin" ? [".."] : ["..", ".."]);
+}
 function options(a, host, ledgerDir) {
-  const akRoot = resolve24(import.meta.dir, "..", "..");
+  const akRoot = kitRoot(import.meta.dir);
   return {
     akRoot,
     bundleDir: resolve24(str5(a, "bundle-dir") ?? join64(akRoot, "dist", host)),
@@ -55791,7 +55808,7 @@ function checkMaintenanceCommand(current2, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename26(path) !== "ak")
+  if (!path || basename28(path) !== "ak")
     return null;
   try {
     const current2 = readFileSync57(path, "utf8");

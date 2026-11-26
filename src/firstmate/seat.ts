@@ -1,7 +1,7 @@
 /** Stock Firstmate scout seats for one frozen runner checkpoint. */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { readAdminToken } from "../runner/token.ts";
@@ -189,6 +189,20 @@ export interface SeatJudgeArgs {
   akRoot: string;
 }
 
+function kitEntry(akRoot: string): string {
+  const source = join(akRoot, "src", "cli.ts");
+  if (existsSync(source)) return source;
+  const running = process.argv[1];
+  if (running === undefined || !existsSync(running)) {
+    throw new Error(`agent-kit CLI not found at ${source}`);
+  }
+  const entry = realpathSync(running);
+  if (basename(dirname(entry)) !== "bin") {
+    throw new Error(`agent-kit CLI not found at ${source}`);
+  }
+  return entry;
+}
+
 export function judgeSeat(args: SeatJudgeArgs) {
   if (![args.taskId, args.seat, args.actor].every((id) => ID.test(id))) throw new Error("invalid seat identity");
   const home = realpathSync(args.fmHome);
@@ -223,7 +237,7 @@ export function judgeSeat(args: SeatJudgeArgs) {
   const result = Bun.spawnSync(
     [
       process.execPath,
-      join(args.akRoot, "src", "cli.ts"),
+      kitEntry(args.akRoot),
       "runner",
       "call",
       "judge",

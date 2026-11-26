@@ -574,6 +574,7 @@ export const REVIEW_VERDICTS = ["changes-requested"] as const;
 export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 
 const BUNDLED_ADAPTER_IDS: readonly string[] = [];
+const GATE_ENTRY = false;
 
 /** The ids a gate record's host may carry: the directories under `adapters/`, which `ak build` writes into the bundled copy. */
 export function adapterIds(): readonly string[] {
@@ -4303,8 +4304,8 @@ function invokedDirectly(): boolean {
     const self = realpathSync(new URL(import.meta.url));
     if (pathToFileURL(realpathSync(script)).href !== pathToFileURL(self).href) return false;
     // Firstmate's packaged verbs import this module into bin/ak. The maintenance CLI owns that file.
-    const base = basename(self);
-    return base === "ak-gate.mjs" || base === "gate.ts";
+    // GATE_ENTRY is rewritten true only when building ak-gate.mjs, so a renamed copy still runs.
+    return GATE_ENTRY || basename(self) === "gate.ts";
   } catch {
     return false;
   }

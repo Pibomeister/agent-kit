@@ -3,11 +3,13 @@
  * here takes a value and the set differs per subcommand; an unknown flag is an
  * error, never ignored.
  *
- * The package root is where this file lives, not the working directory: a
- * patched Firstmate calls `ak firstmate bind` from its own home.
+ * The kit root is the bundle directory when this file is inlined into `bin/ak`
+ * (one level above `bin/`), or the checkout when it lives at `src/firstmate`.
+ * A patched Firstmate calls `ak firstmate bind` from its own home; cwd is not
+ * the root.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { auditRun } from "./audit.ts";
 import { bind } from "./bind.ts";
@@ -155,8 +157,12 @@ const str = (a: Args, name: string): string | undefined => {
   return typeof v === "string" ? v : undefined;
 };
 
+function kitRoot(dir: string): string {
+  return resolve(dir, ...(basename(dir) === "bin" ? [".."] : ["..", ".."]));
+}
+
 function options(a: Args, host: Host, ledgerDir: string): FirstmateOptions {
-  const akRoot = resolve(import.meta.dir, "..", "..");
+  const akRoot = kitRoot(import.meta.dir);
   return {
     akRoot,
     bundleDir: resolve(str(a, "bundle-dir") ?? join(akRoot, "dist", host)),
