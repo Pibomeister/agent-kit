@@ -4300,7 +4300,11 @@ function invokedDirectly(): boolean {
   const script = process.argv[1];
   if (script === undefined) return false;
   try {
-    return pathToFileURL(realpathSync(script)).href === pathToFileURL(realpathSync(new URL(import.meta.url))).href;
+    const self = realpathSync(new URL(import.meta.url));
+    if (pathToFileURL(realpathSync(script)).href !== pathToFileURL(self).href) return false;
+    // Firstmate's packaged verbs import this module into bin/ak. The maintenance CLI owns that file.
+    const base = basename(self);
+    return base === "ak-gate.mjs" || base === "gate.ts";
   } catch {
     return false;
   }

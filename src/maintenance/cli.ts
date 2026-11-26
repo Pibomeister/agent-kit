@@ -25,6 +25,7 @@ import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
 import { runRunner } from "../runner/cli.ts";
 import { runCouncil } from "../council/cli.ts";
+import { runFirstmate } from "../firstmate/cli.ts";
 import { runReview } from "../review/cli.ts";
 import { readKeyFile } from "../semantic-lint/key.ts";
 import pin from "../../provenance/semantic-lint.json" with { type: "json" };
@@ -799,6 +800,13 @@ if (import.meta.main) {
     // The convergence ledger and its verdict (ADR-0018) travel here too: a review protocol calls them from an install with no checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     process.exitCode = runReview(flags, io);
+  } else if (
+    action === "firstmate" &&
+    (flags[0] === "preflight" || flags[0] === "grant" || flags[0] === "status" || flags[0] === "seat-judge")
+  ) {
+    // Worker-side Firstmate verbs travel here too: an overlay install runs stock preflight, grant, status and seat-judge with no checkout. bind, install and remove stay on the source CLI.
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    process.exitCode = runFirstmate(flags, io);
   } else if (action === "semantic-lint" && flags[0] === "hook" && (await hookMain(flags.slice(1))) === 0) {
     // The plugin's Stop hook: hookMain printed the host output.
   } else if (doctorArgs !== null) process.exitCode = await doctor(doctorArgs.json, doctorArgs.lessons);
