@@ -47367,33 +47367,49 @@ function emptyBlob(context, repo, extraEnv) {
   return run3.text;
 }
 var OBJECT_ID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+var FILE_MODE = new Set(["100644", "100755", "120000"]);
+var BATCH_PRESENT = /^([0-9a-f]{40}|[0-9a-f]{64}) (blob|tree|commit|tag) (\d+)$/;
+var BATCH_MISSING = /^([0-9a-f]{40}|[0-9a-f]{64}) missing$/;
 function parseBatchCheck(text5) {
   const types = new Map;
   for (const line of text5.split(`
 `)) {
     if (line === "")
       continue;
-    if (line.endsWith(" missing")) {
-      const sha2 = line.slice(0, -" missing".length);
-      if (sha2 !== "")
-        types.set(sha2, "missing");
+    const missing2 = BATCH_MISSING.exec(line);
+    if (missing2?.[1] !== undefined) {
+      types.set(missing2[1], "missing");
       continue;
     }
-    const [sha, type] = line.split(" ");
-    if (sha === undefined || type === undefined)
+    const present = BATCH_PRESENT.exec(line);
+    const id = present?.[1];
+    const type = present?.[2];
+    if (id !== undefined && (type === "blob" || type === "tree" || type === "commit" || type === "tag")) {
+      types.set(id, type);
       continue;
-    if (type === "blob" || type === "tree" || type === "commit" || type === "tag")
-      types.set(sha, type);
+    }
+    throw new Error(`malformed cat-file line: ${line}`);
   }
   return types;
 }
-function objectKind(sha, types) {
-  if (isZeroOid(sha))
-    return "zero";
-  return types.get(sha) ?? "missing";
+function mismatch(path, mode, type) {
+  return new Error(`${path}: mode ${mode} type ${type}`);
 }
-function isGitlinkKind(kind) {
-  return kind === "commit" || kind === "tree";
+function classifySide(path, mode, sha, types) {
+  if (isZeroOid(sha))
+    return "absent";
+  const type = types.get(sha);
+  if (type === undefined)
+    throw mismatch(path, mode, "unknown");
+  if (FILE_MODE.has(mode) && type === "blob")
+    return "blob";
+  if (mode === "160000" && type === "blob")
+    return "blob";
+  if (mode === "160000" && (type === "commit" || type === "missing"))
+    return "gitlink";
+  if (mode === "040000" && type === "tree")
+    return "tree";
+  throw mismatch(path, mode, type);
 }
 function objectTypes(context, repo, extraEnv, rows2) {
   const ids = [
@@ -47406,7 +47422,11 @@ function objectTypes(context, repo, extraEnv, rows2) {
 `), extraEnv);
   if (run3.code !== 0)
     throw new Error(`git cat-file failed: ${run3.stderr}`);
-  return parseBatchCheck(decode2(run3.stdout));
+  const types = parseBatchCheck(decode2(run3.stdout));
+  for (const id of ids)
+    if (!types.has(id))
+      throw new Error(`cat-file omitted ${id}`);
+  return types;
 }
 function diffBlobPair(context, repo, extraEnv, from, to) {
   if (!OBJECT_ID.test(from) || !OBJECT_ID.test(to))
@@ -47417,28 +47437,30 @@ function diffBlobPair(context, repo, extraEnv, from, to) {
   return readPatch(decode2(patch.stdout)).lines;
 }
 function blobPairLines(context, repo, extraEnv, empty, types, row) {
-  const srcKind = objectKind(row.srcSha, types);
-  const dstKind = objectKind(row.dstSha, types);
-  if (srcKind === "missing" || dstKind === "missing") {
-    if (srcKind === "blob" || dstKind === "blob") {
-      const sha = srcKind === "missing" ? row.srcSha : row.dstSha;
-      throw new Error(`missing blob ${sha}`);
-    }
-    return 1;
-  }
-  if (isGitlinkKind(srcKind) || isGitlinkKind(dstKind) || srcKind === "tag" || dstKind === "tag")
-    return 1;
-  const from = srcKind === "zero" ? empty : row.srcSha;
-  const to = dstKind === "zero" ? empty : row.dstSha;
-  if (from === to)
-    return srcKind === "zero" || dstKind === "zero" || row.srcMode !== row.dstMode ? 1 : 0;
-  if (row.status.startsWith("T")) {
-    const recorded = recordedBlob(row);
-    if (isZeroOid(recorded.sha))
+  const srcKind = classifySide(row.path, row.srcMode, row.srcSha, types);
+  const dstKind = classifySide(row.path, row.dstMode, row.dstSha, types);
+  if (!isZeroOid(row.srcSha) && row.srcSha === row.dstSha)
+    return row.srcMode !== row.dstMode || srcKind !== dstKind ? 1 : 0;
+  const srcBlob = srcKind === "blob";
+  const dstBlob = dstKind === "blob";
+  if (srcKind === "absent" || dstKind === "absent") {
+    if (!srcBlob && !dstBlob)
       return 1;
-    return diffBlobPair(context, repo, extraEnv, empty, recorded.sha);
+    const sha = srcBlob ? row.srcSha : row.dstSha;
+    if (sha === empty)
+      return 1;
+    return diffBlobPair(context, repo, extraEnv, empty, sha);
   }
-  return diffBlobPair(context, repo, extraEnv, from, to);
+  if (srcBlob || dstBlob) {
+    if (srcBlob && dstBlob && row.srcMode !== row.dstMode) {
+      const recorded = recordedBlob(row);
+      return diffBlobPair(context, repo, extraEnv, empty, recorded.sha);
+    }
+    const from = srcBlob ? row.srcSha : empty;
+    const to = dstBlob ? row.dstSha : empty;
+    return diffBlobPair(context, repo, extraEnv, from, to);
+  }
+  return 1;
 }
 function throwawayDiff(context, repo, extraEnv, from, to) {
   const raw = gitProcess(context, repo, ["-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to], 1e4, undefined, extraEnv);
