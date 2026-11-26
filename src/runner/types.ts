@@ -80,6 +80,8 @@ export interface Charter {
     resource_units?: number;
     /** Failed loop-probe or stand-down-replace attempts this run may spend before status goes guided. */
     delegate_replacements?: number;
+    /** Seconds a transient loop-probe or event-delivery failure may last before status goes guided. Naming uses a high-water elapsed mark. A restart starts a new naming window; an open audit-adapter failure is restored so decide stays refused. */
+    outage_backoff_seconds?: number;
   };
 }
 
@@ -183,6 +185,10 @@ export interface Run {
   resume?: { run_state: string; next_permitted_action: string | null };
   /** Frozen behavior policy; written at start from the KB/runner project binding. */
   behavior?: BehaviorBinding;
+  /** Last loop-adapter failure while outage backoff is configured; cleared after a successful tick. */
+  audit_adapter_failure?: { started_at: number; real_started_at: number };
+  /** Halted refused auditTick while outage backoff is configured; restored before listen. Absent otherwise. */
+  audit_tick_halted?: true;
 }
 
 export interface RunLedger {
