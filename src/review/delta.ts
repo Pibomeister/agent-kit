@@ -327,7 +327,7 @@ function decode(stdout: Uint8Array): string {
 }
 
 /** Prefer the recorded (`from`) side of a `--raw` row. */
-function recordedBlob(row: RawRow): { mode: string; sha: string } {
+function recordedBlob(row: RawRow) {
   if (row.srcSha !== "" && !/^0+$/.test(row.srcSha)) return { mode: row.srcMode, sha: row.srcSha };
   return { mode: row.dstMode, sha: row.dstSha };
 }
