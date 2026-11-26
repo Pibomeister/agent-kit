@@ -89,13 +89,31 @@ the timeout; the runner guesses no cap. Its command receives
 `{"run":"r","key":"event-key","payload":"..."}` on stdin and returns a matching
 `{"run":"r","key":"event-key"}` only after handing the wake to the controller. It receives a
 run-scoped worker socket token, never the admin token. The private loop config has the same
-command and timeout shape. A timed-out event consumer leaves status guided until a successful
-retry. A timed-out or failed loop command stays autonomous and retries on the charter cadence
+command and timeout shape. Without `limits.outage_backoff_seconds`, a timed-out event consumer
+leaves the event pending and the run guided. When that field is set, a timeout is a transient
+event-delivery failure, named only after the window. A timed-out or failed loop command stays autonomous and retries on the charter cadence
 while `limits.delegate_replacements` is unspent and a delegate remains active. Status goes guided
 when that cap is spent and names `delegate-replacements`. A cap of N allows N failed attempts,
-and the Nth one halts the audit, so a cap of 1 allows no retry. A charter that omits the cap supplies no
-retry budget, so the first loop failure goes guided and names `audit-failed` until a later tick
-succeeds. On a charter cadence the loop receives a `probe` request listing every active delegate
+and the Nth one halts the audit, so a cap of 1 allows no retry. Without `limits.outage_backoff_seconds`,
+a charter that omits the cap supplies no retry budget, so the first loop failure goes guided and
+names `audit-failed` until a later tick succeeds. When the charter sets
+`limits.outage_backoff_seconds` (minimum 300, maximum 86400), a transient loop-probe
+or event-delivery failure retries with exponential delay starting at 5 seconds and doubling, capped
+by the time left in that window. The window is a wall-clock bound, and elapsed is a high-water mark against the file clock and a
+monotonic clock, so a clock step back cannot un-name a visible failure. Status names `audit-failed` or
+`event-delivery-failed` once the failure has lasted at least that many seconds from the first
+failure in the streak, even while `limits.delegate_replacements` is unspent and the audit is still
+retrying. Cap exhaustion can still halt earlier. A later success clears the streak. The naming window
+is in memory; a serve restart starts a new one. While `limits.outage_backoff_seconds` is set, the
+last audit-adapter failure and a halted refused `auditTick` are persisted on the run, restored
+before listen, and cleared only after a successful tick, so `decide` stays refused across restart.
+A missing halt after a torn write or a deleted field is the same as main, which never persisted it; the run file is runner-owned state, and hand-deleting fields is tampering.
+When that field is set, `decide` is refused with `event delivery retry in progress` while a delivery
+is in flight or not healthy and `event-delivery-failed` is not yet named, until the next successful
+ack. Once `audit-failed` is named, `decide` is the guided-mode refusal, not `audit retry in progress`
+and not `event delivery retry in progress`. Auth failures, bundle drift, and a refused `auditTick`
+still go guided on the first failure. A charter that omits the field keeps the first-failure
+behavior above. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
 whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
 effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
