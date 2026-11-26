@@ -46976,36 +46976,43 @@ function blobKey(mode, sha) {
 function decode2(stdout) {
   return new TextDecoder().decode(stdout);
 }
+function isZeroOid(sha) {
+  return sha === "" || /^0+$/.test(sha);
+}
 function recordedBlob(row) {
-  if (row.srcSha !== "" && !/^0+$/.test(row.srcSha))
+  if (!isZeroOid(row.srcSha))
     return { mode: row.srcMode, sha: row.srcSha };
   return { mode: row.dstMode, sha: row.dstSha };
+}
+function emptyBlob(context, repo, extraEnv) {
+  const run3 = gitProcess(context, repo, ["hash-object", "-w", "-t", "blob", "--stdin"], 1e4, new Uint8Array, extraEnv);
+  if (run3.code !== 0 || run3.text === "")
+    throw new Error(`git hash-object failed: ${run3.stderr}`);
+  return run3.text;
+}
+function blobPairLines(context, repo, extraEnv, empty, row) {
+  if (row.srcMode === "160000" || row.dstMode === "160000" || row.srcMode === "120000" || row.dstMode === "120000")
+    return 1;
+  const from = isZeroOid(row.srcSha) ? empty : row.srcSha;
+  const to = isZeroOid(row.dstSha) ? empty : row.dstSha;
+  if (from === to)
+    return isZeroOid(row.srcSha) || isZeroOid(row.dstSha) ? 1 : 0;
+  const patch = gitProcess(context, repo, ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to], 1e4, undefined, extraEnv);
+  if (patch.code !== 0 && patch.code !== 1)
+    throw new Error(`git diff failed: ${patch.stderr}`);
+  return readPatch(decode2(patch.stdout)).lines;
 }
 function throwawayDiff(context, repo, extraEnv, from, to) {
   const raw = gitProcess(context, repo, ["-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to], 1e4, undefined, extraEnv);
   if (raw.code !== 0 && raw.code !== 1)
     throw new Error(`git diff failed: ${raw.stderr}`);
   const rows2 = parseRaw(decode2(raw.stdout));
+  const empty = emptyBlob(context, repo, extraEnv);
   const paths2 = rows2.map((row) => row.path);
   const path_lines = [];
   for (const row of rows2) {
-    const patch = gitProcess(context, repo, [
-      "-c",
-      "core.quotePath=false",
-      "-c",
-      "diff.ignoreSubmodules=all",
-      "diff",
-      ...DIFF,
-      "--end-of-options",
-      from,
-      to,
-      "--",
-      row.path
-    ], 1e4, undefined, extraEnv);
-    if (patch.code !== 0 && patch.code !== 1)
-      throw new Error(`git diff failed: ${patch.stderr}`);
     const { mode, sha } = recordedBlob(row);
-    path_lines.push({ path: row.path, lines: readPatch(decode2(patch.stdout)).lines, mode, sha });
+    path_lines.push({ path: row.path, lines: blobPairLines(context, repo, extraEnv, empty, row), mode, sha });
   }
   return { paths: paths2, path_lines };
 }
