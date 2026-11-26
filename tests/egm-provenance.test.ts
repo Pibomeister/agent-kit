@@ -626,17 +626,54 @@ function skipTrackedPath(raw: string): boolean {
   return /(^|\/)node_modules\//.test(raw);
 }
 
+function isolatedGitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_CEILING_DIRECTORIES;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_COMMON_DIR;
+  delete env.GIT_OBJECT_DIRECTORY;
+  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  return env;
+}
+
 function git(cwd: string, args: string[]): string {
-  const run = spawnSync("git", ["-c", "user.name=ak", "-c", "user.email=ak@t", ...args], {
-    cwd,
-    encoding: "utf8",
-  });
+  const run = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.name=ak",
+      "-c",
+      "user.email=ak@t",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      ...args,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: isolatedGitEnv(),
+    },
+  );
   expect(run.status, args.join(" ")).toBe(0);
   return run.stdout;
 }
 
 function trackedBlobs(root: string): Array<{ sha: string; path: string }> {
-  const listed = spawnSync("git", ["ls-files", "-s", "-z"], { cwd: root, encoding: "buffer" });
+  const listed = spawnSync("git", ["ls-files", "-s", "-z"], {
+    cwd: root,
+    encoding: "buffer",
+    env: isolatedGitEnv(),
+  });
   expect(listed.status, "git ls-files -s").toBe(0);
   const files: Array<{ sha: string; path: string }> = [];
   for (const rec of listed.stdout.toString("utf8").split("\0")) {
@@ -657,6 +694,7 @@ function readBlob(root: string, sha: string): Uint8Array {
     cwd: root,
     encoding: "buffer",
     maxBuffer: 32 * 1024 * 1024,
+    env: isolatedGitEnv(),
   });
   expect(run.status, sha).toBe(0);
   return Uint8Array.from(run.stdout);
@@ -1410,7 +1448,7 @@ describe("EGM provenance (GS-004f)", () => {
     const { uncovered, decodeLies } = identityScan(REPO);
     expect(decodeLies).toEqual([]);
     expect(uncovered).toEqual([]);
-  });
+  }, 30_000); // identity scan of every committed blob; a solo run measured 5587 ms against Bun's 5 s default
 
   test("generated adaptations.yaml matches the fragments", () => {
     const { catalog } = loadCatalog(REPO);
