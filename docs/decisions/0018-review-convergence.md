@@ -119,7 +119,8 @@ interpret none. `policies/review.yaml` `convergence` records the same values as 
 - **Review depth.** ADR-0017 selects the seats of the first pass. This record does not select a
   seat. The caller tells `decide` how many seats the tier requires and which evidence is missing.
   `policies/review.yaml` `convergence.evidence_by_class` records the evidence and the seat count
-  of each class as data. No skill or protocol reads that map yet.
+  of each class as data. The convergence reference reads it for `--seats` and
+  `--missing-evidence` (amendment below).
 - **The delegation class.** `scoreMergeStage` scores as before. `review_surface_changed` compares
   two printed records and changes no class, and the ticket's delegation block never holds it.
 - `ak council run` and ADR-0015. The engine prints council cards. It does not call the council.
@@ -218,9 +219,8 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   the merge base.
 - The symbol rule reads no grammar. A language with no column-one declarations anchors a finding
   to the file's first lines, and its fingerprint then changes only with the cause key.
-- This record lands with the ledger, the engine, the scope command and the policy data. No
-  skill, protocol or gate calls them yet, so no review changes. The protocol wiring is a later
-  change.
+- This record landed with the ledger, the engine, the scope command and the policy data, and no
+  caller. The amendment below wires them in as the default.
 - `ak review scope` needs git 2.38 or later for `git merge-tree`. Repeating a merge writes its
   objects into a throwaway GIT_DIR. No work tree, index or ref of the author's repository
   changes.
@@ -235,3 +235,20 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
   branch, like the ledger, must sit outside author write.
 - The mutation check in `tests/review/mutation.test.ts` breaks each rule once and expects a red
   test. A rule added to the engine needs a mutant there.
+
+## Amendment of 2026-11-26: converging review is the default
+
+**Authority:** the owner's order FM-CONVERGE-DEFAULT-0820 of 2026-11-26, 08:20, relayed by
+Firstmate, under the convergence rules FM-CONVERGE-ROLLOUT-0820.
+
+Every review run now uses the converging loop. `references/review-convergence/REFERENCE.md` is its
+operating form. `super-review`, its delta and panel references, the review-delta protocol, and the
+`reviewer-spec`, `reviewer-standards` and security seats name the loop and the commands it runs.
+`policies/review.yaml` `convergence.callers` lists them, and `tests/review/wiring.test.ts` holds
+that list to the files. Round 1 is the one full review. Later rounds are fix-only: the delta since
+the last reviewed head and a closure check on each earlier finding. The verdict is the one
+`ak review decide` prints, and no single seat vetoes. At the cap of three rounds per scope the
+change parks and is reported, and nothing at the cap approves on its own.
+
+The repository's own `.no-mistakes.yaml` sets `review.max_fix_rounds: 3`, the same cap, for the
+delivery pipeline's Review. A no-mistakes version before v1.109.0 ignores the key.

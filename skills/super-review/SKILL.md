@@ -131,17 +131,18 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    could not be given its required context, or failed, is `unavailable` with the reason named — a
    result, not an absence (ruling `required-lane-failure-is-unavailable`). Store each covered seat's
    output exactly as it returned, as a run artifact referenced by hash, before synthesis reads it.
-8. Synthesize without merging: deduplicate by fingerprint, keep each seat's evidence attached to its
-   finding, and never rewrite a severity to reconcile two seats. Suppression is by the catalogued
-   reasons only, and a suppressed finding stays readable with its reason.
-9. For `delta`: first test whether architecture, requirements, the comparison base or the affected
-   surface changed materially. Where any did, invalidate the affected approvals and establish a new
-   baseline — a new scope with its own pass 1 — instead of continuing this loop (ruling
-   `delta-baseline-reset-not-third-loop`). Fix commits, a reached cap, and a replan or rebase that
-   leaves the accepted requirements, the relevant architecture and the patch all unchanged are not
-   material, nor is a same-finding replan that changes only the patch while no trigger applies.
-   Otherwise build the packet, run the spec and standards lanes over the fix, and bound the scope by
-   affected behavior rather than by changed lines (ruling `delta-scope-affected-behavior`). Seat
+8. Synthesize without merging: append each seat's verdict and findings to the ledger with `ak review
+   ledger add`, which deduplicates by fingerprint, keep each seat's evidence attached to its finding,
+   and never rewrite a severity to reconcile two seats. Suppression is by the catalogued reasons
+   only, and a suppressed finding stays readable with its reason.
+9. For `delta`: first run `ak review scope`. Its `new-scope` invalidates the affected approvals and
+   opens a new scope with its own pass 1, and its `hold` parks the change, instead of continuing this
+   loop (ruling `delta-baseline-reset-not-third-loop`). Fix commits, a reached cap, and a rebase that
+   leaves the patch unchanged open nothing. Otherwise the round is fix-only: the spec and standards
+   lanes over the delta since the last reviewed head, bounded by affected behavior rather than by
+   changed lines (ruling `delta-scope-affected-behavior`), plus a closure check on each earlier
+   finding. A new finding blocks only with a reproduction red at the head and green at the merge
+   base, or as a security, destructive or data-loss finding that names its asset and harm. Seat
    continuity (ruling `reviewer-continuity-not-amnesia`) and the mechanics: `./references/delta.md`.
 10. For `readiness`: run the two independent lanes as a gate over the panel's synthesized verdict,
     not as a substitute for it. A missing lane is `unavailable`, and a blocking lane result vetoes
@@ -152,8 +153,9 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
     need one, and a `host-unattested` seat counts, disclosed as worker-attested, only in a run that never held a grant; under the unattended policy a distinct one is a recorded note, bounded by [the run supervisor](../../adapters/supervisor/CONTRACT.md), an exception to ruling `closure-requires-independent-verification`). Each `frontend` or `backend` criterion needs a supporting check that declares
     `evidence_required`, and receipts carrying every declared kind. A missing required attestation, a
     missing declaration or a missing kind makes the verification lane `unavailable`; name the gap.
-11. Set the verdict from the lane results: `approved`, `changes-requested`, `blocked` or
-    `unavailable`. Emit the review and its findings, and report what is still open.
+11. Set the verdict from `ak review decide` at the reviewed head, as [review convergence](../../references/review-convergence/REFERENCE.md)
+    maps it: `approved`, `changes-requested`, `blocked` or `unavailable`. No seat vetoes; only a
+    ledger row blocks. Emit the review and its findings, and report what is still open.
 12. On `approved`, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record
     --gate review-full`, `review-delta` or `review-readiness` (the bundle's `bin/`). A `full` that returned
     `changes-requested` records `review-full --verdict changes-requested`; no other verdict is recorded. A
@@ -180,20 +182,20 @@ blocks the checkpoint rather than falling to whoever is still there (ruling
 Gate: an author may never close their own finding, and a finding closes only on independent
 verification evidence plus a policy rule saying that evidence is sufficient for it. A receipt is the
 unit of that evidence: it carries the command or probe, its exit status, the output digest, the
-revision and the environment identity (`schemas/verification.schema.json`). An agent's description of
-a green run is not a receipt. A classifier's output and a reviewer's confidence are recorded as
+revision and the environment identity (`schemas/verification.schema.json`). An agent's description
+of a green run is not a receipt. A classifier's output and a reviewer's confidence are recorded as
 advisory, and a changed patch does not inherit stale receipts (ruling
 `closure-requires-independent-verification`). A receipt or a verdict is stale once the revision or
 the working-tree diff hash it names differs from the snapshot being judged; either one moving is
 enough.
 
-Gate: at most two fix-and-verify cycles after the first pass. The third request stops with the cap
-decision and the open findings attached; repeated failure is a signal about the plan, not an
-invitation to a third loop (ruling `two-fix-cycles-then-stop`). With only P3 findings open it is
-`merge-with-follow-ups`, listing them in `fix_cycles.follow_ups`, and the verdict may be `approved`.
-When two consecutive cycles reopened the same finding theme it is `design-decision`, naming it. A
-cycle a human authorizes after the decision is recorded in `fix_cycles.extensions` (`authorized_by:
-human`, operator-attested, and when) and reviewed as a `delta` that may approve, never as a new
+Gate: three rounds per scope, one full and two closure: at most two fix-and-verify cycles after the
+first pass (ruling `two-fix-cycles-then-stop`). At the cap `ak review decide` gives each open row
+its outcome by rule, and the change parks with that record: nothing at the cap approves on its own.
+Only filed rows open, each with its follow-up, is `merge-with-follow-ups` (`fix_cycles.follow_ups`);
+a theme two consecutive cycles reopened is `design-decision`. A cycle a human authorizes after the
+decision is recorded in `fix_cycles.extensions` (`authorized_by: human`, operator-attested, and
+when) and as an `extension` ledger line, and reviewed as a `delta` that may approve, never as a new
 `full`; without that entry it is refused.
 
 Gate: where architecture, requirements, the comparison base or the affected surface changes
@@ -206,8 +208,7 @@ Gate: a finding whose solution space is still open is never handed to an automat
 carries a null difficulty, because inventing a difficulty before the solution class is known is the
 error the axis exists to prevent; its action class is never automatic; and its dispatch is to
 sharpen, to diagnose or to escalate, never a fixer ticket (`schemas/finding.schema.json`, ruling
-`safe-auto-restricted-per-seat`). Pressure to hand it over anyway is not a reason it became
-specified.
+`safe-auto-restricted-per-seat`). Pressure to hand it over anyway is not a reason it became specified.
 
 Gate: a standards finding cites the project rule it rests on, rule by rule, with the file and the
 rule identifier. Where the project declares no standards the seat returns an empty result: absent
@@ -270,24 +271,22 @@ the reset closes this scope and the new scope opens at pass 1, which is not a th
 `delta-baseline-reset-not-third-loop`).
 
 `needs-input`: no comparison base or reviewed head was named, or `delta` was invoked with no open
-review run. Returns what it would need, and no partial verdict. A missing typed command is not
-this stop.
+review run. Returns what it would need, and no partial verdict. A missing typed command is not this stop.
 
 `cap-reached`: a third fix cycle was requested. Stops with the cap decision (blocked, replan,
-merge-with-follow-ups or design-decision) and every open finding attached.
+merge-with-follow-ups or design-decision), the `ak review decide` record and every open finding.
 
 `failed`: a required lane returned `unavailable` and the run cannot proceed, or the snapshot could
 not be frozen. The lane and the reason are named, and the run stays resumable. A knowledgebase coverage limit — `ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or unknown `ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops. A seat that reads the knowledgebase runs against what it can read and names the limit, so a lane whose only gap is that limit is covered, not unavailable; the learnings lane, which activates only on a readable corpus with hits, is recorded skipped with the limit as its reason.
 
-`cancelled`: the caller withdrew mid-run. Lane results already collected are kept and emitted as
-what they are.
+`cancelled`: the caller withdrew mid-run. Lane results already collected are kept and emitted as what they are.
 
 ## Limits
 
 Fix cycles: 2 (gate). `policies/limits.yaml` `fix_cycles`. The third stops with the cap decision
 rather than another pass; only a cycle a human then authorizes as an extension runs, as a delta.
 
-Review rounds: 3 (gate) across the run (`policies/limits.yaml` `review_rounds`), plus one delta head
+Review rounds: 3 (gate) per scope (`policies/limits.yaml` `review_rounds`), plus one delta head
 per extension recorded in `fix_cycles.extensions`; no head beyond them is reviewed without one.
 
 Panel size: no cap (guidance); the count follows declared risk. Small pass-1 diffs seat the lean

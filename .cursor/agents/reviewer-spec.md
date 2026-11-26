@@ -54,6 +54,11 @@ change under review — not whether the change is well written.
   `delta-scope-affected-behavior`).
 - For a new finding: the novelty evidence — what changed, or what regressed, that makes it new
   (ruling `delta-scope-affected-behavior`).
+- For a new finding after round 1, to make it block: a reproduction command whose exit status is
+  red at the head and green at the merge base, or, for a security, destructive or data-loss
+  finding, one sentence naming the asset at risk and the action that harms it. Without either the
+  finding is filed with a follow-up and does not block, and this seat's `block` word alone vetoes
+  nothing (the `review-convergence` reference, `policies/review.yaml` `convergence`).
 
 ## Never
 

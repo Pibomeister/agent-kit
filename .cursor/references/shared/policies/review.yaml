@@ -507,6 +507,17 @@ delta:
 # ---------------------------------------------------------------------------
 convergence:
   decision: docs/decisions/0018-review-convergence.md
+  # The converging loop is the default for every review run. Each file below names the loop's
+  # reference and the commands it runs; tests/review/wiring.test.ts holds the list to the files.
+  default: references/review-convergence/REFERENCE.md
+  callers:
+    - skills/super-review/SKILL.md
+    - skills/super-review/references/delta.md
+    - skills/super-review/references/panel.md
+    - protocols/review-delta/PROTOCOL.md
+    - roles/reviewer-spec/ROLE.md
+    - roles/reviewer-standards/ROLE.md
+    - roles/code-review/security/ROLE.md
   cap:
     max_rounds: 3
     rounds: one full round and two closure rounds per scope

@@ -1382,6 +1382,21 @@ capabilities:
       bound and ship, and the declared run supervisor that replaces it, are the owner's decision recorded in
       docs/decisions/0014-unattended-lifecycle-policy.md.
 
+  - id: review-convergence
+    capability: The converging review loop as the default for every review run, with one full round, fix-only closure rounds, an evidence bar for a new blocking finding, no single-seat veto and a three-round cap at which the change parks
+    disposition: reference
+    destination: references/review-convergence
+    locator: G:L468-500; G:L1753-1757
+    origin: conversation
+    acceptance_test: >-
+      Loaded on demand by super-review; it has no invocation of its own. tests/review/wiring.test.ts
+      holds every caller in policies/review.yaml convergence.callers to the loop's commands, and runs
+      the three-round flow through ak review to the cap.
+    note: >-
+      The locators describe the bounded delta pass and the two-fix-cycle stop. The ledger, the evidence
+      bar, the no-veto rule and making the loop the default are the owner's decisions recorded in
+      docs/decisions/0018-review-convergence.md and its amendment of 2026-11-26.
+
   - id: knowledgebase-pr-linkage
     capability: Source PRs linked to their knowledgebase PRs, with a source merge activating the existing knowledgebase coordinator
     disposition: retained

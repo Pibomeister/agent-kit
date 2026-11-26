@@ -66,6 +66,10 @@ tracing whether the code stops you.
   low-priority discovery does not restart it (ruling `delta-scope-affected-behavior`).
 - For a new finding: the novelty evidence — what changed, or what regressed, that makes it new
   (ruling `delta-scope-affected-behavior`).
+- For a finding that must block after round 1 without a reproduction: one sentence naming the
+  asset at risk and the action that harms it. That sentence is what makes a security finding
+  always-block; without it the finding is an ordinary one (`policies/review.yaml`
+  `convergence.always_block`).
 - At `confidence_anchor` 75 or 100 the quoted motivating line with `file:line` is the first
   evidence item (`policies/review.yaml` `evidence.quote_the_line.rule`).
 

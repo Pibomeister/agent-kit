@@ -98,8 +98,8 @@
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39197,
-      "tokens": 9785
+      "bytes": 39735,
+      "tokens": 9919
     },
     "bundle/claude-code:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -133,8 +133,8 @@
     },
     "bundle/claude-code:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13813,
-      "tokens": 3451
+      "bytes": 14945,
+      "tokens": 3734
     },
     "bundle/claude-code:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -195,6 +195,11 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
+    },
+    "bundle/claude-code:references/shared/references/review-convergence/REFERENCE.md": {
+      "file": "references/review-convergence/REFERENCE.md",
+      "bytes": 7589,
+      "tokens": 1898
     },
     "bundle/claude-code:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -273,8 +278,8 @@
     },
     "bundle/claude-code:references/shared/roles/code-review/security/ROLE.md": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9903,
-      "tokens": 2472
+      "bytes": 10236,
+      "tokens": 2555
     },
     "bundle/claude-code:references/shared/roles/code-review/swift-ios/ROLE.md": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -348,13 +353,13 @@
     },
     "bundle/claude-code:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9813,
-      "tokens": 2448
+      "bytes": 10314,
+      "tokens": 2573
     },
     "bundle/claude-code:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9019,
-      "tokens": 2252
+      "bytes": 9520,
+      "tokens": 2377
     },
     "bundle/claude-code:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -465,6 +470,11 @@
       "file": "schemas/project.schema.json",
       "bytes": 26181,
       "tokens": 6545
+    },
+    "bundle/claude-code:references/shared/schemas/review-ledger.schema.json": {
+      "file": "schemas/review-ledger.schema.json",
+      "bytes": 21865,
+      "tokens": 5467
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -783,18 +793,18 @@
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26411,
-      "tokens": 6595
+      "bytes": 26709,
+      "tokens": 6671
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5710,
-      "tokens": 1426
+      "bytes": 6090,
+      "tokens": 1521
     },
     "bundle/claude-code:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12222,
-      "tokens": 3050
+      "bytes": 12867,
+      "tokens": 3212
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -993,8 +1003,8 @@
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39197,
-      "tokens": 9785
+      "bytes": 39735,
+      "tokens": 9919
     },
     "bundle/codex:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1028,8 +1038,8 @@
     },
     "bundle/codex:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13813,
-      "tokens": 3451
+      "bytes": 14945,
+      "tokens": 3734
     },
     "bundle/codex:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -1090,6 +1100,11 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
+    },
+    "bundle/codex:references/shared/references/review-convergence/REFERENCE.md": {
+      "file": "references/review-convergence/REFERENCE.md",
+      "bytes": 7589,
+      "tokens": 1898
     },
     "bundle/codex:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -1168,8 +1183,8 @@
     },
     "bundle/codex:references/shared/roles/code-review/security/ROLE.md": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9903,
-      "tokens": 2472
+      "bytes": 10236,
+      "tokens": 2555
     },
     "bundle/codex:references/shared/roles/code-review/swift-ios/ROLE.md": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -1243,13 +1258,13 @@
     },
     "bundle/codex:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9813,
-      "tokens": 2448
+      "bytes": 10314,
+      "tokens": 2573
     },
     "bundle/codex:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9019,
-      "tokens": 2252
+      "bytes": 9520,
+      "tokens": 2377
     },
     "bundle/codex:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -1360,6 +1375,11 @@
       "file": "schemas/project.schema.json",
       "bytes": 26181,
       "tokens": 6545
+    },
+    "bundle/codex:references/shared/schemas/review-ledger.schema.json": {
+      "file": "schemas/review-ledger.schema.json",
+      "bytes": 21865,
+      "tokens": 5467
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -1678,18 +1698,18 @@
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26458,
-      "tokens": 6607
+      "bytes": 26756,
+      "tokens": 6682
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5710,
-      "tokens": 1426
+      "bytes": 6090,
+      "tokens": 1521
     },
     "bundle/codex:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12222,
-      "tokens": 3050
+      "bytes": 12867,
+      "tokens": 3212
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -1888,8 +1908,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39197,
-      "tokens": 9785
+      "bytes": 39735,
+      "tokens": 9919
     },
     "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1923,8 +1943,8 @@
     },
     "bundle/cursor:.cursor/references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13813,
-      "tokens": 3451
+      "bytes": 14945,
+      "tokens": 3734
     },
     "bundle/cursor:.cursor/references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -1985,6 +2005,11 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
+    },
+    "bundle/cursor:.cursor/references/shared/references/review-convergence/REFERENCE.md": {
+      "file": "references/review-convergence/REFERENCE.md",
+      "bytes": 7589,
+      "tokens": 1898
     },
     "bundle/cursor:.cursor/references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -2063,8 +2088,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/security/ROLE.md": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9903,
-      "tokens": 2472
+      "bytes": 10236,
+      "tokens": 2555
     },
     "bundle/cursor:.cursor/references/shared/roles/code-review/swift-ios/ROLE.md": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -2138,13 +2163,13 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9849,
-      "tokens": 2457
+      "bytes": 10350,
+      "tokens": 2582
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9055,
-      "tokens": 2261
+      "bytes": 9556,
+      "tokens": 2386
     },
     "bundle/cursor:.cursor/references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -2255,6 +2280,11 @@
       "file": "schemas/project.schema.json",
       "bytes": 26181,
       "tokens": 6545
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/review-ledger.schema.json": {
+      "file": "schemas/review-ledger.schema.json",
+      "bytes": 21865,
+      "tokens": 5467
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -2568,18 +2598,18 @@
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26447,
-      "tokens": 6604
+      "bytes": 26745,
+      "tokens": 6680
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5710,
-      "tokens": 1426
+      "bytes": 6090,
+      "tokens": 1521
     },
     "bundle/cursor:.cursor/skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12222,
-      "tokens": 3050
+      "bytes": 12867,
+      "tokens": 3212
     },
     "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -2783,8 +2813,8 @@
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39197,
-      "tokens": 9785
+      "bytes": 39735,
+      "tokens": 9919
     },
     "bundle/droid:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -2818,8 +2848,8 @@
     },
     "bundle/droid:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13813,
-      "tokens": 3451
+      "bytes": 14945,
+      "tokens": 3734
     },
     "bundle/droid:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -2880,6 +2910,11 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
+    },
+    "bundle/droid:references/shared/references/review-convergence/REFERENCE.md": {
+      "file": "references/review-convergence/REFERENCE.md",
+      "bytes": 7589,
+      "tokens": 1898
     },
     "bundle/droid:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -2958,8 +2993,8 @@
     },
     "bundle/droid:references/shared/roles/code-review/security/ROLE.md": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9903,
-      "tokens": 2472
+      "bytes": 10236,
+      "tokens": 2555
     },
     "bundle/droid:references/shared/roles/code-review/swift-ios/ROLE.md": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -3033,13 +3068,13 @@
     },
     "bundle/droid:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9813,
-      "tokens": 2448
+      "bytes": 10314,
+      "tokens": 2573
     },
     "bundle/droid:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9019,
-      "tokens": 2252
+      "bytes": 9520,
+      "tokens": 2377
     },
     "bundle/droid:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -3150,6 +3185,11 @@
       "file": "schemas/project.schema.json",
       "bytes": 26181,
       "tokens": 6545
+    },
+    "bundle/droid:references/shared/schemas/review-ledger.schema.json": {
+      "file": "schemas/review-ledger.schema.json",
+      "bytes": 21865,
+      "tokens": 5467
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -3468,18 +3508,18 @@
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26456,
-      "tokens": 6606
+      "bytes": 26754,
+      "tokens": 6682
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5710,
-      "tokens": 1426
+      "bytes": 6090,
+      "tokens": 1521
     },
     "bundle/droid:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12222,
-      "tokens": 3050
+      "bytes": 12867,
+      "tokens": 3212
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -3678,8 +3718,8 @@
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39197,
-      "tokens": 9785
+      "bytes": 39735,
+      "tokens": 9919
     },
     "bundle/grok:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -3713,8 +3753,8 @@
     },
     "bundle/grok:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13813,
-      "tokens": 3451
+      "bytes": 14945,
+      "tokens": 3734
     },
     "bundle/grok:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -3775,6 +3815,11 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
+    },
+    "bundle/grok:references/shared/references/review-convergence/REFERENCE.md": {
+      "file": "references/review-convergence/REFERENCE.md",
+      "bytes": 7589,
+      "tokens": 1898
     },
     "bundle/grok:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -3853,8 +3898,8 @@
     },
     "bundle/grok:references/shared/roles/code-review/security/ROLE.md": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9903,
-      "tokens": 2472
+      "bytes": 10236,
+      "tokens": 2555
     },
     "bundle/grok:references/shared/roles/code-review/swift-ios/ROLE.md": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -3928,13 +3973,13 @@
     },
     "bundle/grok:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9813,
-      "tokens": 2448
+      "bytes": 10314,
+      "tokens": 2573
     },
     "bundle/grok:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9019,
-      "tokens": 2252
+      "bytes": 9520,
+      "tokens": 2377
     },
     "bundle/grok:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -4045,6 +4090,11 @@
       "file": "schemas/project.schema.json",
       "bytes": 26181,
       "tokens": 6545
+    },
+    "bundle/grok:references/shared/schemas/review-ledger.schema.json": {
+      "file": "schemas/review-ledger.schema.json",
+      "bytes": 21865,
+      "tokens": 5467
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -4363,18 +4413,18 @@
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26411,
-      "tokens": 6595
+      "bytes": 26709,
+      "tokens": 6671
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5710,
-      "tokens": 1426
+      "bytes": 6090,
+      "tokens": 1521
     },
     "bundle/grok:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12222,
-      "tokens": 3050
+      "bytes": 12867,
+      "tokens": 3212
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -4573,8 +4623,8 @@
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39197,
-      "tokens": 9785
+      "bytes": 39735,
+      "tokens": 9919
     },
     "bundle/kimi:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -4608,8 +4658,8 @@
     },
     "bundle/kimi:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 13813,
-      "tokens": 3451
+      "bytes": 14945,
+      "tokens": 3734
     },
     "bundle/kimi:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -4670,6 +4720,11 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
+    },
+    "bundle/kimi:references/shared/references/review-convergence/REFERENCE.md": {
+      "file": "references/review-convergence/REFERENCE.md",
+      "bytes": 7589,
+      "tokens": 1898
     },
     "bundle/kimi:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -4748,8 +4803,8 @@
     },
     "bundle/kimi:references/shared/roles/code-review/security/ROLE.md": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9903,
-      "tokens": 2472
+      "bytes": 10236,
+      "tokens": 2555
     },
     "bundle/kimi:references/shared/roles/code-review/swift-ios/ROLE.md": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -4823,13 +4878,13 @@
     },
     "bundle/kimi:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9813,
-      "tokens": 2448
+      "bytes": 10314,
+      "tokens": 2573
     },
     "bundle/kimi:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9019,
-      "tokens": 2252
+      "bytes": 9520,
+      "tokens": 2377
     },
     "bundle/kimi:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -4940,6 +4995,11 @@
       "file": "schemas/project.schema.json",
       "bytes": 26181,
       "tokens": 6545
+    },
+    "bundle/kimi:references/shared/schemas/review-ledger.schema.json": {
+      "file": "schemas/review-ledger.schema.json",
+      "bytes": 21865,
+      "tokens": 5467
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
@@ -5258,18 +5318,18 @@
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26458,
-      "tokens": 6607
+      "bytes": 26756,
+      "tokens": 6682
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 5710,
-      "tokens": 1426
+      "bytes": 6090,
+      "tokens": 1521
     },
     "bundle/kimi:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12222,
-      "tokens": 3050
+      "bytes": 12867,
+      "tokens": 3212
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -5518,8 +5578,8 @@
     },
     "role:code-review/security": {
       "file": "roles/code-review/security/ROLE.md",
-      "bytes": 9548,
-      "tokens": 2383
+      "bytes": 9848,
+      "tokens": 2458
     },
     "role:code-review/swift-ios": {
       "file": "roles/code-review/swift-ios/ROLE.md",
@@ -5628,13 +5688,13 @@
     },
     "role:reviewer-spec": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 9610,
-      "tokens": 2397
+      "bytes": 10081,
+      "tokens": 2515
     },
     "role:reviewer-standards": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 8884,
-      "tokens": 2218
+      "bytes": 9355,
+      "tokens": 2336
     },
     "role:supervisor": {
       "file": "roles/supervisor/ROLE.md",

@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/review-ledger.schema.json",
+  "title": "Review convergence ledger event",
+  "description": "One line of a review convergence ledger: the append-only JSONL file `ak review ledger add` writes for one pull request (docs/decisions/0018-review-convergence.md). A line is never edited. A status change is a new line for the same finding id, and the current state of every finding is a fold over the lines, so two readers of the same file reach the same state and an interrupted write loses at most one line. `seq` counts lines from 1 with no gap, which is how a reader tells a torn line from a removed one. This is not the learning runtime's review ledger (review-event.schema.json), which records review comments after the fact. Field names follow finding.schema.json where the two describe the same thing: `severity`, `fingerprint`, `evidence`. The ledger is evidence a gate holds. Nothing in it grants authority, and `ak review decide` does not authenticate who appended a line.",
+  "type": "object",
+  "required": ["v", "seq", "kind"],
+  "oneOf": [
+    { "$ref": "#/$defs/scope-open" },
+    { "$ref": "#/$defs/round-open" },
+    { "$ref": "#/$defs/verdict" },
+    { "$ref": "#/$defs/round-close" },
+    { "$ref": "#/$defs/carry" },
+    { "$ref": "#/$defs/finding" },
+    { "$ref": "#/$defs/seat" },
+    { "$ref": "#/$defs/repeat" },
+    { "$ref": "#/$defs/flip" },
+    { "$ref": "#/$defs/duplicate" },
+    { "$ref": "#/$defs/response" },
+    { "$ref": "#/$defs/evidence" },
+    { "$ref": "#/$defs/closure" },
+    { "$ref": "#/$defs/followup" },
+    { "$ref": "#/$defs/council" },
+    { "$ref": "#/$defs/owner" },
+    { "$ref": "#/$defs/extension" }
+  ],
+  "$defs": {
+    "v": { "description": "Ledger line format version.", "const": 1 },
+    "seq": { "description": "Position of the line in the file, from 1, with no gap.", "type": "integer", "minimum": 1 },
+    "finding_id": {
+      "description": "Assigned by the tool in order of first report and stable for the life of the pull request.",
+      "type": "string",
+      "pattern": "^F[1-9][0-9]*$"
+    },
+    "seat_id": {
+      "description": "The seat that reported or ruled. `pipeline` names the delivery pipeline's Review, whose findings are imported in round 0 and which never rules.",
+      "$ref": "common.schema.json#/$defs/kebab_id"
+    },
+    "head": {
+      "description": "The exact head a line was recorded against.",
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "severity": {
+      "description": "The same four values finding.schema.json uses. P0 is a wrong merge, data loss or a security defect. P1 is a defect in ordinary use. P2 is an edge case outside ordinary use. P3 is a note. P2 and P3 never block.",
+      "enum": ["P0", "P1", "P2", "P3"]
+    },
+    "category": {
+      "description": "What kind of defect the finding claims. `security`, `destructive` and `data-loss` are the always-block classes, and only with a `risk` sentence.",
+      "enum": ["correctness", "security", "destructive", "data-loss", "convention", "reuse", "test-gap", "docs"]
+    },
+    "status": {
+      "description": "`open`, `addressed` and `disputed` are unresolved. `closed`, `deferred`, `dropped` and `observation` are terminal until a reopen the engine admits.",
+      "enum": ["open", "disputed", "addressed", "closed", "deferred", "dropped", "observation"]
+    },
+    "risk": {
+      "description": "What makes an always-block class concrete: the asset at risk and the action that harms it. A finding in one of those classes without this object is a form error and blocks only as an ordinary finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset", "action"],
+      "properties": {
+        "asset": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "action": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "anchor": {
+      "description": "Where the finding sits, computed by the tool from the snapshot and never by the reviewer: the file, the enclosing symbol, the line at the head where the finding was first seen, and the digest of the symbol's body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "symbol", "line", "blob"],
+      "properties": {
+        "file": { "$ref": "common.schema.json#/$defs/repo_path" },
+        "symbol": {
+          "description": "Empty when the line has no enclosing symbol or no snapshot was given.",
+          "type": "string"
+        },
+        "line": { "type": "integer", "minimum": 1 },
+        "blob": { "$ref": "common.schema.json#/$defs/hash" }
+      }
+    },
+    "evidence_item": {
+      "description": "One piece of evidence for or against a finding. A `repro` is a reviewer's test or command that a worker ran: `exit` is its exit status at `head`, and `base_exit` is its exit status at the merge base. Red at the head and green at the base is an introduced defect. Red at both is pre-existing. `red-green` is the author's test, red before the fix and green after. `reading` is an argument from a file and line. `council` is a council record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "head", "sha256"],
+      "properties": {
+        "kind": { "enum": ["repro", "red-green", "reading", "council"] },
+        "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "head": { "$ref": "#/$defs/head" },
+        "exit": { "type": "integer", "minimum": 0 },
+        "base_exit": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "common.schema.json#/$defs/hash" }
+      },
+      "if": { "properties": { "kind": { "const": "repro" } } },
+      "then": { "required": ["exit", "base_exit"] }
+    },
+    "scope-open": {
+      "description": "A full re-review trigger fired: a new review scope starts at round 1. Rows stay and earlier approvals no longer count. A pull request may open one new scope; a further one holds it for a split-or-replan decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "scope", "trigger", "head"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "scope-open" },
+        "scope": { "type": "integer", "minimum": 2 },
+        "trigger": {
+          "enum": [
+            "large-rebase",
+            "path-identity",
+            "risk-tier-rise",
+            "surface-changed",
+            "scope-growth",
+            "requirement-change"
+          ]
+        },
+        "head": { "$ref": "#/$defs/head" }
+      }
+    },
+    "round-open": {
+      "description": "A review round starts at `head`. Round 0 is the import of the delivery pipeline's findings. Round 1 is the one full review of a scope. Later rounds are closure rounds, up to the cap. A `bounded` round is the one closure round a council ruling may order after the cap.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "scope", "round", "mode", "head"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "round-open" },
+        "scope": { "type": "integer", "minimum": 1 },
+        "round": { "type": "integer", "minimum": 0 },
+        "mode": { "enum": ["import", "full", "closure", "bounded"] },
+        "head": { "$ref": "#/$defs/head" },
+        "max_rounds": {
+          "description": "Only on round 1 of a scope: the scope's round cap, when it is lower than the policy's. Nothing raises the cap.",
+          "enum": [2, 3]
+        }
+      }
+    },
+    "verdict": {
+      "description": "A seat delivered its review in the open round. `word` is the seat's own verdict word. It alone never makes the verdict `blocked`: only ledger rows block. Approval needs at least one seat whose latest verdict in the scope is `approve`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "seat", "word"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "verdict" },
+        "seat": { "$ref": "#/$defs/seat_id" },
+        "word": { "enum": ["approve", "block"] }
+      }
+    },
+    "round-close": {
+      "description": "The open round's batch is complete. The engine applies the closure rules and, at the cap, the cap outcomes when it reads this line. `anchors` carries the digest of each listed row's symbol body at this round's head, which is what a later reopen is compared with.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "round-close" },
+        "anchors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "blob"],
+            "properties": {
+              "id": { "$ref": "#/$defs/finding_id" },
+              "blob": { "$ref": "common.schema.json#/$defs/hash" }
+            }
+          }
+        }
+      }
+    },
+    "carry": {
+      "description": "The head moved with an empty delta by patch id. No seat is called and the earlier review carries to `head`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "head"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "carry" },
+        "head": { "$ref": "#/$defs/head" }
+      }
+    },
+    "finding": {
+      "description": "A finding seen for the first time. `fingerprint` is sha256 over category, file, symbol and cause key, and `theme` is sha256 over category, file and symbol. Neither has a line number, so moved code neither duplicates nor hides a finding. `in_scope` says whether the finding sits inside the delta scope of its round; it is true in a full round. `rule` cites the project rule a `convention` finding rests on. `candidates` lists earlier rows with the same theme and a different fingerprint. `status` and `disposition` are set only on an imported pipeline finding.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v",
+        "seq",
+        "kind",
+        "id",
+        "fingerprint",
+        "theme",
+        "anchor",
+        "severity",
+        "category",
+        "origin",
+        "seat",
+        "first_seen_head",
+        "first_seen_scope",
+        "first_seen_round",
+        "cause_key",
+        "text",
+        "in_scope"
+      ],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "finding" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "fingerprint": { "$ref": "common.schema.json#/$defs/hash" },
+        "theme": { "$ref": "common.schema.json#/$defs/hash" },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "category": { "$ref": "#/$defs/category" },
+        "origin": { "enum": ["introduced", "pre-existing"] },
+        "seat": { "$ref": "#/$defs/seat_id" },
+        "first_seen_head": { "$ref": "#/$defs/head" },
+        "first_seen_scope": { "type": "integer", "minimum": 1 },
+        "first_seen_round": { "type": "integer", "minimum": 0 },
+        "cause_key": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "suggested_fix": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "in_scope": { "type": "boolean" },
+        "risk": { "$ref": "#/$defs/risk" },
+        "rule": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/finding_id" } },
+        "status": { "enum": ["closed", "deferred", "dropped", "observation"] },
+        "disposition": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "seat": {
+      "description": "Another seat reported the fingerprint of an unresolved row. The seat joins the row's holders and no new id is assigned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "seat"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "seat" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "seat": { "$ref": "#/$defs/seat_id" }
+      }
+    },
+    "repeat": {
+      "description": "A seat reported the fingerprint of a row that is already terminal. The report is not shown to the author. `blob` is the digest of the symbol body at this round's head. The engine reopens the row only when that digest differs from the one recorded when the row was closed and the report is inside the delta scope, or when an always-block class is newly made concrete by `risk`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "seat", "in_scope"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "repeat" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "seat": { "$ref": "#/$defs/seat_id" },
+        "blob": { "$ref": "common.schema.json#/$defs/hash" },
+        "in_scope": { "type": "boolean" },
+        "risk": { "$ref": "#/$defs/risk" }
+      }
+    },
+    "flip": {
+      "description": "A seat tried to change a terminal row's status with no change in its anchor and no new evidence. The attempt was rejected. The line is a record for the metrics and changes no state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "seat", "reason"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "flip" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "seat": { "$ref": "#/$defs/seat_id" },
+        "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "duplicate": {
+      "description": "A judgment made outside the engine that row `id` reports the same defect as the earlier row `of`. The later row is dropped and its report counts as a report of the earlier one. Absent this line two candidate rows stay separate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "of"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "duplicate" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "of": { "$ref": "#/$defs/finding_id" }
+      }
+    },
+    "response": {
+      "description": "The author's answer to an unresolved row: `fixed`, normally with a red-green pair, or `dispute` with a claim and a reason. The author never closes a row.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "response"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "response" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "response": { "enum": ["fixed", "dispute"] },
+        "claim": {
+          "description": "What a dispute asserts. Seats that agree drop the row under this disposition, or defer it when the claim is `follow-up`.",
+          "enum": ["unsupported", "pre-existing", "out-of-scope", "follow-up"]
+        },
+        "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence_item" } }
+      },
+      "if": { "properties": { "response": { "const": "dispute" } } },
+      "then": { "required": ["claim", "reason"] }
+    },
+    "evidence": {
+      "description": "Evidence attached to a row inside a round. A `repro` that is red at the head and green at the merge base keeps or makes the row open. A row with a red `repro` closes when a later `repro` line is green.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "evidence"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "evidence" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "evidence": { "$ref": "#/$defs/evidence_item" }
+      }
+    },
+    "closure": {
+      "description": "A seat's closure answer for one row in the open round. On a disputed row `addressed` means the seat agrees with the author.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "seat", "vote"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "closure" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "seat": { "$ref": "#/$defs/seat_id" },
+        "vote": { "enum": ["addressed", "not-addressed"] },
+        "location": {
+          "description": "The file and line in the delta the seat points at.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        }
+      }
+    },
+    "followup": {
+      "description": "The follow-up filed for a row. Every deferred row needs one before the engine approves.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "id", "ref"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "followup" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "council": {
+      "description": "The one council call a pull request gets at the cap. `record` is the digest of the council record. A `follow-up` ruling defers the row. `fix` and `escalate` leave it open for one bounded closure round. Always-block rows are never on a council card.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "record", "rulings"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "council" },
+        "record": { "$ref": "common.schema.json#/$defs/hash" },
+        "rulings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "choice"],
+            "properties": {
+              "id": { "$ref": "#/$defs/finding_id" },
+              "choice": { "enum": ["follow-up", "fix", "escalate"] }
+            }
+          }
+        }
+      }
+    },
+    "owner": {
+      "description": "An owner's ruling on one row, recorded with the order it came in. Whoever appends the line attests the order; the ledger does not prove it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "order", "id", "status"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "owner" },
+        "order": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "id": { "$ref": "#/$defs/finding_id" },
+        "status": { "enum": ["closed", "deferred", "dropped"] }
+      }
+    },
+    "extension": {
+      "description": "A human-authorized extension: one extra closure round past the cap in the current scope, recorded with the order it came in. Whoever appends the line attests the order.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "seq", "kind", "order"],
+      "properties": {
+        "v": { "$ref": "#/$defs/v" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "kind": { "const": "extension" },
+        "order": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "finding_report": {
+      "description": "What `ak review ledger add` takes for a finding a seat reported. The tool assigns the id, computes the fingerprint, the theme and the anchor, and decides whether the report is a new row, a second seat on an unresolved row or a repeat of a terminal one. `symbol` and `blob` are read only when no snapshot is given. `in_scope` defaults to true.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "seat", "severity", "category", "origin", "file", "line", "cause_key", "text"],
+      "properties": {
+        "kind": { "const": "finding" },
+        "seat": { "$ref": "#/$defs/seat_id" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "category": { "$ref": "#/$defs/category" },
+        "origin": { "enum": ["introduced", "pre-existing"] },
+        "file": { "$ref": "common.schema.json#/$defs/repo_path" },
+        "line": { "type": "integer", "minimum": 1 },
+        "symbol": { "type": "string" },
+        "blob": { "$ref": "common.schema.json#/$defs/hash" },
+        "cause_key": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "suggested_fix": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "in_scope": { "type": "boolean" },
+        "risk": { "$ref": "#/$defs/risk" },
+        "rule": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "status": { "enum": ["closed", "deferred", "dropped", "observation"] },
+        "disposition": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  }
+}
