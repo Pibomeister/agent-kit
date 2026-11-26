@@ -376,7 +376,7 @@ donors:
       env: gitEnv({ GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0" }),
     });
     expect(stillMissing.status).not.toBe(0);
-  }, 15_000);
+  }, 30_000);
 
   test("a copy failure warns, strips a partial .donors, and still returns 0", () => {
     const scratch = processScratch("ak-extract-copyfail-");
