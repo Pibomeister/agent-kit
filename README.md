@@ -271,7 +271,8 @@ owner-only roster and a launcher's answer. The record grants no authority.
 [ADR-0015](docs/decisions/0015-council-blind-veto.md) owns the rule and the outbound gate;
 [`adapters/runner-contract/CLI.md`](adapters/runner-contract/CLI.md) owns the runner's `--council-config`.
 
-**The convergence ledger is optional.** `ak review ledger add --ledger <ledger.jsonl> --event <file|->` appends what
+**Every review keeps a convergence ledger.** super-review runs the loop in
+[`skills/super-review/references/convergence.md`](skills/super-review/references/convergence.md). `ak review ledger add --ledger <ledger.jsonl> --event <file|->` appends what
 seats, the author and a gate reported for one pull request, `ak review ledger show --ledger <ledger.jsonl>` prints the
 state the lines fold to, and `ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n>` prints the verdict for
 one exact head: `approved`, `blocked` or `incomplete`, with one next action. `runReview` in `src/review/cli.ts` defines
