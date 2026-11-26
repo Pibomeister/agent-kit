@@ -1,6 +1,6 @@
 # agent-kit
 
-One engineering lifecycle, amalgamated from eleven donors (ten MIT-licensed, one Apache-2.0) into a single installable
+One engineering lifecycle, amalgamated from twelve donors (ten MIT-licensed, two Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
 **36 public skills · 8 domain packs · 9 protocols · 39 role prompts · 11 reference packs · 36 schemas**,
@@ -407,7 +407,7 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
 The research-only [`caveman-ai/blocks` pin](research/sources/caveman-blocks-verified-blocks.md) records the procedure-detection donor and its licence and trademark limits; no donor executable is shipped.
-Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
+The engineering lifecycle (pinned 2026-09-18) is
 `EveryInc/compound-engineering-plugin`, `obra/superpowers`, `mattpocock/skills`,
 `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`, `Yeachan-Heo/oh-my-codex`.
 `BuilderIO/skills` (MIT, pinned at its 2026-09-30 commit) is the source of `visual-edit`.
@@ -418,6 +418,13 @@ Three more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect` (MIT
 is used, by `ak learn doctor`) and `thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
 `provenance/licenses/`, the root `NOTICE` carries its NOTICE, and each file adapted from it records
 what was changed.
+<!-- ak-egm-begin -->
+`google/elephant-goldfish-model` (Apache-2.0, Google LLC, pinned at its 2026-10-30 commit) is the second
+Apache-2.0 catalog donor. It feeds the comprehension seat, the ticket cold read, and the
+review-isolation probe. It ships no NOTICE file. The licence text is in `provenance/licenses/`,
+the root `NOTICE` carries an attribution entry, and each adapted file records what was changed.
+See `research/dossiers/egm.md`.
+<!-- ak-egm-end -->
 
 Every adapted file records its `donor@commit:path` in `provenance/adaptations.yaml`, and that path is
 verified to exist at the pin. For report-derived material, follow the

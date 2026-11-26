@@ -239,10 +239,11 @@ function listOf(doc: Record<string, unknown>, keys: ReadonlyArray<string>): Reco
   return out;
 }
 
-interface Donor {
+export interface Donor {
   id: string;
   path: string;
   commit: string;
+  license: string;
 }
 
 interface LocalSource {
@@ -270,6 +271,24 @@ const isLocalSourceEntry = new Ajv2020({ strict: false }).compile<LocalSourceEnt
   },
 });
 
+interface DonorEntry {
+  id: string;
+  path?: string;
+  commit?: string;
+  license?: string;
+}
+
+const isDonorEntry = new Ajv2020({ strict: false }).compile<DonorEntry>({
+  type: "object",
+  required: ["id"],
+  properties: {
+    id: { type: "string" },
+    path: { type: "string" },
+    commit: { type: "string" },
+    license: { type: "string" },
+  },
+});
+
 function loadLocalSourceRecords(root: string): Map<string, LocalSource> {
   const sources = new Map<string, LocalSource>();
   const doc = readYaml(root, LOCK);
@@ -282,7 +301,7 @@ function loadLocalSourceRecords(root: string): Map<string, LocalSource> {
   return sources;
 }
 
-function loadDonors(root: string): { donors: Map<string, Donor>; issues: Issue[] } {
+export function loadDonors(root: string): { donors: Map<string, Donor>; issues: Issue[] } {
   const donors = new Map<string, Donor>();
   const issues: Issue[] = [];
   const doc = readYaml(root, LOCK);
@@ -299,12 +318,12 @@ function loadDonors(root: string): { donors: Map<string, Donor>; issues: Issue[]
   if ("error" in doc) return { donors, issues: [doc.error] };
 
   for (const entry of listOf(doc.value, ["donors"])) {
-    const id = entry["id"];
-    if (typeof id !== "string") continue;
-    donors.set(id, {
-      id,
-      path: typeof entry["path"] === "string" ? entry["path"] : `.donors/${id}`,
-      commit: typeof entry["commit"] === "string" ? entry["commit"] : "",
+    if (!isDonorEntry(entry)) continue;
+    donors.set(entry.id, {
+      id: entry.id,
+      path: entry.path ?? `.donors/${entry.id}`,
+      commit: entry.commit ?? "",
+      license: entry.license ?? "",
     });
   }
   return { donors, issues };

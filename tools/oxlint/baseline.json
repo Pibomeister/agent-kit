@@ -478,7 +478,7 @@
   },
   "src/validation/provenance.ts": {
     "anti-slop(no-known-value-widening)": 4,
-    "anti-slop(no-runtime-typeof)": 21,
+    "anti-slop(no-runtime-typeof)": 18,
     "anti-slop(no-unknown-parameters)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 11,
     "anti-slop(require-safety-comment-for-type-assertion)": 2,

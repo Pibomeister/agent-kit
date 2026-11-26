@@ -35,7 +35,7 @@ package:
   # different texts about different objects, and adapters/codex/CONTRACT.md §5.2
   # is what keeps them from being forced to agree. Stated verbatim by
   # adapters/claude-code/CONTRACT.md §1.
-  description: "One engineering lifecycle, amalgamated from eleven donors: ten MIT, one Apache-2.0."
+  description: "One engineering lifecycle, amalgamated from twelve donors: ten MIT, two Apache-2.0."
   # Emitted into both host manifests from here, so the two cannot drift apart or
   # drift from the catalog. Both values are specified verbatim by
   # adapters/claude-code/CONTRACT.md §1 and are not chosen here.
