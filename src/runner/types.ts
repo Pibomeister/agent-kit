@@ -187,8 +187,8 @@ export interface Run {
   behavior?: BehaviorBinding;
   /** Last loop-adapter failure while outage backoff is configured; cleared after a successful tick. */
   audit_adapter_failure?: { started_at: number; real_started_at: number };
-  /** Halted refused auditTick while outage backoff is configured; restored before listen. */
-  audit_tick_halted?: boolean;
+  /** Halted refused auditTick while outage backoff is configured; restored before listen. Absent otherwise. */
+  audit_tick_halted?: true;
 }
 
 export interface RunLedger {

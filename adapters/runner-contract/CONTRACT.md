@@ -308,7 +308,7 @@ at least that many seconds from the first failure in the streak, even while
 halt earlier. A later success clears the streak. The naming window is in memory; a serve restart
 starts a new one. While `limits.outage_backoff_seconds` is set, the last audit-adapter failure and a halted refused
 `auditTick` are persisted on the run, restored before listen, and cleared only after a successful
-tick, so `decide` stays refused across restart. When that field is set, `decide` is refused with
+tick, so `decide` stays refused across restart. A missing halt after a torn write or a deleted field is the same as main, which never persisted it; the run file is runner-owned state, and hand-deleting fields is tampering. When that field is set, `decide` is refused with
 `event delivery retry in progress` while a delivery is in flight or not healthy and
 `event-delivery-failed` is not yet named, until the next successful ack. Once `audit-failed` is named, `decide` is the guided-mode refusal,
 not `audit retry in progress` and not `event delivery retry in progress`. Auth failures, bundle drift, and a refused `auditTick` still go guided on the first

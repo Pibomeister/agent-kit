@@ -43218,7 +43218,7 @@ class Runner {
           required: ["started_at", "real_started_at"],
           properties: { started_at: { type: "number" }, real_started_at: { type: "number" } }
         },
-        audit_tick_halted: { type: "boolean" }
+        audit_tick_halted: { const: true }
       }
     });
     const policySchema = schemas.ajv.compile({
@@ -45870,18 +45870,20 @@ async function serve(argv, io) {
     });
   });
   const restorePersistedAudit = () => {
+    try {
+      const run2 = runner.status(runId);
+      if (outageWindow() !== undefined && run2.audit_tick_halted === true) {
+        haltAudit("failed");
+        return;
+      }
+    } catch {}
     applyPersistedCap();
     if (auditHalted)
       return;
     if (outageWindow() === undefined)
       return;
     try {
-      const run2 = runner.status(runId);
-      if (run2.audit_tick_halted === true) {
-        haltAudit("failed");
-        return;
-      }
-      if (run2.audit_adapter_failure === undefined)
+      if (runner.status(runId).audit_adapter_failure === undefined)
         return;
     } catch {
       return;

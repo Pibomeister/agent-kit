@@ -311,7 +311,7 @@ export class Runner {
           required: ["started_at", "real_started_at"],
           properties: { started_at: { type: "number" }, real_started_at: { type: "number" } },
         },
-        audit_tick_halted: { type: "boolean" },
+        audit_tick_halted: { const: true },
       },
     });
     const policySchema = schemas.ajv.compile<InvocationPolicy>({

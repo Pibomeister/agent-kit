@@ -1136,16 +1136,20 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     });
   });
   const restorePersistedAudit = () => {
+    try {
+      const run = runner.status(runId);
+      if (outageWindow() !== undefined && run.audit_tick_halted === true) {
+        haltAudit("failed");
+        return;
+      }
+    } catch {
+      // Invalid state fails closed on the first request.
+    }
     applyPersistedCap();
     if (auditHalted) return;
     if (outageWindow() === undefined) return;
     try {
-      const run = runner.status(runId);
-      if (run.audit_tick_halted === true) {
-        haltAudit("failed");
-        return;
-      }
-      if (run.audit_adapter_failure === undefined) return;
+      if (runner.status(runId).audit_adapter_failure === undefined) return;
     } catch {
       return;
     }
