@@ -898,6 +898,82 @@ describe("ak review scope: later-round tree identity", () => {
     expect(scoped).toMatchObject({ outcome: "closure", delta: { empty: false } });
   });
 
+  test("R9-DIRTY-TWO-MERGES-SAME-PATH: two novel merges at one path still count the unique blob", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    const aSha = f.git("rev-parse", `${reviewed}:src/a.ts`);
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `100644,${aSha},src/evil.ts`);
+    const merge1 = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty 1 copy a onto evil",
+    );
+    f.git("reset", "--hard", merge1);
+    f.write({ "src/evil.ts": lines("unique", 25) });
+    f.git("add", "-A");
+    const merge2 = f.git("commit-tree", f.git("write-tree"), "-p", merge1, "-p", main, "-m", "dirty 2 unique 25");
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      merge2,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("src/evil.ts");
+    expect(scoped).toMatchObject({ delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(25);
+  });
+
+  test("R9-DIRTY-SYMLINK-SAME-BLOB: a hidden symlink with a regular file's blob still counts", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    const aSha = f.git("rev-parse", `${reviewed}:src/a.ts`);
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `120000,${aSha},src/evil.ts`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty symlink same blob",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("src/evil.ts");
+    expect(scoped).toMatchObject({ delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
+  });
+
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
     const f = fixture();
     f.round(f.head);

@@ -72,9 +72,9 @@ interface RawRow {
   path: string;
 }
 
-function rawRows(repo: string, from: string, to: string): RawRow[] {
+function parseRaw(text: string): RawRow[] {
   const rows: RawRow[] = [];
-  for (const line of git(repo, ["diff", ...RAW, from, to]).out.split("\n")) {
+  for (const line of text.split("\n")) {
     if (line === "") continue;
     const match = RAW_ROW.exec(line);
     if (match === null) continue;
@@ -91,6 +91,10 @@ function rawRows(repo: string, from: string, to: string): RawRow[] {
     rows.push({ srcMode, dstMode, srcSha, dstSha, status, path });
   }
   return rows;
+}
+
+function rawRows(repo: string, from: string, to: string): RawRow[] {
+  return parseRaw(git(repo, ["diff", ...RAW, from, to]).out);
 }
 
 /** The resulting path, mode and blob of a pull request diff. Deleted paths are absent. */
@@ -298,7 +302,12 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
 interface PathLines {
   path: string;
   lines: number;
+  mode: string;
   sha: string;
+}
+
+function blobKey(mode: string, sha: string): string {
+  return `${mode} ${sha}`;
 }
 
 interface MergeInspection {
@@ -317,17 +326,10 @@ function decode(stdout: Uint8Array): string {
   return new TextDecoder().decode(stdout);
 }
 
-/** The non-zero blob on a `--full-index` `index` line. Prefer the recorded (`from`) side. */
-function blobFromPatch(diff: string): string {
-  for (const line of diff.split("\n")) {
-    const match = /^index ([0-9a-f]+)\.\.([0-9a-f]+)/.exec(line);
-    if (match === null) continue;
-    const src = match[1] ?? "";
-    const dst = match[2] ?? "";
-    if (src !== "" && !/^0+$/.test(src)) return src;
-    if (dst !== "" && !/^0+$/.test(dst)) return dst;
-  }
-  return "";
+/** Prefer the recorded (`from`) side of a `--raw` row. */
+function recordedBlob(row: RawRow): { mode: string; sha: string } {
+  if (row.srcSha !== "" && !/^0+$/.test(row.srcSha)) return { mode: row.srcMode, sha: row.srcSha };
+  return { mode: row.dstMode, sha: row.dstSha };
 }
 
 /**
@@ -343,42 +345,30 @@ function throwawayDiff(
   from: string,
   to: string,
 ): ThrowawayDiff {
-  const names = gitProcess(
+  const raw = gitProcess(
     context,
     repo,
-    [
-      "-c",
-      "diff.ignoreSubmodules=all",
-      "diff",
-      "--name-only",
-      "--no-renames",
-      "--ignore-submodules=none",
-      "-z",
-      "--end-of-options",
-      from,
-      to,
-    ],
+    ["-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to],
     10_000,
     undefined,
     extraEnv,
   );
-  if (names.code !== 0 && names.code !== 1) throw new Error(`git diff failed: ${names.stderr}`);
-  const paths = decode(names.stdout)
-    .split("\0")
-    .filter((path) => path.length > 0);
+  if (raw.code !== 0 && raw.code !== 1) throw new Error(`git diff failed: ${raw.stderr}`);
+  const rows = parseRaw(decode(raw.stdout));
+  const paths = rows.map((row) => row.path);
   const path_lines: PathLines[] = [];
-  for (const path of paths) {
+  for (const row of rows) {
     const patch = gitProcess(
       context,
       repo,
-      ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to, "--", path],
+      ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to, "--", row.path],
       10_000,
       undefined,
       extraEnv,
     );
     if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
-    const text = decode(patch.stdout);
-    path_lines.push({ path, lines: readPatch(text).lines, sha: blobFromPatch(text) });
+    const { mode, sha } = recordedBlob(row);
+    path_lines.push({ path: row.path, lines: readPatch(decode(patch.stdout)).lines, mode, sha });
   }
   return { paths, path_lines };
 }
@@ -387,8 +377,7 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
   const merges = git(repo, ["rev-list", "--merges", head, `^${previous}`, `^${base}`]).out.split("\n");
   const conflicted = new Set<string>();
   const novelPaths = new Set<string>();
-  const novelLineByPath = new Map<string, number>();
-  const novelShaByPath = new Map<string, string>();
+  const byBlob = new Map<string, PathLines>();
   const pairs: { merge: string; ours: string; theirs: string }[] = [];
   let novel_merge = false;
   for (const merge of merges) {
@@ -449,9 +438,10 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
         if (run.novel) {
           novel_merge = true;
           for (const path of run.extra.paths) novelPaths.add(path);
-          for (const { path, lines, sha } of run.extra.path_lines) {
-            novelLineByPath.set(path, (novelLineByPath.get(path) ?? 0) + lines);
-            if (sha !== "") novelShaByPath.set(path, sha);
+          for (const entry of run.extra.path_lines) {
+            if (entry.sha === "" || entry.mode === "") continue;
+            const key = blobKey(entry.mode, entry.sha);
+            if (!byBlob.has(key)) byBlob.set(key, entry);
           }
         }
         if (run.code === 0) continue;
@@ -467,11 +457,7 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
     conflict_paths: [...conflicted].toSorted(),
     novel_merge,
     novel_paths,
-    novel_path_lines: novel_paths.map((path) => ({
-      path,
-      lines: novelLineByPath.get(path) ?? 0,
-      sha: novelShaByPath.get(path) ?? "",
-    })),
+    novel_path_lines: [...byBlob.values()],
   };
 }
 
@@ -499,7 +485,11 @@ export interface DeltaReading {
 
 /**
  * Compare the pull request at `head` with the pull request at `previous`, the
- * last reviewed head. All three revisions are full commit ids.
+ * last reviewed head. All three revisions are full commit ids. Every hidden
+ * blob a novel merge introduced counts once unless that exact (mode, sha) is in
+ * the result tree; empty-file blob sharing, a mode-only chmod, and the same
+ * blob at two paths are not special-cased (the path still appears in
+ * changed_paths).
  */
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
   if (previous !== base && mergeBase(repo, base, previous) === previous)
@@ -516,12 +506,13 @@ export function readDelta(repo: string, base: string, previous: string, head: st
   const empty = identical && !merges.novel_merge && !nonMerges.novel;
   const novelPaths = [...new Set([...merges.novel_paths, ...nonMerges.paths])].toSorted();
   const visiblePaths = identical ? [] : changedPaths(repo, previous, head);
-  const nowBlobs = new Set([...nowTree.values()].map((entry) => entry.sha));
+  const nowBlobs = new Set([...nowTree.values()].map((entry) => blobKey(entry.mode, entry.sha)));
   const countedBlobs = new Set<string>();
   let hiddenMergeLines = 0;
-  for (const { sha, lines } of merges.novel_path_lines) {
-    if (sha === "" || nowBlobs.has(sha) || countedBlobs.has(sha)) continue;
-    countedBlobs.add(sha);
+  for (const { mode, sha, lines } of merges.novel_path_lines) {
+    const key = blobKey(mode, sha);
+    if (sha === "" || nowBlobs.has(key) || countedBlobs.has(key)) continue;
+    countedBlobs.add(key);
     hiddenMergeLines += lines;
   }
   return {
