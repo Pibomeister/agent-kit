@@ -206,6 +206,8 @@
               "run-ledger",
               "trail",
               "trail-audit",
+              "supervisor-declaration",
+              "supervisor-attestation",
               "review-event",
               "review-pattern",
               "episode",

@@ -3,7 +3,7 @@
 How a lifecycle phase runs when the repository or the runner's environment opts into the
 `unattended` policy (ADR-0014): no
 typed command and no grant starts a phase, every gate records evidence the gate tool ran itself,
-and the human gate is the merge. Where nothing opts in, none of this applies and every phase
+and the human gate is the merge, which agent-kit never performs. Where nothing opts in, none of this applies and every phase
 behaves exactly as its skill describes.
 
 Every runner behaves the same way: a CI job, a scheduled job, a chat bot, a coding-agent platform
@@ -17,16 +17,20 @@ never the working tree) has `"policy": "unattended"`. Any other value of the var
 `open --ticket` stamps the run with the policy and its source, and a record or check under another
 policy is refused. A bypass grant is refused under the policy.
 `AK_LIFECYCLE_SUPERVISOR=<name>`, such as `firstmate` (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`; any
-other value is refused), records who supervises in place of a human. It is a record only and grants
-no authority. The run, its gate records and decisions carry it, and the ship disclosure then reads
-`Unattended lifecycle policy (supervisor: <name>, in place of a human): ...`.
+other value is refused), names the run supervisor that stands in place of a human.
+`AK_LIFECYCLE_SUPERVISOR_DECLARATION=<absolute path>` names its declaration: a JSON file outside
+the repository that says how the supervisor meets six obligations. The contract, both file shapes and the
+refusal points are in [`adapters/supervisor/CONTRACT.md`](../../adapters/supervisor/CONTRACT.md). The run, its gate records and decisions carry the
+name. A phase that needs a human start refuses without a valid declaration.
 
 ## Starting a phase
 
 From the project checkout run `node <bundle>/bin/ak-gate.mjs unattended check --phase <phase>`.
-Exit 0 is the start for `super-align`, `super-bound` and `super-ship`; the four model-started
-phases need no start under either policy. Exit 1 means the policy is not active: the phase needs
-its typed command or a grant.
+Exit 0 is the start for `super-align`, `super-bound` and `super-ship` when the policy is active and the
+declaration is valid; the output names the supervisor and the declaration's digest. The four
+model-started phases need no start under either policy. Exit 1 means the policy is not active or the
+declaration is missing or invalid: the phase needs its typed command or a grant, or the declaration
+fixed.
 
 ## Advancing without a human
 
@@ -96,64 +100,45 @@ their original times. A later read-back is a new record with its own time, never
 
 ## Shipping
 
-`record --gate ship-preflight` runs the pre-ship check (all six earlier phases, current, passing),
-then reads the target repository live and read-only, refuses with every unmet item, and on success
-prints the disclosure and each gate's commands. Put that disclosure in the pull request text; under
-no-mistakes delivery, edit the opened pull request's text once the pipeline returns. Then
-`record --gate ship-preflight --pr <n>` records final ship success: it exits 3 while the independent
-review is pending, and refuses a head that diverged from the shipped revision (open a new run at that
-head). Commits after the shipped revision are listed and are covered by the merge gate only.
+`open --ticket` stamps the run with the declaration's name, path and digest. A run opened with no
+declaration cannot pass ship-preflight.
+
+`record --gate ship-preflight` checks the declaration in force against that stamp, runs the pre-ship
+check (all six earlier phases, current, passing), refuses with every unmet item and refuses a working tree
+whose bytes differ from HEAD, including untracked files that git does not ignore, eol conversion, ident
+expansion, a sparse-missing path and an executable-bit mismatch (use a byte-clean checkout:
+core.autocrlf=false, no ident, a full checkout; commit what should ship, remove or git-ignore the rest,
+then record the gates again; takeSnapshot in src/lifecycle/gate.ts is the dirt check), and on success closes
+the run and prints the disclosure and each gate's commands. Every refusal in the declaration steps ends
+with one recovery: open a new run with `open --ticket` under the declaration in force and record the
+gates again. Open the pull request text with the disclosure as its first paragraph, then a blank line.
+Under no-mistakes delivery, edit the opened pull request's text once the pipeline returns to put it
+first: that is the only pull-request write. The sentence is:
+
+> Unattended lifecycle policy (supervisor: <name>, in place of a human): no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, the supervisor attests its validation gate and independent review at the head, which agent-kit checks but cannot authenticate, and agent-kit does not merge: whoever the human authorized merges.
+
+Final ship is `record --gate ship-preflight --attestation <file> --body-file <file>`. The attestation is a
+file the supervisor writes outside the repository, named by an absolute path. `shipUnattended` (`src/lifecycle/gate.ts`) runs the
+final-ship checks listed in "The sequence and its refusals" of
+[the supervisor contract](../../adapters/supervisor/CONTRACT.md). It appends the result to the closing
+record and lists the commits after the shipped revision. Those commits are covered by the supervisor's
+attestation only.
 
 A host-unattested verifier is a recorded note rather than a refusal under this policy: the evidence
-is worker-attested, and the trust boundary is the merge gate. Self-verification is still refused.
+is worker-attested, and the trust boundary is the declared supervisor. Self-verification is still refused.
 
 ## Operator setup (once per repository)
 
 Nothing here is done by an agent or by agent-kit.
 
-1. Commit `ak.lifecycle.json` to the default branch, with canonical `provider/model` identities:
-
-   ```json
-   {
-     "policy": "unattended",
-     "human_reviewers": ["@alice", "@org/maintainers"],
-     "independent_review": {
-       "check": "agent-kit/independent-review",
-       "environment": "independent-review",
-       "key_secret": "AK_REVIEW_APP_KEY",
-       "reviewer_model": "example-provider/reviewer-model",
-       "author_models": ["example-provider/author-model"],
-       "model_aliases": {}
-     }
-   }
-   ```
-
-2. Commit a code-owners file with a catch-all `*` rule whose owners are all in `human_reviewers`.
-3. Protect the default branch (classic protection or a ruleset with an empty bypass list): require
-   a pull request with one approval, code-owner review, dismissal of stale approvals, approval of
-   the most recent push, required CI pinned to its app, the review check pinned to the review app,
-   and enforcement for admins. Required CI pinned to GitHub Actions counts, but its workflow is
-   editable in the change under review; code-owner review of the workflow files, which the
-   catch-all rule covers, is what covers it.
-4. Create a dedicated GitHub App (Checks write, Contents read, Pull requests read, Metadata read).
-   Store its key only in a deployment environment whose policy is exactly the default branch; set
-   `AK_REVIEW_APP_ID`, `AK_REVIEW_ENVIRONMENT` and `AK_REVIEW_COMMAND`, and the review command's
-   provider credential as `AK_REVIEW_PROVIDER_TOKEN`. The review job holds that credential, so a
-   reviewer steered by the diff can leak it; scope it to review calls. The reviewer command
-   contract: the command reads the diff on standard input and writes its verdict JSON on standard
-   output; its harness, not the model, writes the provider's reported model for the call to the
-   metadata file (`$AK_REVIEW_METADATA_FILE`); the model has no shell or file tools.
-5. Copy the workflow template the super-ship skill ships as `assets/independent-review.yml` to
-   `.github/workflows/`, and allow `pull_request_target` for that file in the repository's Actions
-   event policy. The template is not evidence that a review was installed or ran. Any earlier
-   completed review-app run on a head that did not approve, an `unavailable` provider failure
-   included, refuses that head even after an approving rerun; the gate does not tell
-   infrastructure failures apart. Recovery is a new commit whose head gets its own current
-   independent review and any required human approval; rerunning on the refused head is not.
-6. Give the runner its own user account with role exactly `write` that is not a designated
-   reviewer, and a fine-grained `AK_UNATTENDED_READ_TOKEN` with Administration, Secrets and
-   Environments read. A runner that shares the operator's account or credentials does not meet
-   the assumptions below; an app-token CI job needs a machine-user account.
+1. Opt in with `AK_LIFECYCLE_POLICY=unattended` in the runner's environment, or commit `ak.lifecycle.json`
+   with `{"policy": "unattended"}` to the default branch.
+2. Pick the supervisor's name and set `AK_LIFECYCLE_SUPERVISOR`.
+3. Write the declaration to a path outside every worktree of the project and of every repository that
+   encloses it, and set `AK_LIFECYCLE_SUPERVISOR_DECLARATION` to its absolute path. [`adapters/supervisor/CONTRACT.md`](../../adapters/supervisor/CONTRACT.md) has the
+   shape and an example. [`adapters/firstmate/SUPERVISOR.md`](../../adapters/firstmate/SUPERVISOR.md) has Firstmate's.
+4. Decide who merges. agent-kit does not merge: whoever the human authorized merges, and protects the
+   default branch as the project requires.
 
 ## Human-only steps: the stall class
 
@@ -167,9 +152,11 @@ A supervisor named by `AK_LIFECYCLE_SUPERVISOR` reports a held human-only step t
 `--kind <kind> --started-at <epoch-ms> --now <epoch-ms>`, plus the applicable `--overnight`,
 `--escalated --channel <channel>`, `--target <target> --blocked-on <reason>` and `--prompt-held-open`.
 The check runs the classifier and all three violation checks before returning. Its JSON result
-includes `human_step`; exit 1 reports a violation, and exit 2 reports malformed inputs or a missing
-supervisor. With no human-step options, phase checks keep their existing result. The supervisor
-supplies the observed step and escalation state; this check does not discover steps or monitor them.
+includes `human_step`. A missing supervisor or malformed flags exit 2. A human-started phase with
+the supervisor set but no valid declaration exits 1. Model-started phases exit 2. Exit 1 also
+reports a stall violation. With no human-step options, phase checks keep their existing result.
+The supervisor supplies the observed step and escalation state; this check does not discover
+steps or monitor them.
 
 The definition: a held human-only step — sign-in, an auth prompt, a verification code, an OTP,
 an approval or a captcha — is a stall class distinct from normal work. Approval is an interactive
@@ -182,12 +169,8 @@ a step, and an interactive auth prompt is never held open.
 
 ## Limits
 
-The forge does not show that a designated account is operated by a person, that the review
-command used the model it reports (identity rests on operator configuration and the provider's
-reported metadata, not on a cryptographic attestation), or that a fine-grained read credential is
-read-only. Team membership is not verified. The runner's identity is read with the forge client's
-active credential, on the assumption that the runner's push credential is the active one;
-ship-preflight and review-status print these assumptions. A diff hides
-binary files, large-file pointers and submodule contents, and text in it can steer the reviewer.
-Local checks run with the task's privileges and guard against misconfiguration and accidents, not
-a determined task on the same account; the forge enforces the merge gate either way.
+agent-kit checks both supervisor files and cannot authenticate them. It does not show that the supervisor
+ran its validation gate, that the independent review happened, or that the seats were separate. A party
+that can write outside the repository can forge either file. Phase evidence is worker-attested. Local checks
+run with the task's privileges and guard against misconfiguration and accidents, not a determined task on
+the same account.
