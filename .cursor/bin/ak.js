@@ -45648,7 +45648,7 @@ async function serve(argv, io) {
     auditBlock = block;
     auditHalted = true;
     if (auditTimer !== null)
-      clearInterval(auditTimer);
+      clearTimeout(auditTimer);
     auditTimer = null;
     if (block === "failed" && outageWindow() !== undefined) {
       try {
@@ -45723,7 +45723,7 @@ async function serve(argv, io) {
       }
       if (before.drained) {
         if (auditTimer !== null)
-          clearInterval(auditTimer);
+          clearTimeout(auditTimer);
         auditTimer = null;
         auditBlock = "ok";
         auditOutage = null;
@@ -45798,18 +45798,33 @@ async function serve(argv, io) {
     }
   };
   const armAudit = () => {
-    if (auditHalted || loopCommand === null || auditTimer !== null)
+    if (auditHalted || loopCommand === null || auditTimer !== null || auditRunning)
       return;
     applyPersistedCap();
     if (auditHalted)
       return;
     try {
       const run2 = runner.status(runId);
-      if (run2.charter.audit_cadence_seconds === undefined || !Object.values(run2.delegates ?? {}).some((delegate) => delegate.state === "active"))
+      const cadenceSeconds = run2.charter.audit_cadence_seconds;
+      if (cadenceSeconds === undefined || !Object.values(run2.delegates ?? {}).some((delegate) => delegate.state === "active"))
         return;
-      auditTimer = setInterval(() => {
-        runAudit();
-      }, run2.charter.audit_cadence_seconds * 1000);
+      const tick2 = () => {
+        auditTimer = null;
+        runAudit().finally(() => {
+          if (auditHalted || !open || auditTimer !== null)
+            return;
+          try {
+            const live = runner.status(runId);
+            if (live.charter.audit_cadence_seconds === undefined || !Object.values(live.delegates ?? {}).some((delegate) => delegate.state === "active"))
+              return;
+            auditTimer = setTimeout(tick2, live.charter.audit_cadence_seconds * 1000);
+          } catch (cause) {
+            if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT"))
+              io.err(`ak runner: cannot arm audit: ${cause instanceof Error ? cause.message : String(cause)}`);
+          }
+        });
+      };
+      auditTimer = setTimeout(tick2, cadenceSeconds * 1000);
     } catch (cause) {
       if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT"))
         io.err(`ak runner: cannot arm audit: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -45912,7 +45927,7 @@ async function serve(argv, io) {
     if (questionAlarm !== null)
       clearTimeout(questionAlarm);
     if (auditTimer !== null)
-      clearInterval(auditTimer);
+      clearTimeout(auditTimer);
     for (const pid of activeChildren)
       killGroup(pid);
     if (existsSync41(socketPath))

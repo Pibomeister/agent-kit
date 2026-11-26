@@ -4296,10 +4296,8 @@ describe("runner guards", () => {
         const body: unknown = JSON.parse(response.stdout.toString());
         if (!isAutonomyStatus(body) || !asJsonObject(body)) return false;
         const consumption = body["budget_consumption"];
-        spent =
-          asJsonObject(consumption) && Number.isSafeInteger(consumption["delegate_replacements"])
-            ? consumption["delegate_replacements"]
-            : 0;
+        const raw = asJsonObject(consumption) ? consumption["delegate_replacements"] : 0;
+        spent = Number.isSafeInteger(raw) ? Number(raw) : 0;
         autonomy = body.autonomy;
         return spent >= 1 && autonomy.mode === "autonomous" && autonomy.missing.length === 0;
       });
