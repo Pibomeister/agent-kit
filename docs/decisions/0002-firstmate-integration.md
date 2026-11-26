@@ -313,6 +313,38 @@ The first follow-up above is closed this way:
   ancestry alone, so a run the supervisor has since merged still verifies. The pre-ship default checks
   `build-checks, verify, review-full, review-readiness`, since `ship-preflight` does not exist yet
   when super-ship checks.
+- A `review-full` record with no `verdict` field still counts as approved. `readRecords` treats
+  `verdict === undefined` as well-formed (`src/lifecycle/gate.ts:1351`). The CLI usage text says to
+  leave `--verdict` out for an approved full review (`src/lifecycle/gate.ts:2639`). Existing
+  records stay valid. No migration is needed.
+- Issue #147 reported that a changes-requested full review left no `review-full` record, because
+  super-review recorded the gate only on `approved`. The same claim is in
+  `research/reviews/verification-receipts/01-full-review.md:53`. What was measured at 0.1.37 is
+  separate. The skill at `e2cab1b6` (`skills/super-review/SKILL.md:161-163`) said to record the gate
+  "On `approved`, and only then". The check at `e2cab1b6` (`src/lifecycle/gate.ts:1150-1152`) refuses
+  a gate with no record and does not read `review-delta` for that refusal. A `review-delta` at the
+  head makes an earlier `review-full` record count at `e2cab1b6` (`src/lifecycle/gate.ts:1174-1178`).
+  The current step 12 wording is enforced by `tests/super-review-wording.test.ts`.
+  Super-review workflow step 12: a changes-requested full review is recorded with
+  `--verdict changes-requested`. The 0.1.37 wording recorded the gate only on approved.
+  Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
+  after CRLF-to-LF only and compares every byte from the start of the file through
+  the line before the first `## Hard gates` line to a golden copy of origin/main
+  0c91b031. `## Hard gates` is the sentinel. After the prefix, the suffix is
+  parsed with CommonMark (parser only). Raw HTML is refused except a node that
+  is exactly one HTML comment. A heading may contain only text, code, emphasis,
+  strong, softbreak and linebreak. A heading with a link, image or html child
+  is refused. A heading whose text, or any segment separated by a softbreak, a
+  linebreak, or any line terminator, equals `workflow` after NFKC, stripping
+  `\p{Cf}` and `\p{Default_Ignorable_Code_Point}`, trim and lowercase is
+  refused.
+  A heading whose text contains a bidi control (U+200E, U+200F, U+202A-U+202E,
+  U+2066-U+2069) is refused.
+  Homoglyph confusables, U+2800 braille blank, GFM strikethrough, and tables
+  are out of scope. Otherwise Hard gates body prose is not pinned.
+  `- Workflow notes` and prose that mentions workflow stay green. Fenced,
+  indented and inline-code examples stay green. Editing anything above Hard
+  gates needs a golden update in review.
 - `bind` adds `build-checks` to `required_gates`. `ak firstmate status complete` audits before it
   prints `done`: the same core check over the binding's store and gates, against the head the latest
   `ship-preflight` record names, then the grant audit ADR-0004 describes. `status --verify` runs the

@@ -33,6 +33,7 @@
   "include": [
     "src/**/*.ts",
     "tests/**/*.ts",
+    "tests/commonmark.d.ts",
     "tools/oxlint/*.ts",
     "tools/budget/*.ts",
     "tools/learn/*.ts",
