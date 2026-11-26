@@ -1065,6 +1065,162 @@ describe("ak review scope: later-round tree identity", () => {
     });
   });
 
+  test("GITLINK-STUFFED-BLOB: a dirty-merge gitlink mode pointing at a 500-line blob still counts 500", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/_r14.ts": lines("stuffed", 500) });
+    const blob = f.git("hash-object", "-w", "src/_r14.ts");
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `160000,${blob},vendor/lib`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty stuffed gitlink blob",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("vendor/lib");
+    expect(scoped).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["scope-growth"],
+      delta: { empty: false, added_lines: 500 },
+    });
+  });
+
+  test("REG-TO-GITLINK-BLOB: a regular-to-gitlink change pointing at a 500-line blob still counts 500", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/_r14.ts": lines("reglink", 500) });
+    const blob = f.git("hash-object", "-w", "src/_r14.ts");
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--cacheinfo", `160000,${blob},src/a.ts`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty regular to stuffed gitlink",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("src/a.ts");
+    expect(scoped).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["scope-growth"],
+      delta: { empty: false, added_lines: 500 },
+    });
+  });
+
+  test("SAME-BLOB-TYPECHANGE: a same-blob mode change from regular to symlink counts 1", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    const aSha = f.git("rev-parse", `${reviewed}:src/a.ts`);
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--cacheinfo", `120000,${aSha},src/a.ts`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty same blob typechange",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("src/a.ts");
+    expect(scoped).toMatchObject({
+      outcome: "closure",
+      delta: { empty: false, added_lines: 1 },
+    });
+  });
+
+  test("REAL-GITLINK-BUMP: a dirty-merge gitlink pointing at a real commit still counts 1", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    const pin = f.git("rev-parse", "main");
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty real gitlink",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("vendor/lib");
+    expect(scoped).toMatchObject({
+      outcome: "closure",
+      delta: { empty: false, added_lines: 1 },
+    });
+  });
+
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
     const f = fixture();
     f.round(f.head);

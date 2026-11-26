@@ -370,6 +370,55 @@ function emptyBlob(context: RunnerGitContext, repo: string, extraEnv: NodeJS.Pro
 }
 
 const OBJECT_ID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+type ObjectKind = "zero" | "missing" | "blob" | "tree" | "commit" | "tag";
+
+function parseBatchCheck(text: string): Map<string, ObjectKind> {
+  const types = new Map<string, ObjectKind>();
+  for (const line of text.split("\n")) {
+    if (line === "") continue;
+    if (line.endsWith(" missing")) {
+      const sha = line.slice(0, -" missing".length);
+      if (sha !== "") types.set(sha, "missing");
+      continue;
+    }
+    const [sha, type] = line.split(" ");
+    if (sha === undefined || type === undefined) continue;
+    if (type === "blob" || type === "tree" || type === "commit" || type === "tag") types.set(sha, type);
+  }
+  return types;
+}
+
+function objectKind(sha: string, types: Map<string, ObjectKind>): ObjectKind {
+  if (isZeroOid(sha)) return "zero";
+  return types.get(sha) ?? "missing";
+}
+
+function isGitlinkKind(kind: ObjectKind): boolean {
+  return kind === "commit" || kind === "tree";
+}
+
+/** One `cat-file --batch-check` for every non-zero id in `rows`. */
+function objectTypes(
+  context: RunnerGitContext,
+  repo: string,
+  extraEnv: NodeJS.ProcessEnv,
+  rows: readonly RawRow[],
+): Map<string, ObjectKind> {
+  const ids = [
+    ...new Set(rows.flatMap((row) => [row.srcSha, row.dstSha]).filter((sha) => !isZeroOid(sha) && OBJECT_ID.test(sha))),
+  ];
+  if (ids.length === 0) return new Map();
+  const run = gitProcess(
+    context,
+    repo,
+    ["cat-file", "--batch-check"],
+    10_000,
+    new TextEncoder().encode(`${ids.join("\n")}\n`),
+    extraEnv,
+  );
+  if (run.code !== 0) throw new Error(`git cat-file failed: ${run.stderr}`);
+  return parseBatchCheck(decode(run.stdout));
+}
 
 /**
  * Changed lines of two blob object ids. The argv is only those two ids, so a
@@ -396,22 +445,38 @@ function diffBlobPair(
 }
 
 /**
- * Changed lines of one `--raw` row from its blob ids. The parsed path is
- * display-only and is never a pathspec. A gitlink counts as one line. A
- * hunkless empty add or delete counts as one line. A symlink takes the
- * blob-to-blob diff.
+ * Changed lines of one `--raw` row from the objects' real types. The parsed
+ * path is display-only. A commit or tree (a real gitlink) counts as one line,
+ * including a gitlink to a missing commit. A missing blob throws. A hunkless
+ * empty add or delete counts as one line. Equal blob ids with different modes
+ * count as one line.
  */
 function blobPairLines(
   context: RunnerGitContext,
   repo: string,
   extraEnv: NodeJS.ProcessEnv,
   empty: string,
+  types: Map<string, ObjectKind>,
   row: RawRow,
 ): number {
-  if (row.srcMode === "160000" || row.dstMode === "160000") return 1;
-  const from = isZeroOid(row.srcSha) ? empty : row.srcSha;
-  const to = isZeroOid(row.dstSha) ? empty : row.dstSha;
-  if (from === to) return isZeroOid(row.srcSha) || isZeroOid(row.dstSha) ? 1 : 0;
+  const srcKind = objectKind(row.srcSha, types);
+  const dstKind = objectKind(row.dstSha, types);
+  if (srcKind === "missing" || dstKind === "missing") {
+    if (srcKind === "blob" || dstKind === "blob") {
+      const sha = srcKind === "missing" ? row.srcSha : row.dstSha;
+      throw new Error(`missing blob ${sha}`);
+    }
+    return 1;
+  }
+  if (isGitlinkKind(srcKind) || isGitlinkKind(dstKind) || srcKind === "tag" || dstKind === "tag") return 1;
+  const from = srcKind === "zero" ? empty : row.srcSha;
+  const to = dstKind === "zero" ? empty : row.dstSha;
+  if (from === to) return srcKind === "zero" || dstKind === "zero" || row.srcMode !== row.dstMode ? 1 : 0;
+  if (row.status.startsWith("T")) {
+    const recorded = recordedBlob(row);
+    if (isZeroOid(recorded.sha)) return 1;
+    return diffBlobPair(context, repo, extraEnv, empty, recorded.sha);
+  }
   return diffBlobPair(context, repo, extraEnv, from, to);
 }
 
@@ -419,8 +484,8 @@ function blobPairLines(
  * Paths and changed lines of `from` versus `to` inside the throwaway object store.
  * The store is bare, so `.gitmodules ignore=all` is not read. `-c
  * diff.ignoreSubmodules=all` is that setting; `--ignore-submodules=none` is the
- * override that still lists a gitlink. Line counts come from blob ids, not from
- * a pathspec round-trip.
+ * override that still lists a gitlink. Line counts come from each object's
+ * real type, not from the mode bits.
  */
 function throwawayDiff(
   context: RunnerGitContext,
@@ -440,11 +505,17 @@ function throwawayDiff(
   if (raw.code !== 0 && raw.code !== 1) throw new Error(`git diff failed: ${raw.stderr}`);
   const rows = parseRaw(decode(raw.stdout));
   const empty = emptyBlob(context, repo, extraEnv);
+  const types = objectTypes(context, repo, extraEnv, rows);
   const paths = rows.map((row) => row.path);
   const path_lines: PathLines[] = [];
   for (const row of rows) {
     const { mode, sha } = recordedBlob(row);
-    path_lines.push({ path: row.path, lines: blobPairLines(context, repo, extraEnv, empty, row), mode, sha });
+    path_lines.push({
+      path: row.path,
+      lines: blobPairLines(context, repo, extraEnv, empty, types, row),
+      mode,
+      sha,
+    });
   }
   return { paths, path_lines };
 }
@@ -565,8 +636,9 @@ export interface DeltaReading {
  * blob a novel merge introduced counts once unless that exact (mode, sha) is in
  * the result tree; empty-file blob sharing, a mode-only chmod, and the same
  * blob at two paths are not special-cased (the path still appears in
- * changed_paths). A path parsed from git output is display-only and is never
- * fed back to git.
+ * changed_paths). A same-blob mode or type change counts as one line. Line
+ * counts use the objects' real types, not the mode bits. A path parsed from
+ * git output is display-only and is never fed back to git.
  */
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
   if (previous !== base && mergeBase(repo, base, previous) === previous)
