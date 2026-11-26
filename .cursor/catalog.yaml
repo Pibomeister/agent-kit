@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.135
+  version: 0.1.139
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -951,11 +951,11 @@ references:
     loaded_by: [super-align, super-bound, super-scout, super-build, super-verify, super-review, super-ship]
     summary: >-
       The opt-in unattended policy: starting phases with no human or grant, recording each gate with
-      the evidence commands the gate tool runs, the advances that replace waits, the live merge-gate
-      read before ship and the operator setup it rests on.
+      the evidence commands the gate tool runs, the advances that replace waits, the declared run
+      supervisor ship rests on and the operator setup it needs.
 
 # ---------------------------------------------------------------------------
-# Schemas — 39. `common` holds shared $defs and validates no document itself.
+# Schemas — 42. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1100,6 +1100,18 @@ schemas:
     summary: >-
       The auditor's comparison of a ticket's trail with what the run left behind, with no transcript:
       every stretch by state, the material read, one result and an attention list.
+  - id: supervisor-declaration
+    batch: 15
+    status: authored
+    summary: >-
+      The file a run supervisor keeps outside the checkout to declare how it meets the six
+      obligations of the unattended policy. Shape only.
+  - id: supervisor-attestation
+    batch: 15
+    status: authored
+    summary: >-
+      The file a run supervisor supplies at final ship to attest validation and independent review
+      at one head. Shape only.
   - id: install
     batch: 5
     status: authored
@@ -1243,7 +1255,7 @@ profiles:
       compound-refresh read its ledgers. Never required: every skill works without it.
 
 # ---------------------------------------------------------------------------
-# Adapters — 12. Host and evidence-source contracts.
+# Adapters — 13. Host and evidence-source contracts.
 # Arch 4 also sketched issue-tracker and repository-events directories. repository-events is
 # folded into runner-contract, which owns the event-delivery capability
 # (schemas/common.schema.json#/$defs/capability); splitting it out would create an adapter with no
@@ -1306,6 +1318,13 @@ adapters:
       Firstmate supervises, agent-kit judges inside the worker, no-mistakes delivers. The
       ownership boundary, the task-local child contract, the deprecated legacy upstream patch and
       the status lines it may write.
+  - id: supervisor
+    batch: 15
+    status: authored
+    summary: >-
+      The contract a run supervisor meets under the unattended policy: six obligations declared in
+      a file outside the checkout, an attestation at final ship, and what agent-kit checks and
+      cannot authenticate. Names no vendor.
   - id: tracker
     batch: 1
     status: authored
