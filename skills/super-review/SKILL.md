@@ -192,10 +192,11 @@ enough.
 Gate: three rounds per scope, one full and two closure: at most two fix-and-verify cycles after the
 first pass (ruling `two-fix-cycles-then-stop`). At the cap `ak review decide` gives each open row
 its outcome by rule, and the change parks with that record: nothing at the cap approves on its own.
-Only filed rows open, each with its follow-up, is `merge-with-follow-ups` (`fix_cycles.follow_ups`);
+Only filed rows open, each with its follow-up, is `merge-with-follow-ups` (`fix_cycles.follow_ups`),
+a recommendation that parks with `captain-hold` for a human;
 a theme two consecutive cycles reopened is `design-decision`. A cycle a human authorizes after the
 decision is recorded in `fix_cycles.extensions` (`authorized_by: human`, operator-attested, and
-when) and as an `extension` ledger line, and reviewed as a `delta` that may approve, never as a new
+when) and as an `extension` ledger line, and reviewed as a `delta`, never as a new
 `full`; without that entry it is refused.
 
 Gate: where architecture, requirements, the comparison base or the affected surface changes

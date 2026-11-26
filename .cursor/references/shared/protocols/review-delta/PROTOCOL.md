@@ -85,7 +85,8 @@ lane's findings ([`policies/review.yaml`](../../policies/review.yaml) `pass_1.se
     rounds per scope — and record `fix_cycles`. At the cap, `decide` gives each open row its outcome
     by rule and the change parks and is reported, never approved on its own. Record the decision in
     `fix_cycles.exhausted_action`:
-    `merge-with-follow-ups` when only filed rows are open, listing them in `follow_ups`;
+    `merge-with-follow-ups` when only filed rows are open, listing them in `follow_ups`, which
+    parks with `captain-hold` for a human to merge;
     `design-decision` when the last two cycles reopened the same finding theme; otherwise
     `blocked` or `replan` (ruling `two-fix-cycles-then-stop`).
 

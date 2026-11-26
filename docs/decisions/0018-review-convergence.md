@@ -244,11 +244,12 @@ Firstmate, under the convergence rules FM-CONVERGE-ROLLOUT-0820.
 Every review run now uses the converging loop. `skills/super-review/references/convergence.md` is
 its operating form. `super-review`, its delta and panel references, the review-delta protocol, and the
 `reviewer-spec`, `reviewer-standards` and security seats name the loop and the commands it runs.
-`policies/review.yaml` `convergence.callers` lists them, and `tests/review/wiring.test.ts` holds
-that list to the files. Round 1 is the one full review. Later rounds are fix-only: the delta since
+Round 1 is the one full review. Later rounds are fix-only: the delta since
 the last reviewed head and a closure check on each earlier finding. The verdict is the one
 `ak review decide` prints, and no single seat vetoes. At the cap of three rounds per scope the
-change parks and is reported, and nothing at the cap approves on its own.
+change parks and is reported, and nothing at the cap approves on its own: once the round count
+reaches the cap, `ak review decide` returns `incomplete` with the `captain-hold` action even when
+no row blocks.
 
 The repository's own `.no-mistakes.yaml` sets `review.max_fix_rounds: 3`, the same cap, for the
 delivery pipeline's Review. A no-mistakes version before v1.109.0 ignores the key.

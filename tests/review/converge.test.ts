@@ -238,7 +238,7 @@ describe("what blocks", () => {
     script.fixed(id).open(3).verdict("a").verdict("b");
     script.vote(id, "addressed", "a").vote(id, "addressed", "b").close();
     expect(script.row(id).status).toBe("closed");
-    expect(script.decide(3, 2).verdict).toBe("approved");
+    expect(script.decide(3, 2)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("an always-block row leaves the blocking set by a reproduction-backed fix", () => {
@@ -417,10 +417,10 @@ describe("the cap: every row gets an outcome by rule", () => {
     expect(script.row(id)).toMatchObject({ status: "deferred", disposition: "cap" });
   });
 
-  test("only P3 open at the cap: approve with follow-ups", () => {
+  test("only P3 open at the cap: follow-ups filed, the change parks for a human", () => {
     const { script, id } = oneFinding({ severity: "P3" });
     script.pass(2).pass(3).followup(id);
-    expect(script.decide(3).verdict).toBe("approved");
+    expect(script.decide(3)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("below the cap the same rows still wait: nothing is deferred early", () => {
@@ -435,7 +435,7 @@ describe("the cap: every row gets an outcome by rule", () => {
     expect(script.row(id)).toMatchObject({ status: "deferred", disposition: `council:${digest(4000)}` });
     expect(script.decide(3).action).toBe("file-follow-ups");
     script.followup(id);
-    expect(script.decide(3).verdict).toBe("approved");
+    expect(script.decide(3)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("a council ruling of fix gives one bounded closure round, and a green reproduction there closes the row", () => {
@@ -443,7 +443,7 @@ describe("the cap: every row gets an outcome by rule", () => {
     script.council([{ id, choice: "fix" }]);
     expect(script.decide(3)).toMatchObject({ verdict: "blocked", action: "bounded-closure" });
     script.fixed(id).open(4, "bounded").verdict().repro(id, 0).close();
-    expect(script.decide(4).verdict).toBe("approved");
+    expect(script.decide(4)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("still red after the bounded round: one owner hold", () => {
@@ -456,7 +456,7 @@ describe("the cap: every row gets an outcome by rule", () => {
       .close();
     expect(script.decide(4)).toMatchObject({ verdict: "blocked", action: "owner-hold", blocking: [id] });
     script.owner(id, "deferred").followup(id);
-    expect(script.decide(4).verdict).toBe("approved");
+    expect(script.decide(4)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("a bounded round admits no new finding except an always-block one", () => {
@@ -581,7 +581,7 @@ describe("the cap: every row gets an outcome by rule", () => {
     script.extension();
     expect(script.decide(3)).toMatchObject({ verdict: "blocked", action: "fix", cap: 4 });
     script.fixed(id).open(4).verdict().repro(id, 0).close();
-    expect(script.decide(4).verdict).toBe("approved");
+    expect(script.decide(4)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
     script.extension();
     expect(script.state().problems).toHaveLength(1);
   });
@@ -635,7 +635,7 @@ describe("reopening a terminal row", () => {
     script.repeat(id, { blob: digest(2001) }).close();
     expect(script.row(id)).toMatchObject({ status: "closed", reopened: 0 });
     expect(script.state().repeats).toBe(1);
-    expect(script.decide(3).verdict).toBe("approved");
+    expect(script.decide(3)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("a repeat reopens the row when the anchor's body changed and the report is inside the delta scope", () => {
@@ -671,7 +671,7 @@ describe("reopening a terminal row", () => {
     const { script, id } = closedRow();
     headOnlyRed(script, id, 3).close();
     expect(script.row(id)).toMatchObject({ status: "closed", reopened: 0 });
-    expect(script.decide(3).verdict).toBe("approved");
+    expect(script.decide(3)).toMatchObject({ verdict: "incomplete", action: "captain-hold" });
   });
 
   test("a red reproduction does not reopen a filed note", () => {

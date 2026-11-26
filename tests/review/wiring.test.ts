@@ -149,6 +149,23 @@ describe("the loop through ak review, round by round", () => {
     expect(add([{ kind: "round-open", head: head(4) }]).code).toBe(2);
   });
 
+  test("a round 3 with nothing blocking and every deferred row filed parks instead of approving", () => {
+    const { add, decide } = ledger();
+    add([{ kind: "round-open", head: head(1) }, ...verdicts("approve", "approve"), { kind: "round-close" }]);
+    add([{ kind: "round-open", head: head(2) }, ...verdicts("approve", "approve"), { kind: "round-close" }]);
+    expect(decide(2)).toMatchObject({ code: 0, verdict: "approved", action: "none" });
+    add([
+      { kind: "round-open", head: head(3) },
+      finding("b", "late-thing"),
+      ...verdicts("approve", "approve"),
+      { kind: "round-close" },
+    ]);
+    expect(add([{ kind: "followup", id: "F1", ref: "https://example.invalid/issue/2" }]).code).toBe(0);
+    const capped = decide(3);
+    expect(capped).toMatchObject({ verdict: "incomplete", action: "captain-hold", record: { blocking: [] } });
+    expect(capped.code).not.toBe(0);
+  });
+
   test("after round 1 a new finding with no reproduction is filed, not blocking", () => {
     const { add, decide } = ledger();
     add([{ kind: "round-open", head: head(1) }, ...verdicts("approve", "approve"), { kind: "round-close" }]);

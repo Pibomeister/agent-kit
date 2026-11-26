@@ -106,7 +106,7 @@ synthesis step does not overrule it.
 
 | `decide` action | The review's verdict | Do this |
 |---|---|---|
-| `none` (`approved`, exit 0) | `approved` | Record the review gate |
+| `none` (`approved`, exit 0) | `approved` | Before the cap only: record the review gate |
 | `fix` | `changes-requested` | Hand the blocking rows to apply-findings, then run the next round |
 | `closure-round` | `changes-requested` while a row blocks | Run a closure round over the delta |
 | `file-follow-ups` | `changes-requested` | File each listed row and append its `followup` line |
@@ -122,6 +122,9 @@ The tool refuses a fourth `round-open` in a scope. At the cap, `decide` gives ev
 outcome by rule. A row with a red reproduction escalates, and so does an always-block row. A row
 whose theme reopened in two consecutive rounds escalates as a design decision. Every other open
 row is deferred, and it needs a follow-up reference.
+
+`decide` never returns `approved` at the cap. With no row blocking and every deferred row filed,
+it returns `captain-hold` and exits 1.
 
 Park the pull request and report the decision record. Do not approve it, do not open a new full
 review, and do not open a fourth round. A human may add one more closure round, once per scope,

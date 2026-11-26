@@ -78,7 +78,7 @@ The decision takes one of four values in `fix_cycles.exhausted_action`:
 
 | Open at the cap | Decision |
 |---|---|
-| Only filed rows: P2, P3, pre-existing, uncited convention or unreproduced findings | `merge-with-follow-ups`: recommend merge, each listed in `fix_cycles.follow_ups` with its follow-up reference; the verdict may be `approved` |
+| Only filed rows: P2, P3, pre-existing, uncited convention or unreproduced findings | `merge-with-follow-ups`: recommend merge, each listed in `fix_cycles.follow_ups` with its follow-up reference; `decide` still parks it with `captain-hold` and a human decides the merge |
 | A finding theme the last two cycles both reopened | `design-decision`: name the theme and the design question behind it; no further patch is proposed |
 | Anything else | `blocked` or `replan` |
 
