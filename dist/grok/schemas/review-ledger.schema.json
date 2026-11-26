@@ -104,7 +104,14 @@
         "kind": { "const": "scope-open" },
         "scope": { "type": "integer", "minimum": 2 },
         "trigger": {
-          "enum": ["large-rebase", "risk-tier-rise", "surface-changed", "scope-growth", "requirement-change"]
+          "enum": [
+            "large-rebase",
+            "path-identity",
+            "risk-tier-rise",
+            "surface-changed",
+            "scope-growth",
+            "requirement-change"
+          ]
         },
         "head": { "$ref": "#/$defs/head" }
       }

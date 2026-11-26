@@ -435,10 +435,27 @@ delta:
   scope:
     boundary: affected behavior
     not: changed lines
+    seed: the changed hunks
     rule: >-
       The delta reviews the impact neighbourhood of the fix. A serious newly discovered issue in
       an untouched affected caller stays reportable; scope discipline is not a reason to suppress
       relevant evidence.
+    # What "affected behavior" holds where a review keeps a convergence ledger (ADR-0018). A
+    # finding inside these blocks; one outside them is recorded as an observation.
+    mechanical:
+      compared: the pull request at the head against the pull request at the last reviewed head
+      holds:
+        - the full body of every function a hunk touches
+        - the direct callers of a function whose signature or exit behaviour changed
+      empty_delta: >-
+        When every path of the pull request has the same mode and blob as at the last reviewed
+        head, every non-merge commit in previous..head excluding base is empty or matches a
+        reviewed own-commit patch or the reviewed pull request patch, and inspectMerges.novel_merge
+        is false, no seat is called and the earlier verdict carries. A two-parent merge whose
+        recorded tree is not the isolated merge-tree of its parents is not empty. A rebase that
+        changes no blob and a merge of the base branch with no conflict in the pull request's paths
+        still have to pass that test.
+      tool: ak review scope
     ruling: delta-scope-affected-behavior
     scenario: 8
   new_findings:
@@ -479,6 +496,148 @@ delta:
       - this is a new review scope, not an unbounded third delta loop
     ruling: delta-baseline-reset-not-third-loop
     scenario: 10
+
+# ---------------------------------------------------------------------------
+# Convergence — the rules `ak review decide` and `ak review scope` compare (ADR-0018).
+#
+# A review that keeps a convergence ledger for a pull request follows these rules. The numbers
+# and the lists are those of `DEFAULT_POLICY` and `SCOPE_TRIGGERS` in src/review/types.ts, and
+# tests/review/policy.test.ts holds the two equal. The tools read their own constants: this
+# block is the record of them, and a change here without the same change there fails that test.
+# ---------------------------------------------------------------------------
+convergence:
+  decision: docs/decisions/0018-review-convergence.md
+  cap:
+    max_rounds: 3
+    rounds: one full round and two closure rounds per scope
+    lowered_by: a scope may record a cap of two on its first round
+    raised_by: nothing. A human extension is one more closure round, once per scope
+    limit: policy:limits/review_rounds
+  blocking_bar:
+    severities: [P0, P1]
+    origin: introduced
+    round_1: reading evidence is enough
+    later_rounds: >-
+      A new finding blocks only inside the delta scope, with a reproduction that is red at the
+      head and green at the merge base.
+    never_blocks:
+      - a P2 or P3 finding
+      - a pre-existing finding
+      - a convention finding that cites no project rule
+      - a finding outside the delta scope, which is an observation
+    filed: each finding that does not block needs a follow-up reference before the verdict is approved
+  always_block:
+    categories: [security, destructive, data-loss]
+    requires: a risk sentence that names the asset at risk and the action that harms it
+    without_it: the finding is an ordinary one
+    leaves_the_blocking_set_on:
+      - a green reproduction
+      - every seat of the round calling it addressed
+      - the owner's order
+    council: never
+  reopen:
+    reasons:
+      - the body of the finding's symbol changed inside the delta scope
+      - a new red reproduction
+      - an always-block class newly made concrete
+    otherwise: a counted flip that changes nothing
+  scope:
+    max_scopes: 2
+    new_scope: restarts the round count and invalidates the approvals. The findings stay
+    second_trigger: holds the pull request for a split-or-replan decision by the lane's captain
+    ruling: delta-baseline-reset-not-third-loop
+  # The evidence each class requires at the head and the independent seats its review sits
+  # (ADR-0018). `depth` restates `pass_1.depth.by_class`. `evidence` adds to the class above it
+  # in this map, so each class requires every item of the lower ones. A caller checks each item
+  # with its command, exit status and revision, then gives `ak review decide` the seat count and
+  # each missing item. This map selects no reviewer and names no seat's holder.
+  evidence_by_class:
+    green:
+      depth: single
+      evidence:
+        - lint and the project's rules are green
+        - the full test suite is green
+        - for a bug fix, one test that is red before the fix and green after it
+      independent_seats: 1
+      later_rounds: closure by that seat, only while it holds an open finding
+      second_seat: dropped
+    yellow-agent:
+      depth: reduced
+      evidence:
+        - an acceptance receipt for each criterion, as `super-verify` writes it
+        - for each behaviour change, one test that is red before the change and green after it
+      independent_seats: 1
+      later_rounds: closure by the seat that holds the finding
+      second_seat: dropped
+      second_seat_kept_when:
+        - the diff exceeds 400 changed lines
+        - the diff matches a shared surface of the project record
+    yellow-owner:
+      depth: reduced
+      evidence:
+        - runtime proof of each behaviour a user or an operator sees
+        - a mutation check on the changed lines, where the project has a mutation tool
+      independent_seats: 2
+      later_rounds: closure by the seat that holds the finding, and no other seat
+      second_seat: kept for round 1 and dropped after it
+    red:
+      depth: full
+      evidence:
+        - property tests for each state machine or ledger the change adds or alters
+        - the specialist evidence each attached pack requires
+      independent_seats: 2
+      specialist_seat: each activated specialist seat sits round 1
+      later_rounds: >-
+        Closure by the seats that hold the findings. A specialist seat returns only for its own
+        open finding, as `delta.specialist_return` says.
+      second_seat: kept for round 1
+    missing_evidence: >-
+      Evidence replaces a seat only when it exists. A missing item is not waived. The review
+      requirement rises to the next class in this map, and the verdict names the missing item.
+    seat_never_dropped_when:
+      - the change touches a security surface
+      - an always-block finding is open
+      - a named human lowered the merge-stage class below the ticket-stage class
+    absent_class_evidence: full
+  full_re_review:
+    compared: the pull request at the head against the pull request at the last reviewed head
+    triggers:
+      - id: large-rebase
+        fires_when:
+          - >-
+            The patch of the pull request changed, and the lines the rewritten commits changed
+            are more than `rewritten_percent` of the changed lines of the pull request.
+          - a merge resolved a conflict in a path of the pull request
+          - a merge has more than two parents
+        rewritten_percent: 30
+      - id: path-identity
+        fires_when:
+          - a path of the pull request changed as a gitlink (mode 160000)
+          - a same-blob add and delete pair appears in the pull request, which is a rename with no rename detection
+      - id: risk-tier-rise
+        fires_when:
+          - the merge-stage class at the head is above the class of the last reviewed round
+      - id: surface-changed
+        fires_when:
+          - "`review_surface_changed` is true in the merge-stage record at the head"
+      - id: scope-growth
+        fires_when:
+          - the delta adds more than `percent` to the changed lines of the pull request
+          - the delta adds more than `lines` changed lines
+          - the intent file changed
+        percent: 50
+        lines: 400
+      - id: requirement-change
+        fires_when:
+          - the digest of the ticket's acceptance criteria changed
+    not_a_trigger:
+      - the fix commits themselves
+      - a reached cap
+      - a rebase that leaves the pull request's patches unchanged
+    unevaluated: >-
+      A trigger whose input the caller did not supply is reported as unevaluated. It does not
+      fire and it is not shown to be clear.
+    ruling: delta-baseline-reset-not-third-loop
 
 # ---------------------------------------------------------------------------
 # Reviewer continuity (plan §6.4).

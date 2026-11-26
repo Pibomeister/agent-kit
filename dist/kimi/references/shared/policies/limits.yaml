@@ -34,7 +34,9 @@ enforced:
     applies_to:
       skills: [super-review, ultraqa, autopilot]
       protocols: [review-delta, apply-findings]
-      operations: [review.delta]
+      # `review.merge-gate` names a project's merge gate that reads this cap through
+      # `ak review decide` (ADR-0018). It is not a phase operation of policies/invocation.yaml.
+      operations: [review.delta, review.merge-gate]
     meaning: >-
       At most two fix-and-verify cycles follow a review's first pass. The third stops with an
       explicit blocked-or-replan decision; anything still open is reported, not looped. A
@@ -62,7 +64,8 @@ enforced:
     derivation: one pass-1 panel plus at most `fix_cycles` delta passes
     applies_to:
       skills: [super-review]
-      operations: [review.full, review.delta]
+      # `review.merge-gate`: see `fix_cycles.applies_to`.
+      operations: [review.full, review.delta, review.merge-gate]
     meaning: >-
       A review run reviews at most three heads: the first snapshot and the head produced by each
       permitted fix cycle. A materially changed comparison base, requirement set or affected
