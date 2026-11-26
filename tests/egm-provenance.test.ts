@@ -1211,7 +1211,7 @@ describe("EGM provenance guards", () => {
 
   test("pin section reads REPO paths through readPinned", () => {
     const src = readFileSync(new URL(import.meta.url), "utf8");
-    expect(src.includes("file" + "Sha256")).toBe(false);
+    expect(src.includes(["file", "Sha256"].join(""))).toBe(false);
     expect(/readFileSync\(\s*join\(\s*REPO/.test(src)).toBe(false);
   });
 });
