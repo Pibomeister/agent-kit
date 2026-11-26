@@ -45,7 +45,7 @@
  * table row occurs once after whitespace fold and lies inside the
  * adapters/cursor/CONTRACT.md hashed interior.
  */
-import { describe, expect, test as bunTest } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -626,17 +626,54 @@ function skipTrackedPath(raw: string): boolean {
   return /(^|\/)node_modules\//.test(raw);
 }
 
+function isolatedGitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_CEILING_DIRECTORIES;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_COMMON_DIR;
+  delete env.GIT_OBJECT_DIRECTORY;
+  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  return env;
+}
+
 function git(cwd: string, args: string[]): string {
-  const run = spawnSync("git", ["-c", "user.name=ak", "-c", "user.email=ak@t", ...args], {
-    cwd,
-    encoding: "utf8",
-  });
+  const run = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.name=ak",
+      "-c",
+      "user.email=ak@t",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      ...args,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: isolatedGitEnv(),
+    },
+  );
   expect(run.status, args.join(" ")).toBe(0);
   return run.stdout;
 }
 
 function trackedBlobs(root: string): Array<{ sha: string; path: string }> {
-  const listed = spawnSync("git", ["ls-files", "-s", "-z"], { cwd: root, encoding: "buffer" });
+  const listed = spawnSync("git", ["ls-files", "-s", "-z"], {
+    cwd: root,
+    encoding: "buffer",
+    env: isolatedGitEnv(),
+  });
   expect(listed.status, "git ls-files -s").toBe(0);
   const files: Array<{ sha: string; path: string }> = [];
   for (const rec of listed.stdout.toString("utf8").split("\0")) {
@@ -657,6 +694,7 @@ function readBlob(root: string, sha: string): Uint8Array {
     cwd: root,
     encoding: "buffer",
     maxBuffer: 32 * 1024 * 1024,
+    env: isolatedGitEnv(),
   });
   expect(run.status, sha).toBe(0);
   return Uint8Array.from(run.stdout);
@@ -1056,12 +1094,6 @@ function yamlItemBlock(text: string, idLine: string): string {
   return idLine + (next === -1 ? rest : rest.slice(0, next));
 }
 
-const TEST_TIMEOUT_MS = 30_000; // concurrent bun test of this file stalls git-scratch tests past the 5 s default. Solo identity scan 5587 ms.
-
-function test(name: string, fn: () => void, timeout = TEST_TIMEOUT_MS): void {
-  bunTest(name, fn, timeout);
-}
-
 describe("EGM provenance guards", () => {
   test("hex pin prefix inside a run is identity", () => {
     const file = "package.json";
@@ -1214,7 +1246,7 @@ describe("EGM provenance guards", () => {
     git(root, ["commit", "-q", "-m", "lie"]);
     restoreWorktreeFrom(root, file, `HEAD~1:${file}`);
     expect(() => assertSentencePins(root)).toThrow(`${file} HEAD/worktree`);
-  }, 30_000); // concurrent file run timed out after 5000ms (29564 ms wall); solo run 91.90 ms
+  });
 
   test("README h1 match is exact including the newline", () => {
     const root = scratchPins();
@@ -1282,7 +1314,7 @@ describe("EGM provenance guards", () => {
     commitFile(root, copy.dest, `${readFileSync(join(root, copy.dest), "utf8")}lie\n`);
     restoreWorktreeFrom(root, copy.dest, `HEAD~1:${copy.dest}`);
     expect(() => assertOverlay(root, copy)).toThrow(`${copy.dest} HEAD/worktree`);
-  }, 30_000); // concurrent file run timed out after 5000ms (29568 ms wall); solo run 57.51 ms
+  });
 
   test("catalog.yaml committed lie", () => {
     const file = "catalog.yaml";
