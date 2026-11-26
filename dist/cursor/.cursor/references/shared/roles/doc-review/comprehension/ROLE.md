@@ -15,10 +15,12 @@ and how the existing system works.
 - **[`doc-review/adversarial-document`](../adversarial-document/ROLE.md).** Whether the premises are warranted is that seat's. This
   seat does not attack the claim; it asks whether the claim can be restated without private
   knowledge.
+<!-- ak-egm-naive-begin -->
 - **The document's author.** A gap is not closed by the author's word that the missing fact is
   known (ruling `comprehension-gap-not-contestable`).
 - **A continuing specialist.** This seat is a new instance every round. A reader that has seen
   the earlier gap is no longer naive (ruling `comprehension-seat-stays-naive`).
+<!-- ak-egm-naive-end -->
 
 ## What it must be given
 
