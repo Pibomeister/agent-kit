@@ -10,11 +10,15 @@
  * is set (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins). Without
  * that flag or env they do not wait. `AK_GATE_LANES` is read only when set and
  * non-empty (`1` on, `0` off; any other value refuses); unset or empty matches a
- * checkout without the variable. `lanes run` exports `AK_GATE_LANE_HOLDER` so a
- * child `check`/`record` on the same live hold reuses it instead of waiting on
- * the parent. `lanes publish` pushes HEAD to origin as the current branch without
- * taking the lock, so a commit can land while a gate is queued; it refuses main,
- * master, origin's default branch, and an unnamed branch.
+ * checkout without the variable. `lanes run` exports `AK_GATE_LANE_HOLDER` (pid,
+ * acquired_at, lane key, and a random nonce stored on the holder file) so a child
+ * `check`/`record` on the same live hold reuses it instead of waiting on the parent.
+ * That token is a cooperative local mutex, not a security boundary against a
+ * same-user process that reads the file. `lanes publish` pushes HEAD to origin as
+ * the current branch without taking the lock, so a commit can land while a gate is
+ * queued; it refuses main, master (case-insensitive), a `refs/` name, origin's
+ * default branch, and an unnamed branch. If origin's default cannot be determined
+ * it refuses.
  *
  * - Mutual exclusion holds *within* one lane: two gate runs for the same worktree
  *   and branch cannot overlap. Different lanes hold different locks and run at once.
@@ -39,8 +43,9 @@
  *   rather than guess.
  */
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -65,6 +70,11 @@ export interface LaneHolder extends LaneIdentity {
   host: string;
   acquired_at: string;
   label?: string;
+  /**
+   * Cooperative local mutex secret for child re-entry. Not a security boundary against a
+   * same-user process that reads the holder file. Never printed in status or logs.
+   */
+  nonce?: string;
 }
 
 export interface LaneWaiter extends LaneIdentity {
@@ -103,8 +113,14 @@ const UNPARSEABLE_GRACE_MS = 30_000;
 /** Default wait for `check`/`record --lanes`, in minutes; the same number as the unpublished-age default. */
 export const DEFAULT_LANES_WAIT_MINUTES = 30;
 
-/** Exported by `lanes run` to children that share its live hold. */
+/** Exported by `lanes run` to children that share its live hold. The value includes a nonce that status never prints. */
 export const LANE_HOLDER_ENV = "AK_GATE_LANE_HOLDER";
+
+/** Wait in ms for `check`/`record --lanes`. Absent flag is `DEFAULT_LANES_WAIT_MINUTES`, never unbounded. */
+export function resolveLanesWaitMs(timeoutFlag: string | undefined): number {
+  if (timeoutFlag === undefined) return DEFAULT_LANES_WAIT_MINUTES * 60_000;
+  return Math.max(0, Number(timeoutFlag) * 60_000);
+}
 
 /** The canonical publication remote; a gate remote's refs never count as published. */
 const PUBLICATION_REMOTE = "origin";
@@ -162,19 +178,34 @@ interface InheritedHolder {
   pid: number;
   acquired_at: string;
   key: string;
+  nonce: string;
+}
+
+function holderNonce(holder: LaneHolder): string | undefined {
+  if (!("nonce" in holder) || !isString(holder.nonce) || holder.nonce === "") return undefined;
+  return holder.nonce;
 }
 
 /** Encode this hold for a child process; `acquireLane` reuses a matching live holder. */
 export function laneHolderToken(holder: LaneHolder): string {
-  return `${holder.pid} ${holder.acquired_at} ${laneKey(holder)}`;
+  const nonce = holderNonce(holder);
+  if (nonce === undefined) return `${holder.pid} ${holder.acquired_at} ${laneKey(holder)}`;
+  return `${holder.pid} ${holder.acquired_at} ${laneKey(holder)} ${nonce}`;
 }
 
 function parseLaneHolderToken(raw: string): InheritedHolder | undefined {
-  const match = /^(\d+) (\S+) (\S+)$/.exec(raw);
-  if (match === null || match[1] === undefined || match[2] === undefined || match[3] === undefined) return undefined;
+  const match = /^(\d+) (\S+) (\S+) (\S+)$/.exec(raw);
+  if (
+    match === null ||
+    match[1] === undefined ||
+    match[2] === undefined ||
+    match[3] === undefined ||
+    match[4] === undefined
+  )
+    return undefined;
   const pid = Number(match[1]);
   if (!isPid(pid)) return undefined;
-  return { pid, acquired_at: match[2], key: match[3] };
+  return { pid, acquired_at: match[2], key: match[3], nonce: match[4] };
 }
 
 /** A child of `lanes run` whose token matches this live holder; unrelated processes do not match. */
@@ -190,6 +221,7 @@ function reenteredHolder(
   const seen = readHolder(path);
   if (seen === null) return undefined;
   if (seen.value.pid !== inherited.pid || seen.value.acquired_at !== inherited.acquired_at) return undefined;
+  if (holderNonce(seen.value) !== inherited.nonce) return undefined;
   if (seen.value.host !== host || !alive(seen.value.pid)) return undefined;
   if (laneKey(seen.value) !== identityKey) return undefined;
   return seen.value;
@@ -212,6 +244,7 @@ function isHolder(value: unknown): value is LaneHolder {
     !isString(value.acquired_at)
   )
     return false;
+  if ("nonce" in value && (!isString(value.nonce) || value.nonce === "")) return false;
   return !("label" in value) || isString(value.label);
 }
 
@@ -273,10 +306,15 @@ function listWaiters(dir: string): LaneWaiter[] {
  * A dead holder's record is renamed aside and re-checked before removal, so two
  * processes that both judge it stale cannot delete each other's fresh claim.
  */
+function writeHolderRecord(path: string, record: LaneHolder): void {
+  writeFileSync(path, JSON.stringify(record), { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
 function claim(path: string, record: LaneHolder, host: string): boolean {
   const own = `${path}.${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   try {
-    writeFileSync(own, JSON.stringify(record));
+    writeHolderRecord(own, record);
     try {
       linkSync(own, path);
       return true;
@@ -313,7 +351,7 @@ function claim(path: string, record: LaneHolder, host: string): boolean {
   }
   rmSync(aside, { force: true });
   try {
-    writeFileSync(own, JSON.stringify(record));
+    writeHolderRecord(own, record);
     linkSync(own, path);
     return true;
   } catch {
@@ -375,6 +413,20 @@ export function readWaiters(dir: string): LaneWaiter[] {
   return listWaiters(waitersDir(dir)).toSorted((a, b) => a.enqueued_at.localeCompare(b.enqueued_at));
 }
 
+/** Status never carries the re-entry nonce. */
+function publicHolder(holder: LaneHolder): LaneHolder {
+  const published: LaneHolder = {
+    lane: holder.lane,
+    branch: holder.branch,
+    worktree: holder.worktree,
+    pid: holder.pid,
+    host: holder.host,
+    acquired_at: holder.acquired_at,
+  };
+  if (holder.label !== undefined) published.label = holder.label;
+  return published;
+}
+
 /** Who holds, who waits, and for how long, at `nowMs`. */
 export function laneStatus(dir: string, nowMs: number, host: string = hostname()): LaneStatus {
   const live = (record: { pid: number; host: string }) => record.host !== host || alive(record.pid);
@@ -382,7 +434,7 @@ export function laneStatus(dir: string, nowMs: number, host: string = hostname()
     holders: readHolders(dir)
       .filter(live)
       .map((holder) => ({
-        ...holder,
+        ...publicHolder(holder),
         held_ms: Math.max(0, nowMs - Date.parse(holder.acquired_at)),
       })),
     waiters: readWaiters(dir)
@@ -428,7 +480,13 @@ export function acquireLane(dir: string, identity: LaneIdentity, options: Acquir
   try {
     for (;;) {
       const at = now();
-      const record: LaneHolder = { ...identity, pid, host, acquired_at: new Date(at).toISOString() };
+      const record: LaneHolder = {
+        ...identity,
+        pid,
+        host,
+        acquired_at: new Date(at).toISOString(),
+        nonce: randomBytes(16).toString("hex"),
+      };
       if (options.label !== undefined) record.label = options.label;
       const unlock = claimMutex(dir, record);
       if (unlock !== null) {
@@ -594,26 +652,44 @@ export interface LanePublish {
   sha: string;
 }
 
+const PUBLISH_BLOCKED = "lanes publish does not push main, master, a refs/ name, or origin's default branch";
+
+function publishBlockedName(branch: string): boolean {
+  const lower = branch.toLowerCase();
+  return lower === "main" || lower === "master" || branch.startsWith("refs/");
+}
+
+function originDefaultBranch(project: string, git: GitRunner): string | undefined {
+  const local = git(project, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (local.code === 0 && local.text.startsWith("refs/remotes/origin/")) {
+    const name = local.text.slice("refs/remotes/origin/".length);
+    if (name !== "") return name;
+  }
+  const remote = git(project, ["ls-remote", "--symref", PUBLICATION_REMOTE, "HEAD"]);
+  if (remote.code !== 0) return undefined;
+  const match = /^ref:\s+refs\/heads\/(\S+)\s+HEAD/m.exec(remote.text);
+  if (match === null || match[1] === undefined || match[1] === "") return undefined;
+  return match[1];
+}
+
 export function publishLane(project: string, git: GitRunner = runGit): LanePublish {
   const branchResult = git(project, ["branch", "--show-current"]);
   if (branchResult.code !== 0 || branchResult.text === "")
     throw new Error(`${project} is not on a named branch: ${branchResult.stderr}`);
   const branch = branchResult.text;
-  const blocked = new Set(["main", "master"]);
-  const originHead = git(project, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
-  if (originHead.code === 0 && originHead.text.startsWith("refs/remotes/origin/")) {
-    const defaultBranch = originHead.text.slice("refs/remotes/origin/".length);
-    if (defaultBranch !== "") blocked.add(defaultBranch);
-  }
-  if (blocked.has(branch))
-    throw new Error(
-      `refusing to publish ${branch}: lanes publish does not push main, master, or origin's default branch`,
-    );
+  if (publishBlockedName(branch)) throw new Error(`refusing to publish ${branch}: ${PUBLISH_BLOCKED}`);
   const head = git(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || head.text === "") throw new Error(`${project} has no readable HEAD: ${head.stderr}`);
   const origin = git(project, ["remote", "get-url", PUBLICATION_REMOTE]);
   if (origin.code !== 0 || origin.text === "")
     throw new Error(`${project} has no usable \`${PUBLICATION_REMOTE}\` remote: ${origin.stderr}`);
+  const originDefault = originDefaultBranch(project, git);
+  if (originDefault === undefined)
+    throw new Error(
+      `refusing to publish ${branch}: origin's default branch is unknown; set origin/HEAD (git remote set-head origin -a)`,
+    );
+  if (branch.toLowerCase() === originDefault.toLowerCase())
+    throw new Error(`refusing to publish ${branch}: ${PUBLISH_BLOCKED}`);
   const pushed = git(project, ["push", "--", PUBLICATION_REMOTE, `${head.text}:refs/heads/${branch}`]);
   if (pushed.code !== 0) throw new Error(`git push ${PUBLICATION_REMOTE} ${branch} failed: ${pushed.stderr}`);
   return { branch, sha: head.text };

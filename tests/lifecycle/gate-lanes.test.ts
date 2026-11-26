@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   acquireLane,
   checkUnpublished,
+  DEFAULT_LANES_WAIT_MINUTES,
   formatStatus,
   holdersDir,
   laneHolderToken,
@@ -15,6 +16,7 @@ import {
   releaseLane,
   waitersDir,
   resolveLanesEnabled,
+  resolveLanesWaitMs,
   resolveMaxAgeMinutes,
   resolvePool,
   type LaneIdentity,
@@ -211,12 +213,13 @@ got.release();
     if (first.ok) first.release();
   });
 
-  test("a matching live holder token re-enters; an unrelated waiter times out naming the holder", () => {
+  test("a matching live holder token re-enters; a token rebuilt from status JSON does not", () => {
     const dir = processScratch("ak-gate-lanes-");
     const clock = fakeClock();
     const first = acquireLane(dir, laneA, { now: clock.now, sleep: noSleep, pid: process.pid });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
+    expect(statSync(join(holdersDir(dir), `${laneKey(laneA)}.json`)).mode & 0o777).toBe(0o600);
     const nested = acquireLane(dir, laneA, {
       now: clock.now,
       sleep: noSleep,
@@ -229,19 +232,27 @@ got.release();
       expect(nested.waited_ms).toBe(0);
       nested.release();
     }
-    expect(laneStatus(dir, clock.now()).holders).toHaveLength(1);
-    const unrelated = acquireLane(dir, laneA, {
+    const status = laneStatus(dir, clock.now());
+    expect(status.holders).toHaveLength(1);
+    const visible = status.holders[0];
+    expect(visible).toBeDefined();
+    if (visible === undefined) return;
+    expect(visible.nonce).toBeUndefined();
+    expect(JSON.stringify(status)).not.toContain("nonce");
+    const rebuilt = `${visible.pid} ${visible.acquired_at} ${laneKey(visible)}`;
+    const spoofed = acquireLane(dir, laneA, {
       now: clock.now,
       sleep: clock.sleep,
       pid: 424_242,
+      inherited: rebuilt,
       timeoutMs: 1_000,
       pollMs: 250,
     });
-    expect(unrelated.ok).toBe(false);
-    if (!unrelated.ok) {
-      expect(unrelated.reason).toContain(`pid ${process.pid}`);
-      expect(unrelated.holder?.pid).toBe(process.pid);
-      expect(unrelated.waited_ms).toBeGreaterThanOrEqual(1_000);
+    expect(spoofed.ok).toBe(false);
+    if (!spoofed.ok) {
+      expect(spoofed.reason).toContain(`pid ${process.pid}`);
+      expect(spoofed.holder?.pid).toBe(process.pid);
+      expect(spoofed.waited_ms).toBeGreaterThanOrEqual(1_000);
     }
     first.release();
   });
@@ -265,6 +276,14 @@ got.release();
     expect(resolveLanesEnabled(false, "1")).toBe(true);
     expect(resolveLanesEnabled(true, "0")).toBe(true);
     expect(() => resolveLanesEnabled(false, "yes")).toThrow("AK_GATE_LANES");
+    expect(resolveLanesWaitMs(undefined)).toBe(DEFAULT_LANES_WAIT_MINUTES * 60_000);
+    expect(Number.isFinite(resolveLanesWaitMs(undefined))).toBe(true);
+    expect(resolveLanesWaitMs("0")).toBe(0);
+  });
+
+  test("check/record --lanes with no --timeout-minutes uses DEFAULT_LANES_WAIT_MINUTES", () => {
+    expect(resolveLanesWaitMs(undefined)).toBe(DEFAULT_LANES_WAIT_MINUTES * 60_000);
+    expect(resolveLanesWaitMs(undefined)).not.toBe(Number.POSITIVE_INFINITY);
   });
 });
 
@@ -577,6 +596,7 @@ describe("lanes publish (issue #194)", () => {
     const origin = join(dir, "origin.git");
     spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
     git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
     writeFileSync(join(repo, "next.txt"), "land while queued\n");
     git(repo, ["add", "next.txt"]);
     git(repo, ["commit", "-m", "land while queued"]);
@@ -604,7 +624,7 @@ describe("lanes publish (issue #194)", () => {
     git(mainRepo.repo, ["remote", "add", "origin", originMain]);
     const onMain = capture();
     expect(main(["lanes", "publish", "--project", mainRepo.repo], onMain.io, mainRepo.repo)).toBe(1);
-    expect(onMain.err.join("\n")).toContain("does not push main, master, or origin's default branch");
+    expect(onMain.err.join("\n")).toContain("origin's default branch");
 
     const masterRepo = scratchRepo("ak-gate-lanes-publish-master-", "master");
     const originMaster = join(masterRepo.dir, "origin.git");
@@ -612,7 +632,7 @@ describe("lanes publish (issue #194)", () => {
     git(masterRepo.repo, ["remote", "add", "origin", originMaster]);
     const onMaster = capture();
     expect(main(["lanes", "publish", "--project", masterRepo.repo], onMaster.io, masterRepo.repo)).toBe(1);
-    expect(onMaster.err.join("\n")).toContain("does not push main, master, or origin's default branch");
+    expect(onMaster.err.join("\n")).toContain("origin's default branch");
 
     const { dir, repo } = scratchRepo("ak-gate-lanes-publish-default-", "develop");
     const origin = join(dir, "origin.git");
@@ -621,8 +641,49 @@ describe("lanes publish (issue #194)", () => {
     git(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop"]);
     const onDefault = capture();
     expect(main(["lanes", "publish", "--project", repo], onDefault.io, repo)).toBe(1);
-    expect(onDefault.err.join("\n")).toContain("does not push main, master, or origin's default branch");
+    expect(onDefault.err.join("\n")).toContain("origin's default branch");
     expect(onDefault.err.join("\n")).toContain("develop");
+  }, 30_000);
+
+  test("refuses MAIN, Main, MASTER, and a refs/ branch name", () => {
+    for (const branch of ["MAIN", "Main", "MASTER"]) {
+      const { dir, repo } = scratchRepo(`ak-gate-lanes-publish-${branch}-`, branch);
+      const origin = join(dir, "origin.git");
+      spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+      git(repo, ["remote", "add", "origin", origin]);
+      const refused = capture();
+      expect(main(["lanes", "publish", "--project", repo], refused.io, repo)).toBe(1);
+      expect(refused.err.join("\n")).toContain("refusing to publish");
+    }
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-refs-");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["branch", "-m", "refs/heads/main"]);
+    const onRefs = capture();
+    expect(main(["lanes", "publish", "--project", repo], onRefs.io, repo)).toBe(1);
+    expect(onRefs.err.join("\n")).toContain("refs/");
+  }, 30_000);
+
+  test("refuses when origin/HEAD is unset and the remote default matches, or when the default is unknown", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-lsremote-", "develop");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(origin, ["symbolic-ref", "HEAD", "refs/heads/develop"]);
+    git(repo, ["remote", "add", "origin", origin]);
+    const onRemoteDefault = capture();
+    expect(main(["lanes", "publish", "--project", repo], onRemoteDefault.io, repo)).toBe(1);
+    expect(onRemoteDefault.err.join("\n")).toContain("origin's default branch");
+    expect(onRemoteDefault.err.join("\n")).toContain("develop");
+
+    const unknown = scratchRepo("ak-gate-lanes-publish-unknown-");
+    const bogus = join(unknown.dir, "not-a-git");
+    mkdirSync(bogus);
+    git(unknown.repo, ["remote", "add", "origin", bogus]);
+    const onUnknown = capture();
+    expect(main(["lanes", "publish", "--project", unknown.repo], onUnknown.io, unknown.repo)).toBe(1);
+    expect(onUnknown.err.join("\n")).toContain("set origin/HEAD");
+    expect(onUnknown.err.join("\n")).toContain("git remote set-head origin -a");
   }, 30_000);
 
   test("refuses a non-fast-forward push to origin", () => {
@@ -630,6 +691,7 @@ describe("lanes publish (issue #194)", () => {
     const origin = join(dir, "origin.git");
     spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
     git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
     writeFileSync(join(repo, "next.txt"), "first\n");
     git(repo, ["add", "next.txt"]);
     git(repo, ["commit", "-m", "first"]);
@@ -701,6 +763,34 @@ describe("check and record through lanes (issue #194)", () => {
     ).toBe(1);
     expect(after.err.join("\n")).not.toContain("refused: lane");
     expect(laneStatus(join(store, "gate-lanes"), Date.now())).toEqual({ holders: [], waiters: [] });
+  }, 30_000);
+
+  test("two sequential record --lanes on the same run: the second refuses as closed", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-record-closed-");
+    const store = join(dir, "evidence");
+    const ticket = join(dir, "ticket.json");
+    writeFileSync(
+      ticket,
+      `${JSON.stringify({
+        schema: "ticket",
+        schema_version: 1,
+        id: "T-lanes-closed",
+        acceptance_criteria: [],
+        verification: [],
+        approvals: [{ role: "human", approved_at: "2026-09-29T00:00:00Z" }],
+      })}\n`,
+    );
+    const opened = capture();
+    expect(main(["open", "--ticket", ticket, "--dir", store, "--project", repo], opened.io, repo)).toBe(0);
+    const first = capture();
+    expect(
+      main(["record", "--lanes", "--gate", "ship-preflight", "--dir", store, "--project", repo], first.io, repo),
+    ).toBe(0);
+    const second = capture();
+    expect(
+      main(["record", "--lanes", "--gate", "build-checks", "--dir", store, "--project", repo], second.io, repo),
+    ).toBe(1);
+    expect(second.err.join("\n")).toContain("run closed");
   }, 30_000);
 
   test("record --lanes refuses a held lane", () => {

@@ -94,7 +94,6 @@ import { isDesignReport } from "./design-report.ts";
 import {
   acquireLane,
   checkUnpublished,
-  DEFAULT_LANES_WAIT_MINUTES,
   formatStatus,
   LANE_HOLDER_ENV,
   laneHolderToken,
@@ -104,6 +103,7 @@ import {
   publishLane,
   releaseLane,
   resolveLanesEnabled,
+  resolveLanesWaitMs,
   resolveMaxAgeMinutes,
   resolvePool,
 } from "./gate-lanes.ts";
@@ -3085,7 +3085,8 @@ export const LIFECYCLE_USAGE = [
   "  free, runs, and releases. `check`/`record --lanes` wait at most --timeout-minutes (default 30) and then refuse naming",
   "  the holder. `lanes status` names every holder and waiter with held/waiting time. `lanes publish` pushes HEAD to origin",
   "  as the current branch without taking the lock, so commits can land while a gate is queued; it never force-pushes and",
-  "  it refuses main, master, origin's default branch, and an unnamed branch. `lanes unpublished` alerts when the oldest",
+  "  it refuses main, master (any case), a refs/ name, origin's default branch, and an unnamed branch. If origin's default",
+  "  cannot be determined it refuses and asks for `git remote set-head origin -a`. `lanes unpublished` alerts when the oldest",
   "  commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or",
   "  AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES (default 30); it reports only. It reads local origin-tracking refs and never",
   "  fetches: run `git fetch origin` first for a current answer.",
@@ -3516,8 +3517,7 @@ function holdLane(
     io.err(`${prefix}: --timeout-minutes must be a number, got ${timeoutFlag}`);
     return { ok: false, code: 2 };
   }
-  const timeoutMs =
-    timeoutFlag === undefined ? DEFAULT_LANES_WAIT_MINUTES * 60_000 : Math.max(0, Number(timeoutFlag) * 60_000);
+  const timeoutMs = resolveLanesWaitMs(timeoutFlag);
   let pool: number | undefined;
   try {
     pool = resolvePool(poolFlag);
@@ -4145,22 +4145,6 @@ export function main(
       );
       return 1;
     }
-    if (
-      opened?.closed_at !== undefined &&
-      !(policy !== undefined && gate === "ship-preflight" && flags.has("attestation"))
-    ) {
-      const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
-      // Under the policy only the final `--attestation` append may touch a closed run.
-      const closedHere =
-        policy === undefined &&
-        live !== undefined &&
-        typeof live !== "string" &&
-        readRecords(dir, run, "ship-preflight").some((r) => same(r.snapshot, live));
-      if (!closedHere) {
-        io.err("ak lifecycle record: run closed; open a new run");
-        return 1;
-      }
-    }
     let implementer: GateRecord["implementer"];
     if (authorKind !== undefined && host !== undefined) {
       implementer = { author_kind: authorKind, host };
@@ -4169,6 +4153,23 @@ export function main(
     const held = holdLane(io, "record", project, dir, flags.has("lanes"), str("timeout-minutes"), str("pool"));
     if (!held.ok) return held.code;
     try {
+      const openedNow = readRunRecord(dir, run);
+      if (
+        openedNow?.closed_at !== undefined &&
+        !(policy !== undefined && gate === "ship-preflight" && flags.has("attestation"))
+      ) {
+        const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
+        // Under the policy only the final `--attestation` append may touch a closed run.
+        const closedHere =
+          policy === undefined &&
+          live !== undefined &&
+          typeof live !== "string" &&
+          readRecords(dir, run, "ship-preflight").some((r) => same(r.snapshot, live));
+        if (!closedHere) {
+          io.err("ak lifecycle record: run closed; open a new run");
+          return 1;
+        }
+      }
       if (policy !== undefined && gate === "ship-preflight")
         return shipUnattended(io, dir, run, project, policy, cwd, {
           attestation: str("attestation"),
