@@ -47,16 +47,21 @@ const DIFF = [
   "--dst-prefix=b/",
 ];
 
-/** `--full-index` fills patch `index` lines; `--no-abbrev` is what keeps `--raw` blob ids full. */
+/**
+ * `--full-index` fills patch `index` lines; `--no-abbrev` keeps `--raw` blob
+ * ids full. `-z` is what keeps paths unquoted: `core.quotePath=false` still
+ * quotes `"`, `\\` and newline.
+ */
 const RAW = [
   "--raw",
+  "-z",
   "--no-renames",
   "--no-ext-diff",
   "--full-index",
   "--no-abbrev",
   "--ignore-submodules=none",
 ] as const;
-const RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
+const RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)$/;
 
 interface TreeEntry {
   mode: string;
@@ -72,23 +77,38 @@ interface RawRow {
   path: string;
 }
 
+/**
+ * NUL-separated `--raw -z` records: header, path, and a dest path for rename or copy.
+ * `-z` replaces the tab-separated path, it does not keep it.
+ */
 function parseRaw(text: string): RawRow[] {
   const rows: RawRow[] = [];
-  for (const line of text.split("\n")) {
-    if (line === "") continue;
-    const match = RAW_ROW.exec(line);
+  const parts = text.split("\0");
+  for (let i = 0; i < parts.length; i++) {
+    const rec = parts[i];
+    if (rec === undefined || rec === "") continue;
+    const match = RAW_ROW.exec(rec);
     if (match === null) continue;
-    const [, srcMode, dstMode, srcSha, dstSha, status, path] = match;
+    const [, srcMode, dstMode, srcSha, dstSha, status] = match;
+    i += 1;
+    const path = parts[i];
     if (
       srcMode === undefined ||
       dstMode === undefined ||
       srcSha === undefined ||
       dstSha === undefined ||
       status === undefined ||
-      path === undefined
+      path === undefined ||
+      path === ""
     )
       continue;
-    rows.push({ srcMode, dstMode, srcSha, dstSha, status, path });
+    let result = path;
+    if (status.startsWith("R") || status.startsWith("C")) {
+      i += 1;
+      const dest = parts[i];
+      if (dest !== undefined && dest !== "") result = dest;
+    }
+    rows.push({ srcMode, dstMode, srcSha, dstSha, status, path: result });
   }
   return rows;
 }
@@ -348,7 +368,7 @@ function throwawayDiff(
   const raw = gitProcess(
     context,
     repo,
-    ["-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to],
+    ["-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to],
     10_000,
     undefined,
     extraEnv,
@@ -361,7 +381,19 @@ function throwawayDiff(
     const patch = gitProcess(
       context,
       repo,
-      ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to, "--", row.path],
+      [
+        "-c",
+        "core.quotePath=false",
+        "-c",
+        "diff.ignoreSubmodules=all",
+        "diff",
+        ...DIFF,
+        "--end-of-options",
+        from,
+        to,
+        "--",
+        row.path,
+      ],
       10_000,
       undefined,
       extraEnv,
@@ -388,8 +420,8 @@ function inspectMerges(repo: string, base: string, previous: string, head: strin
       const before = conflicted.size;
       const first = parents[0];
       if (first !== undefined) {
-        const names = git(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", first, merge]).out;
-        for (const path of names.split("\n")) if (path !== "") conflicted.add(path);
+        const names = git(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", first, merge]).out;
+        for (const path of names.split("\0")) if (path !== "") conflicted.add(path);
       }
       if (conflicted.size === before) conflicted.add(".");
       continue;

@@ -195,6 +195,31 @@ function between(f: ReturnType<typeof fixture>) {
   return { B, H };
 }
 
+/** Dirty merge that adds `path` with 20 unique lines, then ours-back to the reviewed tree. */
+function dirtyQuotedPath(path: string, tag: string): JsonValue {
+  const f = fixture();
+  f.round(f.head);
+  const reviewed = f.head;
+  const main = f.git("rev-parse", "main");
+  f.write({ "src/_quoted.ts": lines(tag, 20) });
+  const sha = f.git("hash-object", "-w", "src/_quoted.ts");
+  f.git("read-tree", reviewed);
+  f.git("update-index", "--add", "--cacheinfo", `100644,${sha},${path}`);
+  const dirtyMerge = f.git("commit-tree", f.git("write-tree"), "-p", reviewed, "-p", main, "-m", "dirty quoted path");
+  const restored = f.git(
+    "commit-tree",
+    f.git("rev-parse", `${reviewed}^{tree}`),
+    "-p",
+    dirtyMerge,
+    "-p",
+    main,
+    "-m",
+    "ours back",
+  );
+  f.git("reset", "--hard", restored);
+  return f.record(restored);
+}
+
 describe("ak review scope before round 1", () => {
   test("says the whole change is reviewed and reads the pull request at the head", () => {
     const f = fixture();
@@ -972,6 +997,32 @@ describe("ak review scope: later-round tree identity", () => {
     expect(Array.isArray(paths) ? paths : []).toContain("src/evil.ts");
     expect(scoped).toMatchObject({ delta: { empty: false } });
     expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
+  });
+
+  test("R10-QUOTED-UNICODE: a hidden non-ASCII path still counts its 20 lines", () => {
+    const scoped = dirtyQuotedPath("src/évil.ts", "uni");
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("src/évil.ts");
+    expect(scoped).toMatchObject({ delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(20);
+  });
+
+  test("R10-QUOTED-DQUOTE: a hidden path with a quote still counts its 20 lines", () => {
+    const path = 'src/evil "file".ts';
+    const scoped = dirtyQuotedPath(path, "dquote");
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain(path);
+    expect(scoped).toMatchObject({ delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(20);
+  });
+
+  test("R10-QUOTED-NEWLINE: a hidden path with a newline still counts its 20 lines", () => {
+    const path = "src/evil\nfile.ts";
+    const scoped = dirtyQuotedPath(path, "nl");
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain(path);
+    expect(scoped).toMatchObject({ delta: { empty: false } });
+    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(20);
   });
 
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
