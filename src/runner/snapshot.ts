@@ -1,21 +1,14 @@
 /** Raw runner snapshots avoid worker-configured Git hooks, filters and text conversion. */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  accessSync,
-  constants,
-  existsSync,
-  lstatSync,
-  mkdtempSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  rmSync,
-} from "node:fs";
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { gitBlobId, gitEnv, isolationArgs, isolatedGitArgv, resolveTrustedGit } from "../lifecycle/git-isolation.ts";
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
-import { relativeInsideRoot, workerControlledPath, workerFreePath } from "./path.ts";
+import { relativeInsideRoot } from "./path.ts";
+
+export { isolatedGitArgv };
 
 export interface RunnerGitContext {
   binary: string;
@@ -224,94 +217,26 @@ function assertPinnedLayout(context: RunnerGitContext): void {
 }
 
 export function resolveRunnerGit(workerRoot: string): RunnerGitContext {
-  const path = workerFreePath(process.env["PATH"], workerRoot);
+  const trusted = resolveTrustedGit(workerRoot);
   const layout = resolveLayout(workerRoot);
-  for (const directory of path.split(delimiter)) {
-    const candidate = join(directory, "git");
-    try {
-      accessSync(candidate, constants.X_OK);
-      const binary = realpathSync(candidate);
-      if (!workerControlledPath(binary, workerRoot))
-        return {
-          binary,
-          path,
-          workerRoot,
-          home: "/dev/null",
-          gitDir: layout?.gitDir,
-          workTree: layout?.workTree,
-          pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree),
-        };
-    } catch {
-      // Try the next supervisor-owned PATH entry.
-    }
-  }
-  throw new Error("runner cannot find a trusted git executable outside the worker root");
+  return {
+    binary: trusted.binary,
+    path: trusted.path,
+    workerRoot,
+    home: "/dev/null",
+    gitDir: layout?.gitDir,
+    workTree: layout?.workTree,
+    pinnedGitKind: layout === undefined ? "missing" : pinnedGitKind(layout.workTree),
+  };
 }
 
 function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
 }
 
-/**
- * Env for a git child that does not inherit process replace refs, grafts,
- * GIT_DIR, GIT_WORK_TREE, or the commit graph. Redirecting GIT_* names are
- * omitted, not copied from the process. Repository merge config and
- * attributes still apply unless the child is given a throwaway GIT_DIR.
- */
+/** Two-arg form of `gitEnv` for callers that already split path and home. */
 export function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/dev/null"): NodeJS.ProcessEnv {
-  return {
-    PATH: path,
-    HOME: home,
-    XDG_CONFIG_HOME: home,
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_OPTIONAL_LOCKS: "0",
-    GIT_NO_REPLACE_OBJECTS: "1",
-    GIT_GRAFT_FILE: "/dev/null",
-    GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: "core.commitGraph",
-    GIT_CONFIG_VALUE_0: "false",
-    LC_ALL: "C",
-  };
-}
-
-function gitEnv(context: RunnerGitContext): NodeJS.ProcessEnv {
-  // Residue: a partial or blobless clone may still promisor-fetch through worker
-  // core.sshCommand / credential.helper in the repository config. No refusal.
-  return isolatedGitEnv(context.path, context.home);
-}
-
-function isolationArgs(project: string): string[] {
-  return [
-    "-c",
-    `safe.directory=${realpathSync(project)}`,
-    "-c",
-    "core.fsmonitor=false",
-    "-c",
-    "core.hooksPath=/dev/null",
-    "-c",
-    "core.excludesFile=/dev/null",
-    "-c",
-    "diff.relative=false",
-    "-c",
-    "core.commitGraph=false",
-    "-c",
-    "advice.graftFileDeprecated=false",
-    // Defense-in-depth: throwaway GIT_DIR already ignores worker merge config.
-    "-c",
-    "merge.default=",
-    "-c",
-    "merge.renormalize=false",
-  ];
-}
-
-/**
- * Isolated git argv: worker-owned config is ignored. `-c core.commitGraph=false`
- * here is defense in depth. The pin is `GIT_CONFIG_KEY_0=core.commitGraph` in
- * `isolatedGitEnv`.
- */
-export function isolatedGitArgv(project: string, args: readonly string[]): string[] {
-  return [...isolationArgs(project), ...args];
+  return gitEnv({ path, home });
 }
 
 const emptyTrees = new Map<string, string>();
@@ -582,12 +507,6 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
     if (emptyRun.code > 1) throw new Error(`cannot inspect merge tree: ${emptyRun.stderr}`);
     return emptyRun.code === 0;
   });
-}
-
-function gitBlobId(bytes: Uint8Array, blob: string): string {
-  // In-process: git 2.43 hash-object --stdin-paths has no -z and follows symlinks.
-  const algorithm = blob.length === 64 ? "sha256" : "sha1";
-  return createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
 function escapesWorktree(path: string, rel: string): boolean {

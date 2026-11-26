@@ -6688,6 +6688,25 @@ describe("runner guards", () => {
     }
   });
 
+  test("PATH with an outside dir holding git still selects /usr/bin or /bin", () => {
+    const f = fixture();
+    const outside = mkdtempSync(join(scratchRoot, "ak-outside-git-"));
+    const fake = join(outside, "git");
+    writeFileSync(fake, "#!/bin/sh\nexit 1\n");
+    chmodSync(fake, 0o700);
+    const previous = process.env["PATH"];
+    process.env["PATH"] = `${outside}:${previous ?? ""}`;
+    try {
+      const resolved = resolveRunnerGit(f.worker);
+      expect(resolved.binary).not.toBe(realpathSync(fake));
+      expect(resolved.path).toBe("/usr/bin:/bin");
+      expect(workerControlledPath(resolved.binary, f.worker)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = previous;
+    }
+  });
+
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
     const dir = mkdtempSync(join(scratchRoot, "ak-runner-link-"));
     const worker = join(dir, "worker");
