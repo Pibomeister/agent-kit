@@ -739,7 +739,7 @@ function doctorFlags(flags: readonly string[]): { json: boolean; lessons?: strin
   return { json, lessons };
 }
 
-const DELEGATION_FLAGS = new Set(["project", "stage", "base", "head", "evidence"]);
+const DELEGATION_FLAGS = new Set(["project", "stage", "base", "head", "evidence", "previous"]);
 
 /** One ticket path and the delegation flags, each with a value; anything else is the usage line. */
 function delegationRun(args: readonly string[]): DelegationRun | null {
@@ -767,6 +767,7 @@ function delegationRun(args: readonly string[]): DelegationRun | null {
     base: values.get("base"),
     head: values.get("head"),
     evidence: values.get("evidence"),
+    previous: values.get("previous"),
   };
 }
 
@@ -819,7 +820,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak review ledger add|show … | ak review decide … | ak semantic-lint hook [--host codex]",
+      "Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>] [--previous <record>]] | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak review ledger add|show … | ak review scope … | ak review decide … | ak semantic-lint hook [--host codex]",
     );
     process.exitCode = 2;
   }

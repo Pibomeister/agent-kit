@@ -276,7 +276,11 @@ seats, the author and a gate reported for one pull request, `ak review ledger sh
 state the lines fold to, and `ak review decide --ledger <ledger.jsonl> --head <sha> --seats <n>` prints the verdict for
 one exact head: `approved`, `blocked` or `incomplete`, with one next action. `runReview` in `src/review/cli.ts` defines
 the flags, the records and the exit status; `decide` in `src/review/converge.ts` is the rule, and it reads no file,
-clock or model. The record grants no authority. [ADR-0018](docs/decisions/0018-review-convergence.md) owns the
+clock or model. `ak review scope --ledger <ledger.jsonl> --base <rev> --head <rev>` compares the pull request at a head
+with the pull request at the last reviewed head and prints what the next review covers: the whole change, the delta,
+nothing, a new scope when a full-re-review trigger fires, or hold when a trigger fires and no scope is left. It
+reads git, appends nothing and exits 0 for every outcome. The record grants no authority.
+[ADR-0018](docs/decisions/0018-review-convergence.md) owns the
 evidence bar, the round cap and the stop rule.
 
 **Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes

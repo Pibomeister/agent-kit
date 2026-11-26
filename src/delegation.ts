@@ -10,6 +10,7 @@ import projectSchema from "../schemas/project.schema.json" with { type: "json" }
 import ticketSchema from "../schemas/ticket.schema.json" with { type: "json" };
 import verificationRecipeSchema from "../schemas/verification-recipe.schema.json" with { type: "json" };
 import type { DelegationClass } from "./lifecycle/gate.ts";
+import { isolatedGitEnv, resolveRunnerGit } from "./runner/snapshot.ts";
 import { globToRegExp } from "./util/glob.ts";
 
 export type DelegationFactorName = "reversibility" | "size" | "complexity" | "spec" | "verification";
@@ -25,6 +26,13 @@ export interface DelegationRecord {
   floor: { packs: string[]; sensitive_actions: string[]; shared_surfaces?: string[] };
   factors: Record<DelegationFactorName, DelegationFactor>;
   lowered_by: null | { human: string; reason: string; at: string; from: DelegationClass; superseded?: true };
+  /**
+   * Printed by a merge-stage run that names the previous review round's record. See
+   * {@link reviewSurfaceChanged}. It is a fact about one review round: a ticket's block never holds it.
+   */
+  review_surface_changed?: boolean;
+  /** The commit the merge-stage command scored. Ticket-stage records do not hold it. */
+  head?: string;
 }
 
 /** Merge-stage evidence: any of these keys may replace the ticket's, and the floor only grows. */
@@ -73,7 +81,7 @@ const ACTION_FLOORS = new Map<string, DelegationClass>([
  * The order of the classes. gate.ts is imported for its type alone: it runs its own command line when it is
  * the script, and the bundled `bin/ak` inlines this module, where gate.ts would take itself for the script.
  */
-const CLASS_RANK: Record<DelegationClass, number> = { green: 0, "yellow-agent": 1, "yellow-owner": 2, red: 3 };
+export const CLASS_RANK: Record<DelegationClass, number> = { green: 0, "yellow-agent": 1, "yellow-owner": 2, red: 3 };
 
 function highest(...classes: DelegationClass[]): DelegationClass {
   return classes.reduce((left, right) => (CLASS_RANK[right] > CLASS_RANK[left] ? right : left), "green");
@@ -292,14 +300,95 @@ export function scoreMergeDelegationFiles(
   }
 }
 
+/** What sets a floor in a record: each shared surface, each pack with a floor and each sensitive action. */
+function floorEntries(floor: DelegationRecord["floor"]): string[] {
+  return [
+    ...(floor.shared_surfaces ?? []).map((path) => `surface:${path}`),
+    ...floor.packs.flatMap((pack) => (PACK_FLOORS.has(pack) ? [`pack:${pack}`] : [])),
+    // An action outside ACTION_FLOORS still sets a floor in floorClass, so every action counts.
+    ...floor.sensitive_actions.map((action) => `action:${action}`),
+  ];
+}
+
+/**
+ * True when the record's floor holds a shared surface, a pack with a floor or a sensitive action
+ * that the previous review round's record did not. A review reads it as a reason for a full
+ * re-review (ADR-0018). It compares two records and changes no class.
+ */
+export function reviewSurfaceChanged(record: DelegationRecord, previous: DelegationRecord): boolean {
+  const before = new Set(floorEntries(previous.floor));
+  return floorEntries(record.floor).some((entry) => !before.has(entry));
+}
+
+let printedValidator: ValidateFunction<DelegationRecord> | null = null;
+
+/**
+ * Read a record the merge-stage command printed. It is the ticket's delegation block, plus the
+ * review field that only the printed record holds. `label` names the file's role in an error.
+ */
+export function readMergeRecord(input: string, cwd: string, label: string): DelegationRecord {
+  const path = resolve(cwd, input);
+  if (!existsSync(path)) throw new Error(`${label} does not exist: ${input}`);
+  if (printedValidator === null) {
+    // SAFETY: the same rebased block schema as validateDelegationBlock compiles, with one more
+    // property. The block stays a closed object, so any other key is still refused.
+    const block = ticketSchema.properties.delegation;
+    const schema = {
+      $id: ticketSchema.$id,
+      ...block,
+      properties: {
+        ...block.properties,
+        review_surface_changed: { type: "boolean" },
+        head: { type: "string", pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+      },
+      $defs: ticketSchema.$defs,
+    };
+    printedValidator = makeValidation().compile<DelegationRecord>(schema);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (cause) {
+    throw new Error(`${label} ${input} is not JSON: ${cause instanceof Error ? cause.message : String(cause)}`, {
+      cause,
+    });
+  }
+  if (!printedValidator(parsed))
+    throw new Error(`${label} ${input} is not a delegation record: ${schemaDetail(printedValidator.errors)}`);
+  if (parsed.stage !== "merge") throw new Error(`${label} ${input} is not a merge-stage record`);
+  return parsed;
+}
+
+function isolatedGit(cwd: string, args: readonly string[]) {
+  const context = resolveRunnerGit(cwd);
+  return spawnSync(context.binary, ["--no-replace-objects", "-C", cwd, ...args], {
+    cwd,
+    env: isolatedGitEnv(context.path, context.home),
+    encoding: "utf8",
+  });
+}
+
+/** The full id of `revision`, or an error the merge-stage command already uses for a missing commit. */
+export function resolveRevision(cwd: string, revision: string): string {
+  const check = isolatedGit(cwd, ["rev-parse", "--verify", "--end-of-options", `${revision}^{commit}`]);
+  const id = (check.stdout ?? "").trim();
+  if (check.status !== 0 || id === "") throw new Error(`cannot resolve revision ${revision}`);
+  return id;
+}
+
 /** The merge-stage paths: the three-dot range from the base, with renames split so a move out of a surface counts. */
 export function gitChangedPaths(cwd: string, base: string, head: string): string[] {
-  for (const revision of [base, head]) {
-    const check = spawnSync("git", ["rev-parse", "--verify", `${revision}^{commit}`], { cwd, encoding: "utf8" });
-    if (check.status !== 0) throw new Error(`cannot resolve revision ${revision}`);
-  }
+  for (const revision of [base, head]) resolveRevision(cwd, revision);
   const range = `${base}...${head}`;
-  const diff = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z", range], { cwd, encoding: "utf8" });
+  const diff = isolatedGit(cwd, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "--ignore-submodules=none",
+    "-z",
+    "--end-of-options",
+    range,
+  ]);
   if (diff.status !== 0) throw new Error(`git diff failed for ${range}: ${(diff.stderr ?? "").trim()}`);
   return (diff.stdout ?? "").split("\0").filter((path) => path.length > 0);
 }
@@ -311,6 +400,8 @@ export interface DelegationRun {
   base?: string;
   head?: string;
   evidence?: string;
+  /** The merge-stage record of the previous review round. */
+  previous?: string;
 }
 
 /** The refusal for a flag combination, or null. The repository CLI and the bundled `ak` share it. */
@@ -319,15 +410,28 @@ export function delegationRunProblem(run: DelegationRun): string | null {
     return "ak delegation: --stage must be ticket or merge";
   if (run.stage !== "merge" && (run.base !== undefined || run.head !== undefined || run.evidence !== undefined))
     return "ak delegation: --base, --head and --evidence require --stage merge";
+  if (run.stage !== "merge" && run.previous !== undefined) return "ak delegation: --previous requires --stage merge";
   if (run.stage === "merge" && run.base === undefined) return "ak delegation: --stage merge requires --base <rev>";
   return null;
 }
 
-/** Score one run: the ticket stage reads the ticket alone, the merge stage adds the diff and any evidence. */
+/**
+ * Score one run: the ticket stage reads the ticket alone, the merge stage adds the diff and any evidence.
+ * A merge-stage run that names the previous round's record also states `review_surface_changed`.
+ */
 export function scoreDelegationRun(run: DelegationRun, cwd: string): DelegationRecord {
   if (run.stage === "merge" && run.base !== undefined) {
-    const paths = gitChangedPaths(cwd, run.base, run.head ?? "HEAD");
-    return scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd);
+    // The previous record is read first: a file that cannot be compared is refused before any scoring.
+    const previous = run.previous === undefined ? undefined : readMergeRecord(run.previous, cwd, "previous record");
+    const headRev = run.head ?? "HEAD";
+    const paths = gitChangedPaths(cwd, run.base, headRev);
+    const record = {
+      ...scoreMergeDelegationFiles(run.ticket, run.project, paths, run.evidence, cwd),
+      head: resolveRevision(cwd, headRev),
+    };
+    return previous === undefined
+      ? record
+      : { ...record, review_surface_changed: reviewSurfaceChanged(record, previous) };
   }
   return scoreDelegationFiles(run.ticket, run.project, cwd);
 }

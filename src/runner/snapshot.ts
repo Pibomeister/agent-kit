@@ -234,6 +234,11 @@ function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
 }
 
+/** Two-arg form of `gitEnv` for callers that already split path and home. */
+export function isolatedGitEnv(path = process.env.PATH ?? "/usr/bin", home = "/dev/null"): NodeJS.ProcessEnv {
+  return gitEnv({ path, home });
+}
+
 const emptyTrees = new Map<string, string>();
 
 function emptyTreeId(context: RunnerGitContext, project: string, timeoutMs: number): GitResult {
@@ -432,16 +437,16 @@ export function ciConfigDrift(context: RunnerGitContext, project: string, oldBas
     );
 }
 
-export function mergeTreeClean(context: RunnerGitContext, project: string, baseRef: string, head: string): boolean {
-  assertPinnedLayout(context);
-  const left = resolvedRevision(context, project, baseRef);
-  const right = resolvedRevision(context, project, head);
-  const mergeBase = runnerGit(context, project, ["merge-base", left, right]);
-  if (mergeBase.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(mergeBase.text))
-    throw new Error(`cannot inspect merge tree: ${mergeBase.stderr || mergeBase.text}`);
-  const attrTree = runnerGit(context, project, ["rev-parse", `${mergeBase.text}^{tree}`]);
-  if (attrTree.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(attrTree.text))
-    throw new Error(`cannot inspect merge tree: ${attrTree.stderr || attrTree.text}`);
+/**
+ * Run `fn` with a throwaway bare GIT_DIR whose objects come from `project`.
+ * Repository merge config and attributes do not apply. `gitProcess` still
+ * sets attr.tree to the empty tree unless the caller passes one.
+ */
+export function withThrowawayObjectStore<T>(
+  context: RunnerGitContext,
+  project: string,
+  fn: (extraEnv: { GIT_DIR: string; GIT_ALTERNATE_OBJECT_DIRECTORIES: string }) => T,
+): T {
   const objectFormat = runnerGit(context, project, ["rev-parse", "--show-object-format"]);
   if (objectFormat.code !== 0 || (objectFormat.text !== "sha1" && objectFormat.text !== "sha256"))
     throw new Error(`cannot inspect merge tree: ${objectFormat.stderr || objectFormat.text}`);
@@ -473,10 +478,26 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
     }
     if ((init.status ?? -1) !== 0)
       throw new Error(`cannot inspect merge tree: ${(init.stderr ?? "").toString().trim() || "init failed"}`);
-    const extraEnv = {
+    return fn({
       GIT_DIR: scratch,
       GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDir,
-    };
+    });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+export function mergeTreeClean(context: RunnerGitContext, project: string, baseRef: string, head: string): boolean {
+  assertPinnedLayout(context);
+  const left = resolvedRevision(context, project, baseRef);
+  const right = resolvedRevision(context, project, head);
+  const mergeBase = runnerGit(context, project, ["merge-base", left, right]);
+  if (mergeBase.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(mergeBase.text))
+    throw new Error(`cannot inspect merge tree: ${mergeBase.stderr || mergeBase.text}`);
+  const attrTree = runnerGit(context, project, ["rev-parse", `${mergeBase.text}^{tree}`]);
+  if (attrTree.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(attrTree.text))
+    throw new Error(`cannot inspect merge tree: ${attrTree.stderr || attrTree.text}`);
+  return withThrowawayObjectStore(context, project, (extraEnv) => {
     const inspect = (tree?: string) =>
       gitProcess(context, project, ["merge-tree", "--write-tree", left, right], 10_000, undefined, extraEnv, tree);
     const mergeBaseRun = inspect(attrTree.text);
@@ -485,9 +506,7 @@ export function mergeTreeClean(context: RunnerGitContext, project: string, baseR
     const emptyRun = inspect();
     if (emptyRun.code > 1) throw new Error(`cannot inspect merge tree: ${emptyRun.stderr}`);
     return emptyRun.code === 0;
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
+  });
 }
 
 function escapesWorktree(path: string, rel: string): boolean {

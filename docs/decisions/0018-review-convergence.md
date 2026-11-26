@@ -27,7 +27,8 @@ result at the cap: the synthesizing model decided which findings still blocked.
 
 One append-only **convergence ledger** holds the findings of a pull request, and one pure function
 reads the verdict from it. `ak review ledger add` and `ak review ledger show` write and read the
-ledger. `ak review decide` prints the verdict for one exact head.
+ledger. `ak review decide` prints the verdict for one exact head. `ak review scope` prints what the
+next review covers.
 
 1. **The engine owns the verdict.** `decide(ledger, policy, context)` in `src/review/converge.ts`
    reads no file, no clock and no environment, and calls no model. The same lines and the same
@@ -77,9 +78,37 @@ ledger. `ak review decide` prints the verdict for one exact head.
     for the owner. An always-block row skips the council.
 12. **A new review scope restarts the round count and invalidates the approvals.** The rows stay.
     A pull request opens one new scope. A further one holds it for a split-or-replan decision.
+13. **Six triggers open a new scope, and nothing else does.** `ak review scope` compares the pull
+    request at a head with the pull request at the last reviewed head, which the ledger names.
+    - `large-rebase`: the patch changed and the rewritten commits changed lines amounting to more
+      than 30% of the pull request's changed lines, or a merge resolved a conflict in a path of
+      the pull request, or a merge has more than two parents. A two-parent merge that git
+      resolved with `-X ours` is still a conflicted merge.
+    - `path-identity`: a path changed as a gitlink (mode 160000), or a same-blob add and delete
+      pair appears, which is a rename when rename detection is off.
+    - `risk-tier-rise`: the merge-stage class is above the class of the last reviewed round.
+    - `surface-changed`: `review_surface_changed` is true in the merge-stage record.
+      `ak delegation --stage merge --previous <record>` prints that field.
+    - `scope-growth`: the delta adds more than 50% to the pull request's changed lines, or more
+      than 400 lines, or the intent file changed.
+    - `requirement-change`: the digest of the ticket's acceptance criteria changed.
+
+    A fix commit, a reached cap and a rebase that leaves the blobs unchanged open nothing.
+14. **An unchanged tree calls no seat only when ancestry is also reviewed work.** When every path
+    of the pull request has the same mode and blob it had at the last reviewed head, every
+    non-merge commit in `previous..head` excluding `base` is empty or has the patch of a reviewed
+    own commit or of the reviewed pull request, and `inspectMerges.novel_merge` is false, the
+    outcome is `carry` and the earlier verdict covers the new head. A two-parent merge whose
+    recorded tree is not the isolated merge-tree of its parents is not empty. A novel own commit
+    is `closure` or a new scope. The changed-line patch id is only for rewritten-commit matching.
+    Content that arrives only through the base branch is trusted base movement. A rebase that
+    changes no blob and a merge of the base branch with no conflict still have to pass that test.
+    The base branch, like the ledger, must sit outside author write.
 
 `DEFAULT_POLICY` in `src/review/types.ts` holds the cap, the scope count, the always-block
-categories and the blocking severities. The engine compares these values and interprets none.
+categories, the blocking severities and the trigger thresholds. The tools compare these values and
+interpret none. `policies/review.yaml` `convergence` records the same values as data, and
+`tests/review/policy.test.ts` holds the two equal.
 
 ## What does not change
 
@@ -89,9 +118,15 @@ categories and the blocking severities. The engine compares these values and int
   reports it too.
 - **Review depth.** ADR-0017 selects the seats of the first pass. This record does not select a
   seat. The caller tells `decide` how many seats the tier requires and which evidence is missing.
+  `policies/review.yaml` `convergence.evidence_by_class` records the evidence and the seat count
+  of each class as data. No skill or protocol reads that map yet.
+- **The delegation class.** `scoreMergeStage` scores as before. `review_surface_changed` compares
+  two printed records and changes no class, and the ticket's delegation block never holds it.
 - `ak council run` and ADR-0015. The engine prints council cards. It does not call the council.
 - The unattended policy (ADR-0014). A human merges every class.
-- `policies/limits.yaml` values, the finding schema and the invocation law.
+- `policies/limits.yaml` values, the finding schema and the invocation law. The two review caps
+  now also name `review.merge-gate`: a project's merge gate that reads the cap through
+  `ak review decide`. It is a label in that file and not a phase operation.
 
 ## Readings this record makes
 
@@ -114,6 +149,56 @@ The plan leaves these points open. Each is a choice of this record, held by a te
   same theme. A `duplicate` line records the judgment. An always-block row is never recorded as a
   duplicate of an ordinary one.
 
+The scope command makes these readings, held by `tests/review/scope.test.ts` and
+`tests/review/scope-git.test.ts`.
+
+- **The patch id is this package's own.** It is the digest of the changed lines of a diff with no
+  context lines, in order, with the file headers and without the hunk headers. Whitespace counts,
+  so an indentation change is a change. `git patch-id` ignores whitespace and reads context lines,
+  so a change beside the pull request's lines on the base branch would change it. An old-mode and
+  new-mode pair counts as one changed line. A gitlink counts as one SHA line. Empty is not this
+  id: it is the raw tree, path, mode and blob.
+- **A rewritten commit is one whose patch no commit of the new head has.** This is the exact-match
+  rule of `git range-diff`, applied to patches with no context. A reworded message is not a
+  rewrite. With no rewritten commit the share is zero. Otherwise it is read from the pull request
+  as a whole, never by adding up commits. A commit of the new head is reviewed work when a reviewed
+  commit has its patch, or when the pull request at the last reviewed head holds at least half of
+  its changed lines. "At least half" is a fixed reading, not a policy value. The cut is the last
+  commit of the new head that is reviewed work, and the pull request is read again at the cut,
+  from the cut's own merge base with the base branch, so a merge of the base branch after the cut
+  adds no line. The
+  count is the larger of two figures: the lines the reviewed pull request holds and the pull
+  request at the cut does not, and the reverse. The commits after the cut are new commits, which
+  scope growth reads and which add nothing here, whether they add lines or remove them. A new
+  commit placed before reviewed work is inside the cut, so its lines count as rewritten. No commit
+  message is read.
+- **A rebase that leaves the patch of the pull request unchanged opens nothing**, whatever it did
+  to the commits. A reword or a squash with the same patch carries. A fix folded into a commit with
+  `--amend`, or with `--fixup` and `--autosquash`, counts only the lines its fold changed in the
+  pull request, so a reviewed fix commit squashed into its target moves no line, and a line added
+  and removed again nets to nothing.
+- **A resolved conflict is read from merges.** Each two-parent merge that is new at the head is
+  repeated with `git merge-tree`, and a conflicted path counts when the pull request changes it.
+  A two-parent merge that git resolved with `-X ours` is still a conflict. A merge of more than
+  two parents is a conflict even when its tree equals the first parent. Git records no conflict
+  for a rebase. A conflict resolved in a rebase changes the patch, and the rewritten share counts
+  it.
+- **"The delta adds" counts changed lines the earlier patch does not hold.** A line that left the
+  patch is reported and adds nothing.
+- **The caller supplies three inputs, and a missing one is reported.** The class, the intent file
+  and the acceptance criteria come from flags, and their earlier values come from the scope record
+  of the last reviewed round. A trigger with a missing side is listed as `unevaluated` and does
+  not fire. While the ledger holds a reviewed round, `--previous` is required. An input the earlier
+  record holds must be given again, `review_surface_changed` included, so a trigger evaluated once
+  is never dropped without a refusal.
+- **Before round 1 of a scope nothing is compared.** The outcome is `full`.
+- **Several triggers at once open one scope.** The record lists them all, and the ledger line
+  names the first in the order of the schema.
+- **A trigger with no scope left is the outcome `hold`.** The command appends nothing: the caller
+  records a `scope-open` line or a `carry` line from the record's `event`.
+- **The size guard of the plan is not here.** A later change reads the changed-line count this
+  record prints.
+
 ## Alternatives rejected
 
 - **Keep same-head unanimity and add a round cap.** Rejected. A cap with no rule for the open rows
@@ -126,13 +211,27 @@ The plan leaves these points open. Each is a choice of this record, held by a te
 ## Consequences and limits
 
 - The ledger is single-writer evidence that a gate holds. The engine does not check who appended a
-  line, and a record of any of the three commands grants no authority.
+  line, and a record of any of these commands grants no authority. `ak review decide` trusts
+  those lines as coverage, so the ledger file must sit outside author write. A hand-written carry
+  line is coverage if it is in the file. There is no provenance check on a line.
 - The tool runs no reproduction. The caller runs it and records the exit status at the head and at
   the merge base.
 - The symbol rule reads no grammar. A language with no column-one declarations anchors a finding
   to the file's first lines, and its fingerprint then changes only with the cause key.
-- This record lands with the ledger and the engine. No skill, protocol or gate calls them yet, so
-  no review changes. The policy block that carries these values as data, the scope triggers and
-  the protocol wiring are later changes.
+- This record lands with the ledger, the engine, the scope command and the policy data. No
+  skill, protocol or gate calls them yet, so no review changes. The protocol wiring is a later
+  change.
+- `ak review scope` needs git 2.38 or later for `git merge-tree`. Repeating a merge writes its
+  objects into a throwaway GIT_DIR. No work tree, index or ref of the author's repository
+  changes.
+- The scope command refuses a `--record` whose `head` is not `--head`. A later `ledger add` of a
+  carry needs that last reviewed record as `--previous`. `readDelta` refuses a `--base` that the
+  last reviewed head is a strict ancestor of, so a commit sitting between the reviewed head and a
+  later empty head cannot empty the delta. Carry also requires that every non-merge commit in
+  `previous..head` excluding `base` is empty or matches a reviewed own-commit patch or the
+  reviewed pull request patch. An octopus
+  merge is a large-rebase even when its tree equals the first parent. A head that shares no commit
+  with `--base` is refused, so an ours merge of unrelated histories does not carry. The base
+  branch, like the ledger, must sit outside author write.
 - The mutation check in `tests/review/mutation.test.ts` breaks each rule once and expects a red
   test. A rule added to the engine needs a mutant there.

@@ -18,6 +18,7 @@ import {
   type DelegationTicket,
 } from "../src/delegation.ts";
 import { planBundle } from "../src/packaging/plan.ts";
+import { parseJson, updated, type JsonValue } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..");
@@ -473,6 +474,45 @@ test("ak delegation --stage merge counts a file renamed out of a shared surface"
   expect(JSON.parse(merge(base))).toMatchObject({ class: "red", floor: { shared_surfaces: ["src/shared/**"] } });
 });
 
+test("ak delegation --stage merge lists a gitlink path when .gitmodules ignore=all", () => {
+  const root = makeTree({});
+  const git = (args: string[]) => gitIn(root, args);
+  git(["init", "-b", "main", "."]);
+  git(["config", "user.email", "t@example.invalid"]);
+  git(["config", "user.name", "T"]);
+  const project = {
+    ...validProject,
+    guidance: {
+      ...validProject.guidance,
+      delegation: {
+        ...validProject.guidance.delegation,
+        shared_surfaces: [{ path: "vendor/lib", class: "red", reason: "Vendored gitlink." }],
+      },
+    },
+  };
+  writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
+  writeFileSync(join(root, "project.json"), JSON.stringify(project));
+  git(["add", "."]);
+  git(["commit", "-m", "base"]);
+  const base = git(["rev-parse", "HEAD"]);
+  const pin = git(["rev-parse", "HEAD"]);
+  writeFileSync(
+    join(root, ".gitmodules"),
+    '[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = ./vendor/lib\n\tignore = all\n',
+  );
+  git(["add", ".gitmodules"]);
+  git(["update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`]);
+  git(["commit", "-m", "add gitlink ignore=all"]);
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runCli(["delegation", "ticket.json", "--project", "project.json", "--stage", "merge", "--base", base], {
+    cwd: root,
+    io: { out: (line) => out.push(line), err: (line) => err.push(line) },
+  });
+  expect({ code, err }).toEqual({ code: 0, err: [] });
+  expect(JSON.parse(out.join("\n"))).toMatchObject({ floor: { shared_surfaces: ["vendor/lib"] } });
+});
+
 test("ak delegation --stage merge ignores shared-surface changes made only on the base branch", () => {
   const { root, git, merge } = sharedSurfaceRepo();
   git(["checkout", "-b", "feature"]);
@@ -484,6 +524,116 @@ test("ak delegation --stage merge ignores shared-surface changes made only on th
   git(["commit", "-am", "main moves on"]);
   git(["checkout", "feature"]);
   expect(JSON.parse(merge("main"))).not.toMatchObject({ floor: { shared_surfaces: ["src/shared/**"] } });
+});
+
+/** A repository at the first review round, with that round's record kept in `round-1.json`. */
+function reviewedRepo() {
+  const repo = sharedSurfaceRepo();
+  const { root, git } = repo;
+  const base = git(["rev-parse", "HEAD"]);
+  writeFileSync(join(root, "notes.md"), "notes\n");
+  git(["add", "."]);
+  git(["commit", "-m", "first round"]);
+  writeFileSync(join(root, "round-1.json"), repo.merge(base));
+  const run = (...argv: string[]) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = runCli(["delegation", "ticket.json", "--project", "project.json", ...argv], {
+      cwd: root,
+      io: { out: (line) => out.push(line), err: (line) => err.push(line) },
+    });
+    return { code, out: out.join("\n"), err: err.join("\n") };
+  };
+  const previous = (file: string, ...argv: string[]) =>
+    run("--stage", "merge", "--base", base, "--previous", file, ...argv);
+  return { ...repo, base, run, previous };
+}
+
+describe("ak delegation --stage merge --previous", () => {
+  test("the record without --previous holds no review_surface_changed", () => {
+    const { root } = reviewedRepo();
+    expect(JSON.parse(readFileSync(join(root, "round-1.json"), "utf8"))).not.toHaveProperty("review_surface_changed");
+  });
+
+  test("is false when the delta touches no new surface, pack or sensitive action", () => {
+    const { root, git, previous } = reviewedRepo();
+    writeFileSync(join(root, "notes.md"), "more notes\n");
+    git(["commit", "-am", "a fix"]);
+    const result = previous("round-1.json");
+    expect({ code: result.code, err: result.err }).toEqual({ code: 0, err: "" });
+    expect(JSON.parse(result.out)).toMatchObject({ stage: "merge", review_surface_changed: false });
+  });
+
+  test("is true when the delta newly touches a shared surface, and false again once the last record holds it", () => {
+    const { root, git, previous } = reviewedRepo();
+    writeFileSync(join(root, "src", "shared", "util.ts"), "export const shared = 2;\n");
+    git(["commit", "-am", "touch the shared helper"]);
+    const second = previous("round-1.json");
+    expect(JSON.parse(second.out)).toMatchObject({
+      class: "red",
+      floor: { shared_surfaces: ["src/shared/**"] },
+      review_surface_changed: true,
+    });
+    // The second round's record is the next round's previous record, with the field it carries.
+    writeFileSync(join(root, "round-2.json"), second.out);
+    const third = previous("round-2.json");
+    expect({ code: third.code, err: third.err }).toEqual({ code: 0, err: "" });
+    expect(JSON.parse(third.out)).toMatchObject({ class: "red", review_surface_changed: false });
+  });
+
+  test.each([
+    ["a sensitive action", { floor: { sensitive_actions: ["dependency-add"] } }],
+    ["a pack with a floor", { floor: { packs: ["pack-secure"] } }],
+  ])("is true when the evidence newly names %s", (_name, evidence) => {
+    const { root, previous } = reviewedRepo();
+    writeFileSync(join(root, "evidence.json"), JSON.stringify(evidence));
+    const result = previous("round-1.json", "--evidence", "evidence.json");
+    expect({ code: result.code, err: result.err }).toEqual({ code: 0, err: "" });
+    expect(JSON.parse(result.out)).toMatchObject({ review_surface_changed: true });
+  });
+
+  test("is false when the evidence newly names a pack that sets no floor", () => {
+    const { root, previous } = reviewedRepo();
+    writeFileSync(join(root, "evidence.json"), JSON.stringify({ floor: { packs: ["pack-test"] } }));
+    const result = previous("round-1.json", "--evidence", "evidence.json");
+    expect({ code: result.code, err: result.err }).toEqual({ code: 0, err: "" });
+    expect(JSON.parse(result.out)).toMatchObject({
+      floor: { packs: ["pack-data", "pack-test"] },
+      review_surface_changed: false,
+    });
+  });
+
+  test("scores the class the same with and without --previous", () => {
+    const { root, git, base, run, previous } = reviewedRepo();
+    writeFileSync(join(root, "src", "shared", "util.ts"), "export const shared = 2;\n");
+    git(["commit", "-am", "touch the shared helper"]);
+    const alone = parseJson(run("--stage", "merge", "--base", base).out);
+    expect(parseJson(previous("round-1.json").out)).toEqual(updated(alone, ["review_surface_changed"], () => true));
+  });
+
+  test("refuses a previous record it cannot compare, before it prints anything", () => {
+    const { root, previous, run } = reviewedRepo();
+    const first = parseJson(readFileSync(join(root, "round-1.json"), "utf8"));
+    const changed = (key: string, value: JsonValue) => JSON.stringify(updated(first, [key], () => value));
+    writeFileSync(join(root, "not-json.json"), "{");
+    writeFileSync(join(root, "ticket-stage.json"), changed("stage", "ticket"));
+    writeFileSync(join(root, "extra-key.json"), changed("approved", true));
+    writeFileSync(join(root, "wrong-type.json"), changed("review_surface_changed", "no"));
+    for (const [file, message] of [
+      ["absent.json", "previous record does not exist: absent.json"],
+      ["not-json.json", "previous record not-json.json is not JSON"],
+      ["ticket-stage.json", "previous record ticket-stage.json is not a merge-stage record"],
+      ["extra-key.json", "previous record extra-key.json is not a delegation record"],
+      ["wrong-type.json", "previous record wrong-type.json is not a delegation record"],
+    ] as const) {
+      const result = previous(file);
+      expect({ file, code: result.code, out: result.out }).toEqual({ file, code: 1, out: "" });
+      expect(result.err).toContain(message);
+    }
+    const ticketStage = run("--previous", "round-1.json");
+    expect({ code: ticketStage.code, out: ticketStage.out }).toEqual({ code: 1, out: "" });
+    expect(ticketStage.err).toContain("--previous requires --stage merge");
+  });
 });
 
 test("ak delegation names the block a record lacks", () => {
@@ -560,7 +710,6 @@ test("the bare scorer command the packaged super-bound body names scores with a 
 }, 60_000);
 
 /** An evidence file as a person might write it: the members may be of the wrong type. */
-type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 interface EvidenceFile {
   floor?: { [key: string]: JsonValue };
   factors?: { [key: string]: JsonValue };
@@ -674,5 +823,14 @@ describe("the generated ak command at the merge stage", () => {
     );
     expect(ak("--stage", "sideways").status).toBe(1);
     expect(ak("--bogus", "x").status).toBe(2);
+
+    writeFileSync(join(root, "round-1.json"), ak("--stage", "merge", "--base", head, "--head", head).stdout);
+    const compared = ak("--stage", "merge", "--base", base, "--previous", "round-1.json");
+    expect({ status: compared.status, stderr: compared.stderr }).toEqual({ status: 0, stderr: "" });
+    expect(JSON.parse(compared.stdout)).toMatchObject({ class: "red", review_surface_changed: true });
+    expect(ak("--previous", "round-1.json").stderr).toContain("--previous requires --stage merge");
+    expect(ak("--stage", "merge", "--base", base, "--previous", "absent.json").stderr).toContain(
+      "previous record does not exist: absent.json",
+    );
   }, 60_000);
 });
