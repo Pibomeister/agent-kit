@@ -33,7 +33,7 @@ on `PATH` has the `review` command. The four commands are:
 | Command | What it does |
 |---|---|
 | `ak review scope --ledger <L> --base <merge-base> --head <sha> [--previous <scope.json>]` | Prints what the next round covers |
-| `ak review ledger add --ledger <L> --event <file\|->` | Appends round, verdict, finding, closure, evidence and follow-up lines |
+| `ak review ledger add --ledger <L> --event <file\|-> [--previous <scope.json>]` | Appends round, verdict, finding, closure, evidence and follow-up lines |
 | `ak review ledger show --ledger <L>` | Prints the state the lines fold to |
 | `ak review decide --ledger <L> --head <sha> --seats <n> [--missing-evidence <item>]...` | Prints the verdict and the one next action |
 
@@ -54,7 +54,7 @@ exist, so that each trigger is evaluated. The outcome says what to do:
 |---|---|
 | `full` | Open round 1 and review the whole change |
 | `closure` | Open the next round over the delta since the last reviewed head |
-| `carry` | Append the record's `event` (a `carry` line). Call no seat: the earlier verdict covers the head |
+| `carry` | Run `ledger add --event <scope.json> --previous <last reviewed scope.json>`: it appends the `carry` line. Call no seat: the earlier verdict covers the head |
 | `new-scope` | Append the record's `event` (a `scope-open` line), then open round 1 of the new scope |
 | `hold` | Park the change and report it. The lane's captain splits or replans |
 

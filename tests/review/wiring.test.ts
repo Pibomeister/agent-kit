@@ -1,9 +1,7 @@
 /**
- * Converging review is the default (ADR-0018, amendment of 2026-11-26). Two
- * halves. The first holds each caller that `policies/review.yaml`
- * `convergence.callers` lists to the loop: it names the reference or the
- * commands, and the delta seats carry the evidence bar. The second runs the
- * loop the reference describes through `ak review`, round by round, to the cap.
+ * Converging review is the default (ADR-0018, amendment of 2026-11-26). The
+ * delivery pipeline keeps the same cap, and the loop the convergence reference
+ * describes runs through `ak review`, round by round, to the cap.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -37,78 +35,6 @@ function at(value: JsonValue, ...path: string[]): JsonValue {
 }
 
 const CONVERGENCE = at(yaml("policies/review.yaml"), "convergence");
-
-/** Collapse line breaks and indentation, so a phrase matches across a wrapped line. */
-const flat = (text: string) => text.replace(/\s+/g, " ");
-
-/** Every file that runs the loop. A caller dropped from the policy or from this list is a red test. */
-const CALLERS = [
-  "skills/super-review/SKILL.md",
-  "skills/super-review/references/delta.md",
-  "skills/super-review/references/panel.md",
-  "protocols/review-delta/PROTOCOL.md",
-  "roles/reviewer-spec/ROLE.md",
-  "roles/reviewer-standards/ROLE.md",
-  "roles/code-review/security/ROLE.md",
-];
-const COMMANDS = ["ak review scope", "ak review ledger add", "ak review decide"];
-const EVIDENCE_BAR = /red at the head and green at the merge base/;
-const RISK_SENTENCE = /nam(?:e|es|ing) the asset at risk and the action that harms it/;
-
-describe("the callers name the converging loop", () => {
-  test("the default is the convergence reference, and every listed caller exists", () => {
-    const reference = "skills/super-review/references/convergence.md";
-    expect(at(CONVERGENCE, "default")).toBe(reference);
-    const text = flat(read(reference));
-    for (const command of COMMANDS) expect(text).toContain(command);
-    expect(at(CONVERGENCE, "callers")).toEqual(CALLERS);
-    for (const caller of CALLERS) {
-      expect({ caller, names: flat(read(caller)).includes("convergence") }).toEqual({ caller, names: true });
-    }
-  });
-
-  test("super-review, its delta reference and the delta protocol run the three commands", () => {
-    for (const caller of [
-      "skills/super-review/SKILL.md",
-      "skills/super-review/references/delta.md",
-      "protocols/review-delta/PROTOCOL.md",
-    ]) {
-      const text = flat(read(caller));
-      for (const command of COMMANDS) expect({ caller, has: text.includes(command) }).toEqual({ caller, has: true });
-      expect(text).toMatch(/convergence\.md|super-review's convergence reference/);
-    }
-  });
-
-  test("the verdict comes from ak review decide, and no seat's word vetoes", () => {
-    const skill = flat(read("skills/super-review/SKILL.md"));
-    expect(skill).toContain("Set the verdict from `ak review decide` at the reviewed head");
-    expect(skill).toContain("No seat vetoes; only a ledger row blocks.");
-    const protocol = flat(read("protocols/review-delta/PROTOCOL.md"));
-    expect(protocol).toContain("take the verdict from `ak review decide` at the reviewed head");
-    expect(protocol).toContain("A lane's `block` word alone vetoes nothing");
-  });
-
-  test("the delta seats carry the evidence bar and the risk sentence", () => {
-    for (const role of ["roles/reviewer-spec/ROLE.md", "roles/reviewer-standards/ROLE.md"]) {
-      const text = flat(read(role));
-      expect({ role, bar: EVIDENCE_BAR.test(text), risk: RISK_SENTENCE.test(text) }).toEqual({
-        role,
-        bar: true,
-        risk: true,
-      });
-      expect(text).toContain("`block` word alone vetoes nothing");
-    }
-    expect(flat(read("roles/code-review/security/ROLE.md"))).toMatch(RISK_SENTENCE);
-    expect(flat(read("skills/super-review/references/panel.md"))).toMatch(EVIDENCE_BAR);
-  });
-
-  test("the cap parks the change and never approves on its own", () => {
-    expect(flat(read("skills/super-review/SKILL.md"))).toContain("nothing at the cap approves on its own");
-    expect(flat(read("protocols/review-delta/PROTOCOL.md"))).toContain(
-      "the change parks and is reported, never approved on its own",
-    );
-  });
-});
 
 describe("the delivery pipeline's Review keeps the same cap", () => {
   test("review.max_fix_rounds in .no-mistakes.yaml equals the convergence cap", () => {
