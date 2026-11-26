@@ -1825,9 +1825,32 @@ describe("the gate a bundle carries", () => {
     expect(legacy.exitCode).toBe(1);
     expect(legacy.stderr.toString()).toContain("typed command");
 
+    // Under the unattended policy super-align needs a valid supervisor declaration outside the checkout.
+    const declaration = join(realpathSync(mkdtempSync(join(tmpdir(), "ak-outside-"))), "declaration.json");
+    const obligations = [
+      "launch-and-watch",
+      "validation-gate",
+      "independent-review",
+      "seat-separation",
+      "head-bound-evidence",
+      "disclosure",
+    ].map((key): [string, string] => [key, `how the supervisor meets ${key}`]);
+    writeFileSync(
+      declaration,
+      `${JSON.stringify({
+        contract: "agent-kit/supervisor-contract@1",
+        supervisor: "firstmate",
+        obligations: Object.fromEntries(obligations),
+      })}\n`,
+    );
     const unattended = Bun.spawnSync(argv, {
       cwd,
-      env: { ...process.env, AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "fixture-token" },
+      env: {
+        ...process.env,
+        AK_LIFECYCLE_POLICY: "unattended",
+        AK_LIFECYCLE_SUPERVISOR: "firstmate",
+        AK_LIFECYCLE_SUPERVISOR_DECLARATION: declaration,
+      },
     });
     expect(unattended.exitCode, unattended.stderr.toString()).toBe(0);
     expect(JSON.parse(unattended.stdout.toString())).toMatchObject({ policy: "unattended", phase: "super-align" });

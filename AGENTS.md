@@ -123,7 +123,7 @@ is never backfilled — not by the implementer, not by the author, not by the sp
 a seat already sitting on the panel (ruling `missing-supervisor-never-implementer`).
 
 Worker-attested evidence never lifts an autonomy ceiling, save under the opt-in unattended policy, whose
-boundary is a live-checked merge gate (ADR-0014). The evidence-consuming autonomous form
+boundary is a declared run supervisor (ADR-0014). The evidence-consuming autonomous form
 requires `trusted-evidence`, supplied fail-closed by the runner contract; host permissions are not
 evidence provenance and never imply that capability.
 
@@ -150,7 +150,7 @@ as authoritative. Every row below is a claim about the tree, checkable against i
 | `packs/`, `protocols/`, `roles/`, `references/` | Attachable constraints, shared phase logic, role prompts, reference packs | yes |
 | `schemas/` | JSON Schemas; `common` holds the shared `$defs` | yes |
 | `policies/`, `profiles/` | Machine-readable rulings and install profiles. Profiles never name models | yes |
-| `adapters/` | Host and evidence-source contracts: claude-code, codex, grok, kimi, runner, knowledgebase, firstmate, tracker, review-source, observation-source | yes |
+| `adapters/` | Host and evidence-source contracts: claude-code, codex, grok, kimi, runner, knowledgebase, firstmate, tracker, review-source, observation-source, supervisor | yes |
 | `provenance/` | `upstream.lock.yaml`, `adaptations.yaml`, `conversation-map.yaml`, licenses | yes |
 | `research/` | Design sources and the donor dossiers. **Denylist-exempt** | yes |
 | `src/`, `tests/` | The `ak` CLI and its tests | yes |

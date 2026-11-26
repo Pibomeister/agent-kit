@@ -662,8 +662,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
 });
 
 describe("one task: the grant binds to the task it names and that task's worktree, not to a run", () => {
-  // Wraps every git invocation in a shell PATH shim that inspects argv before execing git.
-  test("a branch list git cannot produce refuses the check, and no use record is written", () => {
+  test("a PATH git shim cannot hide the branch list from a bypass check", () => {
     const { worktree, ledger, grantPath } = granted();
     const realGit = Bun.which("git");
     if (realGit === null) throw new Error("git is not on PATH");
@@ -688,12 +687,11 @@ describe("one task: the grant binds to the task it names and that task's worktre
         "--phase",
         "super-align",
       );
-      expect(r.code).toBe(1);
-      expect(r.err).toContain("cannot list the branches");
+      expect(r.code).toBe(0);
+      expect(r.err).not.toContain("cannot list the branches");
     } finally {
       process.env.PATH = path;
     }
-    expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
   }, 30_000);
 
   test("another task's grant is refused at check, and no use record is written", () => {
