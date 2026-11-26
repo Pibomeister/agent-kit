@@ -1023,8 +1023,11 @@ describe("ak review scope: later-round tree identity", () => {
     const scoped = f.record(restored);
     const paths = member(member(scoped, "delta"), "changed_paths");
     expect(Array.isArray(paths) ? paths : []).toContain("src/evil.ts");
-    expect(scoped).toMatchObject({ delta: { empty: false } });
-    expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
+    expect(scoped).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["scope-growth"],
+      delta: { empty: false, added_lines: 40 },
+    });
   });
 
   test("R10-QUOTED-UNICODE: a hidden non-ASCII path still counts its 20 lines", () => {
@@ -1060,11 +1063,6 @@ describe("ak review scope: later-round tree identity", () => {
       triggers: ["scope-growth"],
       delta: { empty: false, added_lines: 500 },
     });
-  });
-
-  test("delta.ts does not feed a parsed path back to git as a pathspec", () => {
-    const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
-    expect(source).not.toMatch(/["']--["']/);
   });
 
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {

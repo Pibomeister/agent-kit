@@ -369,23 +369,20 @@ function emptyBlob(context: RunnerGitContext, repo: string, extraEnv: NodeJS.Pro
   return run.text;
 }
 
+const OBJECT_ID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+
 /**
- * Changed lines of one `--raw` row from its blob ids. The parsed path is
- * display-only and is never a pathspec. A gitlink or symlink counts as one
- * line. A hunkless empty add or delete counts as one line.
+ * Changed lines of two blob object ids. The argv is only those two ids, so a
+ * parsed path cannot become a pathspec.
  */
-function blobPairLines(
+function diffBlobPair(
   context: RunnerGitContext,
   repo: string,
   extraEnv: NodeJS.ProcessEnv,
-  empty: string,
-  row: RawRow,
+  from: string,
+  to: string,
 ): number {
-  if (row.srcMode === "160000" || row.dstMode === "160000" || row.srcMode === "120000" || row.dstMode === "120000")
-    return 1;
-  const from = isZeroOid(row.srcSha) ? empty : row.srcSha;
-  const to = isZeroOid(row.dstSha) ? empty : row.dstSha;
-  if (from === to) return isZeroOid(row.srcSha) || isZeroOid(row.dstSha) ? 1 : 0;
+  if (!OBJECT_ID.test(from) || !OBJECT_ID.test(to)) throw new Error("git diff of blobs needs two object ids");
   const patch = gitProcess(
     context,
     repo,
@@ -396,6 +393,26 @@ function blobPairLines(
   );
   if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
   return readPatch(decode(patch.stdout)).lines;
+}
+
+/**
+ * Changed lines of one `--raw` row from its blob ids. The parsed path is
+ * display-only and is never a pathspec. A gitlink counts as one line. A
+ * hunkless empty add or delete counts as one line. A symlink takes the
+ * blob-to-blob diff.
+ */
+function blobPairLines(
+  context: RunnerGitContext,
+  repo: string,
+  extraEnv: NodeJS.ProcessEnv,
+  empty: string,
+  row: RawRow,
+): number {
+  if (row.srcMode === "160000" || row.dstMode === "160000") return 1;
+  const from = isZeroOid(row.srcSha) ? empty : row.srcSha;
+  const to = isZeroOid(row.dstSha) ? empty : row.dstSha;
+  if (from === to) return isZeroOid(row.srcSha) || isZeroOid(row.dstSha) ? 1 : 0;
+  return diffBlobPair(context, repo, extraEnv, from, to);
 }
 
 /**
