@@ -1,5 +1,5 @@
 /**
- * Unattended-policy wording (ADR-0014): super-ship's needs-input stop names the
+ * Unattended-policy wording (ADR-0014 and its amendment of 2026-11-11): super-ship's needs-input stop names the
  * unattended start, and the capability-map review is an unattended advance.
  */
 import { readFileSync } from "node:fs";
