@@ -144,8 +144,7 @@ donors:
     license: MIT
     copyright: "Copyright (c) 2026 Denver Technologies, Inc."
     license_file: provenance/licenses/warpdotdev_common-skills.LICENSE
-  # Research pin. The review-isolation probe adapts child-session joining from
-  # tests/integration/test_claude.py and test_codex.py; no EGM plugin ships.
+  # Catalog donor, no EGM plugin, probe plus comprehension and cold read.
   - id: egm
     repo: google/elephant-goldfish-model
     url: https://github.com/google/elephant-goldfish-model

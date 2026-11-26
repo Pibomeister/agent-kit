@@ -13,7 +13,8 @@
 # raised by a reproduced failure: a lifecycle run in a task copy that could reach no knowledgebase.
 # Row 34 is the first raised by publishing with no supervisor and no gate at all. Row 35 keeps the
 # implementer's work trail, an account, from every seat that judges the change. Rows 36-37
-# are the comprehension seat: it stays naive, and a gap is not contestable on the author's word.
+# are the comprehension seat and the ticket cold reader: both stay naive, and a
+# comprehension gap is not contestable on the author's word.
 # Row 38 is the first raised by an owner decision on review cost: review depth follows the class.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
@@ -1432,33 +1433,36 @@ conflicts:
     source:
       plan: "§5.6, §6.2, §7.3, §8"
 
+  # ak-egm-begin
   - id: comprehension-seat-stays-naive
     tension: >-
       Continuity makes closure checks cheaper, but a reader who has seen the earlier gap cannot
       test whether a newcomer would find it.
     ruling: >-
-      The comprehension seat gets no prior-finding packet and no earlier paraphrase. Each round
-      is a new instance. Independence from the author and a fresh context are both required for
-      this seat. Continuity still holds for every other seat. A comprehension finding closes when
-      a later fresh read produces a paraphrase the human accepts as matching intent, recorded as
-      verification kind `manual`.
+      The comprehension seat and the ticket cold reader get no prior-finding packet and no
+      earlier paraphrase. Each round is a new instance. Independence from the author and a
+      fresh context are both required for these two seats. Continuity still holds for every
+      other seat. A comprehension finding closes when a later fresh read produces a paraphrase
+      the human accepts as matching intent, recorded as verification kind `manual`.
     discharged_in: [workflow, inputs]
     overrides:
       source: conversation
       locator: G:L580
       position: "Subsequent reviews buy closure by keeping the finding list, not by reseating a fresh reader"
       reason: >-
-        Continuity still holds for every other seat. A comprehension reader that has seen the
-        earlier gap is no longer naive, so this seat is the scoped exception.
+        Continuity still holds for every other seat. A comprehension reader or cold reader that
+        has seen the earlier gap is no longer naive, so these two seats are the scoped exception.
     binds:
-      skills: [doc-review]
+      skills: [doc-review, super-bound]
       roles: [doc-review/comprehension]
       policies: [review]
+      schemas: [finding]
+      references: [delegation]
     scenario: 9
     coverage: indirect
     note: >-
       Scenario 9 tests that moving a line neither duplicates nor suppresses a finding, which is
-      the continuity packet's identity half. This row exercises the other half on one seat: the
+      the continuity packet's identity half. This row exercises the other half on two seats: the
       packet is withheld so the reader stays naive. Rejected `authority`, which continuity already
       uses for independence from the author; this row does not change who may fill the seat.
       Rejected `hard-gates`: a packet that arrived is a caller error, returned `unavailable`,
@@ -1484,6 +1488,7 @@ conflicts:
       skills: [doc-review]
       roles: [doc-review/comprehension]
       policies: [review]
+      schemas: [finding]
     scenario: 3
     coverage: indirect
     note: >-
@@ -1491,9 +1496,11 @@ conflicts:
       rejection of a comprehension gap. Rejected `authority`: rejection is a human disposition,
       not a grant this skill issues. Rejected `outputs`: the four resolutions are refusals and
       routes, not a new artifact. `hard-gates` is the refusal of author contest; `workflow` is
-      that synthesis must not settle the finding by picking a side.
+      that synthesis must not settle the finding by picking a side. `finding` is the
+      adjudication outcome that may not become rejected on the author's word.
     source:
       plan: "§6.5"
+  # ak-egm-end
 
   - id: review-depth-follows-delegation-class
     tension: >-

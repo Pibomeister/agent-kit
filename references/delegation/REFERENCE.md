@@ -336,7 +336,7 @@ other implementation ticket still requires a cited read.
 parallel, each in its own context. Give the reader the ticket and a read-only checkout at the
 stated revision, including `read_dependencies`. Do not give the specification, the alignment
 interview, other tickets, host session transcripts, or the author's scratch files. Each new read
-is a fresh reader with no prior-finding packet.
+is a fresh reader with no prior-finding packet (ruling `comprehension-seat-stays-naive`).
 
 **Return.** The reader returns a `cold-read` record (`schemas/cold-read.schema.json`). Persist it
 as a run artifact. The record holds a paraphrase of what the reader would build, every decision

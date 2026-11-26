@@ -575,7 +575,9 @@ describe("the licence files the distribution is obliged to carry", () => {
     "provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE",
     "provenance/licenses/addyosmani_agent-skills.LICENSE",
     "provenance/licenses/cursor_plugins.LICENSE",
+    /* ak-egm-begin */
     "provenance/licenses/google_elephant-goldfish-model.LICENSE",
+    /* ak-egm-end */
     "provenance/licenses/mattpocock_skills.LICENSE",
     "provenance/licenses/mizchi_jev-lint.LICENSE",
     "provenance/licenses/obra_superpowers.LICENSE",

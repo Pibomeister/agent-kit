@@ -37,7 +37,7 @@ discovery:
 {
   "name": "ak",
   "version": "0.1.0",
-  "description": "One engineering lifecycle, amalgamated from eleven donors: ten MIT, one Apache-2.0.",
+  "description": "One engineering lifecycle, amalgamated from twelve donors: ten MIT, two Apache-2.0.",
   "author": { "name": "agent-kit maintainers" },
   "license": "MIT",
   "skills": ["./skills/super-align", "./skills/super-bound"],
@@ -114,7 +114,7 @@ compound status is a value no consumer can act on.
 | `human-channel` | `satisfied` | The interactive session is the channel |
 | `artifact-write` | `partial` | Satisfied for storage, **not** for binding. The host writes the file; it does not compute or check the artifact hash. Hash binding is the package's own responsibility (`schemas/common.schema.json#/$defs/envelope`). Every skill that emits a run artifact requires this capability (`capability.artifact-write-missing`), and that is most of the catalog, so reading its status as `satisfied` would silently certify hash binding for every run artifact the package writes |
 | `isolated-worktree` | `convention-only` | `git worktree` is reachable through `process-exec`, but the host does not confine the session to the worktree it created. Ownership is enforced by `protocols/worktree-ownership`, not by the host |
-| `isolated-review-context` | `partial` | The host provides fresh-context subagents. It provides no attestation that a reviewer context never saw the author's narrative, so the package cannot verify the property it depends on |
+| `isolated-review-context` | `partial` | <!-- ak-egm-begin -->The host provides fresh-context subagents. It provides no attestation that a reviewer context never saw the author's narrative, so the package cannot verify the property it depends on. GS-004e live Claude Code and Codex arms did not run (GAP-PROBE, `research/host-facts/2026-11-18/GAP-PROBE.md`). That coverage limit is not a pass<!-- ak-egm-end --> |
 | `independent-context` | `not-provided` | Fresh-context subagents exist, but the host cannot attest what they saw or their excluded lineage. They may produce `host-unattested` evidence in guided work, which the gate counts only in a run that never held a bypass or delegated grant; autonomous verification requires the runner contract |
 | `kb-read` | `not-provided` | The host supplies transport only. See `adapters/knowledgebase/CONTRACT.md` |
 | `kb-write` | `not-provided` | The host supplies transport only. See `adapters/knowledgebase/CONTRACT.md` |

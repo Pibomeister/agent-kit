@@ -1,7 +1,7 @@
 # Execution contract for super-bound (schemas/skill.schema.json).
 # Prose mirror: skills/super-bound/SKILL.md. The two are one statement in two forms.
 id: super-bound
-version: 0.9.0
+version: 0.9.1
 kind: lifecycle
 invocation: U
 summary: >-
@@ -341,6 +341,7 @@ provenance:
         The detect-before-you-ask step only, scoped to reading the repository's own configuration;
         the donor's written constraints file is a repository-local project artifact and does not
         survive, and its thresholds belong to the packs rather than here.
+    # ak-egm-begin
     - donor: egm
       commit: 403d8881d62022490637d740657b33f01e321ea8
       path: resources/document_standards/implementation-readiness-standard.md
@@ -356,6 +357,7 @@ provenance:
       adaptation: >-
         Proposed files are not findings. A path the ticket produces, or a path in allowed_changes
         that is absent at the stated revision, is labelled proposed (phase 1b, GS-004i).
+    # ak-egm-end
   resolved_conflicts:
     - entrypoint-phase-operation-split
     - numeric-heuristics-are-guidance
@@ -363,6 +365,7 @@ provenance:
     - sensitive-surface-sets-the-floor
     - delegation-class-is-authority-not-finding
     - advisor-consultation-follows-class
+    - comprehension-seat-stays-naive
 
 tests:
   - id: approved-direction-stops-at-open-decisions

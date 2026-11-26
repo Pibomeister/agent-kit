@@ -1,4 +1,6 @@
+<!-- ak-egm-begin -->
 # EGM gap status (GS-006e reference oracles)
+<!-- ak-egm-end -->
 
 These three gaps have deterministic bun fixtures. They are not closed. Product
 behavior is unverified. The modules are not on a product path.

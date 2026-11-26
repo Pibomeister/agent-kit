@@ -154,7 +154,7 @@ a ticket whose class makes a human the author keeps that class, and a delegation
     decides. Dispatch is skipped only when every Skip condition in [the delegation
     reference](../../references/delegation/REFERENCE.md) under "Independent cold read of a ticket" holds;
     otherwise dispatch. Shadow and on dispatch one cold reader per remaining implementation ticket, in parallel,
-    each in its own context. Follow [the delegation reference](../../references/delegation/REFERENCE.md) under
+    each in its own context (ruling `comprehension-seat-stays-naive`). Follow [the delegation reference](../../references/delegation/REFERENCE.md) under
     "Independent cold read of a ticket" for Skip, the packet, claims, readiness observations, rewrite cap,
     shadow print, citation, unavailable handling and the green-to-yellow-agent raise.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
