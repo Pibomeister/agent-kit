@@ -38,13 +38,13 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 15230,
-      "tokens": 3808
+      "bytes": 17124,
+      "tokens": 4281
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39165,
-      "tokens": 9762
+      "bytes": 41097,
+      "tokens": 10245
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -373,8 +373,8 @@
     },
     "bundle/claude-code:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 18363,
-      "tokens": 4590
+      "bytes": 19143,
+      "tokens": 4785
     },
     "bundle/claude-code:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
@@ -553,8 +553,8 @@
     },
     "bundle/claude-code:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17825,
-      "tokens": 4450
+      "bytes": 18443,
+      "tokens": 4604
     },
     "bundle/claude-code:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -933,13 +933,13 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 15230,
-      "tokens": 3808
+      "bytes": 17124,
+      "tokens": 4281
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39165,
-      "tokens": 9762
+      "bytes": 41097,
+      "tokens": 10245
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -1268,8 +1268,8 @@
     },
     "bundle/codex:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 18363,
-      "tokens": 4590
+      "bytes": 19143,
+      "tokens": 4785
     },
     "bundle/codex:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
@@ -1448,8 +1448,8 @@
     },
     "bundle/codex:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17367,
-      "tokens": 4335
+      "bytes": 17985,
+      "tokens": 4489
     },
     "bundle/codex:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -1828,13 +1828,13 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 15278,
-      "tokens": 3820
+      "bytes": 17172,
+      "tokens": 4293
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39201,
-      "tokens": 9771
+      "bytes": 41133,
+      "tokens": 10254
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -2163,8 +2163,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 18363,
-      "tokens": 4590
+      "bytes": 19143,
+      "tokens": 4785
     },
     "bundle/cursor:.cursor/references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
@@ -2338,8 +2338,8 @@
     },
     "bundle/cursor:.cursor/skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17858,
-      "tokens": 4458
+      "bytes": 18476,
+      "tokens": 4612
     },
     "bundle/cursor:.cursor/skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -2723,13 +2723,13 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 15230,
-      "tokens": 3808
+      "bytes": 17124,
+      "tokens": 4281
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39165,
-      "tokens": 9762
+      "bytes": 41097,
+      "tokens": 10245
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -3058,8 +3058,8 @@
     },
     "bundle/droid:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 18363,
-      "tokens": 4590
+      "bytes": 19143,
+      "tokens": 4785
     },
     "bundle/droid:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
@@ -3238,8 +3238,8 @@
     },
     "bundle/droid:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17350,
-      "tokens": 4331
+      "bytes": 17968,
+      "tokens": 4485
     },
     "bundle/droid:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -3618,13 +3618,13 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 15230,
-      "tokens": 3808
+      "bytes": 17124,
+      "tokens": 4281
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39165,
-      "tokens": 9762
+      "bytes": 41097,
+      "tokens": 10245
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -3953,8 +3953,8 @@
     },
     "bundle/grok:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 18363,
-      "tokens": 4590
+      "bytes": 19143,
+      "tokens": 4785
     },
     "bundle/grok:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
@@ -4133,8 +4133,8 @@
     },
     "bundle/grok:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17810,
-      "tokens": 4446
+      "bytes": 18428,
+      "tokens": 4600
     },
     "bundle/grok:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -4513,13 +4513,13 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 15230,
-      "tokens": 3808
+      "bytes": 17124,
+      "tokens": 4281
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 39165,
-      "tokens": 9762
+      "bytes": 41097,
+      "tokens": 10245
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -4848,8 +4848,8 @@
     },
     "bundle/kimi:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 18363,
-      "tokens": 4590
+      "bytes": 19143,
+      "tokens": 4785
     },
     "bundle/kimi:references/shared/schemas/cold-read.schema.json": {
       "file": "schemas/cold-read.schema.json",
@@ -5028,8 +5028,8 @@
     },
     "bundle/kimi:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 17382,
-      "tokens": 4339
+      "bytes": 18000,
+      "tokens": 4493
     },
     "bundle/kimi:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
