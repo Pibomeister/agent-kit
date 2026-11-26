@@ -51,11 +51,10 @@ lane's findings (`policies/review.yaml` `pass_1.seat_context.never_receives`).
 ## Workflow
 
 1. Fail fast before dispatch: confirm the comparison base resolves, the fix diff is non-empty and
-   the receipts bind to `reviewed_head`. A bad base or an empty diff stops here, before either
-   lane is seated. Then run `ak review scope` on the review's convergence ledger
-   ([review convergence](../../references/review-convergence/REFERENCE.md)). Only its `closure`
-   outcome continues here: `carry` calls no seat, `new-scope` opens pass 1 of a new scope, and
-   `hold` parks the change.
+   the receipts bind to `reviewed_head`. A bad base or an empty diff stops here, before either lane
+   is seated. Then run `ak review scope` on the review's convergence ledger (super-review's
+   convergence reference). Only its `closure` outcome continues here: `carry` calls no seat,
+   `new-scope` opens pass 1 of a new scope, and `hold` parks the change.
 2. Freeze the snapshot and record its hashes in the `schemas/review.schema.json` record.
 3. Seat `reviewer-spec` and `reviewer-standards` in parallel on that snapshot, each with the
    packet and neither with the other's output. The packet carries the shell rule: deletes and

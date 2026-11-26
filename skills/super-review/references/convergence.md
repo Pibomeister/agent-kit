@@ -16,6 +16,15 @@ The loop has three rules.
    its outcome by rule, the change parks, and the caller reports it. Nothing at the cap approves on
    its own.
 
+## Contents
+
+- The commands
+- Before each round
+- Round 1: the full review
+- Later rounds: fix-only
+- After each round
+- At the cap
+
 ## The commands
 
 Run the bundle's own CLI, `<bundle>/bin/ak review` (a Bun script), or `ak review` where the `ak`

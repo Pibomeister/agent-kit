@@ -52,7 +52,7 @@ change under review — not whether the change is well written.
   red at the head and green at the merge base, or, for a security, destructive or data-loss
   finding, one sentence naming the asset at risk and the action that harms it. Without either the
   finding is filed with a follow-up and does not block, and this seat's `block` word alone vetoes
-  nothing (the `review-convergence` reference, `policies/review.yaml` `convergence`).
+  nothing (super-review's convergence reference, `policies/review.yaml` `convergence`).
 
 ## Never
 

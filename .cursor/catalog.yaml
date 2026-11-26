@@ -953,15 +953,6 @@ references:
       The opt-in unattended policy: starting phases with no human or grant, recording each gate with
       the evidence commands the gate tool runs, the advances that replace waits, the declared run
       supervisor ship rests on and the operator setup it needs.
-  - id: review-convergence
-    batch: 15
-    provenance_origin: conversation
-    status: authored
-    loaded_by: [super-review]
-    summary: >-
-      The converging review loop every review run uses: ak review scope before a round, the ledger
-      lines each round appends, the evidence bar after round 1, the ak review decide verdict and
-      the three-round cap at which the change parks.
 
 # ---------------------------------------------------------------------------
 # Schemas — 42. `common` holds shared $defs and validates no document itself.

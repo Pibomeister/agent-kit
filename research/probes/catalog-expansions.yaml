@@ -91,7 +91,7 @@ roles:
 
 references:
   baseline: 4
-  catalog: 12
+  catalog: 11
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -128,13 +128,6 @@ references:
         and records its evidence commands, the advances that replace waits, and the operator setup
         the live merge-gate read rests on, loaded on demand rather than copied into each skill.
       commits: [ea051ee7]
-    - ids: [review-convergence]
-      reason: >-
-        Converging review becomes the default for every review run, so the loop's commands, ledger
-        lines, evidence bar and round cap are one reference that super-review loads on demand
-        rather than a copy in each review skill, protocol and role.
-      commits: [93892864]
-      docs: [docs/decisions/0018-review-convergence.md]
 
 schemas:
   baseline: 14

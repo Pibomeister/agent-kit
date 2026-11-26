@@ -153,7 +153,7 @@ its input hashes, and the fix diff ([`schemas/review.schema.json`](../../referen
     need one, and a `host-unattested` seat counts, disclosed as worker-attested, only in a run that never held a grant; under the unattended policy a distinct one is a recorded note, bounded by [the run supervisor](../../references/shared/adapters/supervisor/CONTRACT.md), an exception to ruling `closure-requires-independent-verification`). Each `frontend` or `backend` criterion needs a supporting check that declares
     `evidence_required`, and receipts carrying every declared kind. A missing required attestation, a
     missing declaration or a missing kind makes the verification lane `unavailable`; name the gap.
-11. Set the verdict from `ak review decide` at the reviewed head, as [review convergence](../../references/shared/references/review-convergence/REFERENCE.md)
+11. Set the verdict from `ak review decide` at the reviewed head, as [review convergence](references/convergence.md)
     maps it: `approved`, `changes-requested`, `blocked` or `unavailable`. No seat vetoes; only a
     ledger row blocks. Emit the review and its findings, and report what is still open.
 12. On `approved`, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record

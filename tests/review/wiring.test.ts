@@ -57,7 +57,7 @@ const RISK_SENTENCE = /nam(?:e|es|ing) the asset at risk and the action that har
 
 describe("the callers name the converging loop", () => {
   test("the default is the convergence reference, and every listed caller exists", () => {
-    const reference = "references/review-convergence/REFERENCE.md";
+    const reference = "skills/super-review/references/convergence.md";
     expect(at(CONVERGENCE, "default")).toBe(reference);
     const text = flat(read(reference));
     for (const command of COMMANDS) expect(text).toContain(command);
@@ -75,7 +75,7 @@ describe("the callers name the converging loop", () => {
     ]) {
       const text = flat(read(caller));
       for (const command of COMMANDS) expect({ caller, has: text.includes(command) }).toEqual({ caller, has: true });
-      expect(text).toContain("review-convergence/REFERENCE.md");
+      expect(text).toMatch(/convergence\.md|super-review's convergence reference/);
     }
   });
 

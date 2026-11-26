@@ -1,7 +1,7 @@
 # Converging review: the default loop
 
 Every review run of a change uses this loop, from its first round to its last. The rules are
-ADR-0018 and [`policies/review.yaml`](../../policies/review.yaml) `convergence`. This file is the operating form of them: which
+ADR-0018 and [`policies/review.yaml`](../../../references/shared/policies/review.yaml) `convergence`. This file is the operating form of them: which
 command runs when, which line goes into the ledger, and what each verdict makes the caller do.
 
 The loop has three rules.
@@ -15,6 +15,15 @@ The loop has three rules.
 3. **The cap is three rounds per scope:** one full and two closure. At the cap every open row gets
    its outcome by rule, the change parks, and the caller reports it. Nothing at the cap approves on
    its own.
+
+## Contents
+
+- The commands
+- Before each round
+- Round 1: the full review
+- Later rounds: fix-only
+- After each round
+- At the cap
 
 ## The commands
 
@@ -57,7 +66,7 @@ request gets one new scope. A further trigger is a `hold`.
 1. Append `{"kind":"round-open","head":"<sha>"}`. The first round of a scope is `full`.
 2. For each seat, append its verdict, `{"kind":"verdict","seat":"<seat>","word":"approve"}` or
    `"block"`, and one finding report per finding: `seat`, `severity`, `category`, `origin`, `file`,
-   `line`, `cause_key` and `text` ([`schemas/review-ledger.schema.json`](../../schemas/review-ledger.schema.json) `finding_report`). A
+   `line`, `cause_key` and `text` ([`schemas/review-ledger.schema.json`](../../../references/shared/schemas/review-ledger.schema.json) `finding_report`). A
    security, destructive or data-loss finding adds `risk: {asset, action}`. A convention finding
    adds the project `rule` it cites.
 3. Append `{"kind":"round-close"}`. Pass `--snapshot <dir>` to `ledger add` to anchor the findings
@@ -75,7 +84,7 @@ review seat reports it too.
    closes a row.
 2. Append `round-open` for the new head. The mode is `closure`.
 3. Seat only the lanes the delta protocol names, over the delta since the last reviewed head and
-   the behavior it affects ([`protocols/review-delta/PROTOCOL.md`](../../protocols/review-delta/PROTOCOL.md)). Do not review the whole change
+   the behavior it affects ([`protocols/review-delta/PROTOCOL.md`](../../../references/shared/protocols/review-delta/PROTOCOL.md)). Do not review the whole change
    again.
 4. For each earlier finding, the seat that holds it appends a `closure` line: `vote` is
    `addressed` or `not-addressed`, with a `location`. A reproduction closes or keeps a row with no
@@ -91,7 +100,7 @@ review seat reports it too.
 ## After each round
 
 Run `ak review decide` at the reviewed head. `--seats` is the class's `independent_seats` in
-[`policies/review.yaml`](../../policies/review.yaml) `convergence.evidence_by_class`. Each item of that class's evidence with no
+[`policies/review.yaml`](../../../references/shared/policies/review.yaml) `convergence.evidence_by_class`. Each item of that class's evidence with no
 receipt at the head is one `--missing-evidence`. The decision is the review's verdict: the
 synthesis step does not overrule it.
 

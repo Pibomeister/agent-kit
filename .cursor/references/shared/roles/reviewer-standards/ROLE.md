@@ -49,7 +49,7 @@ quality problems — cited rule by rule, and nothing about whether the change sa
   red at the head and green at the merge base, or, for a security, destructive or data-loss
   finding, one sentence naming the asset at risk and the action that harms it. Without either the
   finding is filed with a follow-up and does not block, and this seat's `block` word alone vetoes
-  nothing (the `review-convergence` reference, [`policies/review.yaml`](../../policies/review.yaml) `convergence`).
+  nothing (super-review's convergence reference, [`policies/review.yaml`](../../policies/review.yaml) `convergence`).
 
 The baseline, used only where the project states nothing on the point, and each stated as a
 diagnosis with its remedy: mysterious name, duplicated code, feature envy, data clumps, primitive

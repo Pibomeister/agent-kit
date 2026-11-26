@@ -241,8 +241,8 @@ The scope command makes these readings, held by `tests/review/scope.test.ts` and
 **Authority:** the owner's order FM-CONVERGE-DEFAULT-0820 of 2026-11-26, 08:20, relayed by
 Firstmate, under the convergence rules FM-CONVERGE-ROLLOUT-0820.
 
-Every review run now uses the converging loop. `references/review-convergence/REFERENCE.md` is its
-operating form. `super-review`, its delta and panel references, the review-delta protocol, and the
+Every review run now uses the converging loop. `skills/super-review/references/convergence.md` is
+its operating form. `super-review`, its delta and panel references, the review-delta protocol, and the
 `reviewer-spec`, `reviewer-standards` and security seats name the loop and the commands it runs.
 `policies/review.yaml` `convergence.callers` lists them, and `tests/review/wiring.test.ts` holds
 that list to the files. Round 1 is the one full review. Later rounds are fix-only: the delta since

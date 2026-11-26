@@ -509,7 +509,7 @@ convergence:
   decision: docs/decisions/0018-review-convergence.md
   # The converging loop is the default for every review run. Each file below names the loop's
   # reference and the commands it runs; tests/review/wiring.test.ts holds the list to the files.
-  default: references/review-convergence/REFERENCE.md
+  default: skills/super-review/references/convergence.md
   callers:
     - skills/super-review/SKILL.md
     - skills/super-review/references/delta.md

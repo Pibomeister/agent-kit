@@ -67,7 +67,7 @@ change (ruling `closure-requires-independent-verification`).
 ## Cycles
 
 The ledger, the evidence bar and the verdict are in
-[review convergence](../../../references/review-convergence/REFERENCE.md): `ak review scope` before
+[review convergence](convergence.md): `ak review scope` before
 the round, `ak review ledger add` for every line, and `ak review decide` for the verdict.
 
 At most two fix-and-verify cycles after the first pass, so three rounds per scope. The third stops

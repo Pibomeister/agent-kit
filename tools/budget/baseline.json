@@ -98,8 +98,8 @@
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39735,
-      "tokens": 9919
+      "bytes": 39738,
+      "tokens": 9920
     },
     "bundle/claude-code:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -133,8 +133,8 @@
     },
     "bundle/claude-code:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 14945,
-      "tokens": 3734
+      "bytes": 14908,
+      "tokens": 3724
     },
     "bundle/claude-code:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -195,11 +195,6 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
-    },
-    "bundle/claude-code:references/shared/references/review-convergence/REFERENCE.md": {
-      "file": "references/review-convergence/REFERENCE.md",
-      "bytes": 7589,
-      "tokens": 1898
     },
     "bundle/claude-code:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -353,13 +348,13 @@
     },
     "bundle/claude-code:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10314,
+      "bytes": 10316,
       "tokens": 2573
     },
     "bundle/claude-code:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9520,
-      "tokens": 2377
+      "bytes": 9522,
+      "tokens": 2378
     },
     "bundle/claude-code:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -793,18 +788,23 @@
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26709,
-      "tokens": 6671
+      "bytes": 26668,
+      "tokens": 6660
+    },
+    "bundle/claude-code:skills/super-review/references/convergence.md": {
+      "file": "skills/super-review/references/convergence.md",
+      "bytes": 7806,
+      "tokens": 1952
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 6090,
-      "tokens": 1521
+      "bytes": 6035,
+      "tokens": 1508
     },
     "bundle/claude-code:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12867,
-      "tokens": 3212
+      "bytes": 12812,
+      "tokens": 3198
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -1003,8 +1003,8 @@
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39735,
-      "tokens": 9919
+      "bytes": 39738,
+      "tokens": 9920
     },
     "bundle/codex:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1038,8 +1038,8 @@
     },
     "bundle/codex:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 14945,
-      "tokens": 3734
+      "bytes": 14908,
+      "tokens": 3724
     },
     "bundle/codex:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -1100,11 +1100,6 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
-    },
-    "bundle/codex:references/shared/references/review-convergence/REFERENCE.md": {
-      "file": "references/review-convergence/REFERENCE.md",
-      "bytes": 7589,
-      "tokens": 1898
     },
     "bundle/codex:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -1258,13 +1253,13 @@
     },
     "bundle/codex:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10314,
+      "bytes": 10316,
       "tokens": 2573
     },
     "bundle/codex:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9520,
-      "tokens": 2377
+      "bytes": 9522,
+      "tokens": 2378
     },
     "bundle/codex:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -1698,18 +1693,23 @@
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26756,
-      "tokens": 6682
+      "bytes": 26715,
+      "tokens": 6672
+    },
+    "bundle/codex:skills/super-review/references/convergence.md": {
+      "file": "skills/super-review/references/convergence.md",
+      "bytes": 7806,
+      "tokens": 1952
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 6090,
-      "tokens": 1521
+      "bytes": 6035,
+      "tokens": 1508
     },
     "bundle/codex:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12867,
-      "tokens": 3212
+      "bytes": 12812,
+      "tokens": 3198
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -1908,8 +1908,8 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39735,
-      "tokens": 9919
+      "bytes": 39738,
+      "tokens": 9920
     },
     "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1943,8 +1943,8 @@
     },
     "bundle/cursor:.cursor/references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 14945,
-      "tokens": 3734
+      "bytes": 14908,
+      "tokens": 3724
     },
     "bundle/cursor:.cursor/references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -2005,11 +2005,6 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
-    },
-    "bundle/cursor:.cursor/references/shared/references/review-convergence/REFERENCE.md": {
-      "file": "references/review-convergence/REFERENCE.md",
-      "bytes": 7589,
-      "tokens": 1898
     },
     "bundle/cursor:.cursor/references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -2163,13 +2158,13 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10350,
+      "bytes": 10352,
       "tokens": 2582
     },
     "bundle/cursor:.cursor/references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9556,
-      "tokens": 2386
+      "bytes": 9558,
+      "tokens": 2387
     },
     "bundle/cursor:.cursor/references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -2598,18 +2593,23 @@
     },
     "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26745,
-      "tokens": 6680
+      "bytes": 26704,
+      "tokens": 6669
+    },
+    "bundle/cursor:.cursor/skills/super-review/references/convergence.md": {
+      "file": "skills/super-review/references/convergence.md",
+      "bytes": 7806,
+      "tokens": 1952
     },
     "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 6090,
-      "tokens": 1521
+      "bytes": 6035,
+      "tokens": 1508
     },
     "bundle/cursor:.cursor/skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12867,
-      "tokens": 3212
+      "bytes": 12812,
+      "tokens": 3198
     },
     "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -2813,8 +2813,8 @@
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39735,
-      "tokens": 9919
+      "bytes": 39738,
+      "tokens": 9920
     },
     "bundle/droid:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -2848,8 +2848,8 @@
     },
     "bundle/droid:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 14945,
-      "tokens": 3734
+      "bytes": 14908,
+      "tokens": 3724
     },
     "bundle/droid:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -2910,11 +2910,6 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
-    },
-    "bundle/droid:references/shared/references/review-convergence/REFERENCE.md": {
-      "file": "references/review-convergence/REFERENCE.md",
-      "bytes": 7589,
-      "tokens": 1898
     },
     "bundle/droid:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -3068,13 +3063,13 @@
     },
     "bundle/droid:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10314,
+      "bytes": 10316,
       "tokens": 2573
     },
     "bundle/droid:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9520,
-      "tokens": 2377
+      "bytes": 9522,
+      "tokens": 2378
     },
     "bundle/droid:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -3508,18 +3503,23 @@
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26754,
-      "tokens": 6682
+      "bytes": 26713,
+      "tokens": 6671
+    },
+    "bundle/droid:skills/super-review/references/convergence.md": {
+      "file": "skills/super-review/references/convergence.md",
+      "bytes": 7806,
+      "tokens": 1952
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 6090,
-      "tokens": 1521
+      "bytes": 6035,
+      "tokens": 1508
     },
     "bundle/droid:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12867,
-      "tokens": 3212
+      "bytes": 12812,
+      "tokens": 3198
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -3718,8 +3718,8 @@
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39735,
-      "tokens": 9919
+      "bytes": 39738,
+      "tokens": 9920
     },
     "bundle/grok:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -3753,8 +3753,8 @@
     },
     "bundle/grok:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 14945,
-      "tokens": 3734
+      "bytes": 14908,
+      "tokens": 3724
     },
     "bundle/grok:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -3815,11 +3815,6 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
-    },
-    "bundle/grok:references/shared/references/review-convergence/REFERENCE.md": {
-      "file": "references/review-convergence/REFERENCE.md",
-      "bytes": 7589,
-      "tokens": 1898
     },
     "bundle/grok:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -3973,13 +3968,13 @@
     },
     "bundle/grok:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10314,
+      "bytes": 10316,
       "tokens": 2573
     },
     "bundle/grok:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9520,
-      "tokens": 2377
+      "bytes": 9522,
+      "tokens": 2378
     },
     "bundle/grok:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -4413,18 +4408,23 @@
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26709,
-      "tokens": 6671
+      "bytes": 26668,
+      "tokens": 6660
+    },
+    "bundle/grok:skills/super-review/references/convergence.md": {
+      "file": "skills/super-review/references/convergence.md",
+      "bytes": 7806,
+      "tokens": 1952
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 6090,
-      "tokens": 1521
+      "bytes": 6035,
+      "tokens": 1508
     },
     "bundle/grok:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12867,
-      "tokens": 3212
+      "bytes": 12812,
+      "tokens": 3198
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -4623,8 +4623,8 @@
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 39735,
-      "tokens": 9919
+      "bytes": 39738,
+      "tokens": 9920
     },
     "bundle/kimi:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -4658,8 +4658,8 @@
     },
     "bundle/kimi:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 14945,
-      "tokens": 3734
+      "bytes": 14908,
+      "tokens": 3724
     },
     "bundle/kimi:references/shared/protocols/tdd/PROTOCOL.md": {
       "file": "protocols/tdd/PROTOCOL.md",
@@ -4720,11 +4720,6 @@
       "file": "references/read-economy/REFERENCE.md",
       "bytes": 1371,
       "tokens": 343
-    },
-    "bundle/kimi:references/shared/references/review-convergence/REFERENCE.md": {
-      "file": "references/review-convergence/REFERENCE.md",
-      "bytes": 7589,
-      "tokens": 1898
     },
     "bundle/kimi:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -4878,13 +4873,13 @@
     },
     "bundle/kimi:references/shared/roles/reviewer-spec/ROLE.md": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10314,
+      "bytes": 10316,
       "tokens": 2573
     },
     "bundle/kimi:references/shared/roles/reviewer-standards/ROLE.md": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9520,
-      "tokens": 2377
+      "bytes": 9522,
+      "tokens": 2378
     },
     "bundle/kimi:references/shared/roles/supervisor/ROLE.md": {
       "file": "roles/supervisor/ROLE.md",
@@ -5318,18 +5313,23 @@
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 26756,
-      "tokens": 6682
+      "bytes": 26715,
+      "tokens": 6672
+    },
+    "bundle/kimi:skills/super-review/references/convergence.md": {
+      "file": "skills/super-review/references/convergence.md",
+      "bytes": 7806,
+      "tokens": 1952
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
-      "bytes": 6090,
-      "tokens": 1521
+      "bytes": 6035,
+      "tokens": 1508
     },
     "bundle/kimi:skills/super-review/references/panel.md": {
       "file": "skills/super-review/references/panel.md",
-      "bytes": 12867,
-      "tokens": 3212
+      "bytes": 12812,
+      "tokens": 3198
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
@@ -5688,13 +5688,13 @@
     },
     "role:reviewer-spec": {
       "file": "roles/reviewer-spec/ROLE.md",
-      "bytes": 10081,
+      "bytes": 10083,
       "tokens": 2515
     },
     "role:reviewer-standards": {
       "file": "roles/reviewer-standards/ROLE.md",
-      "bytes": 9355,
-      "tokens": 2336
+      "bytes": 9357,
+      "tokens": 2337
     },
     "role:supervisor": {
       "file": "roles/supervisor/ROLE.md",

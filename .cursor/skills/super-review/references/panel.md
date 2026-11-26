@@ -65,7 +65,7 @@ folder (`rm -rf .work/<seat>/probe`, `docker rm -f <literal-name>`), or the cont
 command, a loop or a multi-line script. Leaving scratch files for cleanup is always allowed.
 
 Every finding a seat returns enters the review's convergence ledger as one finding report
-([review convergence](../../../references/shared/references/review-convergence/REFERENCE.md)). A security, destructive
+([review convergence](convergence.md)). A security, destructive
 or data-loss finding names the asset at risk and the action that harms it, so it blocks in any
 round. A convention finding cites the project rule. After round 1 a specialist seat returns only
 for its own open finding, and a new finding it raises blocks only with a reproduction that is red at
