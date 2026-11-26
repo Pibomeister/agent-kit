@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -8,6 +8,7 @@ import {
   checkUnpublished,
   formatStatus,
   holdersDir,
+  laneHolderToken,
   laneKey,
   laneStatus,
   publishLane,
@@ -210,6 +211,41 @@ got.release();
     if (first.ok) first.release();
   });
 
+  test("a matching live holder token re-enters; an unrelated waiter times out naming the holder", () => {
+    const dir = processScratch("ak-gate-lanes-");
+    const clock = fakeClock();
+    const first = acquireLane(dir, laneA, { now: clock.now, sleep: noSleep, pid: process.pid });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const nested = acquireLane(dir, laneA, {
+      now: clock.now,
+      sleep: noSleep,
+      pid: 424_242,
+      inherited: laneHolderToken(first.holder),
+      timeoutMs: 1_000,
+    });
+    expect(nested.ok).toBe(true);
+    if (nested.ok) {
+      expect(nested.waited_ms).toBe(0);
+      nested.release();
+    }
+    expect(laneStatus(dir, clock.now()).holders).toHaveLength(1);
+    const unrelated = acquireLane(dir, laneA, {
+      now: clock.now,
+      sleep: clock.sleep,
+      pid: 424_242,
+      timeoutMs: 1_000,
+      pollMs: 250,
+    });
+    expect(unrelated.ok).toBe(false);
+    if (!unrelated.ok) {
+      expect(unrelated.reason).toContain(`pid ${process.pid}`);
+      expect(unrelated.holder?.pid).toBe(process.pid);
+      expect(unrelated.waited_ms).toBeGreaterThanOrEqual(1_000);
+    }
+    first.release();
+  });
+
   test("pool and unpublished limits resolve flag over env over default", () => {
     expect(resolvePool(undefined, undefined)).toBeUndefined();
     expect(resolvePool(undefined, "3")).toBe(3);
@@ -259,10 +295,10 @@ function capture() {
   return { out, err, io: { out: (line: string) => out.push(line), err: (line: string) => err.push(line) } };
 }
 
-function scratchRepo(prefix: string) {
+function scratchRepo(prefix: string, branch = "fm/run") {
   const dir = processScratch(prefix);
   const repo = join(dir, "repo");
-  spawnSync("git", ["init", "-b", "fm/run", repo], { encoding: "utf8", env: gitEnv(repo) });
+  spawnSync("git", ["init", "-b", branch, repo], { encoding: "utf8", env: gitEnv(repo) });
   git(repo, ["config", "user.email", "lane@example.invalid"]);
   git(repo, ["config", "user.name", "Lane"]);
   writeFileSync(join(repo, "base.txt"), "base\n");
@@ -311,6 +347,109 @@ describe("lanes run entry point (issue #194)", () => {
     const age = capture();
     expect(main(["lanes", "unpublished", "--max-age-minutes", "5m", "--project", repo], age.io, repo)).toBe(2);
     expect(age.err.join("\n")).toContain("--max-age-minutes");
+  }, 30_000);
+
+  test("a child check --lanes under lanes run completes", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-child-check-");
+    const store = join(dir, "evidence");
+    const log = join(dir, "child.err");
+    const helper = join(dir, "gate-main.ts");
+    writeFileSync(
+      helper,
+      `import { writeFileSync } from "node:fs";
+import { main } from ${JSON.stringify(join(import.meta.dir, "../../src/lifecycle/gate.ts"))};
+const err: string[] = [];
+const code = main(process.argv.slice(2), {
+  out: (line) => console.log(line),
+  err: (line) => { err.push(line); console.error(line); },
+}, process.cwd());
+writeFileSync(${JSON.stringify(log)}, err.join("\\n"));
+process.exit(code);
+`,
+    );
+    const ran = capture();
+    const code = main(
+      [
+        "lanes",
+        "run",
+        "--dir",
+        store,
+        "--project",
+        repo,
+        "--",
+        process.execPath,
+        helper,
+        "check",
+        "--lanes",
+        "--dir",
+        store,
+        "--project",
+        repo,
+        "--gates",
+        "build-checks",
+      ],
+      ran.io,
+      repo,
+    );
+    expect(code).toBe(1);
+    expect(ran.err.join("\n")).not.toContain("refused: lane");
+    const childErr = existsSync(log) ? readFileSync(log, "utf8") : "";
+    expect(childErr).not.toContain("refused: lane");
+    expect(childErr).not.toContain("queued:");
+    expect(childErr).toContain("no current evidence");
+    expect(laneStatus(join(store, "gate-lanes"), Date.now())).toEqual({ holders: [], waiters: [] });
+  }, 30_000);
+
+  test("an AK_GATE_LANES=1 child under lanes run completes", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-child-env-");
+    const store = join(dir, "evidence");
+    const log = join(dir, "child.err");
+    const helper = join(dir, "gate-main.ts");
+    writeFileSync(
+      helper,
+      `import { writeFileSync } from "node:fs";
+import { main } from ${JSON.stringify(join(import.meta.dir, "../../src/lifecycle/gate.ts"))};
+const err: string[] = [];
+const code = main(process.argv.slice(2), {
+  out: (line) => console.log(line),
+  err: (line) => { err.push(line); console.error(line); },
+}, process.cwd());
+writeFileSync(${JSON.stringify(log)}, err.join("\\n"));
+process.exit(code);
+`,
+    );
+    const ran = capture();
+    const code = main(
+      [
+        "lanes",
+        "run",
+        "--dir",
+        store,
+        "--project",
+        repo,
+        "--",
+        "env",
+        "AK_GATE_LANES=1",
+        process.execPath,
+        helper,
+        "check",
+        "--dir",
+        store,
+        "--project",
+        repo,
+        "--gates",
+        "build-checks",
+      ],
+      ran.io,
+      repo,
+    );
+    expect(code).toBe(1);
+    expect(ran.err.join("\n")).not.toContain("refused: lane");
+    const childErr = existsSync(log) ? readFileSync(log, "utf8") : "";
+    expect(childErr).not.toContain("refused: lane");
+    expect(childErr).not.toContain("queued:");
+    expect(childErr).toContain("no current evidence");
+    expect(laneStatus(join(store, "gate-lanes"), Date.now())).toEqual({ holders: [], waiters: [] });
   }, 30_000);
 
   test("an invalid --timeout-minutes is a usage error, not an unbounded wait", () => {
@@ -456,6 +595,55 @@ describe("lanes publish (issue #194)", () => {
     expect(laneStatus(join(store, "gate-lanes"), Date.now()).holders).toHaveLength(1);
     if (held.ok) held.release();
     expect(publishLane(repo)).toMatchObject({ branch: "fm/run", sha });
+  }, 30_000);
+
+  test("refuses main, master, and origin's default branch", () => {
+    const mainRepo = scratchRepo("ak-gate-lanes-publish-main-", "main");
+    const originMain = join(mainRepo.dir, "origin.git");
+    spawnSync("git", ["init", "--bare", originMain], { encoding: "utf8", env: gitEnv(mainRepo.dir) });
+    git(mainRepo.repo, ["remote", "add", "origin", originMain]);
+    const onMain = capture();
+    expect(main(["lanes", "publish", "--project", mainRepo.repo], onMain.io, mainRepo.repo)).toBe(1);
+    expect(onMain.err.join("\n")).toContain("does not push main, master, or origin's default branch");
+
+    const masterRepo = scratchRepo("ak-gate-lanes-publish-master-", "master");
+    const originMaster = join(masterRepo.dir, "origin.git");
+    spawnSync("git", ["init", "--bare", originMaster], { encoding: "utf8", env: gitEnv(masterRepo.dir) });
+    git(masterRepo.repo, ["remote", "add", "origin", originMaster]);
+    const onMaster = capture();
+    expect(main(["lanes", "publish", "--project", masterRepo.repo], onMaster.io, masterRepo.repo)).toBe(1);
+    expect(onMaster.err.join("\n")).toContain("does not push main, master, or origin's default branch");
+
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-default-", "develop");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop"]);
+    const onDefault = capture();
+    expect(main(["lanes", "publish", "--project", repo], onDefault.io, repo)).toBe(1);
+    expect(onDefault.err.join("\n")).toContain("does not push main, master, or origin's default branch");
+    expect(onDefault.err.join("\n")).toContain("develop");
+  }, 30_000);
+
+  test("refuses a non-fast-forward push to origin", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-nff-");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(repo, ["remote", "add", "origin", origin]);
+    writeFileSync(join(repo, "next.txt"), "first\n");
+    git(repo, ["add", "next.txt"]);
+    git(repo, ["commit", "-m", "first"]);
+    const first = capture();
+    expect(main(["lanes", "publish", "--project", repo], first.io, repo)).toBe(0);
+    const originSha = git(origin, ["rev-parse", "fm/run"]);
+    git(repo, ["reset", "--hard", "HEAD~1"]);
+    writeFileSync(join(repo, "other.txt"), "diverged\n");
+    git(repo, ["add", "other.txt"]);
+    git(repo, ["commit", "-m", "diverged"]);
+    const refused = capture();
+    expect(main(["lanes", "publish", "--project", repo], refused.io, repo)).toBe(1);
+    expect(refused.err.join("\n")).toContain("non-fast-forward");
+    expect(git(origin, ["rev-parse", "fm/run"])).toBe(originSha);
   }, 30_000);
 
   test("refuses a checkout with no origin and a detached HEAD", () => {

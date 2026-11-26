@@ -8,8 +8,13 @@
  * forward-looking: `ak lifecycle lanes run -- <command>` still wraps an arbitrary
  * command, and `check` / `record` take the same lock when `--lanes` or `AK_GATE_LANES=1`
  * is set (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins). Without
- * that flag or env they do not wait. `lanes publish` pushes HEAD to origin as the
- * current branch without taking the lock, so a commit can land while a gate is queued.
+ * that flag or env they do not wait. `AK_GATE_LANES` is read only when set and
+ * non-empty (`1` on, `0` off; any other value refuses); unset or empty matches a
+ * checkout without the variable. `lanes run` exports `AK_GATE_LANE_HOLDER` so a
+ * child `check`/`record` on the same live hold reuses it instead of waiting on
+ * the parent. `lanes publish` pushes HEAD to origin as the current branch without
+ * taking the lock, so a commit can land while a gate is queued; it refuses main,
+ * master, origin's default branch, and an unnamed branch.
  *
  * - Mutual exclusion holds *within* one lane: two gate runs for the same worktree
  *   and branch cannot overlap. Different lanes hold different locks and run at once.
@@ -84,6 +89,8 @@ export interface AcquireOptions {
   host?: string;
   sleep?: (ms: number) => void;
   onWait?: (reason: string, waitedMs: number) => void;
+  /** `AK_GATE_LANE_HOLDER` from `lanes run`; a matching live holder is already held by this call chain. */
+  inherited?: string;
 }
 
 export type AcquireResult =
@@ -92,6 +99,12 @@ export type AcquireResult =
 
 const DEFAULT_POLL_MS = 250;
 const UNPARSEABLE_GRACE_MS = 30_000;
+
+/** Default wait for `check`/`record --lanes`, in minutes; the same number as the unpublished-age default. */
+export const DEFAULT_LANES_WAIT_MINUTES = 30;
+
+/** Exported by `lanes run` to children that share its live hold. */
+export const LANE_HOLDER_ENV = "AK_GATE_LANE_HOLDER";
 
 /** The canonical publication remote; a gate remote's refs never count as published. */
 const PUBLICATION_REMOTE = "origin";
@@ -143,6 +156,43 @@ function alive(pid: number): boolean {
 
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+interface InheritedHolder {
+  pid: number;
+  acquired_at: string;
+  key: string;
+}
+
+/** Encode this hold for a child process; `acquireLane` reuses a matching live holder. */
+export function laneHolderToken(holder: LaneHolder): string {
+  return `${holder.pid} ${holder.acquired_at} ${laneKey(holder)}`;
+}
+
+function parseLaneHolderToken(raw: string): InheritedHolder | undefined {
+  const match = /^(\d+) (\S+) (\S+)$/.exec(raw);
+  if (match === null || match[1] === undefined || match[2] === undefined || match[3] === undefined) return undefined;
+  const pid = Number(match[1]);
+  if (!isPid(pid)) return undefined;
+  return { pid, acquired_at: match[2], key: match[3] };
+}
+
+/** A child of `lanes run` whose token matches this live holder; unrelated processes do not match. */
+function reenteredHolder(
+  path: string,
+  identityKey: string,
+  inheritedRaw: string | undefined,
+  host: string,
+): LaneHolder | undefined {
+  if (inheritedRaw === undefined || inheritedRaw === "") return undefined;
+  const inherited = parseLaneHolderToken(inheritedRaw);
+  if (inherited === undefined || inherited.key !== identityKey) return undefined;
+  const seen = readHolder(path);
+  if (seen === null) return undefined;
+  if (seen.value.pid !== inherited.pid || seen.value.acquired_at !== inherited.acquired_at) return undefined;
+  if (seen.value.host !== host || !alive(seen.value.pid)) return undefined;
+  if (laneKey(seen.value) !== identityKey) return undefined;
+  return seen.value;
 }
 
 function isHolder(value: unknown): value is LaneHolder {
@@ -356,10 +406,12 @@ export function acquireLane(dir: string, identity: LaneIdentity, options: Acquir
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
   const timeoutMs = options.timeoutMs ?? 0;
   const started = now();
-  mkdirSync(holdersDir(dir), { recursive: true });
-  mkdirSync(waitersDir(dir), { recursive: true });
   const key = laneKey(identity);
   const holderPath = join(holdersDir(dir), `${key}.json`);
+  const already = reenteredHolder(holderPath, key, options.inherited ?? process.env[LANE_HOLDER_ENV], host);
+  if (already !== undefined) return { ok: true, holder: already, waited_ms: 0, release: () => undefined };
+  mkdirSync(holdersDir(dir), { recursive: true });
+  mkdirSync(waitersDir(dir), { recursive: true });
   const waiterPath = join(waitersDir(dir), `${key}-${pid}.json`);
   let registered = false;
   const registerWaiter = (at: number) => {
@@ -547,6 +599,16 @@ export function publishLane(project: string, git: GitRunner = runGit): LanePubli
   if (branchResult.code !== 0 || branchResult.text === "")
     throw new Error(`${project} is not on a named branch: ${branchResult.stderr}`);
   const branch = branchResult.text;
+  const blocked = new Set(["main", "master"]);
+  const originHead = git(project, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+  if (originHead.code === 0 && originHead.text.startsWith("refs/remotes/origin/")) {
+    const defaultBranch = originHead.text.slice("refs/remotes/origin/".length);
+    if (defaultBranch !== "") blocked.add(defaultBranch);
+  }
+  if (blocked.has(branch))
+    throw new Error(
+      `refusing to publish ${branch}: lanes publish does not push main, master, or origin's default branch`,
+    );
   const head = git(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || head.text === "") throw new Error(`${project} has no readable HEAD: ${head.stderr}`);
   const origin = git(project, ["remote", "get-url", PUBLICATION_REMOTE]);
@@ -557,7 +619,11 @@ export function publishLane(project: string, git: GitRunner = runGit): LanePubli
   return { branch, sha: head.text };
 }
 
-/** `--lanes` or `AK_GATE_LANES=1` opts a real gate command into the per-lane lock. Unset or `0` leaves it off. */
+/**
+ * `--lanes` or `AK_GATE_LANES=1` opts a real gate command into the per-lane lock.
+ * Unset or empty is not parsed and leaves it off, matching a checkout without the variable.
+ * Any other set value refuses (fail closed).
+ */
 export function resolveLanesEnabled(flag: boolean, env: string | undefined = process.env.AK_GATE_LANES): boolean {
   if (flag) return true;
   if (env === undefined || env === "") return false;

@@ -94,7 +94,10 @@ import { isDesignReport } from "./design-report.ts";
 import {
   acquireLane,
   checkUnpublished,
+  DEFAULT_LANES_WAIT_MINUTES,
   formatStatus,
+  LANE_HOLDER_ENV,
+  laneHolderToken,
   laneIdentity,
   type LaneIdentity,
   laneStatus,
@@ -3074,14 +3077,18 @@ export const LIFECYCLE_USAGE = [
   "    [--channel page|human-needed|morning-handoff] [--target pull-request|deploy] [--blocked-on <reason>]",
   "    [--prompt-held-open]",
   "",
-  "  Gate lanes (issue #194): `lanes run` wraps an arbitrary command in one lock per worktree+branch. `check` and `record`",
-  "  take that same lock when `--lanes` or `AK_GATE_LANES=1` is set; without it they do not wait. --lane and --label only",
+  "  Gate lanes (issue #194): `lanes run` wraps an arbitrary command in one lock per worktree+branch and exports",
+  "  AK_GATE_LANE_HOLDER so a child `check`/`record` reuses that live hold. `check` and `record` take the same lock when",
+  "  `--lanes` or `AK_GATE_LANES=1` is set; without it they do not wait. AK_GATE_LANES is read only when set and non-empty:",
+  "  1 on, 0 off, any other value refuses; unset or empty matches a checkout without the variable. --lane and --label only",
   "  describe the holder. It queues visibly until the lane (and the optional bounded pool: --pool or AK_GATE_LANES_POOL) is",
-  "  free, runs, and releases. `lanes status` names every holder and waiter with held/waiting time. `lanes publish` pushes",
-  "  HEAD to origin as the current branch without taking the lock, so commits can land while a gate is queued; it never",
-  "  force-pushes. `lanes unpublished` alerts when the oldest commit origin does not hold (a gate remote never counts) is",
-  "  older than --max-age-minutes or AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES (default 30); it reports only. It reads local",
-  "  origin-tracking refs and never fetches: run `git fetch origin` first for a current answer.",
+  "  free, runs, and releases. `check`/`record --lanes` wait at most --timeout-minutes (default 30) and then refuse naming",
+  "  the holder. `lanes status` names every holder and waiter with held/waiting time. `lanes publish` pushes HEAD to origin",
+  "  as the current branch without taking the lock, so commits can land while a gate is queued; it never force-pushes and",
+  "  it refuses main, master, origin's default branch, and an unnamed branch. `lanes unpublished` alerts when the oldest",
+  "  commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or",
+  "  AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES (default 30); it reports only. It reads local origin-tracking refs and never",
+  "  fetches: run `git fetch origin` first for a current answer.",
   "",
   "  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`",
   "  and the tool runs it. A supervisor declaration outside the checkout (AK_LIFECYCLE_SUPERVISOR_DECLARATION) binds the",
@@ -3509,7 +3516,8 @@ function holdLane(
     io.err(`${prefix}: --timeout-minutes must be a number, got ${timeoutFlag}`);
     return { ok: false, code: 2 };
   }
-  const timeoutMs = timeoutFlag === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Number(timeoutFlag) * 60_000);
+  const timeoutMs =
+    timeoutFlag === undefined ? DEFAULT_LANES_WAIT_MINUTES * 60_000 : Math.max(0, Number(timeoutFlag) * 60_000);
   let pool: number | undefined;
   try {
     pool = resolvePool(poolFlag);
@@ -3728,7 +3736,11 @@ export function main(
     try {
       const [program, ...rest] = command;
       if (program === undefined) return 2;
-      const child = spawnSync(program, rest, { cwd: project, stdio: "inherit" });
+      const child = spawnSync(program, rest, {
+        cwd: project,
+        stdio: "inherit",
+        env: { ...process.env, [LANE_HOLDER_ENV]: laneHolderToken(acquired.holder) },
+      });
       return child.status ?? 1;
     } finally {
       acquired.release();
