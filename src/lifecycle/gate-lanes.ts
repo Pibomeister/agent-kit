@@ -5,10 +5,11 @@
  * unpublished for 80+ minutes, and reviews aimed at stale heads. The lock behind that
  * report, its owner and the caller that took it are not known from this repository,
  * and nothing here replaces or reconfigures it. What this module provides is
- * forward-looking: a supported entry point, `ak lifecycle lanes run -- <command>`
- * (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins), that a gate
- * caller wraps its run in to get per-lane exclusion and a visible queue. Only callers
- * that use it are covered.
+ * forward-looking: `ak lifecycle lanes run -- <command>` still wraps an arbitrary
+ * command, and `check` / `record` take the same lock when `--lanes` or `AK_GATE_LANES=1`
+ * is set (bundled as `bin/ak-gate.mjs`, so it uses only `node:` built-ins). Without
+ * that flag or env they do not wait. `lanes publish` pushes HEAD to origin as the
+ * current branch without taking the lock, so a commit can land while a gate is queued.
  *
  * - Mutual exclusion holds *within* one lane: two gate runs for the same worktree
  *   and branch cannot overlap. Different lanes hold different locks and run at once.
@@ -27,10 +28,10 @@
  *   canonical publication remote, does not hold yet (a gate remote such as
  *   `no-mistakes` never counts as published) and alerts when its age exceeds a configurable limit
  *   (`--max-age-minutes <n>` / `AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES`, default 30).
- *   It only reports: publication means entering the configured pipeline promptly,
- *   never bypassing it with a direct push from here. It reads the local
- *   `refs/remotes/origin/*` refs and never fetches, so its answer is only as fresh as
- *   the caller's last `git fetch origin`; it says so rather than guess.
+ *   It only reports. `lanes publish` is the push: origin, current branch, no force,
+ *   no lock. `unpublished` reads local `refs/remotes/origin/*` and never fetches, so
+ *   its answer is only as fresh as the caller's last `git fetch origin`; it says so
+ *   rather than guess.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -530,6 +531,39 @@ export function checkUnpublished(
     overdue: ageMinutes > maxAgeMinutes,
     basis: UNPUBLISHED_BASIS,
   };
+}
+
+/**
+ * Push HEAD to `origin` as this branch. Does not take the lane lock and never force-pushes.
+ * A gate remote is not the destination.
+ */
+export interface LanePublish {
+  branch: string;
+  sha: string;
+}
+
+export function publishLane(project: string, git: GitRunner = runGit): LanePublish {
+  const branchResult = git(project, ["branch", "--show-current"]);
+  if (branchResult.code !== 0 || branchResult.text === "")
+    throw new Error(`${project} is not on a named branch: ${branchResult.stderr}`);
+  const branch = branchResult.text;
+  const head = git(project, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.text === "") throw new Error(`${project} has no readable HEAD: ${head.stderr}`);
+  const origin = git(project, ["remote", "get-url", PUBLICATION_REMOTE]);
+  if (origin.code !== 0 || origin.text === "")
+    throw new Error(`${project} has no usable \`${PUBLICATION_REMOTE}\` remote: ${origin.stderr}`);
+  const pushed = git(project, ["push", "--", PUBLICATION_REMOTE, `${head.text}:refs/heads/${branch}`]);
+  if (pushed.code !== 0) throw new Error(`git push ${PUBLICATION_REMOTE} ${branch} failed: ${pushed.stderr}`);
+  return { branch, sha: head.text };
+}
+
+/** `--lanes` or `AK_GATE_LANES=1` opts a real gate command into the per-lane lock. Unset or `0` leaves it off. */
+export function resolveLanesEnabled(flag: boolean, env: string | undefined = process.env.AK_GATE_LANES): boolean {
+  if (flag) return true;
+  if (env === undefined || env === "") return false;
+  if (env === "1") return true;
+  if (env === "0") return false;
+  throw new Error(`AK_GATE_LANES must be 1 or 0, got ${env}`);
 }
 
 /** Pool size from flag, then `AK_GATE_LANES_POOL`; absent or `0` means no cap, anything else invalid throws. */

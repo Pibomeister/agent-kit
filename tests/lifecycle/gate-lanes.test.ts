@@ -10,8 +10,10 @@ import {
   holdersDir,
   laneKey,
   laneStatus,
+  publishLane,
   releaseLane,
   waitersDir,
+  resolveLanesEnabled,
   resolveMaxAgeMinutes,
   resolvePool,
   type LaneIdentity,
@@ -221,15 +223,31 @@ got.release();
     expect(resolveMaxAgeMinutes("0", undefined)).toBe(0);
     expect(() => resolveMaxAgeMinutes("5m", undefined)).toThrow("--max-age-minutes");
     expect(() => resolveMaxAgeMinutes(undefined, "-3")).toThrow("AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES");
+    expect(resolveLanesEnabled(false, undefined)).toBe(false);
+    expect(resolveLanesEnabled(false, "")).toBe(false);
+    expect(resolveLanesEnabled(false, "0")).toBe(false);
+    expect(resolveLanesEnabled(false, "1")).toBe(true);
+    expect(resolveLanesEnabled(true, "0")).toBe(true);
+    expect(() => resolveLanesEnabled(false, "yes")).toThrow("AK_GATE_LANES");
   });
 });
 
 const UNPUBLISHED_NOW = () => Date.parse("2026-01-03T00:00:00Z");
 
+function gitEnv(project: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    HOME: project,
+    ...extra,
+  };
+}
+
 function git(project: string, args: string[], env: Record<string, string> = {}): string {
   const result = spawnSync("git", ["-C", project, ...args], {
     encoding: "utf8",
-    env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", HOME: project, ...env },
+    env: gitEnv(project, env),
   });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
   return result.stdout.trim();
@@ -244,7 +262,7 @@ function capture() {
 function scratchRepo(prefix: string) {
   const dir = processScratch(prefix);
   const repo = join(dir, "repo");
-  spawnSync("git", ["init", "-b", "fm/run", repo], { encoding: "utf8" });
+  spawnSync("git", ["init", "-b", "fm/run", repo], { encoding: "utf8", env: gitEnv(repo) });
   git(repo, ["config", "user.email", "lane@example.invalid"]);
   git(repo, ["config", "user.name", "Lane"]);
   writeFileSync(join(repo, "base.txt"), "base\n");
@@ -411,5 +429,110 @@ describe("unpublished-commit age check (issue #194)", () => {
       unpublished: 0,
       overdue: false,
     });
+  }, 30_000);
+});
+
+describe("lanes publish (issue #194)", () => {
+  test("pushes HEAD to origin while the lane lock is held", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(repo, ["remote", "add", "origin", origin]);
+    writeFileSync(join(repo, "next.txt"), "land while queued\n");
+    git(repo, ["add", "next.txt"]);
+    git(repo, ["commit", "-m", "land while queued"]);
+    const sha = git(repo, ["rev-parse", "HEAD"]);
+    const store = join(dir, "evidence");
+    const held = acquireLane(
+      join(store, "gate-lanes"),
+      { lane: "fm/run", branch: "fm/run", worktree: git(repo, ["rev-parse", "--show-toplevel"]) },
+      { sleep: noSleep },
+    );
+    expect(held.ok).toBe(true);
+    const published = capture();
+    expect(main(["lanes", "publish", "--project", repo], published.io, repo)).toBe(0);
+    expect(published.out.join("\n")).toContain("gate lock not taken");
+    expect(git(origin, ["rev-parse", "fm/run"])).toBe(sha);
+    expect(laneStatus(join(store, "gate-lanes"), Date.now()).holders).toHaveLength(1);
+    if (held.ok) held.release();
+    expect(publishLane(repo)).toMatchObject({ branch: "fm/run", sha });
+  }, 30_000);
+
+  test("refuses a checkout with no origin and a detached HEAD", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-err-");
+    const missing = capture();
+    expect(main(["lanes", "publish", "--project", repo], missing.io, repo)).toBe(1);
+    expect(missing.err.join("\n")).toContain("origin");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["checkout", "--detach", "HEAD"]);
+    const detached = capture();
+    expect(main(["lanes", "publish", "--project", repo], detached.io, repo)).toBe(1);
+    expect(detached.err.join("\n")).toContain("named branch");
+  }, 30_000);
+});
+
+describe("check and record through lanes (issue #194)", () => {
+  test("check --lanes refuses a held lane; check without --lanes does not wait", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-check-");
+    const store = join(dir, "evidence");
+    const identity = {
+      lane: "fm/run",
+      branch: "fm/run",
+      worktree: git(repo, ["rev-parse", "--show-toplevel"]),
+    };
+    const held = acquireLane(join(store, "gate-lanes"), identity, { sleep: noSleep });
+    expect(held.ok).toBe(true);
+    const unlocked = capture();
+    const unlockedCode = main(
+      ["check", "--dir", store, "--project", repo, "--gates", "build-checks"],
+      unlocked.io,
+      repo,
+    );
+    expect(unlockedCode).toBe(1);
+    expect(unlocked.err.join("\n")).not.toContain("queued:");
+    expect(unlocked.err.join("\n")).not.toContain("refused: lane");
+    const locked = capture();
+    const lockedCode = main(
+      ["check", "--lanes", "--timeout-minutes", "0", "--dir", store, "--project", repo, "--gates", "build-checks"],
+      locked.io,
+      repo,
+    );
+    expect(lockedCode).toBe(1);
+    expect(locked.err.join("\n")).toContain("refused:");
+    expect(locked.err.join("\n")).toContain(`pid ${process.pid}`);
+    if (held.ok) held.release();
+    const after = capture();
+    expect(
+      main(
+        ["check", "--lanes", "--timeout-minutes", "0", "--dir", store, "--project", repo, "--gates", "build-checks"],
+        after.io,
+        repo,
+      ),
+    ).toBe(1);
+    expect(after.err.join("\n")).not.toContain("refused: lane");
+    expect(laneStatus(join(store, "gate-lanes"), Date.now())).toEqual({ holders: [], waiters: [] });
+  }, 30_000);
+
+  test("record --lanes refuses a held lane", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-record-");
+    const store = join(dir, "evidence");
+    const held = acquireLane(
+      join(store, "gate-lanes"),
+      { lane: "fm/run", branch: "fm/run", worktree: git(repo, ["rev-parse", "--show-toplevel"]) },
+      { sleep: noSleep },
+    );
+    expect(held.ok).toBe(true);
+    const locked = capture();
+    expect(
+      main(
+        ["record", "--lanes", "--timeout-minutes", "0", "--gate", "build-checks", "--dir", store, "--project", repo],
+        locked.io,
+        repo,
+      ),
+    ).toBe(1);
+    expect(locked.err.join("\n")).toContain("refused:");
+    if (held.ok) held.release();
   }, 30_000);
 });
