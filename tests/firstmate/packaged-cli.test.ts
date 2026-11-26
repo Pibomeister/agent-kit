@@ -10,7 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
-import { planBundle } from "../../src/packaging/plan.ts";
+import { planBundle, type BundleFile } from "../../src/packaging/plan.ts";
 import { processScratch, removeProcessDir } from "../helpers/process-tmp.ts";
 import { makeTree } from "../helpers/tree.ts";
 import { makeBundle, makeProject, REPO } from "./fixture.ts";
@@ -23,6 +23,19 @@ function stockHome() {
     "bin/fm-spawn.sh": "#!/bin/sh\n",
     "bin/fm-tasks-axi.sh": "#!/bin/sh\n",
   });
+}
+
+function writePlan(dest: string, files: Iterable<BundleFile>, keep: (path: string) => boolean) {
+  for (const file of files) {
+    if (!keep(file.path)) continue;
+    const out = join(dest, file.path);
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(
+      out,
+      file.contents,
+      file.contents.startsWith("#!") && file.path.endsWith("/ak") ? { mode: 0o755 } : {},
+    );
+  }
 }
 
 interface PackedRun {
@@ -43,23 +56,21 @@ beforeAll(() => {
   if (catalog === null) throw new Error("no catalog");
   const claude = planBundle({ root: REPO, catalog }, "claude-code", {});
   const cursor = planBundle({ root: REPO, catalog }, "cursor", {});
-  const claudeScript = claude.files.get("bin/ak")?.contents;
-  const overlayScript = cursor.files.get(".cursor/bin/ak.js")?.contents;
-  const overlayLauncher = cursor.files.get(".cursor/bin/ak")?.contents;
-  if (claudeScript === undefined || overlayScript === undefined || overlayLauncher === undefined) {
+  if (!claude.files.has("bin/ak") || !cursor.files.has(".cursor/bin/ak") || !cursor.files.has(".cursor/bin/ak.js")) {
     throw new Error("planBundle did not emit bin/ak or .cursor/bin/ak");
   }
 
   const claudeRoot = processScratch("ak-fm-pkg-claude-");
-  mkdirSync(join(claudeRoot, "bin"), { recursive: true });
+  writePlan(claudeRoot, claude.files.values(), (path) => path === "bin/ak" || path.startsWith("schemas/"));
   const claudeAk = join(claudeRoot, "bin", "ak");
-  writeFileSync(claudeAk, claudeScript, { mode: 0o755 });
 
   const overlayRoot = processScratch("ak-fm-pkg-overlay-");
-  mkdirSync(join(overlayRoot, ".cursor", "bin"), { recursive: true });
+  writePlan(
+    overlayRoot,
+    cursor.files.values(),
+    (path) => path === ".cursor/bin/ak" || path === ".cursor/bin/ak.js" || path.startsWith(".cursor/schemas/"),
+  );
   const overlayAk = join(overlayRoot, ".cursor", "bin", "ak");
-  writeFileSync(overlayAk, overlayLauncher, { mode: 0o755 });
-  writeFileSync(join(overlayRoot, ".cursor", "bin", "ak.js"), overlayScript);
 
   const bunDir = dirname(process.execPath);
   const env = {
@@ -126,6 +137,26 @@ describe("packaged firstmate dispatch", () => {
         expect(result.stderr, entry.name).not.toContain("Usage: ak doctor");
         expect(result.stderr, entry.name).not.toContain("ak lifecycle");
         expect(result.stderr, entry.name).toContain("ak firstmate grant: refused: binding");
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "grant and status load the binding schema from the packaged root",
+    () => {
+      const binding = join(processScratch("ak-fm-pkg-schema-"), "empty.json");
+      writeFileSync(binding, "{}\n");
+      for (const entry of entries) {
+        const granted = entry.run(["firstmate", "grant", "--binding", binding, "--operation", "review.full"]);
+        expect(granted.status, `${entry.name} grant: ${granted.stderr}`).toBe(1);
+        expect(granted.stderr, entry.name).not.toContain("did not compile");
+        expect(granted.stderr, entry.name).toContain("must have required property 'schema'");
+
+        const status = entry.run(["firstmate", "status", binding, "complete"]);
+        expect(status.status, `${entry.name} status: ${status.stderr}`).toBe(1);
+        expect(status.stderr, entry.name).not.toContain("did not compile");
+        expect(status.stderr, entry.name).toContain("must have required property 'schema'");
       }
     },
     TIMEOUT_MS,
