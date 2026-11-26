@@ -46799,26 +46799,37 @@ var DIFF = [
 ];
 var RAW = [
   "--raw",
+  "-z",
   "--no-renames",
   "--no-ext-diff",
   "--full-index",
   "--no-abbrev",
   "--ignore-submodules=none"
 ];
-var RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)\t(.*)$/;
+var RAW_ROW = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]\d*)$/;
 function parseRaw(text5) {
   const rows2 = [];
-  for (const line of text5.split(`
-`)) {
-    if (line === "")
+  const parts = text5.split("\x00");
+  for (let i = 0;i < parts.length; i++) {
+    const rec = parts[i];
+    if (rec === undefined || rec === "")
       continue;
-    const match = RAW_ROW.exec(line);
+    const match = RAW_ROW.exec(rec);
     if (match === null)
       continue;
-    const [, srcMode, dstMode, srcSha, dstSha, status2, path] = match;
-    if (srcMode === undefined || dstMode === undefined || srcSha === undefined || dstSha === undefined || status2 === undefined || path === undefined)
+    const [, srcMode, dstMode, srcSha, dstSha, status2] = match;
+    i += 1;
+    const path = parts[i];
+    if (srcMode === undefined || dstMode === undefined || srcSha === undefined || dstSha === undefined || status2 === undefined || path === undefined || path === "")
       continue;
-    rows2.push({ srcMode, dstMode, srcSha, dstSha, status: status2, path });
+    let result2 = path;
+    if (status2.startsWith("R") || status2.startsWith("C")) {
+      i += 1;
+      const dest = parts[i];
+      if (dest !== undefined && dest !== "")
+        result2 = dest;
+    }
+    rows2.push({ srcMode, dstMode, srcSha, dstSha, status: status2, path: result2 });
   }
   return rows2;
 }
@@ -46971,14 +46982,26 @@ function recordedBlob(row) {
   return { mode: row.dstMode, sha: row.dstSha };
 }
 function throwawayDiff(context, repo, extraEnv, from, to) {
-  const raw = gitProcess(context, repo, ["-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to], 1e4, undefined, extraEnv);
+  const raw = gitProcess(context, repo, ["-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to], 1e4, undefined, extraEnv);
   if (raw.code !== 0 && raw.code !== 1)
     throw new Error(`git diff failed: ${raw.stderr}`);
   const rows2 = parseRaw(decode2(raw.stdout));
   const paths2 = rows2.map((row) => row.path);
   const path_lines = [];
   for (const row of rows2) {
-    const patch = gitProcess(context, repo, ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to, "--", row.path], 1e4, undefined, extraEnv);
+    const patch = gitProcess(context, repo, [
+      "-c",
+      "core.quotePath=false",
+      "-c",
+      "diff.ignoreSubmodules=all",
+      "diff",
+      ...DIFF,
+      "--end-of-options",
+      from,
+      to,
+      "--",
+      row.path
+    ], 1e4, undefined, extraEnv);
     if (patch.code !== 0 && patch.code !== 1)
       throw new Error(`git diff failed: ${patch.stderr}`);
     const { mode, sha } = recordedBlob(row);
@@ -47003,9 +47026,8 @@ function inspectMerges(repo, base2, previous, head) {
       const before = conflicted.size;
       const first = parents[0];
       if (first !== undefined) {
-        const names = git4(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", first, merge]).out;
-        for (const path of names.split(`
-`))
+        const names = git4(repo, ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", first, merge]).out;
+        for (const path of names.split("\x00"))
           if (path !== "")
             conflicted.add(path);
       }
