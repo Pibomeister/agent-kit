@@ -17,8 +17,8 @@
  * same-user process that reads the file. `lanes publish` pushes HEAD to origin as
  * the current branch without taking the lock, so a commit can land while a gate is
  * queued; it refuses main, master (case-insensitive), a `refs/` name, origin's
- * default branch, and an unnamed branch. If origin's default cannot be determined
- * it refuses.
+ * default branch, and an unnamed branch. If `refs/remotes/origin/HEAD` is unset it
+ * refuses.
  *
  * - Mutual exclusion holds *within* one lane: two gate runs for the same worktree
  *   and branch cannot overlap. Different lanes hold different locks and run at once.
@@ -115,12 +115,6 @@ export const DEFAULT_LANES_WAIT_MINUTES = 30;
 
 /** Exported by `lanes run` to children that share its live hold. The value includes a nonce that status never prints. */
 export const LANE_HOLDER_ENV = "AK_GATE_LANE_HOLDER";
-
-/** Wait in ms for `check`/`record --lanes`. Absent flag is `DEFAULT_LANES_WAIT_MINUTES`, never unbounded. */
-export function resolveLanesWaitMs(timeoutFlag: string | undefined): number {
-  if (timeoutFlag === undefined) return DEFAULT_LANES_WAIT_MINUTES * 60_000;
-  return Math.max(0, Number(timeoutFlag) * 60_000);
-}
 
 /** The canonical publication remote; a gate remote's refs never count as published. */
 const PUBLICATION_REMOTE = "origin";
@@ -661,15 +655,9 @@ function publishBlockedName(branch: string): boolean {
 
 function originDefaultBranch(project: string, git: GitRunner): string | undefined {
   const local = git(project, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
-  if (local.code === 0 && local.text.startsWith("refs/remotes/origin/")) {
-    const name = local.text.slice("refs/remotes/origin/".length);
-    if (name !== "") return name;
-  }
-  const remote = git(project, ["ls-remote", "--symref", PUBLICATION_REMOTE, "HEAD"]);
-  if (remote.code !== 0) return undefined;
-  const match = /^ref:\s+refs\/heads\/(\S+)\s+HEAD/m.exec(remote.text);
-  if (match === null || match[1] === undefined || match[1] === "") return undefined;
-  return match[1];
+  if (local.code !== 0 || !local.text.startsWith("refs/remotes/origin/")) return undefined;
+  const name = local.text.slice("refs/remotes/origin/".length);
+  return name === "" ? undefined : name;
 }
 
 export function publishLane(project: string, git: GitRunner = runGit): LanePublish {

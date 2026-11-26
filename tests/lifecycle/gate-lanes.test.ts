@@ -16,12 +16,11 @@ import {
   releaseLane,
   waitersDir,
   resolveLanesEnabled,
-  resolveLanesWaitMs,
   resolveMaxAgeMinutes,
   resolvePool,
   type LaneIdentity,
 } from "../../src/lifecycle/gate-lanes.ts";
-import { main } from "../../src/lifecycle/gate.ts";
+import { holdLaneWaitMs, main } from "../../src/lifecycle/gate.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 const laneA: LaneIdentity = { lane: "lane-a", branch: "fm/a", worktree: "/tmp/worktree-a" };
@@ -276,14 +275,14 @@ got.release();
     expect(resolveLanesEnabled(false, "1")).toBe(true);
     expect(resolveLanesEnabled(true, "0")).toBe(true);
     expect(() => resolveLanesEnabled(false, "yes")).toThrow("AK_GATE_LANES");
-    expect(resolveLanesWaitMs(undefined)).toBe(DEFAULT_LANES_WAIT_MINUTES * 60_000);
-    expect(Number.isFinite(resolveLanesWaitMs(undefined))).toBe(true);
-    expect(resolveLanesWaitMs("0")).toBe(0);
   });
 
   test("check/record --lanes with no --timeout-minutes uses DEFAULT_LANES_WAIT_MINUTES", () => {
-    expect(resolveLanesWaitMs(undefined)).toBe(DEFAULT_LANES_WAIT_MINUTES * 60_000);
-    expect(resolveLanesWaitMs(undefined)).not.toBe(Number.POSITIVE_INFINITY);
+    expect(holdLaneWaitMs(undefined)).toBe(DEFAULT_LANES_WAIT_MINUTES * 60_000);
+    expect(Number.isFinite(holdLaneWaitMs(undefined))).toBe(true);
+    expect(holdLaneWaitMs("0")).toBe(0);
+    const src = readFileSync(join(import.meta.dir, "../../src/lifecycle/gate.ts"), "utf8");
+    expect(src).toContain("const timeoutMs = holdLaneWaitMs(timeoutFlag)");
   });
 });
 
@@ -665,25 +664,30 @@ describe("lanes publish (issue #194)", () => {
     expect(onRefs.err.join("\n")).toContain("refs/");
   }, 30_000);
 
-  test("refuses when origin/HEAD is unset and the remote default matches, or when the default is unknown", () => {
-    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-lsremote-", "develop");
+  test("refuses when origin/HEAD is unset", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-nohead-");
     const origin = join(dir, "origin.git");
     spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
-    git(origin, ["symbolic-ref", "HEAD", "refs/heads/develop"]);
     git(repo, ["remote", "add", "origin", origin]);
-    const onRemoteDefault = capture();
-    expect(main(["lanes", "publish", "--project", repo], onRemoteDefault.io, repo)).toBe(1);
-    expect(onRemoteDefault.err.join("\n")).toContain("origin's default branch");
-    expect(onRemoteDefault.err.join("\n")).toContain("develop");
+    const refused = capture();
+    expect(main(["lanes", "publish", "--project", repo], refused.io, repo)).toBe(1);
+    expect(refused.err.join("\n")).toContain("set origin/HEAD");
+    expect(refused.err.join("\n")).toContain("git remote set-head origin -a");
+  }, 30_000);
 
-    const unknown = scratchRepo("ak-gate-lanes-publish-unknown-");
-    const bogus = join(unknown.dir, "not-a-git");
-    mkdirSync(bogus);
-    git(unknown.repo, ["remote", "add", "origin", bogus]);
-    const onUnknown = capture();
-    expect(main(["lanes", "publish", "--project", unknown.repo], onUnknown.io, unknown.repo)).toBe(1);
-    expect(onUnknown.err.join("\n")).toContain("set origin/HEAD");
-    expect(onUnknown.err.join("\n")).toContain("git remote set-head origin -a");
+  test("publishes a lane branch when origin/HEAD points at a different branch", () => {
+    const { dir, repo } = scratchRepo("ak-gate-lanes-publish-okhead-");
+    const origin = join(dir, "origin.git");
+    spawnSync("git", ["init", "--bare", origin], { encoding: "utf8", env: gitEnv(dir) });
+    git(repo, ["remote", "add", "origin", origin]);
+    git(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+    writeFileSync(join(repo, "next.txt"), "lane publish\n");
+    git(repo, ["add", "next.txt"]);
+    git(repo, ["commit", "-m", "lane publish"]);
+    const sha = git(repo, ["rev-parse", "HEAD"]);
+    const published = capture();
+    expect(main(["lanes", "publish", "--project", repo], published.io, repo)).toBe(0);
+    expect(git(origin, ["rev-parse", "fm/run"])).toBe(sha);
   }, 30_000);
 
   test("refuses a non-fast-forward push to origin", () => {

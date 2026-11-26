@@ -94,6 +94,7 @@ import { isDesignReport } from "./design-report.ts";
 import {
   acquireLane,
   checkUnpublished,
+  DEFAULT_LANES_WAIT_MINUTES,
   formatStatus,
   LANE_HOLDER_ENV,
   laneHolderToken,
@@ -103,7 +104,6 @@ import {
   publishLane,
   releaseLane,
   resolveLanesEnabled,
-  resolveLanesWaitMs,
   resolveMaxAgeMinutes,
   resolvePool,
 } from "./gate-lanes.ts";
@@ -3085,8 +3085,8 @@ export const LIFECYCLE_USAGE = [
   "  free, runs, and releases. `check`/`record --lanes` wait at most --timeout-minutes (default 30) and then refuse naming",
   "  the holder. `lanes status` names every holder and waiter with held/waiting time. `lanes publish` pushes HEAD to origin",
   "  as the current branch without taking the lock, so commits can land while a gate is queued; it never force-pushes and",
-  "  it refuses main, master (any case), a refs/ name, origin's default branch, and an unnamed branch. If origin's default",
-  "  cannot be determined it refuses and asks for `git remote set-head origin -a`. `lanes unpublished` alerts when the oldest",
+  "  it refuses main, master (any case), a refs/ name, origin's default branch, and an unnamed branch. If origin/HEAD is",
+  "  unset it refuses and asks for `git remote set-head origin -a`. `lanes unpublished` alerts when the oldest",
   "  commit origin does not hold (a gate remote never counts) is older than --max-age-minutes or",
   "  AK_GATE_UNPUBLISHED_MAX_AGE_MINUTES (default 30); it reports only. It reads local origin-tracking refs and never",
   "  fetches: run `git fetch origin` first for a current answer.",
@@ -3494,6 +3494,12 @@ function commandSummary(dir: string, run: string): string[] {
   });
 }
 
+/** Wait `check`/`record --lanes` uses. Absent `--timeout-minutes` is `DEFAULT_LANES_WAIT_MINUTES`, never unbounded. */
+export function holdLaneWaitMs(timeoutFlag: string | undefined): number {
+  if (timeoutFlag === undefined) return DEFAULT_LANES_WAIT_MINUTES * 60_000;
+  return Math.max(0, Number(timeoutFlag) * 60_000);
+}
+
 /** Take the per-lane lock for `check`/`record` when `--lanes` or `AK_GATE_LANES=1`. No-op otherwise. */
 function holdLane(
   io: Io,
@@ -3517,7 +3523,7 @@ function holdLane(
     io.err(`${prefix}: --timeout-minutes must be a number, got ${timeoutFlag}`);
     return { ok: false, code: 2 };
   }
-  const timeoutMs = resolveLanesWaitMs(timeoutFlag);
+  const timeoutMs = holdLaneWaitMs(timeoutFlag);
   let pool: number | undefined;
   try {
     pool = resolvePool(poolFlag);
