@@ -46990,17 +46990,23 @@ function emptyBlob(context, repo, extraEnv) {
     throw new Error(`git hash-object failed: ${run3.stderr}`);
   return run3.text;
 }
+var OBJECT_ID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+function diffBlobPair(context, repo, extraEnv, from, to) {
+  if (!OBJECT_ID.test(from) || !OBJECT_ID.test(to))
+    throw new Error("git diff of blobs needs two object ids");
+  const patch = gitProcess(context, repo, ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to], 1e4, undefined, extraEnv);
+  if (patch.code !== 0 && patch.code !== 1)
+    throw new Error(`git diff failed: ${patch.stderr}`);
+  return readPatch(decode2(patch.stdout)).lines;
+}
 function blobPairLines(context, repo, extraEnv, empty, row) {
-  if (row.srcMode === "160000" || row.dstMode === "160000" || row.srcMode === "120000" || row.dstMode === "120000")
+  if (row.srcMode === "160000" || row.dstMode === "160000")
     return 1;
   const from = isZeroOid(row.srcSha) ? empty : row.srcSha;
   const to = isZeroOid(row.dstSha) ? empty : row.dstSha;
   if (from === to)
     return isZeroOid(row.srcSha) || isZeroOid(row.dstSha) ? 1 : 0;
-  const patch = gitProcess(context, repo, ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to], 1e4, undefined, extraEnv);
-  if (patch.code !== 0 && patch.code !== 1)
-    throw new Error(`git diff failed: ${patch.stderr}`);
-  return readPatch(decode2(patch.stdout)).lines;
+  return diffBlobPair(context, repo, extraEnv, from, to);
 }
 function throwawayDiff(context, repo, extraEnv, from, to) {
   const raw = gitProcess(context, repo, ["-c", "core.quotePath=false", "-c", "diff.ignoreSubmodules=all", "diff", ...RAW, "--end-of-options", from, to], 1e4, undefined, extraEnv);
