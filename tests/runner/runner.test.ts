@@ -4288,14 +4288,23 @@ describe("runner guards", () => {
         "the drifting probe to return",
         () => existsSync(stamp) && readFileSync(stamp, "utf8").length >= 1 && !existsSync(mutate),
       );
-      await waitUntil(
-        "the refused tick to be recorded or halted",
-        () =>
-          (f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0) >= 1 ||
-          autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("audit-failed"),
-      );
-      expect(f.runner.status("toy-run").budget_consumption["delegate_replacements"] ?? 0).toBe(1);
-      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken))).toEqual({
+      let spent = 0;
+      let autonomy: ReturnType<typeof autonomyOf> = { mode: "guided", missing: ["audit-failed"] };
+      await waitUntil("the refused tick to spend one replacement while remaining autonomous", () => {
+        const response = callRunnerCli("status", request, socket, workerToken);
+        if (response.exitCode !== 0) return false;
+        const body: unknown = JSON.parse(response.stdout.toString());
+        if (!isAutonomyStatus(body) || !asJsonObject(body)) return false;
+        const consumption = body["budget_consumption"];
+        spent =
+          asJsonObject(consumption) && Number.isSafeInteger(consumption["delegate_replacements"])
+            ? consumption["delegate_replacements"]
+            : 0;
+        autonomy = body.autonomy;
+        return spent >= 1 && autonomy.mode === "autonomous" && autonomy.missing.length === 0;
+      });
+      expect(spent).toBe(1);
+      expect(autonomy).toEqual({
         mode: "autonomous",
         missing: [],
       });

@@ -852,7 +852,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         io.err(`ak runner: priority alarm failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   };
-  let auditTimer: ReturnType<typeof setInterval> | null = null;
+  let auditTimer: ReturnType<typeof setTimeout> | null = null;
   let auditRunning = false;
   let auditHalted = false;
   let auditBlock: "ok" | "retry" | "cap" | "failed" = "ok";
@@ -879,7 +879,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const haltAudit = (block: "cap" | "failed") => {
     auditBlock = block;
     auditHalted = true;
-    if (auditTimer !== null) clearInterval(auditTimer);
+    if (auditTimer !== null) clearTimeout(auditTimer);
     auditTimer = null;
     if (block === "failed" && outageWindow() !== undefined) {
       try {
@@ -947,7 +947,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         return;
       }
       if (before.drained) {
-        if (auditTimer !== null) clearInterval(auditTimer);
+        if (auditTimer !== null) clearTimeout(auditTimer);
         auditTimer = null;
         auditBlock = "ok";
         auditOutage = null;
@@ -1032,19 +1032,36 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     }
   };
   const armAudit = () => {
-    if (auditHalted || loopCommand === null || auditTimer !== null) return;
+    if (auditHalted || loopCommand === null || auditTimer !== null || auditRunning) return;
     applyPersistedCap();
     if (auditHalted) return;
     try {
       const run = runner.status(runId);
+      const cadenceSeconds = run.charter.audit_cadence_seconds;
       if (
-        run.charter.audit_cadence_seconds === undefined ||
+        cadenceSeconds === undefined ||
         !Object.values(run.delegates ?? {}).some((delegate) => delegate.state === "active")
       )
         return;
-      auditTimer = setInterval(() => {
-        void runAudit();
-      }, run.charter.audit_cadence_seconds * 1000);
+      const tick = () => {
+        auditTimer = null;
+        void runAudit().finally(() => {
+          if (auditHalted || !open || auditTimer !== null) return;
+          try {
+            const live = runner.status(runId);
+            if (
+              live.charter.audit_cadence_seconds === undefined ||
+              !Object.values(live.delegates ?? {}).some((delegate) => delegate.state === "active")
+            )
+              return;
+            auditTimer = setTimeout(tick, live.charter.audit_cadence_seconds * 1000);
+          } catch (cause) {
+            if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+              io.err(`ak runner: cannot arm audit: ${cause instanceof Error ? cause.message : String(cause)}`);
+          }
+        });
+      };
+      auditTimer = setTimeout(tick, cadenceSeconds * 1000);
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
         io.err(`ak runner: cannot arm audit: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -1169,7 +1186,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const close = () => {
     open = false;
     if (questionAlarm !== null) clearTimeout(questionAlarm);
-    if (auditTimer !== null) clearInterval(auditTimer);
+    if (auditTimer !== null) clearTimeout(auditTimer);
     for (const pid of activeChildren) killGroup(pid);
     if (existsSync(socketPath)) unlinkSync(socketPath);
     process.exit(0);
