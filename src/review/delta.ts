@@ -370,31 +370,52 @@ function emptyBlob(context: RunnerGitContext, repo: string, extraEnv: NodeJS.Pro
 }
 
 const OBJECT_ID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
-type ObjectKind = "zero" | "missing" | "blob" | "tree" | "commit" | "tag";
+const FILE_MODE = new Set(["100644", "100755", "120000"]);
+const BATCH_PRESENT = /^([0-9a-f]{40}|[0-9a-f]{64}) (blob|tree|commit|tag) (\d+)$/;
+const BATCH_MISSING = /^([0-9a-f]{40}|[0-9a-f]{64}) missing$/;
 
-function parseBatchCheck(text: string): Map<string, ObjectKind> {
-  const types = new Map<string, ObjectKind>();
+type CatType = "blob" | "tree" | "commit" | "tag" | "missing";
+type SideKind = "absent" | "blob" | "gitlink" | "tree";
+
+/** Parse `cat-file --batch-check` text. Unknown or malformed lines throw. */
+export function parseBatchCheck(text: string): Map<string, CatType> {
+  const types = new Map<string, CatType>();
   for (const line of text.split("\n")) {
     if (line === "") continue;
-    if (line.endsWith(" missing")) {
-      const sha = line.slice(0, -" missing".length);
-      if (sha !== "") types.set(sha, "missing");
+    const missing = BATCH_MISSING.exec(line);
+    if (missing?.[1] !== undefined) {
+      types.set(missing[1], "missing");
       continue;
     }
-    const [sha, type] = line.split(" ");
-    if (sha === undefined || type === undefined) continue;
-    if (type === "blob" || type === "tree" || type === "commit" || type === "tag") types.set(sha, type);
+    const present = BATCH_PRESENT.exec(line);
+    const id = present?.[1];
+    const type = present?.[2];
+    if (id !== undefined && (type === "blob" || type === "tree" || type === "commit" || type === "tag")) {
+      types.set(id, type);
+      continue;
+    }
+    throw new Error(`malformed cat-file line: ${line}`);
   }
   return types;
 }
 
-function objectKind(sha: string, types: Map<string, ObjectKind>): ObjectKind {
-  if (isZeroOid(sha)) return "zero";
-  return types.get(sha) ?? "missing";
+function mismatch(path: string, mode: string, type: string): Error {
+  return new Error(`${path}: mode ${mode} type ${type}`);
 }
 
-function isGitlinkKind(kind: ObjectKind): boolean {
-  return kind === "commit" || kind === "tree";
+/**
+ * One kind from the raw mode and the cat-file type. A stuffed gitlink
+ * (`160000` + blob) is a blob. A missing object under a file mode throws.
+ */
+function classifySide(path: string, mode: string, sha: string, types: Map<string, CatType>): SideKind {
+  if (isZeroOid(sha)) return "absent";
+  const type = types.get(sha);
+  if (type === undefined) throw mismatch(path, mode, "unknown");
+  if (FILE_MODE.has(mode) && type === "blob") return "blob";
+  if (mode === "160000" && type === "blob") return "blob";
+  if (mode === "160000" && (type === "commit" || type === "missing")) return "gitlink";
+  if (mode === "040000" && type === "tree") return "tree";
+  throw mismatch(path, mode, type);
 }
 
 /** One `cat-file --batch-check` for every non-zero id in `rows`. */
@@ -403,7 +424,7 @@ function objectTypes(
   repo: string,
   extraEnv: NodeJS.ProcessEnv,
   rows: readonly RawRow[],
-): Map<string, ObjectKind> {
+): Map<string, CatType> {
   const ids = [
     ...new Set(rows.flatMap((row) => [row.srcSha, row.dstSha]).filter((sha) => !isZeroOid(sha) && OBJECT_ID.test(sha))),
   ];
@@ -417,7 +438,9 @@ function objectTypes(
     extraEnv,
   );
   if (run.code !== 0) throw new Error(`git cat-file failed: ${run.stderr}`);
-  return parseBatchCheck(decode(run.stdout));
+  const types = parseBatchCheck(decode(run.stdout));
+  for (const id of ids) if (!types.has(id)) throw new Error(`cat-file omitted ${id}`);
+  return types;
 }
 
 /**
@@ -445,47 +468,49 @@ function diffBlobPair(
 }
 
 /**
- * Changed lines of one `--raw` row from the objects' real types. The parsed
- * path is display-only. A commit or tree (a real gitlink) counts as one line,
- * including a gitlink to a missing commit. A missing blob throws. A hunkless
- * empty add or delete counts as one line. Equal blob ids with different modes
- * count as one line.
+ * Changed lines of one `--raw` row from the (mode, type) classifier. A stuffed
+ * gitlink blob counts its content. A real gitlink counts as one line. A
+ * hunkless empty add or delete counts as one line. Equal ids with different
+ * modes count as one line. A mode/type mismatch throws.
  */
 function blobPairLines(
   context: RunnerGitContext,
   repo: string,
   extraEnv: NodeJS.ProcessEnv,
   empty: string,
-  types: Map<string, ObjectKind>,
+  types: Map<string, CatType>,
   row: RawRow,
 ): number {
-  const srcKind = objectKind(row.srcSha, types);
-  const dstKind = objectKind(row.dstSha, types);
-  if (srcKind === "missing" || dstKind === "missing") {
-    if (srcKind === "blob" || dstKind === "blob") {
-      const sha = srcKind === "missing" ? row.srcSha : row.dstSha;
-      throw new Error(`missing blob ${sha}`);
+  const srcKind = classifySide(row.path, row.srcMode, row.srcSha, types);
+  const dstKind = classifySide(row.path, row.dstMode, row.dstSha, types);
+  if (!isZeroOid(row.srcSha) && row.srcSha === row.dstSha)
+    return row.srcMode !== row.dstMode || srcKind !== dstKind ? 1 : 0;
+  const srcBlob = srcKind === "blob";
+  const dstBlob = dstKind === "blob";
+  if (srcKind === "absent" || dstKind === "absent") {
+    if (!srcBlob && !dstBlob) return 1;
+    const sha = srcBlob ? row.srcSha : row.dstSha;
+    if (sha === empty) return 1;
+    return diffBlobPair(context, repo, extraEnv, empty, sha);
+  }
+  if (srcBlob || dstBlob) {
+    if (srcBlob && dstBlob && row.srcMode !== row.dstMode) {
+      const recorded = recordedBlob(row);
+      return diffBlobPair(context, repo, extraEnv, empty, recorded.sha);
     }
-    return 1;
+    const from = srcBlob ? row.srcSha : empty;
+    const to = dstBlob ? row.dstSha : empty;
+    return diffBlobPair(context, repo, extraEnv, from, to);
   }
-  if (isGitlinkKind(srcKind) || isGitlinkKind(dstKind) || srcKind === "tag" || dstKind === "tag") return 1;
-  const from = srcKind === "zero" ? empty : row.srcSha;
-  const to = dstKind === "zero" ? empty : row.dstSha;
-  if (from === to) return srcKind === "zero" || dstKind === "zero" || row.srcMode !== row.dstMode ? 1 : 0;
-  if (row.status.startsWith("T")) {
-    const recorded = recordedBlob(row);
-    if (isZeroOid(recorded.sha)) return 1;
-    return diffBlobPair(context, repo, extraEnv, empty, recorded.sha);
-  }
-  return diffBlobPair(context, repo, extraEnv, from, to);
+  return 1;
 }
 
 /**
  * Paths and changed lines of `from` versus `to` inside the throwaway object store.
  * The store is bare, so `.gitmodules ignore=all` is not read. `-c
  * diff.ignoreSubmodules=all` is that setting; `--ignore-submodules=none` is the
- * override that still lists a gitlink. Line counts come from each object's
- * real type, not from the mode bits.
+ * override that still lists a gitlink. Line counts classify each side by
+ * (mode, type). A mismatch throws.
  */
 function throwawayDiff(
   context: RunnerGitContext,
@@ -636,9 +661,9 @@ export interface DeltaReading {
  * blob a novel merge introduced counts once unless that exact (mode, sha) is in
  * the result tree; empty-file blob sharing, a mode-only chmod, and the same
  * blob at two paths are not special-cased (the path still appears in
- * changed_paths). A same-blob mode or type change counts as one line. Line
- * counts use the objects' real types, not the mode bits. A path parsed from
- * git output is display-only and is never fed back to git.
+ * changed_paths). A same-blob mode or type change counts as one line. Each
+ * side of a hidden row is classified by (mode, type); a mismatch throws. A
+ * path parsed from git output is display-only and is never fed back to git.
  */
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
   if (previous !== base && mergeBase(repo, base, previous) === previous)

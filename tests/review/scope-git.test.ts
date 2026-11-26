@@ -18,6 +18,7 @@ import validProject from "../fixtures/delegation/valid.project.json" with { type
 import validTicket from "../fixtures/delegation/valid.ticket.json" with { type: "json" };
 import { runCli } from "../../src/cli.ts";
 import { runReview } from "../../src/review/cli.ts";
+import { parseBatchCheck } from "../../src/review/delta.ts";
 import { linesNotIn, readPatch } from "../../src/review/scope.ts";
 import { isolatedGitArgv } from "../../src/runner/snapshot.ts";
 import * as snapshot from "../../src/runner/snapshot.ts";
@@ -246,6 +247,12 @@ function dirtyNonUtf8Path(tag: string, count: number): JsonValue {
   );
   f.git("reset", "--hard", restored);
   return f.record(restored);
+}
+
+function deleteLooseObject(root: string, sha: string): void {
+  const path = join(root, ".git/objects", sha.slice(0, 2), sha.slice(2));
+  chmodSync(path, 0o644);
+  unlinkSync(path);
 }
 
 describe("ak review scope before round 1", () => {
@@ -1219,6 +1226,163 @@ describe("ak review scope: later-round tree identity", () => {
       outcome: "closure",
       delta: { empty: false, added_lines: 1 },
     });
+  });
+
+  test("MISSING-BLOB-DELETED-OBJECT: a deleted blob under a file mode exits 2", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/_r15.ts": lines("missing", 500) });
+    const blob = f.git("hash-object", "-w", "src/_r15.ts");
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `100644,${blob},src/evil.ts`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty missing blob",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    deleteLooseObject(f.root, blob);
+    const run = f.scope(restored, "--previous", f.reviewed().path);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("src/evil.ts");
+    expect(run.err.join("\n")).toContain("100644");
+    expect(run.err.join("\n")).toContain("missing");
+  });
+
+  test("STUFFED-GITLINK-VS-REAL-COMMIT: a stuffed gitlink blob against a real commit counts 500", () => {
+    const f = fixture();
+    const pin = f.git("rev-parse", "main");
+    f.git("read-tree", f.head);
+    f.git("update-index", "--add", "--cacheinfo", `160000,${pin},vendor/lib`);
+    const withLink = f.git("commit-tree", f.git("write-tree"), "-p", f.head, "-m", "real gitlink");
+    f.git("reset", "--hard", withLink);
+    f.round(withLink);
+    const reviewed = withLink;
+    const main = f.git("rev-parse", "main");
+    f.write({ "src/_r15.ts": lines("vscommit", 500) });
+    const blob = f.git("hash-object", "-w", "src/_r15.ts");
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--cacheinfo", `160000,${blob},vendor/lib`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty stuffed vs real gitlink",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const scoped = f.record(restored);
+    const paths = member(member(scoped, "delta"), "changed_paths");
+    expect(Array.isArray(paths) ? paths : []).toContain("vendor/lib");
+    expect(scoped).toMatchObject({
+      outcome: "new-scope",
+      delta: { empty: false, added_lines: 500 },
+    });
+  });
+
+  test("TREE-AS-100644: a tree object behind a file mode exits 2", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    const tree = f.git("rev-parse", `${reviewed}^{tree}`);
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `100644,${tree},src/evil.ts`);
+    const dirtyMerge = f.git(
+      "commit-tree",
+      f.git("write-tree"),
+      "-p",
+      reviewed,
+      "-p",
+      main,
+      "-m",
+      "dirty tree as file",
+    );
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const run = f.scope(restored, "--previous", f.reviewed().path);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("src/evil.ts");
+    expect(run.err.join("\n")).toContain("100644");
+    expect(run.err.join("\n")).toContain("tree");
+  });
+
+  test("TAG-AS-100644: an annotated tag behind a file mode exits 2", () => {
+    const f = fixture();
+    f.round(f.head);
+    const reviewed = f.head;
+    const main = f.git("rev-parse", "main");
+    f.git("tag", "-a", "v1", "-m", "ann");
+    const tag = f.git("rev-parse", "v1");
+    f.git("read-tree", reviewed);
+    f.git("update-index", "--add", "--cacheinfo", `100644,${tag},src/evil.ts`);
+    const dirtyMerge = f.git("commit-tree", f.git("write-tree"), "-p", reviewed, "-p", main, "-m", "dirty tag as file");
+    const restored = f.git(
+      "commit-tree",
+      f.git("rev-parse", `${reviewed}^{tree}`),
+      "-p",
+      dirtyMerge,
+      "-p",
+      main,
+      "-m",
+      "ours back",
+    );
+    f.git("reset", "--hard", restored);
+    const run = f.scope(restored, "--previous", f.reviewed().path);
+    expect({ code: run.code, out: run.out }).toEqual({ code: 2, out: [] });
+    expect(run.err.join("\n")).toContain("src/evil.ts");
+    expect(run.err.join("\n")).toContain("100644");
+    expect(run.err.join("\n")).toContain("tag");
+  });
+
+  test("MALFORMED-BATCH-LINE: parseBatchCheck throws on a line that is not a known shape", () => {
+    const id = "a".repeat(40);
+    expect(() => parseBatchCheck("not-an-id blob 1\n")).toThrow(/malformed cat-file line/);
+    expect(() => parseBatchCheck(`${id} dangling 1\n`)).toThrow(/malformed cat-file line/);
+    expect(() => parseBatchCheck(`${id} blob\n`)).toThrow(/malformed cat-file line/);
+    expect(() => parseBatchCheck(`${id} missing extra\n`)).toThrow(/malformed cat-file line/);
+    expect(() => parseBatchCheck(`${id} foo 1\n`)).toThrow(/malformed cat-file line/);
+    expect(parseBatchCheck(`${id} blob 12\n`).get(id)).toBe("blob");
+    expect(parseBatchCheck(`${id} missing\n`).get(id)).toBe("missing");
   });
 
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {
