@@ -18,9 +18,10 @@
  * case-changed markers are plain text. Small-caps ᴇɢᴍ does not NFKD-fold
  * and is out of scope. A free-text claim with no identity token is
  * review's job. Every pin is checked by equality at its parsed location.
- * Pinned files are read from HEAD, the index, and the worktree by one
- * reader; any layer that differs is red, and the pin must hold in all
- * three. The README file must start with exactly `# agent-kit\n`; the
+ * Every pinned byte is read by one reader from HEAD, the index, and the
+ * worktree; any layer that differs is red, hashes run on those agreed
+ * bytes, and the pin must hold in all three. The README file must start
+ * with exactly `# agent-kit\n`; the
  * first paragraph after that heading equals the lede pin.
  * package.json `description` and marketplace `metadata.description` equal
  * their pins after a duplicate-key-rejecting parse; a key repeated in one
@@ -448,7 +449,7 @@ const isLockDonor = new Ajv2020({ strict: false }).compile<LockDonor>({
 });
 
 function loadLockDonors(root: string, version?: "1.1"): Map<string, LockDonor> {
-  const text = readFileSync(join(root, LOCK), "utf8");
+  const text = root === REPO ? readPinned(root, LOCK) : readFileSync(join(root, LOCK), "utf8");
   const value: unknown = version === "1.1" ? parse(text, { version: "1.1" }) : parse(text);
   expect(isLockDoc(value), "lock donors").toBe(true);
   if (!isLockDoc(value)) return new Map();
@@ -478,10 +479,6 @@ function loadLockDonors(root: string, version?: "1.1"): Map<string, LockDonor> {
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   expect(duplicates, `duplicate donor ids=${duplicates.join(",")}`).toEqual([]);
   return out;
-}
-
-function fileSha256(path: string): string {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function textSha256(text: string): string {
@@ -840,6 +837,53 @@ function assertIsolationPin(root = REPO): void {
   expect(textSha256(interior)).toBe(pin.sha256);
 }
 
+function assertFileHashes(root = REPO): void {
+  for (const pin of FILE_HASHES) {
+    expect(textSha256(readPinned(root, pin.file)), pin.file).toBe(pin.sha256);
+  }
+}
+
+function assertLockEntry(root = REPO): void {
+  expect(textSha256(lockEntry(readPinned(root, LOCK))), LOCK).toBe(LOCK_ENTRY_SHA256);
+}
+
+function assertBlockPins(root = REPO): void {
+  for (const pin of BLOCK_PINS) {
+    expect(textSha256(extractPinnedBlock(readPinned(root, pin.file), pin)), pin.file).toBe(pin.sha256);
+  }
+}
+
+function assertFingerprint(root = REPO): void {
+  const schema: unknown = JSON.parse(readPinned(root, "schemas/finding.schema.json"));
+  expect(isFingerprintSchema(schema), "fingerprint description").toBe(true);
+  if (!isFingerprintSchema(schema)) return;
+  expect(textSha256(schema.properties.fingerprint.description), "fingerprint").toBe(FINGERPRINT_DESC_SHA256);
+}
+
+function assertOverlay(root: string, copy: { src: string; dest: string }): void {
+  expect(readPinned(root, copy.dest), copy.dest).toBe(readPinned(root, copy.src));
+}
+
+function assertOverlays(root = REPO): void {
+  for (const copy of OVERLAY_COPIES) {
+    assertOverlay(root, copy);
+  }
+}
+
+function assertFileHash(root: string, file: string): void {
+  const pin = FILE_HASHES.find((row) => row.file === file);
+  expect(pin, file).toBeDefined();
+  if (pin === undefined) return;
+  expect(textSha256(readPinned(root, file)), file).toBe(pin.sha256);
+}
+
+function assertBlockPin(root: string, file: string): void {
+  const pin = BLOCK_PINS.find((row) => row.file === file);
+  expect(pin, file).toBeDefined();
+  if (pin === undefined) return;
+  expect(textSha256(extractPinnedBlock(readPinned(root, file), pin)), file).toBe(pin.sha256);
+}
+
 function identityScan(root: string) {
   const uncovered: string[] = [];
   const decodeLies: string[] = [];
@@ -860,17 +904,25 @@ function identityScan(root: string) {
   return { uncovered, decodeLies };
 }
 
-function scratchPins(): string {
+function scratchTracked(files: string[]): string {
   const root = initRepo();
-  for (const pin of SENTENCE_PINS) {
-    mkdirSync(join(root, dirname(pin.file)), { recursive: true });
-    cpSync(join(REPO, pin.file), join(root, pin.file));
+  for (const file of files) {
+    mkdirSync(join(root, dirname(file)), { recursive: true });
+    cpSync(join(REPO, file), join(root, file));
   }
-  mkdirSync(join(root, "adapters/cursor"), { recursive: true });
-  cpSync(join(REPO, "adapters/cursor/CONTRACT.md"), join(root, "adapters/cursor/CONTRACT.md"));
   git(root, ["add", "-A"]);
   git(root, ["commit", "-q", "-m", "honest"]);
   return root;
+}
+
+function scratchPins(): string {
+  return scratchTracked([...SENTENCE_PINS.map((pin) => pin.file), "adapters/cursor/CONTRACT.md"]);
+}
+
+function commitFile(root: string, file: string, contents: string | Uint8Array, message = "payload"): void {
+  writeFileSync(join(root, file), contents);
+  git(root, ["add", "--", file]);
+  git(root, ["commit", "-q", "-m", message]);
 }
 
 function restoreWorktreeFrom(root: string, file: string, spec: string): void {
@@ -977,25 +1029,28 @@ describe("EGM provenance guards", () => {
   test("F1 README first paragraph is the pin location", () => {
     const root = scratchPins();
     const readme = readFileSync(join(root, "README.md"), "utf8");
-    writeFileSync(join(root, "README.md"), readme.replace(README_LEDE, `decoy paragraph\n\n<!-- ${README_LEDE} -->`));
-    expect(() => assertSentencePins(root)).toThrow();
+    commitFile(root, "README.md", readme.replace(README_LEDE, `decoy paragraph\n\n<!-- ${README_LEDE} -->`));
+    expect(() => assertSentencePins(root)).toThrow("decoy paragraph");
   });
 
   test("F2 duplicate JSON keys are red", () => {
     const root = scratchPins();
     const pkg = readFileSync(join(root, "package.json"), "utf8");
-    writeFileSync(
-      join(root, "package.json"),
+    commitFile(
+      root,
+      "package.json",
       pkg.replace('\n  "description":', '\n  "description": "lie",\n  "\\u0064escription":'),
     );
-    expect(() => assertSentencePins(root)).toThrow();
+    expect(() => assertSentencePins(root)).toThrow("duplicate description");
   });
 
   test("F3 marketplace metadata.description location", () => {
     const root = scratchPins();
-    const market = readFileSync(join(root, ".claude-plugin/marketplace.json"), "utf8");
-    writeFileSync(
-      join(root, ".claude-plugin/marketplace.json"),
+    const file = ".claude-plugin/marketplace.json";
+    const market = readFileSync(join(root, file), "utf8");
+    commitFile(
+      root,
+      file,
       market
         .replace(`"${MARKETPLACE_DESCRIPTION}"`, '"lie"')
         .replace(
@@ -1003,7 +1058,7 @@ describe("EGM provenance guards", () => {
           `"${MARKETPLACE_DESCRIPTION}"`,
         ),
     );
-    expect(() => assertSentencePins(root)).toThrow();
+    expect(() => assertSentencePins(root)).toThrow('"lie"');
   });
 
   test("F4 node_modules basename is not skipped", () => {
@@ -1030,18 +1085,19 @@ describe("EGM provenance guards", () => {
   test("F6 JSON unicode escape in a pinned value is red", () => {
     const root = scratchPins();
     const pkg = readFileSync(join(root, "package.json"), "utf8");
-    writeFileSync(
-      join(root, "package.json"),
+    commitFile(
+      root,
+      "package.json",
       pkg.replace(`"${PACKAGE_DESCRIPTION}"`, `"\\u004f${PACKAGE_DESCRIPTION.slice(1)}"`),
     );
-    expect(() => assertSentencePins(root)).toThrow();
+    expect(() => assertSentencePins(root)).toThrow("\\u004f");
   });
 
   test("F7 BOM on a pinned file is red", () => {
     const root = scratchPins();
     const bytes = readFileSync(join(root, "README.md"));
-    writeFileSync(join(root, "README.md"), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]));
-    expect(() => assertSentencePins(root)).toThrow();
+    commitFile(root, "README.md", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]));
+    expect(() => assertSentencePins(root)).toThrow("BOM README.md");
   });
 
   test("F8 identity reads committed blobs", () => {
@@ -1062,7 +1118,7 @@ describe("EGM provenance guards", () => {
     git(root, ["add", "README.md"]);
     git(root, ["commit", "-q", "-m", "lie"]);
     restoreWorktreeFrom(root, "README.md", "HEAD~1:README.md");
-    expect(() => assertSentencePins(root)).toThrow();
+    expect(() => assertSentencePins(root)).toThrow("README.md HEAD/worktree");
   });
 
   test("staged-lie-restored-worktree", () => {
@@ -1071,7 +1127,7 @@ describe("EGM provenance guards", () => {
     writeFileSync(path, readFileSync(path, "utf8").replace(PACKAGE_DESCRIPTION, "nine donors (all MIT)"));
     git(root, ["add", "package.json"]);
     restoreWorktreeFrom(root, "package.json", "HEAD:package.json");
-    expect(() => assertSentencePins(root)).toThrow();
+    expect(() => assertSentencePins(root)).toThrow("package.json HEAD/index");
   });
 
   test("marketplace metadata.description committed lie", () => {
@@ -1082,32 +1138,81 @@ describe("EGM provenance guards", () => {
     git(root, ["add", file]);
     git(root, ["commit", "-q", "-m", "lie"]);
     restoreWorktreeFrom(root, file, `HEAD~1:${file}`);
-    expect(() => assertSentencePins(root)).toThrow();
+    expect(() => assertSentencePins(root)).toThrow(`${file} HEAD/worktree`);
   });
 
   test("README h1 match is exact including the newline", () => {
     const root = scratchPins();
-    const path = join(root, "README.md");
-    writeFileSync(path, readFileSync(path, "utf8").replace("# agent-kit\n", "# agent-kit   \n"));
-    git(root, ["add", "README.md"]);
-    git(root, ["commit", "-q", "-m", "h1"]);
-    expect(() => assertSentencePins(root)).toThrow();
+    commitFile(
+      root,
+      "README.md",
+      readFileSync(join(root, "README.md"), "utf8").replace("# agent-kit\n", "# agent-kit   \n"),
+    );
+    expect(() => assertSentencePins(root)).toThrow("README must start with exactly");
   });
 
   test("one-byte change at a pin location is red", () => {
     for (const pin of SENTENCE_PINS) {
       const root = scratchPins();
-      const path = join(root, pin.file);
-      const original = readFileSync(path, "utf8");
+      const original = readFileSync(join(root, pin.file), "utf8");
       const mid = Math.floor(pin.text.length / 2);
       const lie = `${pin.text.slice(0, mid)}X${pin.text.slice(mid + 1)}`;
-      writeFileSync(path, original.replace(pin.text, lie));
-      expect(() => assertSentencePins(root)).toThrow();
+      let start = mid;
+      while (start > 0 && lie[start - 1] !== "\n" && mid - start < 24) start--;
+      let stop = mid + 1;
+      while (stop < lie.length && lie[stop] !== "\n" && stop - mid < 24) stop++;
+      commitFile(root, pin.file, original.replace(pin.text, lie));
+      expect(() => assertSentencePins(root)).toThrow(lie.slice(start, stop));
     }
     const root = scratchPins();
-    const path = join(root, "adapters/cursor/CONTRACT.md");
-    writeFileSync(path, `${readFileSync(path, "utf8")}\n| \`isolated-review-context\` | \`full\` | decoy |\n`);
-    expect(() => assertIsolationPin(root)).toThrow();
+    const file = "adapters/cursor/CONTRACT.md";
+    commitFile(
+      root,
+      file,
+      `${readFileSync(join(root, file), "utf8")}\n| \`isolated-review-context\` | \`full\` | decoy |\n`,
+    );
+    expect(() => assertIsolationPin(root)).toThrow("isolation rows");
+  });
+
+  test("committed NOTICE lie", () => {
+    const file = "NOTICE";
+    const root = scratchTracked([file]);
+    commitFile(root, file, `${readFileSync(join(root, file), "utf8")}lie\n`);
+    restoreWorktreeFrom(root, file, `HEAD~1:${file}`);
+    expect(() => assertFileHash(root, file)).toThrow(`${file} HEAD/worktree`);
+  });
+
+  test("staged AGENTS.md lie", () => {
+    const file = "AGENTS.md";
+    const root = scratchTracked([file]);
+    writeFileSync(join(root, file), `${readFileSync(join(root, file), "utf8")}\n`);
+    git(root, ["add", "--", file]);
+    restoreWorktreeFrom(root, file, `HEAD:${file}`);
+    expect(() => assertBlockPin(root, file)).toThrow(`${file} HEAD/index`);
+  });
+
+  test("committed bun.lock entry lie", () => {
+    const root = scratchTracked([LOCK]);
+    const original = readFileSync(join(root, LOCK), "utf8");
+    commitFile(root, LOCK, original.replace(lockEntry(original), `${lockEntry(original)}\n  # lie`));
+    restoreWorktreeFrom(root, LOCK, `HEAD~1:${LOCK}`);
+    expect(() => assertLockEntry(root)).toThrow(`${LOCK} HEAD/worktree`);
+  });
+
+  test("OVERLAY_COPIES lie", () => {
+    const copy = OVERLAY_COPIES[0];
+    expect(copy).toBeDefined();
+    if (copy === undefined) return;
+    const root = scratchTracked([copy.src, copy.dest]);
+    commitFile(root, copy.dest, `${readFileSync(join(root, copy.dest), "utf8")}lie\n`);
+    restoreWorktreeFrom(root, copy.dest, `HEAD~1:${copy.dest}`);
+    expect(() => assertOverlay(root, copy)).toThrow(`${copy.dest} HEAD/worktree`);
+  });
+
+  test("pin section reads REPO paths through readPinned", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    expect(src.includes("file" + "Sha256")).toBe(false);
+    expect(/readFileSync\(\s*join\(\s*REPO/.test(src)).toBe(false);
   });
 });
 
@@ -1134,7 +1239,7 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("re-indenting the lock keeps the pin and the catalog counts", () => {
-    const original = readFileSync(join(REPO, LOCK), "utf8");
+    const original = readPinned(REPO, LOCK);
     const rewritten = stringify(parse(original), { indent: 4 });
     const scratch = processScratch("egm-lock-indent-");
     mkdirSync(join(scratch, "provenance"));
@@ -1162,22 +1267,11 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("hashed provenance files and unique marker blocks", () => {
-    for (const pin of FILE_HASHES) {
-      expect(fileSha256(join(REPO, pin.file)), pin.file).toBe(pin.sha256);
-    }
-    expect(textSha256(lockEntry(readFileSync(join(REPO, LOCK), "utf8"))), LOCK).toBe(LOCK_ENTRY_SHA256);
-    for (const pin of BLOCK_PINS) {
-      const text = readFileSync(join(REPO, pin.file), "utf8");
-      expect(textSha256(extractPinnedBlock(text, pin)), pin.file).toBe(pin.sha256);
-    }
-    const schema: unknown = JSON.parse(readFileSync(join(REPO, "schemas/finding.schema.json"), "utf8"));
-    expect(isFingerprintSchema(schema), "fingerprint description").toBe(true);
-    if (!isFingerprintSchema(schema)) return;
-    expect(textSha256(schema.properties.fingerprint.description), "fingerprint").toBe(FINGERPRINT_DESC_SHA256);
-    for (const copy of OVERLAY_COPIES) {
-      expect(existsSync(join(REPO, copy.dest)), copy.dest).toBe(true);
-      expect(readFileSync(join(REPO, copy.dest)).equals(readFileSync(join(REPO, copy.src))), copy.dest).toBe(true);
-    }
+    assertFileHashes();
+    assertLockEntry();
+    assertBlockPins();
+    assertFingerprint();
+    assertOverlays();
     const catalog = catalogDonorLicenses(REPO);
     expectTwelveCatalogDonors(catalog);
     const { catalog: loaded } = loadCatalog(REPO);
@@ -1188,10 +1282,8 @@ describe("EGM provenance (GS-004f)", () => {
     expect(description).toContain(countWord(catalog.size));
     expect(description).toContain(countWord(mitCount));
     expect(description).toContain(countWord(apacheCount));
-    expect(contractPluginDescription(readFileSync(join(REPO, "adapters/claude-code/CONTRACT.md"), "utf8"))).toBe(
-      description,
-    );
-    expect(readFileSync(join(REPO, ".cursor/catalog.yaml"), "utf8")).toContain(description);
+    expect(contractPluginDescription(readPinned(REPO, "adapters/claude-code/CONTRACT.md"))).toBe(description);
+    expect(readPinned(REPO, ".cursor/catalog.yaml")).toContain(description);
     assertSentencePins();
     assertIsolationPin();
   });
@@ -1235,7 +1327,7 @@ describe("EGM provenance (GS-004f)", () => {
       const licenseFile = lockDonors.get(id)?.license_file;
       expect(licenseFile, id).toBeDefined();
       expect(existsSync(join(REPO, licenseFile ?? "")), licenseFile).toBe(true);
-      const text = readFileSync(join(REPO, licenseFile ?? ""), "utf8");
+      const text = readPinned(REPO, licenseFile ?? "");
       if (license === "Apache-2.0") {
         expect(text, licenseFile).toContain("Apache License");
         expect(text, licenseFile).toMatch(/Version 2\.0/);
@@ -1246,7 +1338,7 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("research/dossiers/egm.md carries no denylist term", () => {
-    const dossier = readFileSync(join(REPO, "research/dossiers/egm.md"), "utf8");
+    const dossier = readPinned(REPO, "research/dossiers/egm.md");
     expect(matchTerms(dossier, DENY_TERMS)).toEqual([]);
     const catalogCount = sectionAfter(dossier, "6. Catalog count");
     expect(labelledIds(catalogCount, "ten MIT").toSorted()).toEqual([...MIT_CATALOG_IDS].toSorted());
@@ -1254,23 +1346,21 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("finding.schema.json status and fingerprint descriptions name both phase-1b rulings", () => {
-    const schema = readFileSync(join(REPO, "schemas/finding.schema.json"), "utf8");
+    const schema = readPinned(REPO, "schemas/finding.schema.json");
     expect(schema).toMatch(/"status": \{\s*"description": "[^"]*comprehension-gap-not-contestable/);
     expect(schema).toMatch(/"fingerprint": \{\s*"description": "[^"]*comprehension-seat-stays-naive/);
   });
 
   test("the two phase-1b rulings name both seats and the four resolutions", () => {
-    const rulings = readFileSync(join(REPO, "policies/resolved-conflicts.yaml"), "utf8");
+    const rulings = readPinned(REPO, "policies/resolved-conflicts.yaml");
     expect(rulings).toContain("id: comprehension-seat-stays-naive");
     expect(rulings).toContain("id: comprehension-gap-not-contestable");
     expect(rulings).toContain("ticket cold reader");
     expect(rulings).toContain("never rejected on the author's word");
     expect(yamlItemBlock(rulings, "\n  - id: comprehension-seat-stays-naive\n")).toContain("references: [delegation]");
-    const delegation = readFileSync(join(REPO, "references/delegation/REFERENCE.md"), "utf8");
+    const delegation = readPinned(REPO, "references/delegation/REFERENCE.md");
     expect(delegation).toContain("no prior-finding packet (ruling `comprehension-seat-stays-naive`)");
-    expect(readFileSync(join(REPO, "skills/super-bound/SKILL.md"), "utf8")).toContain("comprehension-seat-stays-naive");
-    expect(readFileSync(join(REPO, "skills/super-bound/skill.yaml"), "utf8")).toContain(
-      "comprehension-seat-stays-naive",
-    );
+    expect(readPinned(REPO, "skills/super-bound/SKILL.md")).toContain("comprehension-seat-stays-naive");
+    expect(readPinned(REPO, "skills/super-bound/skill.yaml")).toContain("comprehension-seat-stays-naive");
   });
 });
