@@ -10,6 +10,7 @@ const root = dirname(dirname(dirname(source)));
 const { ajv, validate } = compileVerificationSchema(root);
 const standalone = standaloneCode(ajv, validate);
 const adapterDeclaration = "const BUNDLED_ADAPTER_IDS: readonly string[] = [];";
+const gateEntryDeclaration = "const GATE_ENTRY = false;";
 const result = await Bun.build({
   entrypoints: [source],
   target: "node",
@@ -33,10 +34,9 @@ const result = await Bun.build({
           if (!contents.includes(adapterDeclaration))
             throw new Error(`${args.path}: bundled adapter declaration missing`);
           return {
-            contents: contents.replace(
-              adapterDeclaration,
-              `const BUNDLED_ADAPTER_IDS: readonly string[] = ${adapterIds};`,
-            ),
+            contents: contents
+              .replace(adapterDeclaration, `const BUNDLED_ADAPTER_IDS: readonly string[] = ${adapterIds};`)
+              .replace(gateEntryDeclaration, "const GATE_ENTRY = true;"),
             loader: "ts",
           };
         });

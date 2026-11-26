@@ -1856,6 +1856,17 @@ describe("the gate a bundle carries", () => {
     expect(JSON.parse(unattended.stdout.toString())).toMatchObject({ policy: "unattended", phase: "super-align" });
   });
 
+  test("a renamed packaged gate still runs as the entry", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    const file = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get(GATE_FILE);
+    if (file === undefined) throw new Error("planned gate missing");
+    const script = join(makeTree({ "lifecycle-gate.mjs": file.contents }), "lifecycle-gate.mjs");
+    const result = Bun.spawnSync(["node", script], { env: process.env });
+    expect(result.exitCode, result.stderr.toString()).toBe(2);
+    expect(result.stderr.toString()).toContain("ak lifecycle");
+  });
+
   // One test per host and runtime: each pass spawns the gate a dozen times, so together they outran the timeout.
   for (const host of ["claude-code", "codex"] as const)
     for (const [label, runtime] of [
