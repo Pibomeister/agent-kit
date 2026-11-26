@@ -19,9 +19,12 @@
  * and is out of scope. A free-text claim with no identity token is
  * review's job. Every pin is checked by equality at its parsed location.
  * Every pinned byte is read by one reader from HEAD, the index, and the
- * worktree; any layer that differs is red, hashes run on those agreed
- * bytes, and the pin must hold in all three. The README file must start
- * with exactly `# agent-kit\n`; the
+ * worktree; the reader returns those agreed raw bytes. Any layer that
+ * differs is red. FILE_HASHES hash the raw bytes. OVERLAY_COPIES compare
+ * the raw bytes. Text pins decode from the same bytes. catalog.yaml
+ * `package.description` is parsed from the agreed bytes and must name
+ * the twelve-donor counts; `.cursor/catalog.yaml` contains it. The
+ * README file must start with exactly `# agent-kit\n`; the
  * first paragraph after that heading equals the lede pin.
  * package.json `description` and marketplace `metadata.description` equal
  * their pins after a duplicate-key-rejecting parse; a key repeated in one
@@ -314,6 +317,18 @@ const OVERLAY_COPIES: Array<{ src: string; dest: string }> = [
   },
 ];
 
+const PINNED_PATHS = [
+  ...new Set([
+    "catalog.yaml",
+    ".cursor/catalog.yaml",
+    LOCK,
+    ...FILE_HASHES.map((pin) => pin.file),
+    ...BLOCK_PINS.map((pin) => pin.file),
+    ...OVERLAY_COPIES.flatMap((copy) => [copy.src, copy.dest]),
+    ...SENTENCE_PINS.map((pin) => pin.file),
+  ]),
+].toSorted();
+
 function catalogDonorLicenses(root: string): Map<string, string> {
   const { donors } = loadDonors(root);
   const { rows } = loadAdaptationFragments(root);
@@ -432,6 +447,18 @@ const isFingerprintSchema = new Ajv2020({ strict: false }).compile<{
   },
 });
 
+const isCatalogPackage = new Ajv2020({ strict: false }).compile<{ package: { description: string } }>({
+  type: "object",
+  required: ["package"],
+  properties: {
+    package: {
+      type: "object",
+      required: ["description"],
+      properties: { description: { type: "string" } },
+    },
+  },
+});
+
 const isLockDonor = new Ajv2020({ strict: false }).compile<LockDonor>({
   type: "object",
   required: ["id", "commit", "commit_date", "license", "copyright", "license_file", "path", "url", "repo"],
@@ -449,7 +476,7 @@ const isLockDonor = new Ajv2020({ strict: false }).compile<LockDonor>({
 });
 
 function loadLockDonors(root: string, version?: "1.1"): Map<string, LockDonor> {
-  const text = root === REPO ? readPinned(root, LOCK) : readFileSync(join(root, LOCK), "utf8");
+  const text = root === REPO ? pinnedText(root, LOCK) : readFileSync(join(root, LOCK), "utf8");
   const value: unknown = version === "1.1" ? parse(text, { version: "1.1" }) : parse(text);
   expect(isLockDoc(value), "lock donors").toBe(true);
   if (!isLockDoc(value)) return new Map();
@@ -483,6 +510,10 @@ function loadLockDonors(root: string, version?: "1.1"): Map<string, LockDonor> {
 
 function textSha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
+}
+
+function bytesSha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function maskFences(text: string): string {
@@ -556,13 +587,20 @@ function revBlob(root: string, spec: string): Uint8Array {
   return readBlob(root, git(root, ["rev-parse", spec]).trim());
 }
 
-function readPinned(root: string, file: string): string {
+const pinnedReads = new Set<string>();
+
+function readPinned(root: string, file: string): Uint8Array {
+  pinnedReads.add(file);
   const head = revBlob(root, `HEAD:${file}`);
   const index = revBlob(root, `:${file}`);
   const worktree = Uint8Array.from(readFileSync(join(root, file)));
   expect(bytesEqual(head, index), `${file} HEAD/index`).toBe(true);
   expect(bytesEqual(head, worktree), `${file} HEAD/worktree`).toBe(true);
-  return decodeTracked(file, head);
+  return head;
+}
+
+function pinnedText(root: string, file: string): string {
+  return decodeTracked(file, readPinned(root, file));
 }
 
 function skipTrackedPath(raw: string): boolean {
@@ -805,7 +843,7 @@ function assertSentencePins(root = REPO): void {
   expect(BINARY_ALLOWLIST).toEqual([]);
   expect(SENTENCE_PINS).toHaveLength(3);
   for (const pin of SENTENCE_PINS) {
-    const raw = readPinned(root, pin.file);
+    const raw = pinnedText(root, pin.file);
     if (pin.jsonKey === undefined) {
       expect(firstParagraphAfterExactH1(raw), pin.file).toBe(pin.text);
       continue;
@@ -829,7 +867,7 @@ function assertIsolationPin(root = REPO): void {
   const pin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
   expect(pin).toBeDefined();
   if (pin === undefined) return;
-  const text = readPinned(root, pin.file);
+  const text = pinnedText(root, pin.file);
   const rows = isolationRowLines(text);
   expect(rows.length, "isolation rows").toBe(1);
   const interior = extractPinnedBlock(text, pin);
@@ -839,29 +877,29 @@ function assertIsolationPin(root = REPO): void {
 
 function assertFileHashes(root = REPO): void {
   for (const pin of FILE_HASHES) {
-    expect(textSha256(readPinned(root, pin.file)), pin.file).toBe(pin.sha256);
+    expect(bytesSha256(readPinned(root, pin.file)), pin.file).toBe(pin.sha256);
   }
 }
 
 function assertLockEntry(root = REPO): void {
-  expect(textSha256(lockEntry(readPinned(root, LOCK))), LOCK).toBe(LOCK_ENTRY_SHA256);
+  expect(textSha256(lockEntry(pinnedText(root, LOCK))), LOCK).toBe(LOCK_ENTRY_SHA256);
 }
 
 function assertBlockPins(root = REPO): void {
   for (const pin of BLOCK_PINS) {
-    expect(textSha256(extractPinnedBlock(readPinned(root, pin.file), pin)), pin.file).toBe(pin.sha256);
+    expect(textSha256(extractPinnedBlock(pinnedText(root, pin.file), pin)), pin.file).toBe(pin.sha256);
   }
 }
 
 function assertFingerprint(root = REPO): void {
-  const schema: unknown = JSON.parse(readPinned(root, "schemas/finding.schema.json"));
+  const schema: unknown = JSON.parse(pinnedText(root, "schemas/finding.schema.json"));
   expect(isFingerprintSchema(schema), "fingerprint description").toBe(true);
   if (!isFingerprintSchema(schema)) return;
   expect(textSha256(schema.properties.fingerprint.description), "fingerprint").toBe(FINGERPRINT_DESC_SHA256);
 }
 
 function assertOverlay(root: string, copy: { src: string; dest: string }): void {
-  expect(readPinned(root, copy.dest), copy.dest).toBe(readPinned(root, copy.src));
+  expect(bytesEqual(readPinned(root, copy.dest), readPinned(root, copy.src)), copy.dest).toBe(true);
 }
 
 function assertOverlays(root = REPO): void {
@@ -874,14 +912,27 @@ function assertFileHash(root: string, file: string): void {
   const pin = FILE_HASHES.find((row) => row.file === file);
   expect(pin, file).toBeDefined();
   if (pin === undefined) return;
-  expect(textSha256(readPinned(root, file)), file).toBe(pin.sha256);
+  expect(bytesSha256(readPinned(root, file)), file).toBe(pin.sha256);
 }
 
 function assertBlockPin(root: string, file: string): void {
   const pin = BLOCK_PINS.find((row) => row.file === file);
   expect(pin, file).toBeDefined();
   if (pin === undefined) return;
-  expect(textSha256(extractPinnedBlock(readPinned(root, file), pin)), file).toBe(pin.sha256);
+  expect(textSha256(extractPinnedBlock(pinnedText(root, file), pin)), file).toBe(pin.sha256);
+}
+
+function catalogDescription(root: string): string {
+  const value: unknown = parse(pinnedText(root, "catalog.yaml"));
+  expect(isCatalogPackage(value), "catalog.yaml package.description").toBe(true);
+  if (!isCatalogPackage(value)) return "";
+  return value.package.description;
+}
+
+function lfToCrlf(bytes: Uint8Array): Uint8Array {
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  expect(text.includes("\r"), "fixture already CRLF").toBe(false);
+  return new TextEncoder().encode(text.replaceAll("\n", "\r\n"));
 }
 
 function identityScan(root: string) {
@@ -1209,10 +1260,39 @@ describe("EGM provenance guards", () => {
     expect(() => assertOverlay(root, copy)).toThrow(`${copy.dest} HEAD/worktree`);
   });
 
-  test("pin section reads REPO paths through readPinned", () => {
-    const src = readFileSync(new URL(import.meta.url), "utf8");
-    expect(src.includes(["file", "Sha256"].join(""))).toBe(false);
-    expect(/readFileSync\(\s*join\(\s*REPO/.test(src)).toBe(false);
+  test("catalog.yaml committed lie", () => {
+    const file = "catalog.yaml";
+    const root = scratchTracked([file]);
+    const honest = readFileSync(join(root, file), "utf8");
+    commitFile(
+      root,
+      file,
+      honest.replace(
+        '"One engineering lifecycle, amalgamated from twelve donors: ten MIT, two Apache-2.0."',
+        '"Eleven donors and nothing about EGM counts here."',
+      ),
+    );
+    restoreWorktreeFrom(root, file, `HEAD~1:${file}`);
+    expect(() => catalogDescription(root)).toThrow(`${file} HEAD/worktree`);
+  });
+
+  test("NOTICE as CRLF in all three layers", () => {
+    const file = "NOTICE";
+    const root = scratchTracked([file]);
+    const pin = FILE_HASHES.find((row) => row.file === file);
+    expect(pin).toBeDefined();
+    if (pin === undefined) return;
+    commitFile(root, file, lfToCrlf(readFileSync(join(root, file))));
+    expect(() => assertFileHash(root, file)).toThrow(pin.sha256);
+  });
+
+  test("overlay dest as CRLF while src stays LF", () => {
+    const copy = OVERLAY_COPIES[0];
+    expect(copy).toBeDefined();
+    if (copy === undefined) return;
+    const root = scratchTracked([copy.src, copy.dest]);
+    commitFile(root, copy.dest, lfToCrlf(readFileSync(join(root, copy.dest))));
+    expect(() => assertOverlay(root, copy)).toThrow(copy.dest);
   });
 });
 
@@ -1239,7 +1319,7 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("re-indenting the lock keeps the pin and the catalog counts", () => {
-    const original = readPinned(REPO, LOCK);
+    const original = pinnedText(REPO, LOCK);
     const rewritten = stringify(parse(original), { indent: 4 });
     const scratch = processScratch("egm-lock-indent-");
     mkdirSync(join(scratch, "provenance"));
@@ -1267,6 +1347,7 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("hashed provenance files and unique marker blocks", () => {
+    pinnedReads.clear();
     assertFileHashes();
     assertLockEntry();
     assertBlockPins();
@@ -1274,18 +1355,18 @@ describe("EGM provenance (GS-004f)", () => {
     assertOverlays();
     const catalog = catalogDonorLicenses(REPO);
     expectTwelveCatalogDonors(catalog);
-    const { catalog: loaded } = loadCatalog(REPO);
-    const description = loaded?.package.description ?? "";
+    const description = catalogDescription(REPO);
     expect(description.length, "catalog.yaml package.description").toBeGreaterThan(0);
     const mitCount = [...catalog.values()].filter((license) => license === "MIT").length;
     const apacheCount = [...catalog.values()].filter((license) => license === "Apache-2.0").length;
     expect(description).toContain(countWord(catalog.size));
     expect(description).toContain(countWord(mitCount));
     expect(description).toContain(countWord(apacheCount));
-    expect(contractPluginDescription(readPinned(REPO, "adapters/claude-code/CONTRACT.md"))).toBe(description);
-    expect(readPinned(REPO, ".cursor/catalog.yaml")).toContain(description);
+    expect(contractPluginDescription(pinnedText(REPO, "adapters/claude-code/CONTRACT.md"))).toBe(description);
+    expect(pinnedText(REPO, ".cursor/catalog.yaml")).toContain(description);
     assertSentencePins();
     assertIsolationPin();
+    expect([...pinnedReads].toSorted()).toEqual(PINNED_PATHS);
   });
 
   test("identity strings live only in pinned regions or the allowlist", () => {
@@ -1327,7 +1408,7 @@ describe("EGM provenance (GS-004f)", () => {
       const licenseFile = lockDonors.get(id)?.license_file;
       expect(licenseFile, id).toBeDefined();
       expect(existsSync(join(REPO, licenseFile ?? "")), licenseFile).toBe(true);
-      const text = readPinned(REPO, licenseFile ?? "");
+      const text = pinnedText(REPO, licenseFile ?? "");
       if (license === "Apache-2.0") {
         expect(text, licenseFile).toContain("Apache License");
         expect(text, licenseFile).toMatch(/Version 2\.0/);
@@ -1338,7 +1419,7 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("research/dossiers/egm.md carries no denylist term", () => {
-    const dossier = readPinned(REPO, "research/dossiers/egm.md");
+    const dossier = pinnedText(REPO, "research/dossiers/egm.md");
     expect(matchTerms(dossier, DENY_TERMS)).toEqual([]);
     const catalogCount = sectionAfter(dossier, "6. Catalog count");
     expect(labelledIds(catalogCount, "ten MIT").toSorted()).toEqual([...MIT_CATALOG_IDS].toSorted());
@@ -1346,21 +1427,21 @@ describe("EGM provenance (GS-004f)", () => {
   });
 
   test("finding.schema.json status and fingerprint descriptions name both phase-1b rulings", () => {
-    const schema = readPinned(REPO, "schemas/finding.schema.json");
+    const schema = pinnedText(REPO, "schemas/finding.schema.json");
     expect(schema).toMatch(/"status": \{\s*"description": "[^"]*comprehension-gap-not-contestable/);
     expect(schema).toMatch(/"fingerprint": \{\s*"description": "[^"]*comprehension-seat-stays-naive/);
   });
 
   test("the two phase-1b rulings name both seats and the four resolutions", () => {
-    const rulings = readPinned(REPO, "policies/resolved-conflicts.yaml");
+    const rulings = pinnedText(REPO, "policies/resolved-conflicts.yaml");
     expect(rulings).toContain("id: comprehension-seat-stays-naive");
     expect(rulings).toContain("id: comprehension-gap-not-contestable");
     expect(rulings).toContain("ticket cold reader");
     expect(rulings).toContain("never rejected on the author's word");
     expect(yamlItemBlock(rulings, "\n  - id: comprehension-seat-stays-naive\n")).toContain("references: [delegation]");
-    const delegation = readPinned(REPO, "references/delegation/REFERENCE.md");
+    const delegation = pinnedText(REPO, "references/delegation/REFERENCE.md");
     expect(delegation).toContain("no prior-finding packet (ruling `comprehension-seat-stays-naive`)");
-    expect(readPinned(REPO, "skills/super-bound/SKILL.md")).toContain("comprehension-seat-stays-naive");
-    expect(readPinned(REPO, "skills/super-bound/skill.yaml")).toContain("comprehension-seat-stays-naive");
+    expect(pinnedText(REPO, "skills/super-bound/SKILL.md")).toContain("comprehension-seat-stays-naive");
+    expect(pinnedText(REPO, "skills/super-bound/skill.yaml")).toContain("comprehension-seat-stays-naive");
   });
 });
