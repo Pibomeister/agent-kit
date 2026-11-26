@@ -17,9 +17,16 @@
  * exact-byte BLOCK_PINS marker pair in that pin's file. Lookalike or
  * case-changed markers are plain text. Small-caps ᴇɢᴍ does not NFKD-fold
  * and is out of scope. A free-text claim with no identity token is
- * review's job. Every SENTENCE_PINS and BLOCK_PINS pin occurs exactly
- * once in exact bytes in its file. package.json has one "description"
- * key whose parsed value equals the pin. The isolation-review-context
+ * review's job. Every pin is checked by equality at its parsed location.
+ * The README first paragraph after `# agent-kit` equals the lede pin.
+ * package.json `description` and marketplace `metadata.description` equal
+ * their pins after a duplicate-key-rejecting parse; a key repeated in one
+ * object, including via a \\u escape, is red. A \\u escape that changes
+ * bytes in a pinned JSON value is red. A pinned file starting with U+FEFF
+ * is red. The identity scan reads committed blob bytes (`git ls-files -s`
+ * and `git cat-file blob`), not the working tree. Gitlinks (mode 160000)
+ * are skipped. `node_modules` is skipped only as a directory segment
+ * (`node_modules/`), not as a basename. The isolation-review-context
  * table row occurs once after whitespace fold and lies inside the
  * adapters/cursor/CONTRACT.md hashed interior.
  */
@@ -27,7 +34,7 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse, stringify } from "yaml";
 
@@ -126,22 +133,20 @@ const IDENTITY_ALLOWLIST: Array<{ file: string; reason: string }> = [
 const FOLDED_NEEDLES = ["elephant-goldfish", "gap-probe", "gap-mastra"] as const;
 const EGM_PIN7 = EGM_COMMIT.slice(0, 7);
 const BINARY_ALLOWLIST: string[] = [];
+const README_LEDE =
+  "One engineering lifecycle, amalgamated from twelve donors (ten MIT-licensed, two Apache-2.0) into a single installable\ncatalog — rather than four plugins competing over activation descriptions.";
 const PACKAGE_DESCRIPTION =
   "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.";
+const MARKETPLACE_DESCRIPTION =
+  "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0), installable under /ak:.";
 type SentencePin = { file: string; text: string; jsonKey?: string };
 const SENTENCE_PINS: SentencePin[] = [
-  {
-    file: "README.md",
-    text: "One engineering lifecycle, amalgamated from twelve donors (ten MIT-licensed, two Apache-2.0) into a single installable",
-  },
-  {
-    file: "package.json",
-    text: `"description": "${PACKAGE_DESCRIPTION}",`,
-    jsonKey: "description",
-  },
+  { file: "README.md", text: README_LEDE },
+  { file: "package.json", text: PACKAGE_DESCRIPTION, jsonKey: "description" },
   {
     file: ".claude-plugin/marketplace.json",
-    text: '"description": "One engineering lifecycle amalgamated from twelve donors (ten MIT, two Apache-2.0), installable under /ak:."',
+    text: MARKETPLACE_DESCRIPTION,
+    jsonKey: "metadata.description",
   },
 ];
 const OVERLONG_UTF8 = new Uint8Array([0xc0, 0x80]);
@@ -391,6 +396,18 @@ const isPluginExample = new Ajv2020({ strict: false }).compile<{ description: st
   properties: { description: { type: "string" } },
 });
 
+const isMarketplaceMeta = new Ajv2020({ strict: false }).compile<{ metadata: { description: string } }>({
+  type: "object",
+  required: ["metadata"],
+  properties: {
+    metadata: {
+      type: "object",
+      required: ["description"],
+      properties: { description: { type: "string" } },
+    },
+  },
+});
+
 const isFingerprintSchema = new Ajv2020({ strict: false }).compile<{
   properties: { fingerprint: { description: string } };
 }>({
@@ -525,26 +542,54 @@ function foldOffset(original: string, at: number): number {
 
 function decodeTracked(file: string, bytes: Uint8Array): string {
   if (BINARY_ALLOWLIST.includes(file)) return "";
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    throw new Error(`BOM ${file}`);
+  }
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replaceAll("\r\n", "\n");
 }
 
-function readTracked(file: string): string {
-  return decodeTracked(file, readFileSync(join(REPO, file)));
+function readTracked(root: string, file: string): string {
+  return decodeTracked(file, readFileSync(join(root, file)));
 }
 
 function skipTrackedPath(raw: string): boolean {
-  return raw.split("/").includes("node_modules");
+  return /(^|\/)node_modules\//.test(raw);
 }
 
-function trackedTextFiles(): string[] {
-  const listed = spawnSync("git", ["ls-files", "-z"], { cwd: REPO, encoding: "buffer" });
-  expect(listed.status, "git ls-files").toBe(0);
-  const files: string[] = [];
-  for (const raw of listed.stdout.toString("utf8").split("\0")) {
-    if (raw === "" || skipTrackedPath(raw)) continue;
-    files.push(raw);
+function git(cwd: string, args: string[]): string {
+  const run = spawnSync("git", ["-c", "user.name=ak", "-c", "user.email=ak@t", ...args], {
+    cwd,
+    encoding: "utf8",
+  });
+  expect(run.status, args.join(" ")).toBe(0);
+  return run.stdout;
+}
+
+function trackedBlobs(root: string): Array<{ sha: string; path: string }> {
+  const listed = spawnSync("git", ["ls-files", "-s", "-z"], { cwd: root, encoding: "buffer" });
+  expect(listed.status, "git ls-files -s").toBe(0);
+  const files: Array<{ sha: string; path: string }> = [];
+  for (const rec of listed.stdout.toString("utf8").split("\0")) {
+    if (rec === "") continue;
+    const tab = rec.indexOf("\t");
+    expect(tab, rec).toBeGreaterThan(0);
+    const [mode, sha] = rec.slice(0, tab).split(" ");
+    const path = rec.slice(tab + 1);
+    if (mode === "160000" || skipTrackedPath(path)) continue;
+    expect(sha, rec).toBeDefined();
+    files.push({ sha: sha ?? "", path });
   }
   return files;
+}
+
+function readBlob(root: string, sha: string): Uint8Array {
+  const run = spawnSync("git", ["cat-file", "blob", sha], {
+    cwd: root,
+    encoding: "buffer",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  expect(run.status, sha).toBe(0);
+  return Uint8Array.from(run.stdout);
 }
 
 function exactMarkerRanges(file: string, original: string) {
@@ -603,31 +648,216 @@ function isolationRowLines(text: string): string[] {
     .filter((line) => line.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` |"));
 }
 
-function assertSentencePins(): void {
+function firstParagraphAfterH1(text: string): string {
+  expect(text.startsWith("# agent-kit\n"), "README h1").toBe(true);
+  const rest = text.slice("# agent-kit\n".length).replace(/^\n*/, "");
+  return rest.split("\n\n")[0] ?? "";
+}
+
+function scanJson(text: string): Map<string, string> {
+  let i = 0;
+  const rawAt = new Map<string, string>();
+  function peek(): string {
+    return text[i] ?? "";
+  }
+  function skipWs(): void {
+    while (i < text.length && (text[i] === " " || text[i] === "\n" || text[i] === "\r" || text[i] === "\t")) i++;
+  }
+  function parseString() {
+    const start = i;
+    expect(text[i], "json string").toBe('"');
+    i++;
+    let decoded = "";
+    while (i < text.length) {
+      const c = text[i] ?? "";
+      if (c === '"') {
+        i++;
+        return { decoded, raw: text.slice(start, i) };
+      }
+      if (c === "\\") {
+        i++;
+        const e = text[i] ?? "";
+        i++;
+        if (e === "u") {
+          const hex = text.slice(i, i + 4);
+          expect(/^[0-9a-fA-F]{4}$/.test(hex), "json \\u").toBe(true);
+          decoded += String.fromCharCode(Number.parseInt(hex, 16));
+          i += 4;
+        } else if (e === "n") decoded += "\n";
+        else if (e === "r") decoded += "\r";
+        else if (e === "t") decoded += "\t";
+        else if (e === "b") decoded += "\b";
+        else if (e === "f") decoded += "\f";
+        else if (e === '"' || e === "\\" || e === "/") decoded += e;
+        else expect(e, "json escape").toBe('"');
+      } else {
+        decoded += c;
+        i++;
+      }
+    }
+    expect(false, "unterminated string").toBe(true);
+    return { decoded: "", raw: "" };
+  }
+  function skipValue(path: string): void {
+    skipWs();
+    const c = peek();
+    if (c === '"') {
+      const s = parseString();
+      rawAt.set(path, s.raw);
+      return;
+    }
+    if (c === "{") {
+      skipObject(path);
+      return;
+    }
+    if (c === "[") {
+      skipArray(path);
+      return;
+    }
+    if (c === "t") {
+      expect(text.slice(i, i + 4)).toBe("true");
+      i += 4;
+      return;
+    }
+    if (c === "f") {
+      expect(text.slice(i, i + 5)).toBe("false");
+      i += 5;
+      return;
+    }
+    if (c === "n") {
+      expect(text.slice(i, i + 4)).toBe("null");
+      i += 4;
+      return;
+    }
+    const m = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(i));
+    expect(m, "json number").toBeTruthy();
+    i += m?.[0].length ?? 0;
+  }
+  function skipObject(path: string): void {
+    i++;
+    const seen = new Set<string>();
+    skipWs();
+    if (peek() === "}") {
+      i++;
+      return;
+    }
+    for (;;) {
+      skipWs();
+      const key = parseString();
+      expect(seen.has(key.decoded), `duplicate ${key.decoded}`).toBe(false);
+      seen.add(key.decoded);
+      skipWs();
+      expect(peek()).toBe(":");
+      i++;
+      skipValue(path === "" ? key.decoded : `${path}.${key.decoded}`);
+      skipWs();
+      if (peek() === ",") {
+        i++;
+        continue;
+      }
+      expect(peek()).toBe("}");
+      i++;
+      return;
+    }
+  }
+  function skipArray(path: string): void {
+    i++;
+    skipWs();
+    if (peek() === "]") {
+      i++;
+      return;
+    }
+    let idx = 0;
+    for (;;) {
+      skipValue(`${path}[${idx}]`);
+      idx++;
+      skipWs();
+      if (peek() === ",") {
+        i++;
+        continue;
+      }
+      expect(peek()).toBe("]");
+      i++;
+      return;
+    }
+  }
+  skipValue("");
+  skipWs();
+  expect(i, "json trailing").toBe(text.length);
+  return rawAt;
+}
+
+function assertSentencePins(root = REPO): void {
   expect(BINARY_ALLOWLIST).toEqual([]);
   expect(SENTENCE_PINS).toHaveLength(3);
   for (const pin of SENTENCE_PINS) {
-    const raw = readFileSync(join(REPO, pin.file), "utf8");
-    expect(indicesOf(raw, pin.text).length, pin.file).toBe(1);
-    if (pin.jsonKey === undefined) continue;
-    expect(indicesOf(raw, `"${pin.jsonKey}"`).length, `${pin.file} ${pin.jsonKey}`).toBe(1);
+    const raw = readTracked(root, pin.file);
+    if (pin.jsonKey === undefined) {
+      expect(firstParagraphAfterH1(raw), pin.file).toBe(pin.text);
+      continue;
+    }
+    const tokens = scanJson(raw);
     const parsed: unknown = JSON.parse(raw);
-    expect(isPluginExample(parsed), pin.file).toBe(true);
-    if (!isPluginExample(parsed)) continue;
-    expect(parsed.description).toBe(PACKAGE_DESCRIPTION);
+    if (pin.jsonKey === "description") {
+      expect(isPluginExample(parsed), pin.file).toBe(true);
+      if (!isPluginExample(parsed)) continue;
+      expect(parsed.description).toBe(pin.text);
+    } else {
+      expect(isMarketplaceMeta(parsed), pin.file).toBe(true);
+      if (!isMarketplaceMeta(parsed)) continue;
+      expect(parsed.metadata.description).toBe(pin.text);
+    }
+    expect(tokens.get(pin.jsonKey), pin.file).toBe(JSON.stringify(pin.text));
   }
 }
 
-function assertIsolationPin(): void {
+function assertIsolationPin(root = REPO): void {
   const pin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
   expect(pin).toBeDefined();
   if (pin === undefined) return;
-  const text = readFileSync(join(REPO, pin.file), "utf8").replaceAll("\r\n", "\n");
+  const text = readTracked(root, pin.file);
   const rows = isolationRowLines(text);
   expect(rows.length, "isolation rows").toBe(1);
   const interior = extractPinnedBlock(text, pin);
   expect(isolationRowLines(interior)).toEqual(rows);
   expect(textSha256(interior)).toBe(pin.sha256);
+}
+
+function identityScan(root: string) {
+  const uncovered: string[] = [];
+  const decodeLies: string[] = [];
+  for (const { path, sha } of trackedBlobs(root)) {
+    if (BINARY_ALLOWLIST.includes(path)) continue;
+    let text: string;
+    try {
+      text = decodeTracked(path, readBlob(root, sha));
+    } catch {
+      decodeLies.push(path);
+      continue;
+    }
+    const ranges = coveredRanges(path, text);
+    for (const offset of identityOffsets(path, text)) {
+      if (!offsetCovered(offset, ranges)) uncovered.push(`${path}:${offset}`);
+    }
+  }
+  return { uncovered, decodeLies };
+}
+
+function scratchPins(): string {
+  const root = processScratch("egm-pins-");
+  for (const pin of SENTENCE_PINS) {
+    mkdirSync(join(root, dirname(pin.file)), { recursive: true });
+    cpSync(join(REPO, pin.file), join(root, pin.file));
+  }
+  mkdirSync(join(root, "adapters/cursor"), { recursive: true });
+  cpSync(join(REPO, "adapters/cursor/CONTRACT.md"), join(root, "adapters/cursor/CONTRACT.md"));
+  return root;
+}
+
+function initRepo(): string {
+  const root = processScratch("egm-git-");
+  git(root, ["init", "-q"]);
+  return root;
 }
 
 function offsetCovered(offset: number, ranges: Array<[number, number]>): boolean {
@@ -713,38 +943,109 @@ describe("EGM provenance guards", () => {
     expect(identityOffsets("README.md", "<!-- AK-EGM-BEGIN -->\n<!-- AK-EGM-END -->").length).toBeGreaterThan(0);
   });
 
-  test("node_modules skip is a path segment", () => {
+  test("node_modules skip is a directory segment", () => {
     expect(skipTrackedPath("src/node_modules/x.ts")).toBe(true);
     expect(skipTrackedPath("node_modules/x.ts")).toBe(true);
     expect(skipTrackedPath("not_node_modules/x.ts")).toBe(false);
+    expect(skipTrackedPath("node_modules")).toBe(false);
+    expect(skipTrackedPath("foo/node_modules")).toBe(false);
   });
 
-  test("one-byte change to pinned sentences or isolation row is red", () => {
-    assertSentencePins();
-    assertIsolationPin();
+  test("F1 README first paragraph is the pin location", () => {
+    const root = scratchPins();
+    const readme = readFileSync(join(root, "README.md"), "utf8");
+    writeFileSync(join(root, "README.md"), readme.replace(README_LEDE, `decoy paragraph\n\n<!-- ${README_LEDE} -->`));
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("F2 duplicate JSON keys are red", () => {
+    const root = scratchPins();
+    const pkg = readFileSync(join(root, "package.json"), "utf8");
+    writeFileSync(
+      join(root, "package.json"),
+      pkg.replace('\n  "description":', '\n  "description": "lie",\n  "\\u0064escription":'),
+    );
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("F3 marketplace metadata.description location", () => {
+    const root = scratchPins();
+    const market = readFileSync(join(root, ".claude-plugin/marketplace.json"), "utf8");
+    writeFileSync(
+      join(root, ".claude-plugin/marketplace.json"),
+      market
+        .replace(`"${MARKETPLACE_DESCRIPTION}"`, '"lie"')
+        .replace(
+          '"Seven super skills plus packs, protocols and roles: align, bound, scout, build, verify, review, ship."',
+          `"${MARKETPLACE_DESCRIPTION}"`,
+        ),
+    );
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("F4 node_modules basename is not skipped", () => {
+    const root = initRepo();
+    writeFileSync(join(root, "node_modules"), "egm\n");
+    git(root, ["add", "-f", "node_modules"]);
+    git(root, ["commit", "-q", "-m", "f4"]);
+    const { uncovered, decodeLies } = identityScan(root);
+    expect(decodeLies).toEqual([]);
+    expect(uncovered.length).toBeGreaterThan(0);
+  });
+
+  test("F5 gitlink is skipped", () => {
+    const root = initRepo();
+    writeFileSync(join(root, "README.md"), "# ok\n");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-q", "-m", "f5"]);
+    git(root, ["update-index", "--add", "--cacheinfo", "160000,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,vendor/lib"]);
+    const { uncovered, decodeLies } = identityScan(root);
+    expect(decodeLies).toEqual([]);
+    expect(uncovered).toEqual([]);
+  });
+
+  test("F6 JSON unicode escape in a pinned value is red", () => {
+    const root = scratchPins();
+    const pkg = readFileSync(join(root, "package.json"), "utf8");
+    writeFileSync(
+      join(root, "package.json"),
+      pkg.replace(`"${PACKAGE_DESCRIPTION}"`, `"\\u004f${PACKAGE_DESCRIPTION.slice(1)}"`),
+    );
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("F7 BOM on a pinned file is red", () => {
+    const root = scratchPins();
+    const bytes = readFileSync(join(root, "README.md"));
+    writeFileSync(join(root, "README.md"), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]));
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("F8 identity reads committed blobs", () => {
+    const root = initRepo();
+    writeFileSync(join(root, "hidden.md"), "egm\n");
+    git(root, ["add", "hidden.md"]);
+    git(root, ["commit", "-q", "-m", "f8"]);
+    writeFileSync(join(root, "hidden.md"), "clean\n");
+    const { uncovered, decodeLies } = identityScan(root);
+    expect(decodeLies).toEqual([]);
+    expect(uncovered.length).toBeGreaterThan(0);
+  });
+
+  test("one-byte change at a pin location is red", () => {
     for (const pin of SENTENCE_PINS) {
-      const path = join(REPO, pin.file);
+      const root = scratchPins();
+      const path = join(root, pin.file);
       const original = readFileSync(path, "utf8");
       const mid = Math.floor(pin.text.length / 2);
       const lie = `${pin.text.slice(0, mid)}X${pin.text.slice(mid + 1)}`;
-      try {
-        writeFileSync(path, original.replace(pin.text, lie));
-        expect(indicesOf(readFileSync(path, "utf8"), pin.text).length, pin.file).not.toBe(1);
-      } finally {
-        writeFileSync(path, original);
-      }
+      writeFileSync(path, original.replace(pin.text, lie));
+      expect(() => assertSentencePins(root)).toThrow();
     }
-    const pin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
-    expect(pin).toBeDefined();
-    if (pin === undefined) return;
-    const path = join(REPO, pin.file);
-    const original = readFileSync(path, "utf8");
-    try {
-      writeFileSync(path, original.replace("`partial`", "`partiaX`"));
-      expect(textSha256(extractPinnedBlock(readFileSync(path, "utf8"), pin))).not.toBe(pin.sha256);
-    } finally {
-      writeFileSync(path, original);
-    }
+    const root = scratchPins();
+    const path = join(root, "adapters/cursor/CONTRACT.md");
+    writeFileSync(path, `${readFileSync(path, "utf8")}\n| \`isolated-review-context\` | \`full\` | decoy |\n`);
+    expect(() => assertIsolationPin(root)).toThrow();
   });
 });
 
@@ -838,22 +1139,7 @@ describe("EGM provenance (GS-004f)", () => {
       expect(existsSync(join(REPO, entry.file)), entry.reason).toBe(true);
       expect(entry.reason.length, entry.file).toBeGreaterThan(0);
     }
-    const uncovered: string[] = [];
-    const decodeLies: string[] = [];
-    for (const file of trackedTextFiles()) {
-      if (BINARY_ALLOWLIST.includes(file)) continue;
-      let text: string;
-      try {
-        text = readTracked(file);
-      } catch {
-        decodeLies.push(file);
-        continue;
-      }
-      const ranges = coveredRanges(file, text);
-      for (const offset of identityOffsets(file, text)) {
-        if (!offsetCovered(offset, ranges)) uncovered.push(`${file}:${offset}`);
-      }
-    }
+    const { uncovered, decodeLies } = identityScan(REPO);
     expect(decodeLies).toEqual([]);
     expect(uncovered).toEqual([]);
   });
