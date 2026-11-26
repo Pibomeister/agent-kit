@@ -40,6 +40,8 @@ const FILTERS = [
   "R10-QUOTED-UNICODE",
   "R10-QUOTED-DQUOTE",
   "R10-QUOTED-NEWLINE",
+  "R11-NON-UTF8",
+  "delta.ts does not feed a parsed path back",
   "UNRELATED-OURS-MERGE",
   "UNRELATED-BASE",
   "MERGE-TREE-SPAWN-FAIL",

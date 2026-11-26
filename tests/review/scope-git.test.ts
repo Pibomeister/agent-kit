@@ -220,6 +220,34 @@ function dirtyQuotedPath(path: string, tag: string): JsonValue {
   return f.record(restored);
 }
 
+/** Dirty merge that adds `src/` + bytes 80 ff + `.ts` with `count` unique lines, then ours-back. */
+function dirtyNonUtf8Path(tag: string, count: number): JsonValue {
+  const f = fixture();
+  f.round(f.head);
+  const reviewed = f.head;
+  const main = f.git("rev-parse", "main");
+  f.write({ "src/_r11.ts": lines(tag, count) });
+  const sha = f.git("hash-object", "-w", "src/_r11.ts");
+  f.git("read-tree", reviewed);
+  const pathBytes = Buffer.concat([Buffer.from("src/"), Buffer.from([0x80, 0xff]), Buffer.from(".ts")]);
+  const info = Buffer.concat([Buffer.from(`100644 ${sha}\t`), pathBytes, Buffer.from("\0")]);
+  const indexed = spawnSync("git", ["-C", f.root, "update-index", "-z", "--index-info"], { input: info });
+  if (indexed.status !== 0) throw new Error(indexed.stderr.toString());
+  const dirtyMerge = f.git("commit-tree", f.git("write-tree"), "-p", reviewed, "-p", main, "-m", "dirty non-utf8 path");
+  const restored = f.git(
+    "commit-tree",
+    f.git("rev-parse", `${reviewed}^{tree}`),
+    "-p",
+    dirtyMerge,
+    "-p",
+    main,
+    "-m",
+    "ours back",
+  );
+  f.git("reset", "--hard", restored);
+  return f.record(restored);
+}
+
 describe("ak review scope before round 1", () => {
   test("says the whole change is reviewed and reads the pull request at the head", () => {
     const f = fixture();
@@ -1023,6 +1051,20 @@ describe("ak review scope: later-round tree identity", () => {
     expect(Array.isArray(paths) ? paths : []).toContain(path);
     expect(scoped).toMatchObject({ delta: { empty: false } });
     expect(Number(member(member(scoped, "delta"), "added_lines"))).toBe(20);
+  });
+
+  test("R11-NON-UTF8: a hidden non-UTF-8 path still counts its 500 lines", () => {
+    const scoped = dirtyNonUtf8Path("r11", 500);
+    expect(scoped).toMatchObject({
+      outcome: "new-scope",
+      triggers: ["scope-growth"],
+      delta: { empty: false, added_lines: 500 },
+    });
+  });
+
+  test("delta.ts does not feed a parsed path back to git as a pathspec", () => {
+    const source = readFileSync(join(import.meta.dir, "../../src/review/delta.ts"), "utf8");
+    expect(source).not.toMatch(/["']--["']/);
   });
 
   test("GITMODULES-IGNORE-ALL-ADD: a gitlink add with ignore=all lists vendor/lib", () => {

@@ -346,17 +346,64 @@ function decode(stdout: Uint8Array): string {
   return new TextDecoder().decode(stdout);
 }
 
+function isZeroOid(sha: string): boolean {
+  return sha === "" || /^0+$/.test(sha);
+}
+
 /** Prefer the recorded (`from`) side of a `--raw` row. */
 function recordedBlob(row: RawRow) {
-  if (row.srcSha !== "" && !/^0+$/.test(row.srcSha)) return { mode: row.srcMode, sha: row.srcSha };
+  if (!isZeroOid(row.srcSha)) return { mode: row.srcMode, sha: row.srcSha };
   return { mode: row.dstMode, sha: row.dstSha };
+}
+
+function emptyBlob(context: RunnerGitContext, repo: string, extraEnv: NodeJS.ProcessEnv): string {
+  const run = gitProcess(
+    context,
+    repo,
+    ["hash-object", "-w", "-t", "blob", "--stdin"],
+    10_000,
+    new Uint8Array(),
+    extraEnv,
+  );
+  if (run.code !== 0 || run.text === "") throw new Error(`git hash-object failed: ${run.stderr}`);
+  return run.text;
+}
+
+/**
+ * Changed lines of one `--raw` row from its blob ids. The parsed path is
+ * display-only and is never a pathspec. A gitlink or symlink counts as one
+ * line. A hunkless empty add or delete counts as one line.
+ */
+function blobPairLines(
+  context: RunnerGitContext,
+  repo: string,
+  extraEnv: NodeJS.ProcessEnv,
+  empty: string,
+  row: RawRow,
+): number {
+  if (row.srcMode === "160000" || row.dstMode === "160000" || row.srcMode === "120000" || row.dstMode === "120000")
+    return 1;
+  const from = isZeroOid(row.srcSha) ? empty : row.srcSha;
+  const to = isZeroOid(row.dstSha) ? empty : row.dstSha;
+  if (from === to) return isZeroOid(row.srcSha) || isZeroOid(row.dstSha) ? 1 : 0;
+  const patch = gitProcess(
+    context,
+    repo,
+    ["-c", "diff.ignoreSubmodules=all", "diff", ...DIFF, "--end-of-options", from, to],
+    10_000,
+    undefined,
+    extraEnv,
+  );
+  if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
+  return readPatch(decode(patch.stdout)).lines;
 }
 
 /**
  * Paths and changed lines of `from` versus `to` inside the throwaway object store.
  * The store is bare, so `.gitmodules ignore=all` is not read. `-c
  * diff.ignoreSubmodules=all` is that setting; `--ignore-submodules=none` is the
- * override that still lists a gitlink.
+ * override that still lists a gitlink. Line counts come from blob ids, not from
+ * a pathspec round-trip.
  */
 function throwawayDiff(
   context: RunnerGitContext,
@@ -375,32 +422,12 @@ function throwawayDiff(
   );
   if (raw.code !== 0 && raw.code !== 1) throw new Error(`git diff failed: ${raw.stderr}`);
   const rows = parseRaw(decode(raw.stdout));
+  const empty = emptyBlob(context, repo, extraEnv);
   const paths = rows.map((row) => row.path);
   const path_lines: PathLines[] = [];
   for (const row of rows) {
-    const patch = gitProcess(
-      context,
-      repo,
-      [
-        "-c",
-        "core.quotePath=false",
-        "-c",
-        "diff.ignoreSubmodules=all",
-        "diff",
-        ...DIFF,
-        "--end-of-options",
-        from,
-        to,
-        "--",
-        row.path,
-      ],
-      10_000,
-      undefined,
-      extraEnv,
-    );
-    if (patch.code !== 0 && patch.code !== 1) throw new Error(`git diff failed: ${patch.stderr}`);
     const { mode, sha } = recordedBlob(row);
-    path_lines.push({ path: row.path, lines: readPatch(decode(patch.stdout)).lines, mode, sha });
+    path_lines.push({ path: row.path, lines: blobPairLines(context, repo, extraEnv, empty, row), mode, sha });
   }
   return { paths, path_lines };
 }
@@ -521,7 +548,8 @@ export interface DeltaReading {
  * blob a novel merge introduced counts once unless that exact (mode, sha) is in
  * the result tree; empty-file blob sharing, a mode-only chmod, and the same
  * blob at two paths are not special-cased (the path still appears in
- * changed_paths).
+ * changed_paths). A path parsed from git output is display-only and is never
+ * fed back to git.
  */
 export function readDelta(repo: string, base: string, previous: string, head: string): DeltaReading {
   if (previous !== base && mergeBase(repo, base, previous) === previous)
