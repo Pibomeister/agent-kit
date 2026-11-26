@@ -45,7 +45,7 @@
  * table row occurs once after whitespace fold and lies inside the
  * adapters/cursor/CONTRACT.md hashed interior.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test as bunTest } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -1056,6 +1056,12 @@ function yamlItemBlock(text: string, idLine: string): string {
   return idLine + (next === -1 ? rest : rest.slice(0, next));
 }
 
+const TEST_TIMEOUT_MS = 30_000; // concurrent bun test of this file stalls git-scratch tests past the 5 s default. Solo identity scan 5587 ms.
+
+function test(name: string, fn: () => void, timeout = TEST_TIMEOUT_MS): void {
+  bunTest(name, fn, timeout);
+}
+
 describe("EGM provenance guards", () => {
   test("hex pin prefix inside a run is identity", () => {
     const file = "package.json";
@@ -1208,7 +1214,7 @@ describe("EGM provenance guards", () => {
     git(root, ["commit", "-q", "-m", "lie"]);
     restoreWorktreeFrom(root, file, `HEAD~1:${file}`);
     expect(() => assertSentencePins(root)).toThrow(`${file} HEAD/worktree`);
-  });
+  }, 30_000); // concurrent file run timed out after 5000ms (29564 ms wall); solo run 91.90 ms
 
   test("README h1 match is exact including the newline", () => {
     const root = scratchPins();
@@ -1276,7 +1282,7 @@ describe("EGM provenance guards", () => {
     commitFile(root, copy.dest, `${readFileSync(join(root, copy.dest), "utf8")}lie\n`);
     restoreWorktreeFrom(root, copy.dest, `HEAD~1:${copy.dest}`);
     expect(() => assertOverlay(root, copy)).toThrow(`${copy.dest} HEAD/worktree`);
-  });
+  }, 30_000); // concurrent file run timed out after 5000ms (29568 ms wall); solo run 57.51 ms
 
   test("catalog.yaml committed lie", () => {
     const file = "catalog.yaml";
