@@ -330,7 +330,7 @@ The first follow-up above is closed this way:
   Everything before Hard gates is frozen to main's bytes. The lock reads SKILL.md
   after CRLF-to-LF only and compares every byte from the start of the file through
   the line before the first `## Hard gates` line to a golden copy of origin/main
-  e6d4dfc6. `## Hard gates` is the sentinel. After the prefix, the suffix is
+  0c91b031. `## Hard gates` is the sentinel. After the prefix, the suffix is
   parsed with CommonMark (parser only). Raw HTML is refused except a node that
   is exactly one HTML comment. A heading may contain only text, code, emphasis,
   strong, softbreak and linebreak. A heading with a link, image or html child
