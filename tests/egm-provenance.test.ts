@@ -1410,7 +1410,7 @@ describe("EGM provenance (GS-004f)", () => {
     const { uncovered, decodeLies } = identityScan(REPO);
     expect(decodeLies).toEqual([]);
     expect(uncovered).toEqual([]);
-  });
+  }, 30_000); // identity scan of every committed blob; a solo run measured 5587 ms against Bun's 5 s default
 
   test("generated adaptations.yaml matches the fragments", () => {
     const { catalog } = loadCatalog(REPO);
