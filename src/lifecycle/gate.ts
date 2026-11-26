@@ -47,6 +47,7 @@ import {
   copyFileSync,
   existsSync,
   fstatSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -60,24 +61,32 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir, userInfo } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { artifactHash } from "../util/hash.ts";
+import {
+  gitEnv,
+  isolatedGitArgv,
+  lsTreeToStageZ,
+  resolveTrustedGit,
+  TRUSTED_GIT_PATH,
+  unfilteredTrackedDirt,
+} from "./git-isolation.ts";
 import { defaultMarkersPath, runPublishScan } from "./publish-scan.ts";
 import {
-  checkMergeGate,
-  checkReviewStatus,
-  compareShipped,
-  ghAccounts,
-  ghForge,
+  type Json,
+  parseJson,
+  readAttestation,
+  bodyCarriesDisclosure,
+  CONTRACT,
+  DECLARATION_ENV,
+  declarationFailures,
   HUMAN_STARTED_PHASES,
   MODEL_STARTED_PHASES,
-  type GateIo,
   type Policy,
-  READ_TOKEN_ENV,
-  RESIDUAL_ASSUMPTIONS,
   resolvePolicy,
-  resolveRepo,
+  sha256Digest,
+  SUPERVISOR_ENV,
   SUPERVISOR_PATTERN,
   unattendedDisclosure,
 } from "./unattended.ts";
@@ -220,6 +229,15 @@ export function unknownSelector(kind: string, input: string, candidates: readonl
  * The copy keeps the index's mtime. Git trusts a file's cached stat only when the file is older than
  * the index; a copy stamped "now" would make a same-size edit made in the second of the last index
  * write look clean, and the snapshot would miss it.
+ *
+ * Snapshot git calls reuse `isolatedGitArgv`: fsmonitor, hooks and excludes are off, skip-worktree
+ * and assume-unchanged bits are cleared on the index copy, and attr.tree is the empty tree so clean
+ * and smudge filters do not run. Ship-preflight then compares worktree bytes to HEAD blobs: eol
+ * conversion, ident expansion, a sparse-missing path and an executable-bit mismatch count as dirt.
+ * A byte-clean checkout is core.autocrlf=false, no ident, and a full checkout. Snapshot diffs pass
+ * `--ignore-submodules=none --submodule=short` so `diff.ignoreSubmodules=all` cannot hide a gitlink
+ * bump, a -dirty submodule, or an untracked nested repo. Gitlink worktrees are walked against nested
+ * HEAD bytes; ignored untracked files inside a gitlink stay out of scope (ADV-006).
  */
 export interface Snapshot {
   repo: string;
@@ -239,10 +257,33 @@ export interface GitResult {
   stderr: string;
 }
 
-export function git(cwd: string, args: readonly string[], env?: Record<string, string>): GitResult {
-  const proc = spawnSync("git", [...args], {
+/** Pinned git binary for the current snapshot/reason walk, so scratch inits cannot re-resolve PATH. */
+let sessionGit: { binary: string; path: string } | undefined;
+
+/** Overlay keys a snapshot spawn may take from its `env` argument. Never process.env. */
+const SNAPSHOT_GIT_EXTRAS = ["GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_NO_LAZY_FETCH"] as const;
+
+export function git(cwd: string, args: readonly string[], extra?: NodeJS.ProcessEnv, input?: Uint8Array): GitResult {
+  let pinned = sessionGit;
+  if (pinned === undefined) {
+    try {
+      pinned = resolveTrustedGit(existsSync(join(cwd, ".git")) ? cwd : workTreeHoldingGit(cwd));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return { code: -1, stdout: new Uint8Array(), text: "", stderr: `cannot run git in ${cwd}: ${message}` };
+    }
+  }
+  const env: NodeJS.ProcessEnv = gitEnv({ path: pinned.path, home: "/dev/null" });
+  if (extra !== undefined) {
+    for (const key of SNAPSHOT_GIT_EXTRAS) {
+      const value = extra[key];
+      if (value !== undefined) env[key] = value;
+    }
+  }
+  const proc = spawnSync(pinned.binary, [...args], {
     cwd,
-    env: env === undefined ? process.env : { ...process.env, ...env },
+    env,
+    input,
     maxBuffer: 1 << 30,
   });
   if (proc.error !== undefined) {
@@ -265,24 +306,133 @@ export function git(cwd: string, args: readonly string[], env?: Record<string, s
  * command, so the caller's own refusal carries the evidence. Commands that legitimately print
  * nothing (a clean diff, no untracked files, `--is-ancestor`) keep using `git`.
  */
-export function gitMustPrint(cwd: string, args: readonly string[], env?: Record<string, string>): GitResult {
+export function gitMustPrint(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): GitResult {
   const result = git(cwd, args, env);
   if (result.code !== 0 || result.text !== "") return result;
   return { ...result, code: -1, stderr: `git ${args.join(" ")} in ${cwd} exited 0 with no output` };
 }
 
+/** The same guard `FINAL_SHIP_GIT` uses: replace refs cannot rewrite the objects a snapshot reads. */
+const NO_REPLACE_OBJECTS = ["--no-replace-objects"] as const;
+
+function nulPaths(stdout: Uint8Array): string[] {
+  return new TextDecoder()
+    .decode(stdout)
+    .split("\0")
+    .filter((path) => path !== "");
+}
+
+/**
+ * Untracked `.gitignore` paths that a committed ignore rule already excludes. The check uses a
+ * throwaway tree of committed `.gitignore` files only, so an untracked self-hiding `.gitignore`
+ * cannot hide itself.
+ */
+function gitignoresExcludedByCommittedRules(
+  list: (args: readonly string[]) => GitResult,
+  extras: readonly string[],
+): Set<string> {
+  const dropped = new Set<string>();
+  if (extras.length === 0) return dropped;
+  const tracked = list(["ls-files", "-z"]);
+  if (tracked.code !== 0) return dropped;
+  const committed = nulPaths(tracked.stdout).filter((path) => basename(path) === ".gitignore");
+  if (committed.length === 0) return dropped;
+  const scratch = mkdtempSync(join(tmpdir(), "ak-cgi-"));
+  try {
+    if (git(scratch, ["init", "-q", "-b", "main"]).code !== 0) return dropped;
+    for (const rel of committed) {
+      const shown = list(["show", `HEAD:${rel}`]);
+      if (shown.code !== 0) continue;
+      const dest = join(scratch, rel);
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, shown.stdout);
+    }
+    for (const extra of extras) {
+      const check = git(scratch, [
+        "-c",
+        "core.excludesFile=/dev/null",
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        extra,
+      ]);
+      if (check.code === 0) dropped.add(extra);
+    }
+    return dropped;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Untracked paths that ship-preflight treats as dirt: committed `.gitignore` still excludes, but
+ * `.git/info/exclude` does not, and an untracked `.gitignore` is listed even when it hides itself
+ * unless a committed rule already excludes that path.
+ */
+function untrackedWorktreePaths(
+  list: (args: readonly string[]) => GitResult,
+  ignoreUntrackedDirs: readonly string[] = [],
+): { ok: true; paths: string[] } | { ok: false; stderr: string } {
+  const keep = (path: string) => !ignoreUntrackedDirs.some((dir) => path === dir || path.startsWith(`${dir}/`));
+  const untracked = list(["ls-files", "--others", "--exclude-per-directory=.gitignore", "-z"]);
+  if (untracked.code !== 0) return { ok: false, stderr: untracked.stderr };
+  const others = list(["ls-files", "--others", "-z"]);
+  if (others.code !== 0) return { ok: false, stderr: others.stderr };
+  const extras = nulPaths(others.stdout).filter((entry) => basename(entry) === ".gitignore");
+  const dropped = gitignoresExcludedByCommittedRules(list, extras);
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const path of [...nulPaths(untracked.stdout), ...extras.filter((entry) => !dropped.has(entry))]) {
+    if (!keep(path) || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  return { ok: true, paths };
+}
+
+function nestedGitWalker() {
+  return {
+    git: (cwd: string, args: readonly string[]) =>
+      git(cwd, [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(cwd, args)], { GIT_WORK_TREE: cwd }),
+  };
+}
+
 export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
-  const head = gitMustPrint(project, ["rev-parse", "HEAD"]);
+  const env = boundWorkTreeEnv(project);
+  const workTree = env.GIT_WORK_TREE ?? project;
+  const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
+  const previousGit = sessionGit;
+  try {
+    sessionGit = resolveTrustedGit(workTree);
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause);
+  }
+  try {
+    return snapshotWithPinnedGit(project, workTree, env, isolate, options);
+  } finally {
+    sessionGit = previousGit;
+  }
+}
+
+function snapshotWithPinnedGit(
+  project: string,
+  workTree: string,
+  env: NodeJS.ProcessEnv,
+  isolate: (args: readonly string[]) => string[],
+  options: SnapshotOptions,
+): Snapshot | string {
+  const head = gitMustPrint(workTree, isolate(["rev-parse", "HEAD"]), env);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   }
-  const indexPath = gitMustPrint(project, ["rev-parse", "--git-path", "index"]);
-  // An empty path joins back to the project directory, and copying that directory throws.
+  const indexPath = gitMustPrint(workTree, isolate(["rev-parse", "--git-path", "index"]), env);
+  // An empty path joins back to the work tree, and copying that directory throws.
   if (indexPath.code !== 0 || indexPath.text === "")
     return indexPath.stderr === ""
       ? `cannot locate the index of ${project}`
       : `cannot locate the index of ${project}: ${indexPath.stderr}`;
-  const index = isAbsolute(indexPath.text) ? indexPath.text : join(project, indexPath.text);
+  const index = isAbsolute(indexPath.text) ? indexPath.text : join(workTree, indexPath.text);
 
   const scratch = mkdtempSync(join(tmpdir(), "ak-index-"));
   const temp = join(scratch, "index");
@@ -292,24 +442,53 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
       const { atime, mtime } = statSync(index);
       utimesSync(temp, atime, mtime);
     }
-    const env = { GIT_INDEX_FILE: temp };
-    const untracked = git(project, ["ls-files", "--others", "--exclude-standard", "-z"], env);
-    if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
-    const paths = untracked.text
+    env.GIT_INDEX_FILE = temp;
+    const empty = git(workTree, isolate(["hash-object", "-t", "tree", "--stdin"]), env, new Uint8Array());
+    if (empty.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(empty.text))
+      return `cannot resolve the empty tree in ${project}: ${empty.stderr || empty.text}`;
+    const raw = (args: readonly string[], input?: Uint8Array) =>
+      git(workTree, isolate(["-c", `attr.tree=${empty.text}`, ...args]), env, input);
+    const bits = raw(["update-index", "--no-fsmonitor"]);
+    if (bits.code !== 0) return `cannot isolate the index of ${project}: ${bits.stderr}`;
+    const tracked = raw(["ls-files", "-z"]);
+    if (tracked.code !== 0) return `cannot list tracked files in ${project}: ${tracked.stderr}`;
+    const trackedPaths = new TextDecoder()
+      .decode(tracked.stdout)
       .split("\0")
-      .filter(
-        (path) =>
-          path !== "" && !(options.ignoreUntrackedDirs ?? []).some((dir) => path === dir || path.startsWith(`${dir}/`)),
-      );
-    if (paths.length > 0) {
-      const add = git(project, ["add", "--intent-to-add", "--", ...paths], env);
+      .filter((path) => path !== "");
+    for (let i = 0; i < trackedPaths.length; i += 200) {
+      const chunk = trackedPaths.slice(i, i + 200);
+      const cleared = raw(["update-index", "--no-skip-worktree", "--no-assume-unchanged", "--", ...chunk]);
+      if (cleared.code !== 0)
+        return `cannot clear skip-worktree and assume-unchanged bits in ${project}: ${cleared.stderr}`;
+    }
+    const listed = untrackedWorktreePaths(raw, options.ignoreUntrackedDirs ?? []);
+    if (!listed.ok) return `cannot list untracked files in ${project}: ${listed.stderr}`;
+    const paths = listed.paths;
+    for (let i = 0; i < paths.length; i += 200) {
+      const chunk = paths.slice(i, i + 200);
+      const add = raw(["add", "--force", "--intent-to-add", "--", ...chunk]);
       if (add.code !== 0) return `cannot mark untracked files in ${project}: ${add.stderr}`;
     }
-    const diff = git(project, ["diff", "--no-ext-diff", "--binary", head.text], env);
+    const diff = raw([
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--binary",
+      "--ignore-submodules=none",
+      "--submodule=short",
+      head.text,
+    ]);
     if (diff.code !== 0) return `cannot diff ${project} against ${head.text}: ${diff.stderr}`;
-    const digest = createHash("sha256").update(diff.stdout).digest("hex");
+    let digest = createHash("sha256").update(diff.stdout).digest("hex");
+    if (diff.stdout.length === 0) {
+      const staged = raw(["ls-files", "-s", "-z"]);
+      if (staged.code !== 0) return `cannot list tracked files in ${project}: ${staged.stderr}`;
+      const hidden = unfilteredTrackedDirt(workTree, staged.stdout, nestedGitWalker());
+      if (hidden !== undefined) digest = hidden.digest;
+    }
 
-    const remote = git(project, ["config", "--get", "remote.origin.url"]);
+    const remote = git(workTree, isolate(["config", "--get", "remote.origin.url"]), env);
     return {
       repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
       revision: head.text,
@@ -317,6 +496,53 @@ export function takeSnapshot(project: string, options: SnapshotOptions = {}): Sn
     };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** A path that may appear in a ship-preflight refusal: relative, no parent segments. */
+function shipDirtPath(path: string | undefined): string | undefined {
+  if (path === undefined || path === "" || isAbsolute(path)) return undefined;
+  if (path.split(/[/\\]/).includes("..")) return undefined;
+  return path;
+}
+
+/**
+ * Why ship-preflight refuses this tree. Names the first relative path whose worktree bytes differ
+ * from HEAD. Does not claim git porcelain saw the dirt: eol conversion, ident expansion and a
+ * sparse-missing path can leave porcelain clean. The way out is a byte-clean checkout
+ * (core.autocrlf=false, no ident, full checkout).
+ */
+function shipDirtReason(project: string): string {
+  const env = boundWorkTreeEnv(project);
+  const workTree = env.GIT_WORK_TREE ?? project;
+  const isolate = (args: readonly string[]) => [...NO_REPLACE_OBJECTS, ...isolatedGitArgv(workTree, args)];
+  const previousGit = sessionGit;
+  try {
+    sessionGit = resolveTrustedGit(workTree);
+  } catch {
+    sessionGit = previousGit;
+  }
+  try {
+    const listed = untrackedWorktreePaths((args) => git(workTree, isolate(args), env));
+    const firstUntracked = listed.ok ? listed.paths.map(shipDirtPath).find((path) => path !== undefined) : undefined;
+    const named = git(
+      workTree,
+      isolate(["diff", "--name-only", "-z", "--ignore-submodules=none", "--submodule=short", "HEAD"]),
+      env,
+    );
+    const firstDiff =
+      named.code === 0
+        ? nulPaths(named.stdout)
+            .map(shipDirtPath)
+            .find((path) => path !== undefined)
+        : undefined;
+    const tree = git(workTree, isolate(["ls-tree", "-r", "-z", "HEAD"]), env);
+    const vsHead =
+      tree.code === 0 ? unfilteredTrackedDirt(workTree, lsTreeToStageZ(tree.stdout), nestedGitWalker()) : undefined;
+    const at = firstUntracked ?? firstDiff ?? shipDirtPath(vsHead?.path) ?? "the working tree";
+    return `the worktree bytes differ from HEAD at ${at}, which the shipped revision would not carry; use a byte-clean checkout (core.autocrlf=false, no ident, full checkout), commit what should ship, remove or git-ignore the rest, then record the gates again`;
+  } finally {
+    sessionGit = previousGit;
   }
 }
 
@@ -421,10 +647,22 @@ export interface RunRecord {
   closed_at?: string;
   /** The unattended policy the run was opened under; a run without one is a legacy run. */
   policy?: Policy;
+  /** The declared run supervisor the run was opened under; its digest is what ship-preflight compares. */
+  supervisor?: RunSupervisor;
   /** Absent on pre-feature runs. Present on every run this open writes. */
   schema_version?: typeof RUN_SCHEMA_VERSION;
   /** Frozen behavior policy. Absent only on pre-feature runs. */
   behavior?: BehaviorBinding;
+}
+
+/** The supervisor declaration a run was stamped with at `open --ticket`. */
+export interface RunSupervisor {
+  name: string;
+  contract: string;
+  /** The declaration file's real path. */
+  declaration_path: string;
+  /** `sha256:` and 64 lower-case hex digits over the file's bytes. */
+  declaration_digest: string;
 }
 
 const isGate = (g: string): g is Gate => (GATES as readonly string[]).includes(g);
@@ -460,7 +698,6 @@ const atomicBytes = (path: string, value: Uint8Array): void => {
   renameSync(staging, path);
 };
 
-const sha256 = (value: Uint8Array | string): string => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const hashHex = (hash: string): string | undefined => /^sha256:([0-9a-f]{64})$/.exec(hash)?.[1];
 const artifactPath = (dir: string, run: string, hash: string): string | undefined => {
   const hex = hashHex(hash);
@@ -470,9 +707,9 @@ const artifactPath = (dir: string, run: string, hash: string): string | undefine
 export { persistFrozenRun } from "./persist-run.ts";
 
 function storeArtifact(dir: string, run: string, bytes: Uint8Array): string {
-  const hash = sha256(bytes);
+  const hash = sha256Digest(bytes);
   const path = artifactPath(dir, run, hash)!;
-  if (!existsSync(path) || sha256(readFileSync(path)) !== hash) atomicBytes(path, bytes);
+  if (!existsSync(path) || sha256Digest(readFileSync(path)) !== hash) atomicBytes(path, bytes);
   return hash;
 }
 
@@ -491,7 +728,7 @@ function storedReceipt(dir: string, run: string, ref: ArtifactRef): Record<strin
   const path = artifactPath(dir, run, ref.hash);
   if (path === undefined || !existsSync(path)) return undefined;
   const bytes = readFileSync(path);
-  if (sha256(bytes) !== ref.hash) return undefined;
+  if (sha256Digest(bytes) !== ref.hash) return undefined;
   try {
     return object(JSON.parse(new TextDecoder().decode(bytes)));
   } catch {
@@ -547,6 +784,19 @@ function readRunRecord(dir: string, run: string): RunRecord | undefined {
     if (!(nonempty(policy.supervisor) && SUPERVISOR_PATTERN.test(policy.supervisor)))
       Reflect.deleteProperty(policy, "supervisor");
   }
+  const stamp = object(value.supervisor);
+  if (
+    value.supervisor !== undefined &&
+    !(
+      stamp !== undefined &&
+      nonempty(stamp.name) &&
+      SUPERVISOR_PATTERN.test(stamp.name) &&
+      nonempty(stamp.contract) &&
+      nonempty(stamp.declaration_path) &&
+      hashHex(String(stamp.declaration_digest)) !== undefined
+    )
+  )
+    Reflect.deleteProperty(value, "supervisor");
   return value as unknown as RunRecord;
 }
 
@@ -711,7 +961,7 @@ function registeredFirstmateBinding(
   }
   if (!asJsonObject(parsed)) return { ok: false, reason: `ledger record ${entry} is unreadable` };
   const at = realpathSync(bindingPath);
-  const sha = sha256(readFileSync(bindingPath));
+  const sha = sha256Digest(readFileSync(bindingPath));
   const namedPath = nonempty(parsed.binding_path) ? parsed.binding_path : "unknown";
   const namedSha = nonempty(parsed.binding_sha256) ? parsed.binding_sha256 : "unknown";
   if (parsed.binding_path !== at)
@@ -728,7 +978,7 @@ function registeredFirstmateBinding(
 }
 
 function parseTicketBytes(bytes: Uint8Array, hash: string): JsonObject | undefined {
-  if (sha256(bytes) !== hash) return undefined;
+  if (sha256Digest(bytes) !== hash) return undefined;
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder().decode(bytes));
@@ -822,6 +1072,8 @@ export interface OpenArgs {
   ledger?: string;
   /** Stamped on the run; pre-ticket phase records at the opening revision are imported into it. */
   policy?: Policy;
+  /** The valid supervisor declaration in force at open, stamped on the run. */
+  supervisor?: RunSupervisor;
 }
 
 function callerProject(path: string): { ok: true; doc: JsonObject; hash: string } | { ok: false; reason: string } {
@@ -908,7 +1160,7 @@ function importPhaseRecords(dir: string, run: RunRecord, now: string): void {
         commands,
         run_id: run.run_id,
         recorded_at: now,
-        imported_from: { run: from, sha256: sha256(readFileSync(recordPath(dir, from, record))) },
+        imported_from: { run: from, sha256: sha256Digest(readFileSync(recordPath(dir, from, record))) },
       };
       atomicJson(recordPath(dir, run.run_id, copy), copy);
     }
@@ -1000,7 +1252,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const canonical = new TextEncoder().encode(
     canonicalJson(Object.fromEntries(Object.entries(ticketDoc).filter(([key]) => key !== "approvals"))),
   );
-  const ticketHash = sha256(canonical);
+  const ticketHash = sha256Digest(canonical);
   const nonce = randomBytes(16).toString("hex");
   const suffix = createHash("sha256")
     .update(JSON.stringify([id, ticketHash, head.text, openedAt, nonce]))
@@ -1020,6 +1272,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     ...bound,
   };
   if (a.policy !== undefined) run.policy = a.policy;
+  if (a.supervisor !== undefined) run.supervisor = a.supervisor;
   const boundPolicy = bindBehaviorPolicy({
     runId,
     ticket: ticketDoc,
@@ -1213,7 +1466,7 @@ export function recordGate(
         .flatMap((candidate) =>
           existsSync(candidate) && statSync(candidate).isFile() ? [readFileSync(candidate)] : [],
         )
-        .find((candidate) => sha256(candidate) === entry.digest);
+        .find((candidate) => sha256Digest(candidate) === entry.digest);
       if (artifactBytes === undefined) {
         return {
           ok: false,
@@ -1695,7 +1948,7 @@ function evaluateEvidence(
       continue;
     }
     const bytes = readFileSync(path);
-    if (sha256(bytes) !== ref.hash) {
+    if (sha256Digest(bytes) !== ref.hash) {
       reasons.push({
         code: "digest-mismatch",
         detail: `receipt ${ref.id} does not hash to ${ref.hash}`,
@@ -1773,7 +2026,7 @@ function evaluateEvidence(
     const output = receipt.output_digest as string | undefined;
     if (output !== undefined) {
       const outputPath = artifactPath(a.dir, a.run, output);
-      if (outputPath === undefined || !existsSync(outputPath) || sha256(readFileSync(outputPath)) !== output) {
+      if (outputPath === undefined || !existsSync(outputPath) || sha256Digest(readFileSync(outputPath)) !== output) {
         reasons.push({
           code: "output-missing",
           detail: `receipt ${ref.id} output ${output} is absent or changed`,
@@ -1827,7 +2080,7 @@ function evaluateEvidence(
       if (seatId !== undefined && seat?.isolation !== "runner-attested") {
         if (run.policy !== undefined)
           notes.push(
-            `note: verifier seat ${seatId} on receipt ${ref.id} is host-unattested: worker-attested evidence, counted under the unattended policy, whose boundary is the merge gate`,
+            `note: verifier seat ${seatId} on receipt ${ref.id} is host-unattested: worker-attested evidence, counted under the unattended policy, whose boundary is the declared run supervisor`,
           );
         else if (buildSeats.size > 0 || grantRecord !== undefined)
           reasons.push({
@@ -1844,7 +2097,7 @@ function evaluateEvidence(
     for (const artifact of (Array.isArray(receipt.artifacts) ? receipt.artifacts : []).map(object)) {
       if (artifact === undefined || !nonempty(artifact.digest)) continue;
       const stored = artifactPath(a.dir, a.run, artifact.digest);
-      if (stored === undefined || !existsSync(stored) || sha256(readFileSync(stored)) !== artifact.digest) {
+      if (stored === undefined || !existsSync(stored) || sha256Digest(readFileSync(stored)) !== artifact.digest) {
         reasons.push({
           code: "artifact-missing",
           detail: `receipt ${ref.id} artifact ${artifact.digest} is absent or changed`,
@@ -1959,6 +2212,35 @@ function commandRefusals(a: CheckArgs, gate: Gate, head: Snapshot, fork: { base:
   return delta === undefined ? own : [...own, ...entryRefusals(a, "review-delta", delta)];
 }
 
+/**
+ * Under the unattended policy, the first counted record that names a supervisor other than `supervisor`. It reads
+ * the record each gate is current through, and a full review current only through a later review-delta is judged
+ * with that delta too, so a superseded record cannot block and a covering one cannot slip by.
+ */
+function supervisorMismatch(a: CheckArgs, head: Snapshot, supervisor: string): string | undefined {
+  for (const gate of a.gates) {
+    const first = countedRecord(a, gate, head, undefined);
+    const counted = [first];
+    if (
+      gate === "review-full" &&
+      first !== undefined &&
+      !(same(first.snapshot, head) && first.verdict !== "changes-requested")
+    )
+      counted.push(
+        readRecords(a.dir, a.run, "review-delta")
+          .filter((r) => same(r.snapshot, head) && r.recorded_at >= first.recorded_at)
+          .toSorted((x, y) => x.recorded_at.localeCompare(y.recorded_at))
+          .at(-1),
+      );
+    for (const record of counted) {
+      const named = record?.policy?.supervisor;
+      if (record !== undefined && named !== undefined && named !== supervisor)
+        return `gate ${record.gate} was recorded under supervisor ${JSON.stringify(named)}, not ${JSON.stringify(supervisor)}`;
+    }
+  }
+  return undefined;
+}
+
 /** Each argv's latest entry that failed: what a verify re-recorded under another seat must still answer for. */
 function failingLatest(entries: CommandEntry[]): CommandEntry[] {
   const latest = new Map<string, CommandEntry>();
@@ -1978,7 +2260,7 @@ function entryRefusals(a: CheckArgs, gate: Gate, record: GateRecord): string[] {
   const latest = new Map<string, CommandEntry>();
   for (const entry of entries) {
     const stored = artifactPath(a.dir, a.run, entry.output);
-    if (stored === undefined || !existsSync(stored) || sha256(readFileSync(stored)) !== entry.output)
+    if (stored === undefined || !existsSync(stored) || sha256Digest(readFileSync(stored)) !== entry.output)
       out.push(`refused: gate ${gate} evidence output ${entry.output} is absent or changed`);
     if (!same(entry.snapshot, record.snapshot))
       out.push(`refused: gate ${gate} evidence command ${JSON.stringify(entry.argv)} ran at another snapshot`);
@@ -2012,7 +2294,7 @@ function ticketDeclaresEvidence(dir: string, run: string, record: RunRecord | un
   const path = artifactPath(dir, run, record.ticket.hash);
   if (path === undefined || !existsSync(path)) return true;
   const bytes = readFileSync(path);
-  if (sha256(bytes) !== record.ticket.hash) return true;
+  if (sha256Digest(bytes) !== record.ticket.hash) return true;
   let ticket: ReturnType<typeof object>;
   try {
     ticket = object(JSON.parse(new TextDecoder().decode(bytes)));
@@ -2276,6 +2558,173 @@ function repoOf(project: string): { common: string; writable: string[] } | { err
   return { common: real, writable: [real, ...worktrees] };
 }
 
+// The supervisor files' containment has its own helpers. `within`, `realOr` and `repoOf` above also serve the
+// bypass grant, which stays as it is (ticket non-goal); the three defects they carry for these files are fixed here.
+
+/** Walk up from `start` to the directory that holds a `.git` entry. Does not ask git, so `core.worktree` cannot redirect it. */
+function workTreeHoldingGit(start: string): string {
+  let dir = existsSync(start) ? realpathSync(start) : resolve(start);
+  for (;;) {
+    try {
+      lstatSync(join(dir, ".git"));
+      return dir;
+    } catch {
+      const parent = dirname(dir);
+      if (parent === dir) return dir;
+      dir = parent;
+    }
+  }
+}
+
+/** Bind the work tree to the directory that holds `.git`, so `core.worktree` cannot point git at another tree. */
+function boundWorkTreeEnv(project: string): NodeJS.ProcessEnv {
+  return { GIT_WORK_TREE: workTreeHoldingGit(project) };
+}
+
+/** Git's stdout for `args` in `dir` under the trusted git whitelist, or undefined when git refuses. */
+function placeGit(dir: string, args: readonly string[]): string | undefined {
+  const run = git(dir, args);
+  return run.code === 0 ? run.text : undefined;
+}
+
+/** The real path in the on-disk letter case, which Node's JavaScript `realpathSync` does not return on a case-insensitive volume. */
+const realNative = (path: string): string => {
+  const at = resolve(path);
+  if (existsSync(at)) return realpathSync.native(at);
+  return dirname(at) === at ? at : join(realNative(dirname(at)), basename(at));
+};
+
+/** Whether `path` is `dir` or below it. A first segment that merely starts with two dots is a child, not a parent. */
+const containedIn = (path: string, dir: string): boolean => {
+  const rel = relative(dir, path);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+};
+
+/**
+ * One repository's git directory, work tree and the places a worker in it can write: its git directory and every
+ * worktree. `gitDir` names the repository; without it git finds the repository that holds `dir`.
+ */
+function checkoutPlaces(
+  dir: string,
+  gitDir?: string,
+): { common: string; top: string | undefined; writable: string[] } | undefined {
+  const named = gitDir === undefined ? [] : [`--git-dir=${gitDir}`];
+  const common = placeGit(dir, [...named, "rev-parse", "--git-common-dir"]);
+  const trees = placeGit(dir, [...named, "worktree", "list", "--porcelain"]);
+  if (common === undefined || trees === undefined || common === "") return undefined;
+  const top = placeGit(dir, [...named, "rev-parse", "--show-toplevel"]);
+  const worktrees = trees.split("\n").flatMap((line) => (line.startsWith("worktree ") ? [line.slice(9)] : []));
+  const realCommon = realNative(isAbsolute(common) ? common : join(dir, common));
+  return {
+    common: realCommon,
+    top: top === undefined || top === "" ? undefined : realNative(top),
+    writable: [realCommon, ...worktrees.map(realNative)],
+  };
+}
+
+/** A place a supervisor file must stay out of, and the toplevel of the enclosing repository it belongs to, if any. */
+interface WritablePlace {
+  path: string;
+  enclosing?: string;
+}
+
+/** A repository's toplevel as a list: empty when git reports none, as for a bare repository. */
+const tops = (found: { top: string | undefined }): string[] => (found.top === undefined ? [] : [found.top]);
+
+/**
+ * Every place a worker could write that a supervisor file must stay out of: the project's own directory and
+ * toplevel, its git directory and worktrees, and every directory from the project's real path up to the root that
+ * holds a `.git` entry, with that repository's git directory, toplevel and worktrees. So a repository nested in a
+ * worktree cannot hide the worktree, whatever git reports for the nest. Refused when `project` is not a git
+ * repository, or when a `.git` entry on the way up is not a repository git can read.
+ */
+function supervisorWritable(project: string): { ok: true; places: WritablePlace[] } | { ok: false; reason: string } {
+  const own = checkoutPlaces(project);
+  if (own === undefined) return { ok: false, reason: `${project} is not a git repository` };
+  const real = realNative(project);
+  const places: WritablePlace[] = [...own.writable, real, ...tops(own)].map((path) => ({ path }));
+  for (let dir = real; ; dir = dirname(dir)) {
+    const entry = join(dir, ".git");
+    if (lstatSync(entry, { throwIfNoEntry: false }) !== undefined) {
+      const found = checkoutPlaces(dir, entry);
+      if (found === undefined) return { ok: false, reason: `${entry} is not a repository git can read` };
+      const enclosing = found.common === own.common ? undefined : (found.top ?? dir);
+      for (const path of [dir, ...found.writable, ...tops(found)])
+        places.push(enclosing === undefined ? { path } : { path, enclosing });
+    }
+    if (dirname(dir) === dir) return { ok: true, places };
+  }
+}
+
+/** A file a supervisor supplies must sit where a worker in the repository cannot write it. */
+function outsideRepo(
+  project: string,
+  path: string,
+  what: string,
+): { ok: true; real: string } | { ok: false; reason: string } {
+  const writable = supervisorWritable(project);
+  if (!writable.ok) return { ok: false, reason: `${what} cannot be placed outside the repository: ${writable.reason}` };
+  let real: string;
+  try {
+    real = realNative(path);
+  } catch {
+    return { ok: false, reason: `${what} ${path} cannot be read` };
+  }
+  const held = writable.places.filter((place) => containedIn(real, place.path));
+  if (held.length === 0) return { ok: true, real };
+  // The project's own repository names the refusal whenever it holds the file; an enclosing one only otherwise.
+  const enclosing = held.every((place) => place.enclosing !== undefined) ? held[0]?.enclosing : undefined;
+  return {
+    ok: false,
+    reason:
+      enclosing === undefined
+        ? `${what} ${path} is inside the repository; it must be outside the repository, where a worker cannot write it`
+        : `${what} ${path} is inside ${enclosing}, a repository that encloses the project; it must be outside the repository and every repository that encloses it, where a worker cannot write it`,
+  };
+}
+
+/** A supervisor file read from outside the repository: placed, read and parsed, each refusal naming `what`. */
+function readOutsideRepo(
+  project: string,
+  path: string,
+  what: string,
+): { ok: true; real: string; bytes: Buffer; value: Json } | { ok: false; reason: string } {
+  const placed = outsideRepo(project, path, what);
+  if (!placed.ok) return placed;
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(placed.real);
+  } catch {
+    return { ok: false, reason: `${what} ${path} cannot be read` };
+  }
+  const value = parseJson(bytes.toString("utf8"));
+  if (value === undefined) return { ok: false, reason: `${what} ${path} is not valid JSON` };
+  return { ok: true, real: placed.real, bytes, value };
+}
+
+type LoadedDeclaration =
+  | { state: "valid"; supervisor: string; path: string; digest: string }
+  | { state: "invalid" | "absent"; reason: string };
+
+/**
+ * The supervisor declaration named by the environment: a name that matches `SUPERVISOR_PATTERN` untrimmed, and a
+ * file that is set, absolute, outside the repository, readable, JSON and valid.
+ */
+export function loadDeclaration(project: string, env: NodeJS.ProcessEnv = process.env): LoadedDeclaration {
+  const name = env[SUPERVISOR_ENV];
+  const raw = env[DECLARATION_ENV] ?? "";
+  if (name !== undefined && !SUPERVISOR_PATTERN.test(name))
+    return { state: "invalid", reason: `${SUPERVISOR_ENV} must match ${SUPERVISOR_PATTERN.source}` };
+  if (raw === "") return { state: "absent", reason: `${DECLARATION_ENV} is not set` };
+  if (name === undefined) return { state: "invalid", reason: `${SUPERVISOR_ENV} is not set` };
+  if (!isAbsolute(raw)) return { state: "invalid", reason: `${DECLARATION_ENV} must be an absolute path` };
+  const read = readOutsideRepo(project, raw, DECLARATION_ENV);
+  if (!read.ok) return { state: "invalid", reason: read.reason };
+  const failures = declarationFailures(read.value, name);
+  if (failures.length > 0) return { state: "invalid", reason: `${DECLARATION_ENV} ${raw}: ${failures.join("; ")}` };
+  return { state: "valid", supervisor: name, path: read.real, digest: sha256Digest(read.bytes) };
+}
+
 /** A gate record is worker-written, so its attribution is a claim; the use record and the grant are what a reviewer checks. */
 const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
   authority === undefined || authority?.mode === "bypass" || authority?.mode === "explicit";
@@ -2427,7 +2876,7 @@ export function grantBypass(
   const grant: BypassGrant = {
     schema: "bypass-grant",
     schema_version: 1,
-    grant_id: `bypass-${safeRunId(a.task)}-${sha256(`${a.task}\n${repo.common}\n${created}`).slice(7, 19)}`.slice(
+    grant_id: `bypass-${safeRunId(a.task)}-${sha256Digest(`${a.task}\n${repo.common}\n${created}`).slice(7, 19)}`.slice(
       0,
       128,
     ),
@@ -2447,7 +2896,7 @@ export function grantBypass(
   const ledgered: BypassLedgerRecord = {
     grant_id: grant.grant_id,
     grant_path: realpathSync(out),
-    grant_sha256: sha256(text),
+    grant_sha256: sha256Digest(text),
     issued: grant.issued,
   };
   atomicJson(join(a.ledger, `${grant.grant_id}.json`), ledgered);
@@ -2516,7 +2965,7 @@ export function checkBypass(
   }
   if (registered === undefined || registered.dev !== opened.dev || registered.ino !== opened.ino)
     return no(`bypass grant ${path} is not the ${at} that was registered`);
-  const hash = sha256(bytes);
+  const hash = sha256Digest(bytes);
   if (entry.grant_sha256 !== hash)
     return no(`bypass grant ${path} hashes to ${hash}, not the ${String(entry.grant_sha256)} that was registered`);
   // From here the bytes are the ones `grantBypass` wrote and registered.
@@ -2614,7 +3063,6 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle publish-scan --repo <owner/name> [--visibility <v>] [--title <text>] [--body-file <file>] [--commits <range>] [--markers <file>] [--project <dir>]",
   "  ak lifecycle unattended check --phase <phase> [--project <dir>]",
   "    With AK_LIFECYCLE_SUPERVISOR, accepts the human-step options below for a reported human-only step.",
-  "  ak lifecycle unattended review-status --pr <n> [--project <dir>]",
   "  ak lifecycle lanes run [--lane <name>] [--label <text>] [--pool <n>] [--timeout-minutes <n>] [--dir <dir>] [--project <dir>] -- <command...>",
   "  ak lifecycle lanes status [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle lanes release [--lane <name>] [--dir <dir>] [--project <dir>]",
@@ -2632,7 +3080,8 @@ export const LIFECYCLE_USAGE = [
   "  It reads local origin-tracking refs and never fetches: run `git fetch origin` first for a current answer.",
   "",
   "  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`",
-  "  and the tool runs it; ship-preflight reads the merge gate live, and with --pr <n> records final ship success.",
+  "  and the tool runs it. A supervisor declaration outside the checkout (AK_LIFECYCLE_SUPERVISOR_DECLARATION) binds the",
+  "  run at open; ship-preflight checks it, and --attestation <absolute path> --body-file <file> records final ship success.",
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
@@ -2686,14 +3135,14 @@ const FLAGS: Record<string, readonly string[]> = {
     "run",
     "dir",
     "project",
-    "pr",
+    "attestation",
+    "body-file",
   ],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
   "publish-scan": ["repo", "visibility", "title", "body-file", "commits", "markers", "project"],
   "unattended check": ["phase", "project", ...HUMAN_STEP_FLAGS],
-  "unattended review-status": ["pr", "project"],
   "lanes run": ["lane", "label", "pool", "timeout-minutes", "dir", "project", "json"],
   "lanes status": ["dir", "project", "json"],
   "lanes release": ["lane", "dir", "project"],
@@ -2809,42 +3258,95 @@ function runHumanStep(
 
 const UNATTENDED_PHASES: readonly string[] = [...HUMAN_STARTED_PHASES, ...MODEL_STARTED_PHASES];
 
-/** The forge reads, with the operator's read credential from the environment. */
-const forgeIo = (): GateIo => ({
-  forge: ghForge(),
-  accounts: ghAccounts,
-  readToken: process.env[READ_TOKEN_ENV] || undefined,
-});
+const RECOVERY =
+  "recovery: open a new run with open --ticket under the declaration in force and record the gates again";
 
 /**
- * Ship-preflight under the unattended policy. Without a pull request: the live merge-gate read, then the pre-ship
- * check; only both passing writes the record and closes the run, and a merge-gate refusal leaves no decision
- * record. With one: final ship success, appended to the run's latest ship-preflight record once the posted
- * review validates and the head still descends from it.
+ * How final ship reads objects in the worker's repository, which the worker can write, here and in the policy read:
+ * GIT_NO_LAZY_FETCH=1, so a missing object runs no promisor remote's program; no replace refs; and no signature display, so
+ * no `gpg.program` runs in the supervisor's process. The call uses the same trusted-git whitelist `git()` uses.
+ * `--no-lazy-fetch` is not on the argv. git 2.43 exits 129 for that option. Any other program-valued key git reads in
+ * the worker's repository is outside this guarantee: only OS user separation closes it.
  */
-function shipUnattended(io: Io, dir: string, run: string, project: string, policy: Policy, prFlag?: string): number {
-  const say = (failures: readonly string[], notes: readonly string[]) => {
-    for (const note of notes) io.err(`note: ${note}`);
-    for (const failure of failures) io.err(`ak lifecycle record: refused: ${failure}`);
+const FINAL_SHIP_GIT = [...NO_REPLACE_OBJECTS, "-c", "log.showSignature=false"] as const;
+
+function finalShipEnv(project: string): NodeJS.ProcessEnv {
+  return {
+    ...gitEnv({ path: TRUSTED_GIT_PATH, home: "/dev/null" }),
+    ...boundWorkTreeEnv(project),
+    GIT_NO_LAZY_FETCH: "1",
   };
-  const repo = resolveRepo(project);
-  if (!repo.ok) {
-    say([repo.reason], []);
-    return 1;
+}
+
+function gitFinal(project: string, extra: readonly string[]): GitResult {
+  return git(project, [...FINAL_SHIP_GIT, ...extra], finalShipEnv(project));
+}
+
+function graftsRefusal(project: string): string | undefined {
+  const common = gitFinal(project, ["rev-parse", "--git-common-dir"]);
+  if (common.code !== 0 || common.text === "")
+    return "cannot locate info/grafts, so descent from the shipped revision cannot be read";
+  const grafts = join(isAbsolute(common.text) ? common.text : join(project, common.text), "info", "grafts");
+  try {
+    const info = statSync(grafts, { throwIfNoEntry: false });
+    if (info === undefined || (info.isFile() && info.size === 0)) return undefined;
+  } catch {
+    return "cannot read info/grafts, so descent from the shipped revision cannot be read";
   }
-  const forge = forgeIo();
-  io.err(`note: ${RESIDUAL_ASSUMPTIONS}`);
-  // The run's stamp, not this invocation's resolution, says where the run's policy was read.
-  const runPolicy = readRunRecord(dir, run)?.policy;
-  const source = runPolicy?.source ?? policy.source;
-  const supervisor = runPolicy?.supervisor ?? policy.supervisor;
-  const stampedPolicy = supervisor === undefined ? { ...policy, source } : { ...policy, source, supervisor };
-  if (prFlag === undefined) {
-    const gate = checkMergeGate(forge, repo.repo, { identity: true, policySource: source });
-    if (gate.failures.length > 0) {
-      say(gate.failures, gate.notes);
-      return 1;
-    }
+  return "info/grafts is present and non-empty, so descent from the shipped revision cannot be read";
+}
+
+/** What final ship stores beside the closing record, by digest. */
+interface FinalShipOutput {
+  head: string;
+  pull_request?: string;
+  attestation_path: string;
+  attestation_digest: string;
+  body_digest: string;
+  commits_after: { sha: string; subject: string }[];
+}
+
+/**
+ * Ship-preflight under the unattended policy. Without flags: the declaration in force must match the run's stamp
+ * and the pre-ship gates must hold; only then does the record close the run. With `--attestation` and `--body-file`:
+ * final ship, appended to the closing record once the supervisor's attestation, the head and the body check out.
+ */
+function shipUnattended(
+  io: Io,
+  dir: string,
+  run: string,
+  project: string,
+  policy: Policy,
+  cwd: string,
+  flags: { attestation: string | undefined; body: string | undefined },
+): number {
+  const deny = (reason: string, recovery: boolean): number => {
+    io.err(`ak lifecycle record: refused: ${reason}`);
+    if (recovery) io.err(RECOVERY);
+    return 1;
+  };
+  const opened = readRunRecord(dir, run);
+  const stamp = opened?.supervisor;
+  const loaded = loadDeclaration(project);
+  const attestationPath = flags.attestation;
+  const finalShip = attestationPath !== undefined;
+  if (loaded.state !== "valid")
+    return deny(loaded.state === "absent" ? `no supervisor declaration: ${loaded.reason}` : loaded.reason, !finalShip);
+  if (stamp === undefined)
+    return deny("the run carries no supervisor stamp: it was opened without a valid declaration", true);
+  if (stamp.declaration_digest !== loaded.digest)
+    return deny(
+      `the declaration in force (${loaded.digest}) differs from the run's stamp (${stamp.declaration_digest})`,
+      !finalShip,
+    );
+  const supervisor = loaded.supervisor;
+  const stampedPolicy: Policy = { ...policy, source: opened?.policy?.source ?? policy.source, supervisor };
+  if (attestationPath === undefined) {
+    const live = takeSnapshot(project);
+    if (!isSnapshot(live)) return deny(live, false);
+    if (live.diff_hash !== EMPTY_DIFF) return deny(shipDirtReason(project), false);
+    const mismatch = supervisorMismatch({ dir, run, gates: UNATTENDED_PRE_SHIP_GATES, project }, live, supervisor);
+    if (mismatch !== undefined) return deny(mismatch, true);
     const pre = checkGates({ dir, run, gates: UNATTENDED_PRE_SHIP_GATES, project });
     if (!pre.ok) {
       for (const refusal of pre.refusals) io.err(`ak lifecycle record: ${refusal}`);
@@ -2857,13 +3359,13 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
       project,
       policy: stampedPolicy,
       builtin: {
-        name: "merge-gate",
-        argv: ["agent-kit", "merge-gate", repo.repo],
+        name: "supervisor",
+        argv: ["agent-kit", "supervisor", supervisor],
         output: JSON.stringify({
-          repo: repo.repo,
-          default_branch: gate.defaultBranch,
-          review_app_id: gate.reviewAppId,
-          notes: gate.notes,
+          supervisor,
+          contract: CONTRACT,
+          declaration_path: loaded.path,
+          declaration_digest: loaded.digest,
         }),
       },
     });
@@ -2872,7 +3374,7 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
       return 1;
     }
     closeRun(dir, run, r.record.recorded_at);
-    for (const line of [...pre.notes, ...gate.notes.map((text) => `note: ${text}`)]) io.err(line);
+    for (const line of pre.notes) io.err(line);
     io.out(`recorded ship-preflight for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
     io.out(unattendedDisclosure(supervisor));
     for (const reason of pre.decision?.reasons ?? [])
@@ -2881,71 +3383,80 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     for (const line of commandSummary(dir, run)) io.out(line);
     return 0;
   }
-  const pr = Number(prFlag);
-  if (!Number.isInteger(pr) || pr < 1) {
-    io.err("ak lifecycle record: --pr <number> is required");
-    return 2;
-  }
   const shipped = readRecords(dir, run, "ship-preflight")
     .toSorted((x, y) => x.recorded_at.localeCompare(y.recorded_at))
     .at(-1);
-  if (shipped === undefined) {
-    say([`run ${run} has no ship-preflight record to append final ship success to`], []);
-    return 1;
+  if (
+    opened?.closed_at === undefined ||
+    shipped === undefined ||
+    !(shipped.commands ?? []).some((c) => c.builtin === "supervisor")
+  )
+    return deny(`run ${run} was not closed by a ship-preflight record; record ship-preflight first`, false);
+  if (!isAbsolute(attestationPath)) return deny(`attestation ${attestationPath} must be an absolute path`, false);
+  const placed = readOutsideRepo(project, attestationPath, "attestation");
+  if (!placed.ok) return deny(placed.reason, false);
+  const attestationBytes = placed.bytes;
+  const read = readAttestation(placed.value, supervisor);
+  if (!read.ok) return deny(`attestation ${attestationPath}: ${read.failures.join("; ")}`, false);
+  const { head, review } = read.attestation;
+  const reviewer = review.reviewer;
+  const authors = review.authors;
+  if (authors.includes(reviewer))
+    return deny(`reviewer ${reviewer} is among the authors; the review is not independent`, false);
+  if (gitFinal(project, ["cat-file", "-e", `${head}^{commit}`]).code !== 0)
+    return deny(`commit ${head} is not in this repository; fetch it, then record again`, false);
+  const grafts = graftsRefusal(project);
+  if (grafts !== undefined) return deny(grafts, false);
+  const shippedRevision = shipped.snapshot.revision;
+  if (gitFinal(project, ["merge-base", "--is-ancestor", shippedRevision, head]).code !== 0)
+    return deny(`head ${head} does not descend from the shipped revision ${shippedRevision}`, true);
+  let bodyBytes: Buffer;
+  try {
+    bodyBytes = readFileSync(resolve(cwd, flags.body ?? ""));
+  } catch {
+    return deny(`the body file ${flags.body ?? ""} cannot be read`, false);
   }
-  const status = checkReviewStatus(
-    forge,
-    repo.repo,
-    pr,
-    checkMergeGate(forge, repo.repo, { identity: true, policySource: source }),
-  );
-  if (status.state !== "pass") {
-    say(status.failures, status.notes);
-    if (status.state === "waiting") io.err(`waiting: no completed independent review on ${String(status.head)} yet`);
-    return status.state === "waiting" ? 3 : 1;
-  }
-  const head = status.head;
-  if (head === undefined) {
-    say([`pull request ${pr}'s head is unreadable`], status.notes);
-    return 1;
-  }
-  const compared = compareShipped(forge, repo.repo, shipped.snapshot.revision, head);
-  if ("error" in compared) {
-    say([compared.error], []);
-    return 1;
-  }
-  if (compared.status !== "identical" && compared.status !== "ahead") {
-    say(
-      [
-        `pull request ${pr}'s head ${head} is ${compared.status} from the shipped revision ${shipped.snapshot.revision}, so this run's evidence does not cover it; open a new run at the pull request's head with \`open --ticket\` and record the gates again`,
-      ],
-      status.notes,
+  const body = bodyBytes.toString("utf8");
+  if (!bodyCarriesDisclosure(body, supervisor)) {
+    const sentence = unattendedDisclosure(supervisor);
+    return deny(
+      body.startsWith(sentence, body.startsWith("﻿") ? 1 : 0)
+        ? "the body opens with the disclosure sentence, but a blank line or the end of the body does not follow it: the sentence must be the body's whole first paragraph"
+        : `the body does not open with the disclosure sentence, which must be its first paragraph, followed by a blank line: ${sentence}`,
+      false,
     );
-    return 1;
   }
+  const commits = gitFinal(project, ["log", "--no-show-signature", "--format=%H%x09%s", `${shippedRevision}..${head}`])
+    .text.split("\n")
+    .filter((line) => line !== "")
+    .map((line) => {
+      const [sha = "", ...subject] = line.split("\t");
+      return { sha, subject: subject.join("\t") };
+    });
   const at = new Date().toISOString();
+  const output: FinalShipOutput = {
+    head,
+    attestation_path: placed.real,
+    attestation_digest: sha256Digest(attestationBytes),
+    body_digest: sha256Digest(bodyBytes),
+    commits_after: commits,
+  };
+  if (read.attestation.pull_request !== undefined) output.pull_request = read.attestation.pull_request;
   const entry: CommandEntry = {
-    argv: ["agent-kit", "final-ship", "--pr", String(pr)],
+    argv: ["agent-kit", "final-ship", head],
     exit_status: 0,
-    output: storeArtifact(
-      dir,
-      run,
-      new TextEncoder().encode(JSON.stringify({ pr, head, commits_after: compared.commits })),
-    ),
+    output: storeArtifact(dir, run, new TextEncoder().encode(JSON.stringify(output))),
     started_at: at,
     finished_at: at,
     snapshot: shipped.snapshot,
     builtin: "final-ship",
   };
   atomicJson(recordPath(dir, run, shipped), { ...shipped, commands: [...(shipped.commands ?? []), entry] });
-  for (const note of status.notes) io.err(`note: ${note}`);
+  io.out(`final ship: supervisor ${supervisor} attests validation and independent review at ${head}`);
   io.out(
-    `final ship success: pull request ${pr} at ${head} carries a valid independent review and the merge gate is enforced`,
+    `${commits.length} commit(s) after the shipped revision ${shippedRevision.slice(0, 12)}, attested by the supervisor only:`,
   );
-  io.out(
-    `${compared.commits.length} commit(s) after the shipped revision ${shipped.snapshot.revision.slice(0, 12)}, covered by the merge gate only:`,
-  );
-  for (const commit of compared.commits) io.out(`  ${commit.sha.slice(0, 12)} ${commit.author}`);
+  for (const commit of commits) io.out(`  ${commit.sha.slice(0, 12)} ${commit.subject}`);
   return 0;
 }
 
@@ -3136,7 +3647,11 @@ export function main(
       acquired.release();
     }
   }
-  const resolved = sub === "bypass grant" ? { ok: true as const } : resolvePolicy(project);
+  const finalShipGit = sub === "record" && flags.has("attestation") ? FINAL_SHIP_GIT : [];
+  const resolved =
+    sub === "bypass grant"
+      ? { ok: true as const }
+      : resolvePolicy(project, process.env, finalShipGit, finalShipGit.length > 0 ? finalShipEnv(project) : undefined);
   if (!resolved.ok) {
     io.err(`ak lifecycle ${sub}: ${resolved.reason}`);
     return 2;
@@ -3148,51 +3663,66 @@ export function main(
       io.err(`ak lifecycle unattended check: ${unknownSelector("phase", phase ?? "", UNATTENDED_PHASES)}`);
       return 2;
     }
+    if (HUMAN_STEP_FLAGS.some((flag) => flags.has(flag)) && policy?.supervisor === undefined) {
+      io.err(
+        "ak lifecycle unattended check: human-step options require an unattended policy with AK_LIFECYCLE_SUPERVISOR",
+      );
+      return 2;
+    }
     const modelStarted = MODEL_STARTED_PHASES.some((started) => started === phase);
-    if (!modelStarted && policy === undefined) {
+    if (modelStarted) {
+      const declared = policy === undefined ? undefined : loadDeclaration(project);
+      const valid = declared?.state === "valid" ? declared : undefined;
+      const name = policy?.name ?? "legacy";
+      const started =
+        valid === undefined
+          ? { policy: name, phase, start: "model-started" }
+          : {
+              policy: name,
+              supervisor: valid.supervisor,
+              declaration_digest: valid.digest,
+              phase,
+              start: "model-started",
+            };
+      if (HUMAN_STEP_FLAGS.some((flag) => flags.has(flag))) {
+        return runHumanStep(io, flags, (assessment) =>
+          io.out(
+            JSON.stringify(
+              { ...started, supervisor: valid?.supervisor ?? policy?.supervisor, human_step: assessment },
+              null,
+              2,
+            ),
+          ),
+        );
+      }
+      io.out(JSON.stringify(started, null, 2));
+      return 0;
+    }
+    if (policy === undefined) {
       io.err(
         `ak lifecycle unattended check: ${phase} is human-started and needs its typed command or a grant to start`,
       );
       return 1;
     }
-    const started = modelStarted
-      ? { policy: policy?.name ?? "legacy", phase, start: "model-started" }
-      : { policy: policy?.name, source: policy?.source, phase };
-    const phaseCheck = policy?.supervisor === undefined ? started : { ...started, supervisor: policy.supervisor };
+    const loaded = loadDeclaration(project);
+    if (loaded.state !== "valid") {
+      io.err(`ak lifecycle unattended check: refused: ${phase} needs a valid supervisor declaration: ${loaded.reason}`);
+      return 1;
+    }
+    const phaseCheck = {
+      policy: policy.name,
+      source: policy.source,
+      supervisor: loaded.supervisor,
+      declaration_digest: loaded.digest,
+      phase,
+    };
     if (HUMAN_STEP_FLAGS.some((flag) => flags.has(flag))) {
-      if (policy?.supervisor === undefined) {
-        io.err(
-          "ak lifecycle unattended check: human-step options require an unattended policy with AK_LIFECYCLE_SUPERVISOR",
-        );
-        return 2;
-      }
       return runHumanStep(io, flags, (assessment) =>
         io.out(JSON.stringify({ ...phaseCheck, human_step: assessment }, null, 2)),
       );
     }
     io.out(JSON.stringify(phaseCheck, null, 2));
     return 0;
-  }
-  if (sub === "unattended review-status") {
-    const pr = Number(str("pr"));
-    if (!Number.isInteger(pr) || pr < 1) {
-      io.err("ak lifecycle unattended review-status: --pr <number> is required");
-      return 2;
-    }
-    const repo = resolveRepo(project);
-    if (!repo.ok) {
-      io.err(`ak lifecycle unattended review-status: refused: ${repo.reason}`);
-      return 1;
-    }
-    const forge = forgeIo();
-    const status = checkReviewStatus(forge, repo.repo, pr, checkMergeGate(forge, repo.repo, { identity: false }));
-    io.err(`note: ${RESIDUAL_ASSUMPTIONS}`);
-    for (const note of status.notes) io.err(`note: ${note}`);
-    for (const failure of status.failures) io.err(`refused: ${failure}`);
-    if (status.state === "waiting") io.err(`waiting: no completed independent review on ${String(status.head)} yet`);
-    if (status.state === "pass")
-      io.out(`ok: pull request ${pr} at ${String(status.head)} carries a valid independent review`);
-    return status.state === "pass" ? 0 : status.state === "waiting" ? 3 : 1;
   }
   let dir: string;
   try {
@@ -3253,12 +3783,29 @@ export function main(
     if (binding !== undefined) openArgs.binding = resolve(cwd, binding);
     const projectRecord = str("project-record");
     if (projectRecord !== undefined) openArgs.projectRecord = resolve(cwd, projectRecord);
-    if (policy !== undefined) openArgs.policy = policy;
+    let note: string | undefined;
+    if (policy !== undefined) {
+      openArgs.policy = policy;
+      const loaded = loadDeclaration(project);
+      if (loaded.state === "invalid") {
+        io.err(`ak lifecycle open: refused: ${loaded.reason}`);
+        return 1;
+      }
+      if (loaded.state === "valid")
+        openArgs.supervisor = {
+          name: loaded.supervisor,
+          contract: CONTRACT,
+          declaration_path: loaded.path,
+          declaration_digest: loaded.digest,
+        };
+      else note = "note: no supervisor declaration; this run cannot pass ship-preflight under the unattended policy";
+    }
     const opened = openRun(openArgs);
     if (!opened.ok) {
       io.err(`ak lifecycle open: ${opened.reason}`);
       return 1;
     }
+    if (note !== undefined) io.err(note);
     io.out(`opened run ${opened.run.run_id}`);
     return 0;
   }
@@ -3363,8 +3910,10 @@ export function main(
       io.err(`ak lifecycle record: refused: gate ${gate} is recorded only under the unattended policy`);
       return 1;
     }
-    if (policy === undefined && (command !== undefined || flags.has("pr"))) {
-      io.err("ak lifecycle record: `-- <command>` and --pr apply only under the unattended policy");
+    if (policy === undefined && (command !== undefined || flags.has("attestation") || flags.has("body-file"))) {
+      io.err(
+        "ak lifecycle record: `-- <command>`, --attestation and --body-file apply only under the unattended policy",
+      );
       return 2;
     }
     if (policy !== undefined && gate === "ship-preflight" && command !== undefined) {
@@ -3377,8 +3926,12 @@ export function main(
       );
       return 2;
     }
-    if (flags.has("pr") && gate !== "ship-preflight") {
-      io.err("ak lifecycle record: --pr applies only to ship-preflight");
+    if ((flags.has("attestation") || flags.has("body-file")) && gate !== "ship-preflight") {
+      io.err("ak lifecycle record: --attestation and --body-file apply only to ship-preflight");
+      return 2;
+    }
+    if (flags.has("attestation") !== flags.has("body-file")) {
+      io.err("ak lifecycle record: --attestation and --body-file must be supplied together");
       return 2;
     }
     const bypassPath = str("bypass");
@@ -3477,15 +4030,28 @@ export function main(
       );
       return 1;
     }
+    if (
+      policy?.supervisor !== undefined &&
+      opened?.policy?.supervisor !== undefined &&
+      policy.supervisor !== opened.policy.supervisor
+    ) {
+      io.err(
+        `ak lifecycle record: refused: run ${run} was opened under supervisor ${JSON.stringify(opened.policy.supervisor)}, and this record names ${JSON.stringify(policy.supervisor)}`,
+      );
+      return 1;
+    }
     if (policy !== undefined && !isPhaseGate(gate) && opened === undefined) {
       io.err(
         "ak lifecycle record: refused: under the unattended policy this gate needs a run opened with `open --ticket`",
       );
       return 1;
     }
-    if (opened?.closed_at !== undefined && !(policy !== undefined && gate === "ship-preflight" && flags.has("pr"))) {
+    if (
+      opened?.closed_at !== undefined &&
+      !(policy !== undefined && gate === "ship-preflight" && flags.has("attestation"))
+    ) {
       const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
-      // Under the policy only the final `--pr` append may touch a closed run.
+      // Under the policy only the final `--attestation` append may touch a closed run.
       const closedHere =
         policy === undefined &&
         live !== undefined &&
@@ -3502,7 +4068,10 @@ export function main(
       if (seatId !== undefined) implementer.seat_id = seatId;
     }
     if (policy !== undefined && gate === "ship-preflight")
-      return shipUnattended(io, dir, run, project, policy, str("pr"));
+      return shipUnattended(io, dir, run, project, policy, cwd, {
+        attestation: str("attestation"),
+        body: str("body-file"),
+      });
     // The ship handoff itself judges the receipts, not only a `check` a caller remembered to run:
     // an opened run whose ticket declares evidence may not record ship-preflight (and so may not
     // close, merge or publish) until the pre-ship gates hold for the exact head. Runs with no

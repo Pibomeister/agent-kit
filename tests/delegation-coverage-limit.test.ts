@@ -327,7 +327,7 @@ describe("an unscored ticket still carries criteria and named verification, and 
     expect(text).toContain(
       "The gate counts those checks and nothing else, refuses a verify recorded by the build's implementer seat or by no seat, and records the limit on its ship decision and in the ship disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any other. Outside the policy it is unavailable.",
     );
-    expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.5\.0$/m);
+    expect(readFileSync(join(REPO, "skills/super-verify/skill.yaml"), "utf8")).toMatch(/^version: 0\.5\.1$/m);
   });
 });
 
