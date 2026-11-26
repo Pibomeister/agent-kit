@@ -18,7 +18,10 @@
  * case-changed markers are plain text. Small-caps ᴇɢᴍ does not NFKD-fold
  * and is out of scope. A free-text claim with no identity token is
  * review's job. Every pin is checked by equality at its parsed location.
- * The README first paragraph after `# agent-kit` equals the lede pin.
+ * Pinned files are read from HEAD, the index, and the worktree by one
+ * reader; any layer that differs is red, and the pin must hold in all
+ * three. The README file must start with exactly `# agent-kit\n`; the
+ * first paragraph after that heading equals the lede pin.
  * package.json `description` and marketplace `metadata.description` equal
  * their pins after a duplicate-key-rejecting parse; a key repeated in one
  * object, including via a \\u escape, is red. A \\u escape that changes
@@ -548,8 +551,21 @@ function decodeTracked(file: string, bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replaceAll("\r\n", "\n");
 }
 
-function readTracked(root: string, file: string): string {
-  return decodeTracked(file, readFileSync(join(root, file)));
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, i) => byte === right[i]);
+}
+
+function revBlob(root: string, spec: string): Uint8Array {
+  return readBlob(root, git(root, ["rev-parse", spec]).trim());
+}
+
+function readPinned(root: string, file: string): string {
+  const head = revBlob(root, `HEAD:${file}`);
+  const index = revBlob(root, `:${file}`);
+  const worktree = Uint8Array.from(readFileSync(join(root, file)));
+  expect(bytesEqual(head, index), `${file} HEAD/index`).toBe(true);
+  expect(bytesEqual(head, worktree), `${file} HEAD/worktree`).toBe(true);
+  return decodeTracked(file, head);
 }
 
 function skipTrackedPath(raw: string): boolean {
@@ -648,8 +664,9 @@ function isolationRowLines(text: string): string[] {
     .filter((line) => line.replaceAll(/\s+/g, " ").trim().startsWith("| `isolated-review-context` |"));
 }
 
-function firstParagraphAfterH1(text: string): string {
-  expect(text.startsWith("# agent-kit\n"), "README h1").toBe(true);
+/** README must start with exactly `# agent-kit\n`; then the first paragraph is the lede. */
+function firstParagraphAfterExactH1(text: string): string {
+  expect(text.startsWith("# agent-kit\n"), "README must start with exactly # agent-kit\\n").toBe(true);
   const rest = text.slice("# agent-kit\n".length).replace(/^\n*/, "");
   return rest.split("\n\n")[0] ?? "";
 }
@@ -791,9 +808,9 @@ function assertSentencePins(root = REPO): void {
   expect(BINARY_ALLOWLIST).toEqual([]);
   expect(SENTENCE_PINS).toHaveLength(3);
   for (const pin of SENTENCE_PINS) {
-    const raw = readTracked(root, pin.file);
+    const raw = readPinned(root, pin.file);
     if (pin.jsonKey === undefined) {
-      expect(firstParagraphAfterH1(raw), pin.file).toBe(pin.text);
+      expect(firstParagraphAfterExactH1(raw), pin.file).toBe(pin.text);
       continue;
     }
     const tokens = scanJson(raw);
@@ -815,7 +832,7 @@ function assertIsolationPin(root = REPO): void {
   const pin = BLOCK_PINS.find((row) => row.file === "adapters/cursor/CONTRACT.md");
   expect(pin).toBeDefined();
   if (pin === undefined) return;
-  const text = readTracked(root, pin.file);
+  const text = readPinned(root, pin.file);
   const rows = isolationRowLines(text);
   expect(rows.length, "isolation rows").toBe(1);
   const interior = extractPinnedBlock(text, pin);
@@ -844,14 +861,20 @@ function identityScan(root: string) {
 }
 
 function scratchPins(): string {
-  const root = processScratch("egm-pins-");
+  const root = initRepo();
   for (const pin of SENTENCE_PINS) {
     mkdirSync(join(root, dirname(pin.file)), { recursive: true });
     cpSync(join(REPO, pin.file), join(root, pin.file));
   }
   mkdirSync(join(root, "adapters/cursor"), { recursive: true });
   cpSync(join(REPO, "adapters/cursor/CONTRACT.md"), join(root, "adapters/cursor/CONTRACT.md"));
+  git(root, ["add", "-A"]);
+  git(root, ["commit", "-q", "-m", "honest"]);
   return root;
+}
+
+function restoreWorktreeFrom(root: string, file: string, spec: string): void {
+  writeFileSync(join(root, file), revBlob(root, spec));
 }
 
 function initRepo(): string {
@@ -1030,6 +1053,45 @@ describe("EGM provenance guards", () => {
     const { uncovered, decodeLies } = identityScan(root);
     expect(decodeLies).toEqual([]);
     expect(uncovered.length).toBeGreaterThan(0);
+  });
+
+  test("committed-lie-restored-worktree", () => {
+    const root = scratchPins();
+    const path = join(root, "README.md");
+    writeFileSync(path, readFileSync(path, "utf8").replace(README_LEDE, "Nine donors, all proprietary"));
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-q", "-m", "lie"]);
+    restoreWorktreeFrom(root, "README.md", "HEAD~1:README.md");
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("staged-lie-restored-worktree", () => {
+    const root = scratchPins();
+    const path = join(root, "package.json");
+    writeFileSync(path, readFileSync(path, "utf8").replace(PACKAGE_DESCRIPTION, "nine donors (all MIT)"));
+    git(root, ["add", "package.json"]);
+    restoreWorktreeFrom(root, "package.json", "HEAD:package.json");
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("marketplace metadata.description committed lie", () => {
+    const root = scratchPins();
+    const file = ".claude-plugin/marketplace.json";
+    const path = join(root, file);
+    writeFileSync(path, readFileSync(path, "utf8").replace(MARKETPLACE_DESCRIPTION, "nine donors (all MIT)"));
+    git(root, ["add", file]);
+    git(root, ["commit", "-q", "-m", "lie"]);
+    restoreWorktreeFrom(root, file, `HEAD~1:${file}`);
+    expect(() => assertSentencePins(root)).toThrow();
+  });
+
+  test("README h1 match is exact including the newline", () => {
+    const root = scratchPins();
+    const path = join(root, "README.md");
+    writeFileSync(path, readFileSync(path, "utf8").replace("# agent-kit\n", "# agent-kit   \n"));
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-q", "-m", "h1"]);
+    expect(() => assertSentencePins(root)).toThrow();
   });
 
   test("one-byte change at a pin location is red", () => {
