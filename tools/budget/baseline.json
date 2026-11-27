@@ -38,13 +38,13 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 17124,
-      "tokens": 4281
+      "bytes": 19793,
+      "tokens": 4948
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 41097,
-      "tokens": 10245
+      "bytes": 41429,
+      "tokens": 10328
     },
     "bundle/claude-code:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -68,8 +68,8 @@
     },
     "bundle/claude-code:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 10235,
-      "tokens": 2558
+      "bytes": 10482,
+      "tokens": 2620
     },
     "bundle/claude-code:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -933,13 +933,13 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 17124,
-      "tokens": 4281
+      "bytes": 19793,
+      "tokens": 4948
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 41097,
-      "tokens": 10245
+      "bytes": 41429,
+      "tokens": 10328
     },
     "bundle/codex:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -963,8 +963,8 @@
     },
     "bundle/codex:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 10235,
-      "tokens": 2558
+      "bytes": 10482,
+      "tokens": 2620
     },
     "bundle/codex:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -1828,13 +1828,13 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 17172,
-      "tokens": 4293
+      "bytes": 19865,
+      "tokens": 4966
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 41133,
-      "tokens": 10254
+      "bytes": 41465,
+      "tokens": 10337
     },
     "bundle/cursor:.cursor/references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -1858,8 +1858,8 @@
     },
     "bundle/cursor:.cursor/references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 10235,
-      "tokens": 2558
+      "bytes": 10482,
+      "tokens": 2620
     },
     "bundle/cursor:.cursor/references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -2723,13 +2723,13 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 17124,
-      "tokens": 4281
+      "bytes": 19793,
+      "tokens": 4948
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 41097,
-      "tokens": 10245
+      "bytes": 41429,
+      "tokens": 10328
     },
     "bundle/droid:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -2753,8 +2753,8 @@
     },
     "bundle/droid:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 10235,
-      "tokens": 2558
+      "bytes": 10482,
+      "tokens": 2620
     },
     "bundle/droid:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -3618,13 +3618,13 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 17124,
-      "tokens": 4281
+      "bytes": 19793,
+      "tokens": 4948
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 41097,
-      "tokens": 10245
+      "bytes": 41429,
+      "tokens": 10328
     },
     "bundle/grok:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -3648,8 +3648,8 @@
     },
     "bundle/grok:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 10235,
-      "tokens": 2558
+      "bytes": 10482,
+      "tokens": 2620
     },
     "bundle/grok:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -4513,13 +4513,13 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 17124,
-      "tokens": 4281
+      "bytes": 19793,
+      "tokens": 4948
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 41097,
-      "tokens": 10245
+      "bytes": 41429,
+      "tokens": 10328
     },
     "bundle/kimi:references/shared/adapters/supervisor/CONTRACT.md": {
       "file": "adapters/supervisor/CONTRACT.md",
@@ -4543,8 +4543,8 @@
     },
     "bundle/kimi:references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
       "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
-      "bytes": 10235,
-      "tokens": 2558
+      "bytes": 10482,
+      "tokens": 2620
     },
     "bundle/kimi:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",

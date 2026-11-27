@@ -14,8 +14,11 @@ supervising orchestrator, not by a human reading the generated artifacts.
 A human-started phase starts by a typed command, a delegated grant, the standing autopilot grant of
 ADR-0007 or a supervisor's bypass grant. A CI job, a scheduled job, a chat bot, a coding-agent
 platform or a supervised worker with nobody watching holds none of them honestly. Autonomous ship also
-refuses a host-unattested verifier once a seat or grant is recorded, and the runner-attested path that
-would lift that refusal does not exist. Such a runner therefore cannot finish the lifecycle at all.
+refuses a host-unattested verifier once a seat or grant is recorded, and when this policy was adopted
+no runner-attested path lifted that refusal. Such a runner therefore could not finish the lifecycle at
+all. Lifecycle-mode `ak runner run-verify` later added that path for a host that runs the local runner
+service ([CLI.md](../../adapters/runner-contract/CLI.md#lifecycle-verifier-receipts)); this policy
+remains the path for a host that does not.
 
 ## Decision
 
