@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
+import { globToRegExp } from "../util/glob.ts";
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
 import { asJsonObject } from "../lifecycle/behavior-policy.ts";
 import { loadArtifacts } from "./artifacts.ts";
@@ -111,23 +112,6 @@ function creatorRole(doc: Record<string, unknown>): string | null {
 function revisionOf(value: unknown): string | null {
   const record = obj(value);
   return record === null ? str(value) : str(record["revision"]);
-}
-
-/** Minimal glob match, enough for `src/**` style write-scope declarations. */
-function globMatches(pattern: string, path: string): boolean {
-  const source = pattern
-    .split("")
-    .map((c) => (/[.+^${}()|[\]\\]/.test(c) ? `\\${c}` : c))
-    .join("")
-    .replace(/\*\*\//g, "(?:.*/)?")
-    .replace(/\*\*/g, ".*")
-    .replace(/(?<!\.)\*/g, "[^/]*")
-    .replace(/\?/g, "[^/]");
-  try {
-    return new RegExp(`^${source}$`).test(path);
-  } catch {
-    return false;
-  }
 }
 
 function* walkKeys(value: unknown, path: string[] = []): Generator<{ key: string; path: string; value: unknown }> {
@@ -272,7 +256,7 @@ function charterRules(rc: RuleContext): void {
         if (record === null) continue;
         for (const glob of arr(record["paths"])) {
           const pattern = str(glob);
-          if (pattern !== null && globMatches(pattern, location)) {
+          if (pattern !== null && globToRegExp(pattern).test(location)) {
             fail(
               rc,
               RULE_HASH,
