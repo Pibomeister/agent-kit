@@ -13,6 +13,7 @@ import { checkOutbound, describeRefusals } from "../council/outbound.ts";
 import { workerVeto } from "../council/rule.ts";
 import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
+import { lifecycleConfigProblems, runLifecycleVerify } from "./lifecycle-verify.ts";
 import { readAdminToken } from "./token.ts";
 import {
   isArgs,
@@ -30,6 +31,7 @@ import {
   type EffectAdapter,
   type RunnerArgs,
   type SeatLauncher,
+  type VerifyConfig,
 } from "./wire.ts";
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
@@ -72,7 +74,8 @@ type StringKey =
   | "target"
   | "input_hash"
   | "limit"
-  | "parent";
+  | "parent"
+  | "check";
 type ArrayKey = "excluded_actors" | "input_dispatches" | "lineage";
 
 function equal(a: string, b: string): boolean {
@@ -298,7 +301,7 @@ async function execute(
   allowedRun: string,
   launchers: SeatLauncher[],
   council: CouncilConfig | null,
-  verifyCommand: string[] | null,
+  verifyConfig: VerifyConfig | null,
   effectAdapters: Map<string, EffectAdapter>,
   decisions: Map<string, Promise<unknown>>,
   activeChildren: Set<number>,
@@ -388,8 +391,21 @@ async function execute(
     case "sync":
       return seen(runner.syncRevision(str(a, "run")));
     case "run-verify": {
-      if (verifyCommand === null) throw new Error("runner verification command is unconfigured");
+      if (verifyConfig === null) throw new Error("runner verification command is unconfigured");
       const runId = str(a, "run");
+      if ("lifecycle" in verifyConfig)
+        return runLifecycleVerify({
+          stateDir: runner.stateDir,
+          workerRoot: runner.workerRoot,
+          runId,
+          config: verifyConfig.lifecycle,
+          check: str(a, "check"),
+          receiptId: a.receipt_id,
+          env: privateChildEnv(runner),
+          spawn: async (argv, cwd, env, timeoutMs) =>
+            await spawnPiped(argv, cwd, undefined, env, activeChildren, timeoutMs),
+        });
+      const verifyCommand = verifyConfig.command;
       const before = runner.syncRevision(runId);
       if (before.next_permitted_action !== "verify.record")
         throw new Error("verification is not the next permitted action");
@@ -575,14 +591,18 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     const problems = rosterProblems([...pairSeats, council.veto]);
     if (problems.length > 0) throw new Error(`invalid council configuration: ${problems.join("; ")}`);
   }
-  let verifyCommand: string[] | null = null;
+  let verifyConfig: VerifyConfig | null = null;
   if (verifyConfigPath !== undefined) {
     const configPath = realpathSync(verifyConfigPath);
     runner.assertPrivatePath(configPath);
     const configValue: unknown = JSON.parse(readFileSync(configPath, "utf8"));
     if (!isVerifyConfig(configValue))
       throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
-    verifyCommand = configValue.command;
+    if ("lifecycle" in configValue) {
+      const problems = lifecycleConfigProblems(configValue.lifecycle);
+      if (problems.length > 0) throw new Error(`invalid verification configuration: ${problems.join("; ")}`);
+    }
+    verifyConfig = configValue;
   }
   let eventCommand: string[] | null = null;
   let eventTimeoutMs: number | null = null;
@@ -1097,7 +1117,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           runId,
           launchers,
           council,
-          verifyCommand,
+          verifyConfig,
           effectAdapters,
           decisions,
           activeChildren,
@@ -1105,19 +1125,24 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           auditRetryOpen,
           deliveryRetryOpen,
         );
-        const missing = [
-          eventCommand === null ? "event-adapter" : null,
-          deliveryFailedVisible() ? "event-delivery-failed" : null,
-          loopCommand === null ? "loop-adapter" : null,
-          !runner.status(runId).charter.allowed_capabilities.includes("event-delivery")
-            ? "charter-event-delivery"
-            : null,
-          loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined
-            ? "charter-cadence"
-            : null,
-          auditBlock === "cap" ? "delegate-replacements" : null,
-          auditFailedVisible() ? "audit-failed" : null,
-        ].filter((part): part is string => part !== null);
+        // Only status presents autonomy, and a lifecycle-verify endpoint serves a run with no autopilot state.
+        const missing = (
+          request.verb !== "status"
+            ? []
+            : [
+                eventCommand === null ? "event-adapter" : null,
+                deliveryFailedVisible() ? "event-delivery-failed" : null,
+                loopCommand === null ? "loop-adapter" : null,
+                !runner.status(runId).charter.allowed_capabilities.includes("event-delivery")
+                  ? "charter-event-delivery"
+                  : null,
+                loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined
+                  ? "charter-cadence"
+                  : null,
+                auditBlock === "cap" ? "delegate-replacements" : null,
+                auditFailedVisible() ? "audit-failed" : null,
+              ]
+        ).filter((part): part is string => part !== null);
         const visibleStatus = () => {
           const run = runner.status(runId);
           return equal(request.token, adminToken) ? run : workerRun(run);

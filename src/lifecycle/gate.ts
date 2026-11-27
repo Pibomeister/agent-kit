@@ -673,7 +673,7 @@ export interface RunSupervisor {
 
 const isGate = (g: string): g is Gate => (GATES as readonly string[]).includes(g);
 const isPhaseGate = (g: string): g is (typeof PHASE_GATES)[number] => PHASE_GATES.some((phase) => phase === g);
-const isSnapshot = (s: Snapshot | string): s is Snapshot => Object(s) === s;
+export const isSnapshot = (s: Snapshot | string): s is Snapshot => Object(s) === s;
 const short = (s: Snapshot) => `${s.revision.slice(0, 12)}/${s.diff_hash.replace(/^sha256:/, "").slice(0, 12)}`;
 const same = (a: Snapshot, b: Snapshot) => a.revision === b.revision && a.diff_hash === b.diff_hash;
 
@@ -769,7 +769,7 @@ function readObject(path: string): Record<string, unknown> | undefined {
   }
 }
 
-function readRunRecord(dir: string, run: string): RunRecord | undefined {
+export function readRunRecord(dir: string, run: string): RunRecord | undefined {
   const value = readObject(runRecordPath(dir, run));
   if (
     value === undefined ||
@@ -1696,7 +1696,7 @@ export interface CheckResult {
 const isAncestor = (project: string, older: string, newer: string): boolean =>
   older === newer || git(project, ["merge-base", "--is-ancestor", older, newer]).code === 0;
 
-const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
+export const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
 
 /** A git call that failed outright: a silent must-print exit, a spawn error or a git fatal, not an absent answer. */
 const gitFailed = (r: GitResult): boolean => r.code === -1 || r.code >= 128;
