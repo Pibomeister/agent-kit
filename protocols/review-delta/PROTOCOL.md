@@ -51,8 +51,10 @@ lane's findings (`policies/review.yaml` `pass_1.seat_context.never_receives`).
 ## Workflow
 
 1. Fail fast before dispatch: confirm the comparison base resolves, the fix diff is non-empty and
-   the receipts bind to `reviewed_head`. A bad base or an empty diff stops here, before either
-   lane is seated.
+   the receipts bind to `reviewed_head`. A bad base or an empty diff stops here, before either lane
+   is seated. Then run `ak review scope` on the review's convergence ledger (super-review's
+   convergence reference). Only its `closure` outcome continues here: `carry` calls no seat,
+   `new-scope` opens pass 1 of a new scope, and `hold` parks the change.
 2. Freeze the snapshot and record its hashes in the `schemas/review.schema.json` record.
 3. Seat `reviewer-spec` and `reviewer-standards` in parallel on that snapshot, each with the
    packet and neither with the other's output. The packet carries the shell rule: deletes and
@@ -60,21 +62,31 @@ lane's findings (`policies/review.yaml` `pass_1.seat_context.never_receives`).
    inside a compound command or script.
 4. Collect each lane's result as `complete`, `empty` or `unavailable`.
 5. For each prior finding, record `ADDRESSED` or `NOT ADDRESSED` with a `file:line` reference in
-   the fix diff. This is a closure check, not a re-litigation of whether the finding was valid.
+   the fix diff, as a `closure` line in the ledger. A reproduction the caller ran is an `evidence`
+   line with its exit status at the head and at the merge base, and it closes or keeps the row with
+   no vote. This is a closure check, not a re-litigation of whether the finding was valid.
 6. Check the fix diff alone for new breakage it introduced. Do not re-review the whole file.
 7. Admit a new finding only with novelty evidence: what changed, or what regressed, that makes
    this finding new. Unrelated low-priority discovery is ledgered as an out-of-scope
-   observation, never looped into another round (ruling `delta-scope-affected-behavior`).
+   observation, never looped into another round (ruling `delta-scope-affected-behavior`). A new
+   finding blocks only with a reproduction that is red at the head and green at the merge base,
+   or as a security, destructive or data-loss finding that names the asset at risk and the action
+   that harms it. Every other new finding is filed and needs a follow-up reference.
 8. Route an unresolved prior finding of a specialist type back to that seat alone, and seat a
    specialist the delta diff's own risk evidence triggers. Do not trigger another full fan-out.
 9. Synthesize the verdict: a required lane `unavailable` yields `blocked` (ruling
-   `required-lane-failure-is-unavailable`); else a lane requesting changes yields
-   `changes-requested`; `approved` requires every required lane `complete` or `empty` and every
-   prior finding independently closed (ruling `closure-requires-independent-verification`), or,
-   at the cap with `merge-with-follow-ups`, open only as a P3 listed in `fix_cycles.follow_ups`.
-10. If findings remain open, hand control back for the next fix cycle — at most twice — and
-    record `fix_cycles`. At the cap, record the decision in `fix_cycles.exhausted_action`:
-    `merge-with-follow-ups` when only P3 findings are open, listing them in `follow_ups`;
+   `required-lane-failure-is-unavailable`). Otherwise append both lanes' verdicts and findings
+   and close the round with `ak review ledger add`, then take the verdict from `ak review decide`
+   at the reviewed head. A lane's `block` word alone vetoes nothing: only a ledger row blocks. `approved` requires
+   every required lane `complete` or `empty` and `decide` exiting 0, which needs every blocking row
+   closed by evidence (ruling `closure-requires-independent-verification`) and every filed row
+   carrying its follow-up, as `merge-with-follow-ups` lists them in `fix_cycles.follow_ups`.
+10. If findings remain open, hand control back for the next fix cycle — at most twice, so three
+    rounds per scope — and record `fix_cycles`. At the cap, `decide` gives each open row its outcome
+    by rule and the change parks and is reported, never approved on its own. Record the decision in
+    `fix_cycles.exhausted_action`:
+    `merge-with-follow-ups` when only filed rows are open, listing them in `follow_ups`, which
+    parks with `captain-hold` for a human to merge;
     `design-decision` when the last two cycles reopened the same finding theme; otherwise
     `blocked` or `replan` (ruling `two-fix-cycles-then-stop`).
 

@@ -66,15 +66,19 @@ change (ruling `closure-requires-independent-verification`).
 
 ## Cycles
 
-At most two fix-and-verify cycles after the first pass. The third stops with an explicit
-blocked-or-replan decision, and anything still open is reported rather than looped (ruling
-`two-fix-cycles-then-stop`).
+The ledger, the evidence bar and the verdict are in
+[review convergence](convergence.md): `ak review scope` before
+the round, `ak review ledger add` for every line, and `ak review decide` for the verdict.
+
+At most two fix-and-verify cycles after the first pass, so three rounds per scope. The third stops
+with an explicit blocked-or-replan decision, and anything still open is reported rather than looped
+(ruling `two-fix-cycles-then-stop`).
 
 The decision takes one of four values in `fix_cycles.exhausted_action`:
 
 | Open at the cap | Decision |
 |---|---|
-| Only P3 findings | `merge-with-follow-ups`: recommend merge, each P3 listed in `fix_cycles.follow_ups`; the verdict may be `approved` |
+| Only filed rows: P2, P3, pre-existing, uncited convention or unreproduced findings | `merge-with-follow-ups`: recommend merge, each listed in `fix_cycles.follow_ups` with its follow-up reference; `decide` still parks it with `captain-hold` and a human decides the merge |
 | A finding theme the last two cycles both reopened | `design-decision`: name the theme and the design question behind it; no further patch is proposed |
 | Anything else | `blocked` or `replan` |
 

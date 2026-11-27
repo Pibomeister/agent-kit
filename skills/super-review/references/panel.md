@@ -64,6 +64,13 @@ folder (`rm -rf .work/<seat>/probe`, `docker rm -f <literal-name>`), or the cont
 `docker run --rm`. Never `rm` on a variable path, and never `rm` or `docker rm -f` inside a compound
 command, a loop or a multi-line script. Leaving scratch files for cleanup is always allowed.
 
+Every finding a seat returns enters the review's convergence ledger as one finding report
+([review convergence](convergence.md)). A security, destructive
+or data-loss finding names the asset at risk and the action that harms it, so it blocks in any
+round. A convention finding cites the project rule. After round 1 a specialist seat returns only
+for its own open finding, and a new finding it raises blocks only with a reproduction that is red at
+the head and green at the merge base.
+
 Independence comes from isolated evidence packets, not from scheduling. Two seats that share a
 scratchpad are one seat, and a seat that cannot be filled independently of the author is unavailable
 rather than filled from the author lane (ruling `missing-supervisor-never-implementer`).
@@ -154,7 +161,8 @@ seats as conflicting.
 May not: make a ticket easier, more specified or more authorized than its originating seat said;
 raise a nit's severity because several seats agreed on it; drop a low-confidence security finding,
 which is adjudicated rather than filtered (ruling `low-confidence-security-adjudicated`); change a
-lane result; drop a finding because of its action class.
+lane result; drop a finding because of its action class; let one seat's `block` word set the
+verdict, which `ak review decide` reads from the ledger rows alone.
 
 An inbound `safe_auto` from a peer lane is remapped to `gated_auto` and kept. No code-review seat
 emits `safe_auto` itself (ruling `safe-auto-restricted-per-seat`).

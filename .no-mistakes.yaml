@@ -53,6 +53,13 @@ commands:
 auto_fix:
   review: 3
 
+# The Review step stops after three fix rounds, the round cap ADR-0018 sets
+# for a review scope (`policies/review.yaml` `convergence.cap.max_rounds`).
+# no-mistakes reads this key only from the default-branch file, from v1.109.0
+# on. An older version, such as the stable v1.106.1, ignores it.
+review:
+  max_fix_rounds: 3
+
 # Integrate a moved main with `git merge --no-ff` rather than a rebase. Under
 # the default `rebase`, once one PR merged, every other open PR whose pipeline
 # rebased onto the new main rewrote commits it had already published, and Push

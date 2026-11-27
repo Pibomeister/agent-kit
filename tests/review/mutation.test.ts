@@ -359,6 +359,11 @@ const TABLE: Mutant[] = [
     to: `  if (true) {\n    const unanswered`,
   },
   {
+    rule: "nothing at the cap approves on its own",
+    from: `  if (state.round >= cap)\n    return result("incomplete", "captain-hold", [`,
+    to: `  if (false)\n    return result("incomplete", "captain-hold", [`,
+  },
+  {
     rule: "a ruling of fix gives the bounded round",
     from: `if (state.council !== null && !state.bounded && awaitsBoundedRound(state))`,
     to: `if (false)`,

@@ -710,7 +710,8 @@ function blockedAction(state: LedgerState, blocking: readonly Row[], cap: number
  * current scope sat the required seats, the review carries to the exact head,
  * at least one seat's latest verdict in the scope approves, every deferred
  * row has a follow-up reference and no required evidence is missing.
- * `incomplete` otherwise. The action names the one next step.
+ * `incomplete` otherwise, and always once the round count reaches the cap:
+ * the change then parks for a human. The action names the one next step.
  */
 export function decide(events: readonly LedgerEvent[], policy: ConvergencePolicy, context: DecideContext): Decision {
   const state = fold(events, policy);
@@ -773,5 +774,9 @@ export function decide(events: readonly LedgerEvent[], policy: ConvergencePolicy
     ]);
   if (context.evidence_missing.length > 0)
     return result("incomplete", "supply-evidence", [`missing at the head: ${context.evidence_missing.join(", ")}`]);
+  if (state.round >= cap)
+    return result("incomplete", "captain-hold", [
+      `round ${state.round} reached the ${cap}-round cap: the change parks and is reported, never approved on its own`,
+    ]);
   return result("approved", "none", []);
 }

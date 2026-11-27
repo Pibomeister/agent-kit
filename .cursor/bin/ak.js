@@ -52944,6 +52944,10 @@ function decide3(events, policy, context) {
     ]);
   if (context.evidence_missing.length > 0)
     return result2("incomplete", "supply-evidence", [`missing at the head: ${context.evidence_missing.join(", ")}`]);
+  if (state.round >= cap)
+    return result2("incomplete", "captain-hold", [
+      `round ${state.round} reached the ${cap}-round cap: the change parks and is reported, never approved on its own`
+    ]);
   return result2("approved", "none", []);
 }
 
