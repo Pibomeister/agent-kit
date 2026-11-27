@@ -49486,16 +49486,21 @@ function exportRevision(stateDir, workerRoot, revision) {
   mkdirSync28(parent, { recursive: true, mode: 448 });
   const scratch = mkdtempSync5(join53(parent, "x-"));
   const tree = join53(scratch, "tree");
-  const clone = trustedGit(workerRoot, scratch, ["clone", "--quiet", "--shared", "--no-checkout", workerRoot, tree], stateDir);
-  if (clone.code !== 0)
-    throw new Error(`runner cannot clone the revision: ${clone.err}`);
-  const checkout = trustedGit(workerRoot, tree, ["checkout", "--quiet", "--detach", revision], stateDir);
-  if (checkout.code !== 0)
-    throw new Error(`runner cannot check out ${revision}: ${checkout.err}`);
-  const head = trustedGit(workerRoot, tree, ["rev-parse", "HEAD"], stateDir);
-  if (head.text !== revision)
-    throw new Error(`runner export is at ${head.text}, not ${revision}`);
-  return tree;
+  try {
+    const clone = trustedGit(workerRoot, scratch, ["clone", "--quiet", "--shared", "--no-checkout", workerRoot, tree], stateDir);
+    if (clone.code !== 0)
+      throw new Error(`runner cannot clone the revision: ${clone.err}`);
+    const checkout = trustedGit(workerRoot, tree, ["checkout", "--quiet", "--detach", revision], stateDir);
+    if (checkout.code !== 0)
+      throw new Error(`runner cannot check out ${revision}: ${checkout.err}`);
+    const head = trustedGit(workerRoot, tree, ["rev-parse", "HEAD"], stateDir);
+    if (head.text !== revision)
+      throw new Error(`runner export is at ${head.text}, not ${revision}`);
+    return tree;
+  } catch (e2) {
+    rmSync17(scratch, { recursive: true, force: true });
+    throw e2;
+  }
 }
 function childEnvironment(base2) {
   const env = {};
@@ -49627,6 +49632,8 @@ async function runLifecycleVerify(a) {
   const recorded = recordGate({ dir, run: a.runId, gate: "verify", project: a.workerRoot, receipts: [receiptPath] });
   if (!recorded.ok)
     throw new Error(`lifecycle verify gate refused the runner receipt: ${recorded.reason}`);
+  if (recorded.skipped.length > 0)
+    throw new Error(`lifecycle verify gate did not record the runner receipt: ${recorded.skipped.join("; ")}`);
   return {
     receipt: { id: receiptId, hash: sha2562(receiptBytes), status: status2 },
     attestation: { id: attestationId, hash: attestationHash, path: attestationPath },
