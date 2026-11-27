@@ -129,18 +129,23 @@ function exportRevision(stateDir: string, workerRoot: string, revision: string):
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   const scratch = mkdtempSync(join(parent, "x-"));
   const tree = join(scratch, "tree");
-  const clone = trustedGit(
-    workerRoot,
-    scratch,
-    ["clone", "--quiet", "--shared", "--no-checkout", workerRoot, tree],
-    stateDir,
-  );
-  if (clone.code !== 0) throw new Error(`runner cannot clone the revision: ${clone.err}`);
-  const checkout = trustedGit(workerRoot, tree, ["checkout", "--quiet", "--detach", revision], stateDir);
-  if (checkout.code !== 0) throw new Error(`runner cannot check out ${revision}: ${checkout.err}`);
-  const head = trustedGit(workerRoot, tree, ["rev-parse", "HEAD"], stateDir);
-  if (head.text !== revision) throw new Error(`runner export is at ${head.text}, not ${revision}`);
-  return tree;
+  try {
+    const clone = trustedGit(
+      workerRoot,
+      scratch,
+      ["clone", "--quiet", "--shared", "--no-checkout", workerRoot, tree],
+      stateDir,
+    );
+    if (clone.code !== 0) throw new Error(`runner cannot clone the revision: ${clone.err}`);
+    const checkout = trustedGit(workerRoot, tree, ["checkout", "--quiet", "--detach", revision], stateDir);
+    if (checkout.code !== 0) throw new Error(`runner cannot check out ${revision}: ${checkout.err}`);
+    const head = trustedGit(workerRoot, tree, ["rev-parse", "HEAD"], stateDir);
+    if (head.text !== revision) throw new Error(`runner export is at ${head.text}, not ${revision}`);
+    return tree;
+  } catch (e) {
+    rmSync(scratch, { recursive: true, force: true });
+    throw e;
+  }
 }
 
 function childEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -271,6 +276,8 @@ export async function runLifecycleVerify(a: LifecycleVerifyArgs): Promise<Lifecy
 
   const recorded = recordGate({ dir, run: a.runId, gate: "verify", project: a.workerRoot, receipts: [receiptPath] });
   if (!recorded.ok) throw new Error(`lifecycle verify gate refused the runner receipt: ${recorded.reason}`);
+  if (recorded.skipped.length > 0)
+    throw new Error(`lifecycle verify gate did not record the runner receipt: ${recorded.skipped.join("; ")}`);
   return {
     receipt: { id: receiptId, hash: sha256(receiptBytes), status },
     attestation: { id: attestationId, hash: attestationHash, path: attestationPath },
