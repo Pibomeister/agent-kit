@@ -276,6 +276,25 @@ describe("runner lifecycle verification", () => {
     expect(ak(f.worker, "check").code).toBe(1);
   });
 
+  test("a runner verify record leaves the run's bypass use records alone and claims no authority", async () => {
+    const f = fixture();
+    const useDir = join(defaultEvidenceDir(f.worker), f.run, "bypass");
+    mkdirSync(useDir, { recursive: true });
+    const usePath = join(useDir, "super-review-full.json");
+    const use = `${JSON.stringify({ mode: "bypass", grant_id: "grant-1", task_id: "task-1", phase: "super-review:full", run_id: f.run })}\n`;
+    writeFileSync(usePath, use);
+
+    await verify(f, "v-t1", config(), "verif-v-t1");
+
+    const [marker] = readRecords(defaultEvidenceDir(f.worker), f.run, "verify");
+    expect(marker?.authority).toBeUndefined();
+    expect(readdirSync(useDir)).toEqual(["super-review-full.json"]);
+    expect(readFileSync(usePath, "utf8")).toBe(use);
+    const typed = ak(f.worker, "record", "--gate", "verify", "--bypass", usePath, "--task", "task-1");
+    expect(typed.code).toBe(1);
+    expect(typed.err).toContain("no bypass phase records verify");
+  });
+
   test("a dirty worker tree is refused before anything runs", async () => {
     const f = fixture();
     writeFileSync(join(f.worker, "src", "a.js"), "export const a = 3;\n");
