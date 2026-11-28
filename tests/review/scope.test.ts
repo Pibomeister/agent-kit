@@ -168,6 +168,15 @@ describe("scopeOutcome", () => {
 
 const HEADER = "diff --git a/src/a.ts b/src/a.ts\nindex 1111..2222 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n";
 
+/** A same-sized replacement hunk starting at `start`, or nothing when `count` is 0. */
+function replacement(start: number, count: number): string {
+  return count === 0
+    ? ""
+    : `@@ -${start + 1},${count} +${start + 1},${count} @@\n` +
+        Array.from({ length: count }, (_, index) => `-old${start + index}\n`).join("") +
+        Array.from({ length: count }, (_, index) => `+new${start + index}\n`).join("");
+}
+
 /** The patch of a binary file that becomes the blob whose id repeats `blob`. */
 function binary(blob: string) {
   return readPatch(
@@ -243,6 +252,30 @@ describe("readPatch", () => {
 });
 
 describe("linesNotIn", () => {
+  test.each([0, 24, 49])("restoring source line %i removes only its two patch entries", (restored) => {
+    const before = readPatch(HEADER + replacement(0, 50));
+    const after = readPatch(HEADER + replacement(0, restored) + replacement(restored + 1, 49 - restored));
+    expect(linesNotIn(after, before)).toBe(0);
+    expect(linesNotIn(before, after)).toBe(2);
+    expect(after.id).not.toBe(before.id);
+  });
+
+  test("inserting a line inside replacement text preserves the other entries", () => {
+    const before = readPatch(HEADER + replacement(0, 50));
+    const after = readPatch(
+      HEADER + replacement(0, 50).replace("+new0\n", "+extra\n+new0\n").replace("+1,50", "+1,51"),
+    );
+    expect(linesNotIn(after, before)).toBe(1);
+    expect(linesNotIn(before, after)).toBe(0);
+  });
+
+  test("merging hunks matches each repeated line only once", () => {
+    const separate = readPatch(`${HEADER}@@ -1 +1 @@\n-a\n+same\n@@ -3 +3 @@\n-b\n+same\n`);
+    const merged = readPatch(`${HEADER}@@ -1,3 +1,3 @@\n-a\n-gap\n-b\n+same\n+same\n+same\n`);
+    expect(linesNotIn(merged, separate)).toBe(2);
+    expect(linesNotIn(separate, merged)).toBe(0);
+  });
+
   test("counts each changed line as often as it occurs, per file", () => {
     const before = readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+}\n+}\n`);
     const now = readPatch(`${HEADER}@@ -1 +1,4 @@\n-x\n+}\n+}\n+}\n+y\n`);

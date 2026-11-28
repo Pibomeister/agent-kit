@@ -147,8 +147,10 @@ export interface DeltaFacts {
    * last reviewed head has a commit of the new head with its patch. Otherwise
    * the pull request at the last reviewed head is compared with the pull
    * request at the cut, the last own commit of the new head that is reviewed
-   * work, and the count is the larger of the lines either holds and the other
-   * does not. Own commits after the cut are new commits, which scope growth reads.
+   * work. Each later unpaired prefix is also compared as an aggregate patch.
+   * The count is the smallest of these comparisons, each the larger of the
+   * lines either patch holds and the other does not. Scope growth reads the
+   * full delta, including new commits.
    */
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */

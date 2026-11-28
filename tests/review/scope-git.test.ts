@@ -47,6 +47,11 @@ function lines(tag: string, count: number): string {
   return Array.from({ length: count }, (_, index) => `export const ${tag}${index} = ${index};\n`).join("");
 }
 
+/** `total`, with `applyDiscount` only when `discount` is set. `prefix` shifts the function down the file. */
+function totalBody(discount: boolean, prefix = ""): string {
+  return `${prefix}function total() {\n${discount ? "  applyDiscount();\n" : ""}  return 1;\n}\n`;
+}
+
 interface Run {
   code: number;
   out: string[];
@@ -1456,6 +1461,23 @@ describe("ak review scope: later-round tree identity", () => {
 });
 
 describe("ak review scope: what is not a trigger", () => {
+  test("a clean rebase shifting an edit within its function counts no rewritten line", () => {
+    const f = fixture();
+    f.git("checkout", "main");
+    f.commit({ "src/functions.ts": totalBody(false) }, "functions");
+    f.git("checkout", "pr");
+    f.git("rebase", "main");
+    f.round(f.commit({ "src/functions.ts": totalBody(true) }, "discount"));
+    f.git("checkout", "main");
+    f.commit({ "src/functions.ts": totalBody(false, "\n\n\n\n") }, "shift the function");
+    f.git("checkout", "pr");
+    f.git("rebase", "main");
+    expect(f.record(f.git("rev-parse", "HEAD"))).toMatchObject({
+      triggers: [],
+      delta: { added_lines: 0, removed_lines: 0, rewritten_lines: 0 },
+    });
+  }, 120_000);
+
   test("a fix commit gets a closure round", () => {
     const f = fixture();
     f.round(f.head);
@@ -1583,6 +1605,41 @@ describe("ak review scope: what is not a trigger", () => {
     (f: Fixture) => string,
     { pr_lines: number; rewritten_lines: number; outcome: string; triggers: string[] },
   ][] = [
+    ...[21, 30].flatMap((replaced) =>
+      [false, true].map((append): (typeof rows)[number] => [
+        `a terminal 40-line commit with ${replaced} lines replaced${append ? ", followed by a new fix" : ""}`,
+        (f) => {
+          f.git("reset", "--hard", "main");
+          f.commit({ "src/a.ts": lines("a", 10) + lines("first", 60) }, "first change");
+          f.round(f.commit({ "src/b.ts": lines("b", 10) + lines("second", 40) }, "second change"));
+          f.write({ "src/b.ts": lines("b", 10) + lines("second", 40 - replaced) + lines("other", replaced) });
+          f.git("add", "-A");
+          f.git("commit", "--amend", "--no-edit");
+          return append
+            ? f.commit({ "src/a.ts": lines("a", 10) + lines("first", 60) + lines("new", 16) }, "fix a finding")
+            : tip(f);
+        },
+        { pr_lines: 100, rewritten_lines: replaced, outcome: "closure", triggers: [] },
+      ]),
+    ),
+    [
+      "ten reviewed 100-line commits squashed with one new line",
+      (f) => {
+        f.git("reset", "--hard", "main");
+        let text = "";
+        for (let index = 0; index < 10; index += 1) {
+          text += lines(`part${index}_`, 100);
+          f.commit({ "src/squash.ts": text }, `part ${index}`);
+        }
+        f.round(tip(f));
+        f.git("reset", "--soft", "main");
+        f.write({ "src/squash.ts": text + lines("extra", 1) });
+        f.git("add", "-A");
+        f.git("commit", "-m", "all parts");
+        return tip(f);
+      },
+      { pr_lines: 1000, rewritten_lines: 1, outcome: "closure", triggers: [] },
+    ],
     [
       "a 30-line commit amended in place, one line replaced",
       (f) => {
@@ -1740,11 +1797,15 @@ describe("ak review scope: what is not a trigger", () => {
       { pr_lines: 50, rewritten_lines: 1, outcome: "closure", triggers: [] },
     ],
   ];
-  test.each(rows)("%s", (_, build, expected) => {
-    const f = fixture();
-    const { outcome, triggers, ...delta } = expected;
-    expect(f.record(build(f))).toMatchObject({ outcome, triggers, delta });
-  });
+  test.each(rows)(
+    "%s",
+    (_, build, expected) => {
+      const f = fixture();
+      const { outcome, triggers, ...delta } = expected;
+      expect(f.record(build(f))).toMatchObject({ outcome, triggers, delta });
+    },
+    120_000,
+  );
 });
 
 describe("ak review scope: large rebase", () => {
