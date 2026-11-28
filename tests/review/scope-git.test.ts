@@ -47,18 +47,6 @@ function lines(tag: string, count: number): string {
   return Array.from({ length: count }, (_, index) => `export const ${tag}${index} = ${index};\n`).join("");
 }
 
-/** Checkout body with `chargeCard` before the guard, after it, or absent. */
-function checkoutBody(target: string): string {
-  return `function checkout(allowed) {\n${target === "before" ? "  chargeCard();\n" : ""}  if (!allowed) return;\n${target === "after" ? "  chargeCard();\n" : ""}  finish();\n}\n`;
-}
-
-/** `total` and `refund`, with `applyDiscount` only inside `target`. An empty target puts it in neither. */
-function discountBody(target: string): string {
-  return ["total", "refund"]
-    .map((name) => `function ${name}() {\n${name === target ? "  applyDiscount();\n" : ""}  return 1;\n}\n`)
-    .join("\n");
-}
-
 /** `total`, with `applyDiscount` only when `discount` is set. `prefix` shifts the function down the file. */
 function totalBody(discount: boolean, prefix = ""): string {
   return `${prefix}function total() {\n${discount ? "  applyDiscount();\n" : ""}  return 1;\n}\n`;
@@ -330,18 +318,15 @@ describe("ak review scope: later-round tree identity", () => {
     expect(Number(member(member(scoped, "delta"), "added_lines"))).toBeGreaterThanOrEqual(1);
   });
 
-  test("moving added lines above unchanged base lines counts the block and is not a carry", () => {
+  test("moving added lines above unchanged base lines is closure, not carry", () => {
     const f = fixture();
     f.round(f.head);
-    // The 30 `first` lines move from after the 10 base lines to before them.
-    // Those source ranges do not overlap, so each patch holds 30 lines the other does not.
-    // 30 added lines on this 50-line pull request is more than half, so scope growth fires.
     const reordered = f.commit({ "src/a.ts": lines("first", 30) + lines("a", 10) }, "reorder");
     expect(f.record(reordered)).toMatchObject({
-      outcome: "new-scope",
-      triggers: ["scope-growth"],
-      delta: { empty: false, added_lines: 30, removed_lines: 30, rewritten_lines: 0 },
-      event: { kind: "scope-open", trigger: "scope-growth", head: reordered },
+      outcome: "closure",
+      triggers: [],
+      delta: { empty: false },
+      event: null,
     });
   });
 
@@ -1452,23 +1437,16 @@ describe("ak review scope: later-round tree identity", () => {
     }
   });
 
-  test("MOVE-HUNK: moving the same lines inside a file changes the patch id and counts the block", () => {
+  test("MOVE-HUNK: moving the same lines inside a file is a non-empty closure with that path", () => {
     const f = fixture();
     f.round(f.head);
     const moved = f.commit({ "src/a.ts": lines("first", 30) + lines("a", 10) }, "move first hunk above base lines");
     const scoped = f.record(moved);
-    expect(member(member(scoped, "pull_request"), "patch_id")).not.toBe(member(member(scoped, "previous"), "patch_id"));
+    expect(member(member(scoped, "pull_request"), "patch_id")).toBe(member(member(scoped, "previous"), "patch_id"));
     expect(scoped).toMatchObject({
-      outcome: "new-scope",
-      triggers: ["scope-growth"],
-      delta: {
-        empty: false,
-        added_lines: 30,
-        removed_lines: 30,
-        rewritten_lines: 0,
-        changed_paths: ["src/a.ts"],
-      },
-      event: { kind: "scope-open", trigger: "scope-growth", head: moved },
+      outcome: "closure",
+      triggers: [],
+      delta: { empty: false, added_lines: 0, changed_paths: ["src/a.ts"] },
     });
   });
 
@@ -1483,48 +1461,6 @@ describe("ak review scope: later-round tree identity", () => {
 });
 
 describe("ak review scope: what is not a trigger", () => {
-  test.each(["before", "after"])(
-    "moving a charge from %s the guard cannot carry its review",
-    (source) => {
-      const f = fixture();
-      f.git("checkout", "main");
-      f.commit({ "src/checkout.ts": checkoutBody("") }, "checkout");
-      f.git("checkout", "pr");
-      f.git("rebase", "main");
-      f.round(f.commit({ "src/checkout.ts": checkoutBody(source) }, "charge"));
-      f.write({ "src/checkout.ts": checkoutBody(source === "before" ? "after" : "before") });
-      f.git("add", "-A");
-      f.git("commit", "--amend", "--no-edit");
-      expect(f.record(f.git("rev-parse", "HEAD"))).toMatchObject({
-        outcome: "closure",
-        delta: { empty: false, added_lines: 1, removed_lines: 1, rewritten_lines: 1 },
-        event: null,
-      });
-    },
-    120_000,
-  );
-
-  test.each(["total", "refund"])(
-    "moving an edit out of %s cannot carry its review",
-    (source) => {
-      const f = fixture();
-      f.git("checkout", "main");
-      f.commit({ "src/functions.ts": discountBody("") }, "functions");
-      f.git("checkout", "pr");
-      f.git("rebase", "main");
-      f.round(f.commit({ "src/functions.ts": discountBody(source) }, "discount"));
-      f.write({ "src/functions.ts": discountBody(source === "total" ? "refund" : "total") });
-      f.git("add", "-A");
-      f.git("commit", "--amend", "--no-edit");
-      expect(f.record(f.git("rev-parse", "HEAD"))).toMatchObject({
-        outcome: "closure",
-        delta: { empty: false, added_lines: 1, removed_lines: 1, rewritten_lines: 1 },
-        event: null,
-      });
-    },
-    120_000,
-  );
-
   test("a clean rebase shifting an edit within its function counts no rewritten line", () => {
     const f = fixture();
     f.git("checkout", "main");

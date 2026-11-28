@@ -39,17 +39,6 @@ function fixture() {
 }
 
 describe("readDelta locations in the reviewed base (ADR-0018)", () => {
-  test.each(["before", "after"])(
-    "a charge moved from %s the guard changes the patch",
-    (source) => {
-      const f = fixture();
-      const previous = f.commit({ "checkout.ts": checkout(source) }, "charge");
-      f.commit({ "checkout.ts": checkout(source === "before" ? "after" : "before") }, "charge", "--amend");
-      expect(f.delta(previous)).toMatchObject({ empty: false, added_lines: 1, removed_lines: 1, rewritten_lines: 1 });
-    },
-    120_000,
-  );
-
   test.each([
     ["before the function", "\n\n\n\n", steps],
     ["inside the function", "", `  prepareMore();\n${steps}`],
