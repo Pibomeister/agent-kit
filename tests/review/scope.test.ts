@@ -274,7 +274,6 @@ describe("linesNotIn", () => {
     const merged = readPatch(`${HEADER}@@ -1,3 +1,3 @@\n-a\n-gap\n-b\n+same\n+same\n+same\n`);
     expect(linesNotIn(merged, separate)).toBe(2);
     expect(linesNotIn(separate, merged)).toBe(0);
-    expect(linesNotIn(merged, separate)).toBe(2);
   });
 
   test("counts each changed line as often as it occurs, per file", () => {
