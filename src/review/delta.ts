@@ -220,11 +220,14 @@ export function readHead(repo: string, base: string, head: string): HeadReading 
   return headPatch(repo, base, head).reading;
 }
 
-/** Patch of a non-merge commit against its parent. A missing parent is a novel commit. */
-function commitPatch(repo: string, commit: string): Patch | null {
+/**
+ * Patch of a non-merge commit against its parent, with edit locations read in
+ * `reference`. A missing parent is a novel commit.
+ */
+function commitPatch(repo: string, commit: string, reference: string): Patch | null {
   const run = git(repo, ["diff", ...DIFF, `${commit}^`, commit], [0, 1, 128]);
   if (run.status === 128) return null;
-  return readPatch(run.out);
+  return readPatch(run.out, git(repo, ["diff", ...DIFF, reference, `${commit}^`]).out);
 }
 
 interface NovelInspection {
@@ -255,7 +258,7 @@ function novelNonMerge(
   let novel = false;
   for (const commit of git(repo, ["rev-list", "--no-merges", `${previous}..${head}`, "--not", base]).out.split("\n")) {
     if (commit === "") continue;
-    const patch = commitPatch(repo, commit);
+    const patch = commitPatch(repo, commit, reviewedFrom);
     if (patch === null) {
       novel = true;
       continue;

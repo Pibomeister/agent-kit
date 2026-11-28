@@ -67,6 +67,20 @@ describe("readDelta locations in the reviewed base (ADR-0018)", () => {
     },
     120_000,
   );
+  test("a clean rebase of two commits editing one file keeps every patch", () => {
+    const f = fixture();
+    f.commit({ "a.ts": lines("base", 20) }, "source lines");
+    f.git("checkout", "main");
+    f.git("merge", "--ff-only", "pr");
+    f.git("checkout", "pr");
+    f.commit({ "a.ts": lines("top", 10) + lines("base", 20) }, "add on top");
+    const previous = f.commit({ "a.ts": lines("top", 10) + lines("base", 20) + lines("end", 1) }, "append");
+    f.git("checkout", "main");
+    f.commit({ "b.ts": lines("b", 1) }, "unrelated base change");
+    f.git("checkout", "pr");
+    f.git("rebase", "main");
+    expect(f.delta(previous)).toMatchObject({ empty: true, changed_paths: [], rewritten_lines: 0 });
+  }, 120_000);
 });
 
 describe("readDelta aggregate rewrite counts (ADR-0018, hand-counted edits)", () => {
