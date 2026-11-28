@@ -168,6 +168,15 @@ describe("scopeOutcome", () => {
 
 const HEADER = "diff --git a/src/a.ts b/src/a.ts\nindex 1111..2222 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n";
 
+/** A same-sized replacement hunk starting at `start`, or nothing when `count` is 0. */
+function replacement(start: number, count: number): string {
+  return count === 0
+    ? ""
+    : `@@ -${start + 1},${count} +${start + 1},${count} @@\n` +
+        Array.from({ length: count }, (_, index) => `-old${start + index}\n`).join("") +
+        Array.from({ length: count }, (_, index) => `+new${start + index}\n`).join("");
+}
+
 /** The patch of a binary file that becomes the blob whose id repeats `blob`. */
 function binary(blob: string) {
   return readPatch(
@@ -181,10 +190,38 @@ describe("readPatch", () => {
     expect(patch.lines).toBe(3);
   });
 
-  test("a patch that only moved keeps its id", () => {
-    const at3 = readPatch(`${HEADER}@@ -3 +3 @@\n-old\n+new\n`);
-    const at90 = readPatch(`${HEADER}@@ -90 +94 @@ function later() {\n-old\n+new\n`);
+  test("a base-induced line shift keeps its id and changed lines", () => {
+    const at3 = readPatch(`${HEADER}@@ -3 +3 @@ function later() {\n-old\n+new\n`);
+    const baseDiff = `${HEADER}@@ -0,0 +1,87 @@\n${"+padding\n".repeat(87)}`;
+    const at90 = readPatch(`${HEADER}@@ -90 +94 @@ function later() {\n-old\n+new\n`, baseDiff);
     expect(at90.id).toBe(at3.id);
+    expect(linesNotIn(at90, at3)).toBe(0);
+    expect(linesNotIn(at3, at90)).toBe(0);
+  });
+
+  test("a base deletion maps the surviving line after the removed range", () => {
+    const at90 = readPatch(`${HEADER}@@ -90 +90 @@ function later() {\n-old\n+new\n`);
+    const baseDiff = `${HEADER}@@ -3,87 +2,0 @@\n${"-padding\n".repeat(87)}`;
+    const at3 = readPatch(`${HEADER}@@ -3 +3 @@ function later() {\n-old\n+new\n`, baseDiff);
+    expect(at3.id).toBe(at90.id);
+    expect(linesNotIn(at3, at90)).toBe(0);
+    expect(linesNotIn(at90, at3)).toBe(0);
+  });
+
+  test("moving an edit within the same function changes identity and both line counts", () => {
+    const before = readPatch(`${HEADER}@@ -3,0 +4 @@ function checkout() {\n+chargeCard();\n`);
+    const after = readPatch(`${HEADER}@@ -5,0 +6 @@ function checkout() {\n+chargeCard();\n`);
+    expect(before.id).not.toBe(after.id);
+    expect(linesNotIn(before, after)).toBe(1);
+    expect(linesNotIn(after, before)).toBe(1);
+  });
+
+  test("the same edit in another function changes identity and both line counts", () => {
+    const total = readPatch(`${HEADER}@@ -3 +3 @@ function total() {\n-old\n+new\n`);
+    const refund = readPatch(`${HEADER}@@ -90 +90 @@ function refund() {\n-old\n+new\n`);
+    expect(refund.id).not.toBe(total.id);
+    expect(linesNotIn(total, refund)).toBe(2);
+    expect(linesNotIn(refund, total)).toBe(2);
   });
 
   test("an indentation change is a change", () => {
@@ -243,6 +280,31 @@ describe("readPatch", () => {
 });
 
 describe("linesNotIn", () => {
+  test.each([0, 24, 49])("restoring source line %i removes only its two patch entries", (restored) => {
+    const before = readPatch(HEADER + replacement(0, 50));
+    const after = readPatch(HEADER + replacement(0, restored) + replacement(restored + 1, 49 - restored));
+    expect(linesNotIn(after, before)).toBe(0);
+    expect(linesNotIn(before, after)).toBe(2);
+    expect(after.id).not.toBe(before.id);
+  });
+
+  test("inserting a line inside replacement text preserves the other entries", () => {
+    const before = readPatch(HEADER + replacement(0, 50));
+    const after = readPatch(
+      HEADER + replacement(0, 50).replace("+new0\n", "+extra\n+new0\n").replace("+1,50", "+1,51"),
+    );
+    expect(linesNotIn(after, before)).toBe(1);
+    expect(linesNotIn(before, after)).toBe(0);
+  });
+
+  test("merging hunks matches each repeated line only once", () => {
+    const separate = readPatch(`${HEADER}@@ -1 +1 @@\n-a\n+same\n@@ -3 +3 @@\n-b\n+same\n`);
+    const merged = readPatch(`${HEADER}@@ -1,3 +1,3 @@\n-a\n-gap\n-b\n+same\n+same\n+same\n`);
+    expect(linesNotIn(merged, separate)).toBe(2);
+    expect(linesNotIn(separate, merged)).toBe(0);
+    expect(linesNotIn(merged, separate)).toBe(2);
+  });
+
   test("counts each changed line as often as it occurs, per file", () => {
     const before = readPatch(`${HEADER}@@ -1 +1,2 @@\n-x\n+}\n+}\n`);
     const now = readPatch(`${HEADER}@@ -1 +1,4 @@\n-x\n+}\n+}\n+}\n+y\n`);

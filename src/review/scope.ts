@@ -8,10 +8,10 @@
  * policy give the same triggers and the same outcome.
  *
  * - `readPatch` turns a zero-context diff into a patch id, a count of changed
- *   lines and the changed lines themselves. A mode-only pair, a gitlink and a
- *   hunkless new or deleted file each count as one changed line. The id is for
- *   rewritten-commit matching. Empty is blob identity plus no novel own commit
- *   in `delta.ts`.
+ *   lines and those lines with their positions in a reference base. A mode-only
+ *   pair, a gitlink and a hunkless new or deleted file each count as one
+ *   changed line. The id is for rewritten-commit matching. Empty is blob
+ *   identity plus no novel own commit in `delta.ts`.
  * - `scopeTriggers` says which triggers fire, which could not be evaluated and
  *   why.
  * - `scopeOutcome` turns the triggers and the ledger's scope into one of
@@ -22,34 +22,58 @@ import { createHash } from "node:crypto";
 
 import { SCOPE_TRIGGERS, type ConvergencePolicy, type ScopeTrigger } from "./types.ts";
 
+interface LineRange {
+  start: number;
+  end: number;
+}
+
 export interface Patch {
-  /** The digest of the changed lines in order. It holds no line number and no context line. */
+  /** The digest of changed lines and their positions in the reference base. */
   id: string;
   /** Changed lines: one per added or removed line and one per binary file. */
   lines: number;
-  /** How many times each changed line occurs, keyed by its file. */
-  counts: Map<string, number>;
+  /** Each occurrence of a changed line, keyed by its file and text, with its reference range. */
+  counts: Map<string, LineRange[]>;
 }
 
 const MODE = /^(old mode|new mode|new file mode|deleted file mode) /;
 const GITLINK_MODE = / 160000$/;
+const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+const STRUCTURAL: LineRange = { start: 0, end: 0 };
+
+function readHunk(line: string) {
+  const match = HUNK.exec(line);
+  if (match === null) return null;
+  const removed = Number(match[2] ?? 1);
+  const added = Number(match[4] ?? 1);
+  return {
+    old: Number(match[1]) - (removed === 0 ? 0 : 1),
+    now: Number(match[3]) - (added === 0 ? 0 : 1),
+    removed,
+    added,
+  };
+}
 
 /**
  * Read a diff made with no context lines, no rename detection and full blob ids.
  *
- * The id keeps whitespace, so an indentation change is a change. It drops hunk
- * headers, so a patch that only moved keeps its id. A binary file counts as
- * one changed line, identified by the blob it becomes. An old-mode/new-mode
- * pair counts as one changed line. A hunkless new or deleted file counts as
- * one changed line, matching that pair. A gitlink (mode 160000) counts as one
- * SHA line, not the Subproject commit hunk.
+ * Positions refer to the original side of each hunk. `baseDiff` maps the
+ * reference base to that side, so shifts introduced by the base do not move
+ * the edit. Moving an edit to another line changes the id. A binary file
+ * counts as one changed line, identified by the blob it becomes. An
+ * old-mode/new-mode pair counts as one changed line. A hunkless new or deleted
+ * file counts as one changed line, matching that pair. A gitlink (mode 160000)
+ * counts as one SHA line, not the Subproject commit hunk.
  */
-export function readPatch(diff: string): Patch {
+export function readPatch(diff: string, baseDiff = ""): Patch {
   const hash = createHash("sha256");
-  const counts = new Map<string, number>();
+  const counts = new Map<string, LineRange[]>();
   let lines = 0;
   let file = "";
   let blob = "";
+  let location = "";
+  let range: LineRange = STRUCTURAL;
+  let removedPosition = 0;
   let inHunk = false;
   let gitlink = false;
   let oldMode = false;
@@ -57,20 +81,45 @@ export function readPatch(diff: string): Patch {
   let created = false;
   let deleted = false;
   let counted = false;
-  const changed = (text: string): void => {
-    hash.update(`${text}\n`);
+  const shifts = new Map<string, NonNullable<ReturnType<typeof readHunk>>[]>();
+  for (const line of baseDiff.split("\n")) {
+    if (line.startsWith("diff --git ")) file = line;
+    else {
+      const hunk = readHunk(line);
+      if (hunk !== null) shifts.set(file, [...(shifts.get(file) ?? []), hunk]);
+    }
+  }
+  file = "";
+  const locate = (position: number): string => {
+    let offset = 0;
+    for (const shift of shifts.get(file) ?? []) {
+      if (position < shift.now) break;
+      if (position < shift.now + shift.added)
+        return position === shift.now ? String(shift.old) : `${shift.old}:${position - shift.now}`;
+      offset = shift.old + shift.removed - shift.now - shift.added;
+    }
+    return String(position + offset);
+  };
+  const point = (position: number): number => Number(locate(position).split(":")[0]);
+  const changed = (text: string, at: LineRange, where: string): void => {
+    hash.update(`${where}\n${text}\n`);
     lines += 1;
     counted = true;
     const key = `${file}\n${text}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const entries = counts.get(key) ?? [];
+    entries.push(at);
+    counts.set(key, entries);
+  };
+  const structural = (text: string): void => {
+    changed(text, STRUCTURAL, "");
   };
   const flushMode = (): void => {
-    if (oldMode && newMode) changed("mode");
+    if (oldMode && newMode) structural("mode");
     oldMode = false;
     newMode = false;
   };
   const flushFile = (): void => {
-    if ((created || deleted) && !counted) changed("file");
+    if ((created || deleted) && !counted) structural("file");
     created = false;
     deleted = false;
     counted = false;
@@ -81,23 +130,35 @@ export function readPatch(diff: string): Patch {
       flushFile();
       file = line;
       blob = "";
+      location = "";
+      range = STRUCTURAL;
+      removedPosition = 0;
       inHunk = false;
       gitlink = false;
       hash.update(`${line}\n`);
     } else if (line.startsWith("@@")) {
       // A changed line starts with `+`, `-` or `\`, so this is a hunk header wherever it stands.
+      const hunk = readHunk(line);
+      if (hunk === null) throw new Error("invalid patch hunk");
+      location = locate(hunk.old);
+      range = { start: point(hunk.old), end: point(hunk.old + hunk.removed) };
+      removedPosition = hunk.old;
       inHunk = true;
     } else if (inHunk) {
       if (gitlink) continue;
-      if (line.startsWith("+") || line.startsWith("-")) changed(line);
+      if (line.startsWith("-")) {
+        const position = point(removedPosition);
+        removedPosition += 1;
+        changed(line, { start: position, end: position }, location);
+      } else if (line.startsWith("+")) changed(line, range, location);
       // `\ No newline at end of file` is part of what changed.
       else if (line.startsWith("\\")) hash.update(`${line}\n`);
     } else if (line.startsWith("index ")) {
       blob = line.slice("index ".length).split("..")[1]?.split(" ")[0] ?? "";
       if (GITLINK_MODE.test(line)) gitlink = true;
-      if (gitlink) changed(`gitlink ${blob}`);
+      if (gitlink) structural(`gitlink ${blob}`);
     } else if (line.startsWith("Binary files ") || line === "GIT binary patch") {
-      changed(`binary ${blob}`);
+      structural(`binary ${blob}`);
     } else if (line === "new file mode 160000" || line === "deleted file mode 160000") {
       hash.update(`${line}\n`);
       gitlink = true;
@@ -121,7 +182,14 @@ export function readPatch(diff: string): Patch {
 /** Changed lines that `patch` holds and `other` does not, each counted as often as it occurs. */
 export function linesNotIn(patch: Patch, other: Patch): number {
   let total = 0;
-  for (const [key, count] of patch.counts) total += Math.max(0, count - (other.counts.get(key) ?? 0));
+  for (const [key, entries] of patch.counts) {
+    const available = (other.counts.get(key) ?? []).toSorted((left, right) => left.end - right.end);
+    for (const at of entries.toSorted((left, right) => left.end - right.end)) {
+      const index = available.findIndex((held) => at.start <= held.end && held.start <= at.end);
+      if (index < 0) total += 1;
+      else available.splice(index, 1);
+    }
+  }
   return total;
 }
 
@@ -147,8 +215,10 @@ export interface DeltaFacts {
    * last reviewed head has a commit of the new head with its patch. Otherwise
    * the pull request at the last reviewed head is compared with the pull
    * request at the cut, the last own commit of the new head that is reviewed
-   * work, and the count is the larger of the lines either holds and the other
-   * does not. Own commits after the cut are new commits, which scope growth reads.
+   * work. Each later unpaired prefix is also compared as an aggregate patch.
+   * The count is the smallest of these comparisons, each the larger of the
+   * lines either patch holds and the other does not. Scope growth reads the
+   * full delta, including new commits.
    */
   rewritten_lines: number;
   /** Paths in which a merge that is new at the head had a conflict. Each is a path the pull request's commits changed. */
@@ -162,8 +232,8 @@ export interface DeltaFacts {
    * Paths `git diff --name-only previous..head` names, unioned with novel
    * merge and novel non-merge paths when empty is false. Novel-merge paths
    * are merge versus its isolated merge-tree; novel non-merge paths are
-   * commit versus parent. A closure round reads this list. A move that keeps
-   * the patch id still has a path.
+   * commit versus parent. A closure round reads this list. An edit that moved
+   * still names its path.
    */
   changed_paths: readonly string[];
 }

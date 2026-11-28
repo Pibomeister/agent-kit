@@ -208,9 +208,10 @@ interface HeadPatch {
   patch: Patch;
 }
 
-function headPatch(repo: string, base: string, head: string): HeadPatch {
+function headPatch(repo: string, base: string, head: string, reference?: string): HeadPatch {
   const from = mergeBase(repo, base, head);
-  const patch = readPatch(git(repo, ["diff", ...DIFF, from, head]).out);
+  const shifts = reference === undefined || reference === from ? "" : git(repo, ["diff", ...DIFF, reference, from]).out;
+  const patch = readPatch(git(repo, ["diff", ...DIFF, from, head]).out, shifts);
   return { reading: { head, merge_base: from, patch_id: patch.id, lines: patch.lines }, patch };
 }
 
@@ -270,14 +271,25 @@ function novelNonMerge(
 }
 
 /** Each own commit of a head, oldest first: every commit after the merge base that is not a merge. */
-function ownCommits(repo: string, from: string, head: string): { commit: string; patch: Patch }[] {
-  const log = git(repo, ["log", "--reverse", "--no-merges", "--format=%x00%H", "-p", ...DIFF, `${from}..${head}`]).out;
+function ownCommits(repo: string, from: string, head: string, reference = from): { commit: string; patch: Patch }[] {
+  const log = git(repo, [
+    "log",
+    "--reverse",
+    "--no-merges",
+    "--format=%x00%H %P",
+    "-p",
+    ...DIFF,
+    `${from}..${head}`,
+  ]).out;
   return log
     .split("\0")
     .slice(1)
     .map((entry) => {
       const end = entry.indexOf("\n");
-      return { commit: entry.slice(0, end), patch: readPatch(entry.slice(end + 1)) };
+      const [commit, parent] = entry.slice(0, end).split(" ");
+      if (commit === undefined || parent === undefined) throw new Error("git log omitted a commit or its parent");
+      const shifts = parent === reference ? "" : git(repo, ["diff", ...DIFF, reference, parent]).out;
+      return { commit, patch: readPatch(entry.slice(end + 1), shifts) };
     });
 }
 
@@ -285,26 +297,48 @@ function ownCommits(repo: string, from: string, head: string): { commit: string;
  * Changed lines that a rewrite changed, as `DeltaFacts.rewritten_lines` states.
  *
  * A commit of the new head is reviewed work when a reviewed commit has its
- * patch, or when the pull request at the last reviewed head holds at least
- * half of its changed lines. The pull request is read again at the last such
- * commit, the cut, from the cut's own merge base, and compared with the
- * reviewed one as a whole, so a line added and removed again nets to nothing
- * and a squash or a reword moves no line. With no reviewed work at the new
- * head, the pull request at the cut is empty.
+ * patch, or git range-diff pairs it with a reviewed commit. The pull request
+ * is read again at the last such commit, the cut, from its own merge base,
+ * and compared with the reviewed one as a whole, so a line added and removed
+ * again nets to nothing and a squash or a reword moves no line. With no
+ * reviewed work at the new head, the pull request at the cut is empty. Later
+ * unpaired prefixes can lower the count when they retain aggregate reviewed work.
  */
 function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: HeadReading, head: string): number {
-  const older = ownCommits(repo, reviewed.reading.merge_base, reviewed.reading.head);
-  const newer = ownCommits(repo, now.merge_base, head);
+  const reference = reviewed.reading.merge_base;
+  const older = ownCommits(repo, reference, reviewed.reading.head, reference);
+  const newer = ownCommits(repo, now.merge_base, head, reference);
   const kept = new Set(newer.map(({ patch }) => patch.id));
   if (older.every(({ patch }) => kept.has(patch.id))) return 0;
   const held = new Set(older.map(({ patch }) => patch.id));
+  const comparison = git(repo, [
+    "range-diff",
+    "--no-patch",
+    "--no-color",
+    "--no-abbrev",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-renames",
+    "--no-notes",
+    "--diff-algorithm=myers",
+    `${reviewed.reading.merge_base}..${reviewed.reading.head}`,
+    `${now.merge_base}..${head}`,
+  ]).out;
+  const paired = new Set<string>();
+  for (const line of comparison.split("\n")) {
+    const commit = /^\s*\d+:\s+[a-f0-9]+\s+[=!]\s+\d+:\s+([a-f0-9]+)\s/.exec(line)?.[1];
+    if (commit !== undefined) paired.add(commit);
+  }
   const old = reviewed.patch;
-  const work = newer.filter(
-    ({ patch }) => held.has(patch.id) || (patch.lines > 0 && 2 * (patch.lines - linesNotIn(patch, old)) >= patch.lines),
-  );
+  const work = newer.filter(({ commit, patch }) => held.has(patch.id) || paired.has(commit));
   const cut = work.at(-1)?.commit;
-  const atCut = cut === undefined ? readPatch("") : headPatch(repo, base, cut).patch;
-  return Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
+  const atCut = cut === undefined ? readPatch("") : headPatch(repo, base, cut, reference).patch;
+  let rewritten = Math.max(linesNotIn(old, atCut), linesNotIn(atCut, old));
+  for (const { commit } of newer.slice(newer.findIndex((entry) => entry.commit === cut) + 1)) {
+    const aggregate = headPatch(repo, base, commit, reference).patch;
+    rewritten = Math.min(rewritten, Math.max(linesNotIn(old, aggregate), linesNotIn(aggregate, old)));
+  }
+  return rewritten;
 }
 
 /**
@@ -671,7 +705,7 @@ export function readDelta(repo: string, base: string, previous: string, head: st
       `the last reviewed head ${previous} is an ancestor of base ${base}: it is not a comparison base of this pull request`,
     );
   const before = headPatch(repo, base, previous);
-  const now = headPatch(repo, base, head);
+  const now = headPatch(repo, base, head, before.reading.merge_base);
   const beforeTree = treeOf(rawRows(repo, before.reading.merge_base, previous));
   const nowTree = treeOf(rawRows(repo, now.reading.merge_base, head));
   const identical = sameTree(beforeTree, nowTree);

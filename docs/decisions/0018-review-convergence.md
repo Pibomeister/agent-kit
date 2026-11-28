@@ -149,29 +149,37 @@ The plan leaves these points open. Each is a choice of this record, held by a te
   same theme. A `duplicate` line records the judgment. An always-block row is never recorded as a
   duplicate of an ordinary one.
 
-The scope command makes these readings, held by `tests/review/scope.test.ts` and
-`tests/review/scope-git.test.ts`.
+The scope command makes these readings, held by `tests/review/scope.test.ts`,
+`tests/review/delta.test.ts` and `tests/review/scope-git.test.ts`.
 
 - **The patch id is this package's own.** It is the digest of the changed lines of a diff with no
-  context lines, in order, with the file headers and without the hunk headers. Whitespace counts,
-  so an indentation change is a change. `git patch-id` ignores whitespace and reads context lines,
-  so a change beside the pull request's lines on the base branch would change it. An old-mode and
-  new-mode pair counts as one changed line. A gitlink counts as one SHA line. Empty is not this
-  id: it is the raw tree, path, mode and blob.
+  context lines, in order, with file headers and original hunk positions. Positions are mapped back
+  to the last reviewed merge base through the base's own diff. Moving an edit within a function or
+  between functions changes its id; base-induced line shifts do not. The same mapping applies to
+  own commits, each read against its parent, and to aggregate patches at a cut. Counts match each
+  occurrence once by file, sign, text and overlapping reference ranges. Removed lines retain their
+  individual source positions. Added lines use the source interval their hunk replaces, or its
+  single insertion boundary. Shrinking, splitting or merging a hunk preserves retained entries;
+  moving an insertion to a different boundary does not. Whitespace counts, so an indentation change
+  is a change. `git patch-id` ignores whitespace and reads context lines, so a change beside the
+  pull request's lines on the base branch would change it. An old-mode and new-mode pair counts as
+  one changed line. A gitlink counts as one SHA line. Empty is not this id: it is the raw tree,
+  path, mode and blob.
 - **A rewritten commit is one whose patch no commit of the new head has.** This is the exact-match
   rule of `git range-diff`, applied to patches with no context. A reworded message is not a
   rewrite. With no rewritten commit the share is zero. Otherwise it is read from the pull request
   as a whole, never by adding up commits. A commit of the new head is reviewed work when a reviewed
-  commit has its patch, or when the pull request at the last reviewed head holds at least half of
-  its changed lines. "At least half" is a fixed reading, not a policy value. The cut is the last
+  commit has its patch, or `git range-diff` pairs it with a reviewed commit. The cut is the last
   commit of the new head that is reviewed work, and the pull request is read again at the cut,
   from the cut's own merge base with the base branch, so a merge of the base branch after the cut
-  adds no line. The
-  count is the larger of two figures: the lines the reviewed pull request holds and the pull
-  request at the cut does not, and the reverse. The commits after the cut are new commits, which
-  scope growth reads and which add nothing here, whether they add lines or remove them. A new
-  commit placed before reviewed work is inside the cut, so its lines count as rewritten. No commit
-  message is read.
+  adds no line. Each comparison takes the larger of two figures: the lines the reviewed pull
+  request holds and the aggregate patch does not, and the reverse. Each later unpaired prefix is
+  also read as an aggregate patch, in the same reference positions. The smallest changed-line count
+  from the cut through those prefixes is used. Retained reviewed work can lower the count without
+  an individual pair, while appended fixes that add unrelated lines or remove reviewed lines cannot
+  raise it. Scope growth reads the full delta, including new commits. A new commit placed before
+  reviewed work is inside the cut, so its lines count as rewritten. No commit message alone
+  identifies a pair: `git range-diff` compares the patches as well.
 - **A rebase that leaves the patch of the pull request unchanged opens nothing**, whatever it did
   to the commits. A reword or a squash with the same patch carries. A fix folded into a commit with
   `--amend`, or with `--fixup` and `--autosquash`, counts only the lines its fold changed in the
