@@ -197,18 +197,23 @@ charter or standing grant is needed for this mode.
 The worker names a configured check and, optionally, a receipt id. It never supplies an argv. For
 each call the runner:
 
-1. refuses a dirty worker tree, an unknown check, and a verifier seat that any `build-checks` record of
-   the run names as its implementer;
+1. refuses a run opened under the unattended policy (that run judges verify by its recorded commands,
+   so record it with `ak lifecycle record --gate verify`), a closed run, a dirty worker tree, an unknown
+   check, a verifier seat that any `build-checks` record of the run names as its implementer, and an
+   `implementer_seat` that none of those records names;
 2. clones the exact revision into its state directory (`git clone --shared --no-checkout`, then a
    detached checkout under isolated Git), and runs the argv there with runner tokens and `GIT_*`
-   variables removed;
-3. refuses when the worker tree moved during the run;
-4. stores the output and a `runner-verifier-attestation` JSON document under
-   `<state-dir>/attestations/`. The document names the seats, the excluded lineage, the argv, the
-   exit status, the output digest, the revision and diff hash, the environment and the host platform;
+   variables removed. The clone holds tracked files only: no ignored files such as `node_modules`
+   and no submodule contents, so a check that needs installed dependencies installs them in its argv;
+3. refuses when the worker tree moved during the run. A check that times out records nothing;
+4. stores the output under `<state-dir>/lifecycle-verify/<run>/<receipt>/` and a
+   `runner-verifier-attestation` JSON document under `<state-dir>/attestations/`. The document names the
+   seats, the excluded lineage, the argv, the exit status, the output digest, the revision and diff hash,
+   the environment with its secrets policy, and the host platform;
 5. records a receipt with `created_by.role` `verifier`, `isolation` `runner-attested` and the
-   attestation's id and hash, `passed` or `failed` by exit status, through `ak lifecycle record
-   --gate verify`.
+   attestation's id and hash, `passed` or `failed` by exit status, on the run's verify gate. It checks
+   again that the run is still open, then records through the same gate function `ak lifecycle record
+   --gate verify` uses, without that command's lane lock.
 
 The reply names the receipt, the attestation path and hash, the exit status and the gate record. A
 receipt that reuses an earlier receipt's id replaces it on the verify marker, unless the earlier one is

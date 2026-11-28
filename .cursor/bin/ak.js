@@ -49509,6 +49509,12 @@ function childEnvironment(base2) {
       env[key] = value;
   return env;
 }
+function refuseUnrecordable(run2, runId) {
+  if (run2.policy !== undefined)
+    throw new Error(`run ${runId} was opened under the ${run2.policy.name} policy; runner verify records only legacy-policy runs, so record it with \`ak lifecycle record --gate verify\``);
+  if (run2.closed_at !== undefined)
+    throw new Error(`run ${runId} is closed; open a new run`);
+}
 async function runLifecycleVerify(a) {
   const now = a.now ?? (() => new Date);
   const problems = lifecycleConfigProblems(a.config);
@@ -49521,6 +49527,7 @@ async function runLifecycleVerify(a) {
   const run2 = readRunRecord(dir, a.runId);
   if (run2 === undefined)
     throw new Error(`run ${a.runId} has no task-bound run record in ${dir}`);
+  refuseUnrecordable(run2, a.runId);
   const before = takeSnapshot(a.workerRoot);
   if (!isSnapshot(before))
     throw new Error(before);
@@ -49535,6 +49542,8 @@ async function runLifecycleVerify(a) {
   ];
   if (buildSeats.includes(a.config.verifier_seat))
     throw new Error(`verifier seat ${a.config.verifier_seat} implemented this run; it cannot verify it`);
+  if (buildSeats.length > 0 && !buildSeats.includes(a.config.implementer_seat))
+    throw new Error(`implementer seat ${a.config.implementer_seat} is not a seat this run's build-checks records name (${buildSeats.join(", ")})`);
   const excluded = [...new Set([...a.config.excluded_lineage, ...buildSeats])];
   const work = join53(a.stateDir, "lifecycle-verify", a.runId, receiptId);
   rmSync17(work, { recursive: true, force: true });
@@ -49629,6 +49638,10 @@ async function runLifecycleVerify(a) {
 `;
   const receiptPath = join53(work, `${receiptId}.json`);
   writeFileSync19(receiptPath, receiptBytes, { mode: 384 });
+  const current = readRunRecord(dir, a.runId);
+  if (current === undefined)
+    throw new Error(`run ${a.runId} has no task-bound run record in ${dir}`);
+  refuseUnrecordable(current, a.runId);
   const recorded = recordGate({ dir, run: a.runId, gate: "verify", project: a.workerRoot, receipts: [receiptPath] });
   if (!recorded.ok)
     throw new Error(`lifecycle verify gate refused the runner receipt: ${recorded.reason}`);

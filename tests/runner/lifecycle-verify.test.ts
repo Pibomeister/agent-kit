@@ -176,6 +176,10 @@ function storedReceipt(f: Fixture, id: string): JsonObject {
 }
 
 /** The message a refused verification rejects with; a resolved one fails the test. */
+function runRecordFile(f: Fixture): string {
+  return join(defaultEvidenceDir(f.worker), "runs", f.run, "run.json");
+}
+
 async function refusal(pending: Promise<unknown>): Promise<string> {
   const outcome = await pending.then(
     () => "resolved",
@@ -308,6 +312,39 @@ describe("runner lifecycle verification", () => {
       verify(f, "v-t1", config({ implementer_seat: "build-9", excluded_lineage: ["build-9"] })),
     );
     expect(refused).toContain("implemented this run");
+  });
+
+  test("a run opened under the unattended policy is refused, so its recorded commands stay", async () => {
+    const f = fixture();
+    const path = runRecordFile(f);
+    const opened = jsonObject(readFileSync(path, "utf8"));
+    const commands = [{ argv: ["bun", "test"], exit_status: 1 }];
+    writeFileSync(path, `${JSON.stringify({ ...opened, policy: { name: "unattended", source: "environment" } })}\n`);
+    const verifyDir = join(defaultEvidenceDir(f.worker), f.run, "verify");
+    mkdirSync(verifyDir, { recursive: true });
+    const earlier = join(verifyDir, "earlier.json");
+    writeFileSync(earlier, `${JSON.stringify({ commands })}\n`);
+    expect(await refusal(verify(f, "v-t1"))).toContain("opened under the unattended policy");
+    expect(readdirSync(verifyDir)).toEqual(["earlier.json"]);
+    expect(jsonObject(readFileSync(earlier, "utf8")).commands).toEqual(commands);
+    expect(existsSync(join(f.state, "attestations"))).toBe(false);
+  });
+
+  test("a closed run is refused before anything runs", async () => {
+    const f = fixture();
+    const path = runRecordFile(f);
+    const opened = jsonObject(readFileSync(path, "utf8"));
+    writeFileSync(path, `${JSON.stringify({ ...opened, closed_at: "2026-11-27T00:00:00Z" })}\n`);
+    expect(await refusal(verify(f, "v-t1"))).toContain("is closed; open a new run");
+    expect(readRecords(defaultEvidenceDir(f.worker), f.run, "verify")).toEqual([]);
+    expect(existsSync(join(f.state, "attestations"))).toBe(false);
+  });
+
+  test("an implementer seat the run's build records do not name is refused", async () => {
+    const f = fixture("build-7");
+    const refused = await refusal(verify(f, "v-t1"));
+    expect(refused).toContain("implementer seat build-1 is not a seat this run's build-checks records name (build-7)");
+    expect(existsSync(join(f.state, "attestations"))).toBe(false);
   });
 
   test("the worker can only name a configured check", async () => {

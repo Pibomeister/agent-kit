@@ -38,8 +38,8 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 19793,
-      "tokens": 4948
+      "bytes": 20464,
+      "tokens": 5116
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -933,8 +933,8 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 19793,
-      "tokens": 4948
+      "bytes": 20464,
+      "tokens": 5116
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1828,8 +1828,8 @@
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 19865,
-      "tokens": 4966
+      "bytes": 20548,
+      "tokens": 5137
     },
     "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2723,8 +2723,8 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 19793,
-      "tokens": 4948
+      "bytes": 20464,
+      "tokens": 5116
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3618,8 +3618,8 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 19793,
-      "tokens": 4948
+      "bytes": 20464,
+      "tokens": 5116
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -4513,8 +4513,8 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CLI.md": {
       "file": "adapters/runner-contract/CLI.md",
-      "bytes": 19793,
-      "tokens": 4948
+      "bytes": 20464,
+      "tokens": 5116
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",

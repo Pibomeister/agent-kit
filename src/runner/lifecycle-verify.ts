@@ -154,6 +154,20 @@ function childEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * The refusals `ak lifecycle record` applies before it records, which a direct `recordGate` call would skip.
+ * A run opened under the unattended policy judges verify by its recorded commands, and a record written
+ * without that policy would drop them, failures included, so the runner records only legacy-policy runs.
+ * A closed run takes no record at all.
+ */
+function refuseUnrecordable(run: { policy?: { name: string }; closed_at?: string }, runId: string): void {
+  if (run.policy !== undefined)
+    throw new Error(
+      `run ${runId} was opened under the ${run.policy.name} policy; runner verify records only legacy-policy runs, so record it with \`ak lifecycle record --gate verify\``,
+    );
+  if (run.closed_at !== undefined) throw new Error(`run ${runId} is closed; open a new run`);
+}
+
 export async function runLifecycleVerify(a: LifecycleVerifyArgs): Promise<LifecycleVerifyResult> {
   const now = a.now ?? (() => new Date());
   const problems = lifecycleConfigProblems(a.config);
@@ -164,6 +178,7 @@ export async function runLifecycleVerify(a: LifecycleVerifyArgs): Promise<Lifecy
   const dir = a.config.evidence_dir ?? defaultEvidenceDir(a.workerRoot);
   const run = readRunRecord(dir, a.runId);
   if (run === undefined) throw new Error(`run ${a.runId} has no task-bound run record in ${dir}`);
+  refuseUnrecordable(run, a.runId);
 
   const before = takeSnapshot(a.workerRoot);
   if (!isSnapshot(before)) throw new Error(before);
@@ -178,6 +193,11 @@ export async function runLifecycleVerify(a: LifecycleVerifyArgs): Promise<Lifecy
   ];
   if (buildSeats.includes(a.config.verifier_seat))
     throw new Error(`verifier seat ${a.config.verifier_seat} implemented this run; it cannot verify it`);
+  // The receipt names the implementer seat; it must be one this run's build records name, never a guess.
+  if (buildSeats.length > 0 && !buildSeats.includes(a.config.implementer_seat))
+    throw new Error(
+      `implementer seat ${a.config.implementer_seat} is not a seat this run's build-checks records name (${buildSeats.join(", ")})`,
+    );
   const excluded = [...new Set([...a.config.excluded_lineage, ...buildSeats])];
 
   const work = join(a.stateDir, "lifecycle-verify", a.runId, receiptId);
@@ -274,6 +294,10 @@ export async function runLifecycleVerify(a: LifecycleVerifyArgs): Promise<Lifecy
   const receiptPath = join(work, `${receiptId}.json`);
   writeFileSync(receiptPath, receiptBytes, { mode: 0o600 });
 
+  // The check ran for minutes; the run may have been closed meanwhile.
+  const current = readRunRecord(dir, a.runId);
+  if (current === undefined) throw new Error(`run ${a.runId} has no task-bound run record in ${dir}`);
+  refuseUnrecordable(current, a.runId);
   const recorded = recordGate({ dir, run: a.runId, gate: "verify", project: a.workerRoot, receipts: [receiptPath] });
   if (!recorded.ok) throw new Error(`lifecycle verify gate refused the runner receipt: ${recorded.reason}`);
   if (recorded.skipped.length > 0)
