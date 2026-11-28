@@ -144,6 +144,14 @@ describe("readDelta aggregate rewrite counts (ADR-0018, hand-counted edits)", ()
     });
   }, 120_000);
 
+  test("dropping every own commit counts every reviewed line", () => {
+    const f = fixture();
+    f.commit({ "a.ts": lines("a", 60) }, "first change");
+    const previous = f.commit({ "b.ts": lines("b", 40) }, "second change");
+    f.git("reset", "--hard", "main");
+    expect(f.delta(previous)).toMatchObject({ pr_lines: 100, rewritten_lines: 100, removed_lines: 100 });
+  }, 120_000);
+
   test("dropping a 40-line commit still counts its lines when an unrelated fix follows", () => {
     const f = fixture();
     f.commit({ "a.ts": lines("a", 60) }, "first change");

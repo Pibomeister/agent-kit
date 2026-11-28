@@ -298,19 +298,22 @@ function linesRewritten(repo: string, base: string, reviewed: HeadPatch, now: He
   const kept = new Set(newer.map(({ patch }) => patch.id));
   if (older.every(({ patch }) => kept.has(patch.id))) return 0;
   const held = new Set(older.map(({ patch }) => patch.id));
-  const comparison = git(repo, [
-    "range-diff",
-    "--no-patch",
-    "--no-color",
-    "--no-abbrev",
-    "--no-ext-diff",
-    "--no-textconv",
-    "--no-renames",
-    "--no-notes",
-    "--diff-algorithm=myers",
-    `${reviewed.reading.merge_base}..${reviewed.reading.head}`,
-    `${now.merge_base}..${head}`,
-  ]).out;
+  const comparison =
+    newer.length === 0
+      ? ""
+      : git(repo, [
+          "range-diff",
+          "--no-patch",
+          "--no-color",
+          "--no-abbrev",
+          "--no-ext-diff",
+          "--no-textconv",
+          "--no-renames",
+          "--no-notes",
+          "--diff-algorithm=myers",
+          `${reviewed.reading.merge_base}..${reviewed.reading.head}`,
+          `${now.merge_base}..${head}`,
+        ]).out;
   const paired = new Set<string>();
   for (const line of comparison.split("\n")) {
     const commit = /^\s*\d+:\s+[a-f0-9]+\s+[=!]\s+\d+:\s+([a-f0-9]+)\s/.exec(line)?.[1];
