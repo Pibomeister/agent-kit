@@ -210,7 +210,7 @@ each call the runner:
 4. stores the output under `<state-dir>/lifecycle-verify/<run>/<receipt>/` and a
    `runner-verifier-attestation` JSON document under `<state-dir>/attestations/`. The document names the
    seats, the excluded lineage, the argv, the exit status, the output digest, the revision and diff hash,
-   the environment with its secrets policy, and the host platform;
+   the environment id, plus the host's platform, arch and release;
 5. records a receipt with `created_by.role` [`verifier`](../../roles/verifier/ROLE.md), `isolation` `runner-attested` and the
    attestation's id and hash, `passed` or `failed` by exit status, on the run's verify gate. It checks
    again that the run is still open, then records through the same gate function `.cursor/bin/ak lifecycle record
