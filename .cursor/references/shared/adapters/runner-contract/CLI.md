@@ -200,7 +200,8 @@ each call the runner:
 1. refuses a run opened under the unattended policy (that run judges verify by its recorded commands,
    so record it with `.cursor/bin/ak lifecycle record --gate verify`), a closed run, a dirty worker tree, an unknown
    check, a verifier seat that any `build-checks` record of the run names as its implementer, and an
-   `implementer_seat` that none of those records names;
+   `implementer_seat` that none of those records names. A run with no seat-bearing `build-checks`
+   record, such as one that only bypasses, cannot use runner verify;
 2. clones the exact revision into its state directory (`git clone --shared --no-checkout`, then a
    detached checkout under isolated Git), and runs the argv there with runner tokens and `GIT_*`
    variables removed. The clone holds tracked files only: no ignored files such as `node_modules`

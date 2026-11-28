@@ -49542,7 +49542,9 @@ async function runLifecycleVerify(a) {
   ];
   if (buildSeats.includes(a.config.verifier_seat))
     throw new Error(`verifier seat ${a.config.verifier_seat} implemented this run; it cannot verify it`);
-  if (buildSeats.length > 0 && !buildSeats.includes(a.config.implementer_seat))
+  if (buildSeats.length === 0)
+    throw new Error(`no build-checks record of run ${a.runId} names an implementer seat; runner verify needs one so the receipt names a recorded seat`);
+  if (!buildSeats.includes(a.config.implementer_seat))
     throw new Error(`implementer seat ${a.config.implementer_seat} is not a seat this run's build-checks records name (${buildSeats.join(", ")})`);
   const excluded = [...new Set([...a.config.excluded_lineage, ...buildSeats])];
   const work = join53(a.stateDir, "lifecycle-verify", a.runId, receiptId);

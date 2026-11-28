@@ -60,7 +60,7 @@ interface Fixture {
 }
 
 let counter = 0;
-function fixture(implementerSeat = "build-1"): Fixture {
+function fixture(implementerSeat: string | null = "build-1"): Fixture {
   const base = join(scratchRoot, `f${counter++}`);
   const worker = join(base, "worker");
   const state = join(base, "state");
@@ -99,8 +99,7 @@ function fixture(implementerSeat = "build-1"): Fixture {
     "agent",
     "--host",
     "codex",
-    "--seat-id",
-    implementerSeat,
+    ...(implementerSeat === null ? [] : ["--seat-id", implementerSeat]),
   );
   expect(seat.code, seat.err).toBe(0);
   for (const gate of ["review-full", "review-readiness"]) {
@@ -344,6 +343,14 @@ describe("runner lifecycle verification", () => {
     const f = fixture("build-7");
     const refused = await refusal(verify(f, "v-t1"));
     expect(refused).toContain("implementer seat build-1 is not a seat this run's build-checks records name (build-7)");
+    expect(existsSync(join(f.state, "attestations"))).toBe(false);
+  });
+
+  test("a run whose build records name no implementer seat is refused", async () => {
+    const f = fixture(null);
+    const refused = await refusal(verify(f, "v-t1"));
+    expect(refused).toContain(`no build-checks record of run ${f.run} names an implementer seat`);
+    expect(readRecords(defaultEvidenceDir(f.worker), f.run, "verify")).toEqual([]);
     expect(existsSync(join(f.state, "attestations"))).toBe(false);
   });
 
