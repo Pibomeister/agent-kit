@@ -50,7 +50,7 @@ names what is missing. A charter requesting unattended mode cannot use `decide` 
 | `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A card that is not the next permitted action is an error and leaves the run unchanged; decide it once its phase arrives. A launcher that fails or answers outside the options refuses the card with its error |
 | `answer` | Firstmate | `{"run":"r","card_id":"align-1","choice":"no","actor":"captain","rationale":"..."}`; the runner always accepts `no` as a refusal even when the card omits it. The escalation recommends `no` by default and names the operation and approving option. After any non-approving human choice, including `retry`, every later card for that operation goes to a human until one approves. An approving answer at a charter cap stops at `cap-reached` |
 | `cancel` | Firstmate | `{"run":"r","actor":"captain","rationale":"Stop this run."}`; records actor, rationale and time in the ledger, clears an open escalation and sets the durable `cancelled` stop even at a cap. A completed run cannot be cancelled. It does not undo a confirmed effect or reconcile a performed effect awaiting read-back |
-| `sync`, `run-verify` | Worker | `{"run":"r"}`; sync observes the current Git revision and diff, while verification executes only the private configured command |
+| `sync`, `run-verify` | Worker | `{"run":"r"}`; sync observes the current Git revision and diff, while verification executes only the private configured command. Under a lifecycle verification config, `run-verify` takes `{"run":"r","check":"v-t1","receipt_id":"verif-v-t1"}` and records a lifecycle verifier receipt ([below](#lifecycle-verifier-receipts)) |
 | `effect` | Firstmate | `{"run":"r","effect":"pr-open","target":"repo/pr-identity","input_hash":"sha256:<digest>"}` |
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |
 
@@ -77,7 +77,7 @@ root, so it executes worker-controlled code under the runner's OS identity; isol
 from supervisor secrets when workers may be adversarial. Under stock Firstmate those launchers must
 dispatch separate ordinary crewmates, not children of the implementing worker. Alternatively
 Firstmate submits `judge` after arranging both crewmates itself. The private verification config is
-`{"command":["..."]}`. Use absolute script and file paths in the private seat and effect configs;
+`{"command":["..."]}`, or `{"lifecycle":{...}}` for [lifecycle verifier receipts](#lifecycle-verifier-receipts). Use absolute script and file paths in the private seat and effect configs;
 their working directory is the state directory, and a worker-root `node_modules/.bin` entry is not
 available on the filtered `PATH`. The optional private
 effect config is `{"adapters":[{"effect":"pr-open","read_back":["..."],"perform":["..."]}]}`;
@@ -182,3 +182,43 @@ completion rearm or clear the alarm; cancellation and completion suppress it. Re
 the recorded deadline and prints immediately if it is overdue; emission is not recorded across
 service restarts. Firstmate displays this output; its outer-supervisor duties are in
 [SUPERVISOR.md](../firstmate/SUPERVISOR.md#per-task).
+
+## Lifecycle verifier receipts
+
+With `{"lifecycle":{...}}` as the private verification config, `--run-id` is an opened lifecycle run
+(`ak lifecycle open`) and `run-verify` writes its verification receipts, so a worker no longer does.
+The config names `verifier_seat`, `implementer_seat`, `excluded_lineage` (which must include the
+implementer seat), `environment` (`id`, and `secrets_policy` `none` or `test-only`), and `checks`, a map
+from check id to `{"argv":[...],"supports":["AC-1"],"timeout_ms":1800000}`. `evidence_dir` defaults to
+the worker's lifecycle evidence store and `project` to `{"id":"<worker directory name>"}`. `serve`
+refuses a verifier seat equal to the implementer seat or inside the excluded lineage. No autopilot run,
+charter or standing grant is needed for this mode.
+
+The worker names a configured check and, optionally, a receipt id. It never supplies an argv. For
+each call the runner:
+
+1. refuses a run opened under the unattended policy (that run judges verify by its recorded commands,
+   so record it with `ak lifecycle record --gate verify`), a closed run, a dirty worker tree, an unknown
+   check, a verifier seat that any `build-checks` record of the run names as its implementer, and an
+   `implementer_seat` that none of those records names. A run with no seat-bearing `build-checks`
+   record, such as one that only bypasses, cannot use runner verify;
+2. clones the exact revision into its state directory (`git clone --shared --no-checkout`, then a
+   detached checkout under isolated Git), and runs the argv there with runner tokens and `GIT_*`
+   variables removed. The clone holds tracked files only: no ignored files such as `node_modules`
+   and no submodule contents, so a check that needs installed dependencies installs them in its argv;
+3. refuses when the worker tree moved during the run. A check that times out records nothing;
+4. stores the output under `<state-dir>/lifecycle-verify/<run>/<receipt>/` and a
+   `runner-verifier-attestation` JSON document under `<state-dir>/attestations/`. The document names the
+   seats, the excluded lineage, the argv, the exit status, the output digest, the revision and diff hash,
+   the environment id, plus the host's platform, arch and release;
+5. records a receipt with `created_by.role` `verifier`, `isolation` `runner-attested` and the
+   attestation's id and hash, `passed` or `failed` by exit status, on the run's verify gate. It checks
+   again that the run is still open, then records through the same gate function `ak lifecycle record
+   --gate verify` uses, without that command's lane lock.
+
+The reply names the receipt, the attestation path and hash, the exit status and the gate record. A
+receipt that reuses an earlier receipt's id replaces it on the verify marker, unless the earlier one is
+a failure recorded at the same snapshot. The attestation adds no
+key or secret. The gate checks the reference for shape only, and the command runs under the runner's
+OS identity, so the same-user limits in [§9](CONTRACT.md#9-local-service-under-firstmate) apply. The
+evidence store also stays worker-writable on a same-user install.

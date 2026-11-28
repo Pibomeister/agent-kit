@@ -426,7 +426,9 @@ captain-approved charter (ADR-0007) and records `start_authority` before any sea
 `complete` require the supervisor token. A worker can read `status` and `ledger`, freeze a `prepare`
 card and ask `decide` to apply the next validated grant. `sync` observes the worker's current Git
 revision and diff; `run-verify` executes only the supervisor-configured command and stores its
-output privately.
+output privately. Under a lifecycle verification config it runs a configured check on a fresh clone
+of the clean revision and records a runner-attested lifecycle verifier receipt
+([CLI.md](CLI.md#lifecycle-verifier-receipts)).
 
 Workers may also register and answer prioritized questions under the
 [CLI question rules](CLI.md#prioritized-questions). These source attestations do not become
@@ -568,6 +570,7 @@ evidence store, because nothing here changes operating-system permissions. A cha
 human-approved charter is needed.
 
 `run-verify` is the deliberate exception to the private child directory: it runs the worker's own
-verification command from the worker root and strips runner tokens. The verifier therefore executes
+verification command from the worker root and strips runner tokens. In lifecycle mode it runs from a
+fresh clone under the state directory instead, but that clone is still the worker's code. The verifier therefore executes
 worker-controlled code under the service's OS identity; an adversarial deployment must isolate that
 identity from supervisor credentials and private files outside the process environment too.

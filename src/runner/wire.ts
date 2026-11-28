@@ -1,5 +1,6 @@
 import Ajv2020 from "ajv/dist/2020.js";
 
+import type { LifecycleVerifyConfig } from "./lifecycle-verify.ts";
 import type { CardInput, StandingGrant } from "./types.ts";
 
 export interface RunnerArgs {
@@ -26,6 +27,8 @@ export interface RunnerArgs {
   parent?: string;
   subject?: string;
   amount?: number;
+  check?: string;
+  receipt_id?: string;
   excluded_actors?: string[];
   input_dispatches?: string[];
   lineage?: string[];
@@ -56,9 +59,8 @@ export interface SeatAnswer {
   choice: string;
   rationale: string;
 }
-export interface VerifyConfig {
-  command: string[];
-}
+/** A bare command feeds the autopilot verify step; `lifecycle` makes the runner write lifecycle verifier receipts. */
+export type VerifyConfig = { command: string[] } | { lifecycle: LifecycleVerifyConfig };
 export interface EventConfig {
   command: string[];
   timeout_ms: number;
@@ -122,6 +124,8 @@ const stringFields = [
   "limit",
   "subject",
   "parent",
+  "check",
+  "receipt_id",
 ];
 const argsSchema = {
   type: "object",
@@ -200,11 +204,57 @@ export const isSeatAnswer = ajv.compile<SeatAnswer>({
   required: ["choice", "rationale"],
   properties: { choice: { type: "string" }, rationale: { type: "string" } },
 });
-export const isVerifyConfig = ajv.compile<VerifyConfig>({
+const argvSchema = { type: "array", minItems: 1, items: { type: "string", minLength: 1 } };
+const lifecycleVerifySchema = {
   type: "object",
   additionalProperties: false,
-  required: ["command"],
-  properties: { command: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } },
+  required: ["verifier_seat", "implementer_seat", "excluded_lineage", "environment", "checks"],
+  properties: {
+    evidence_dir: { type: "string", minLength: 1 },
+    project: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id"],
+      properties: { id: { type: "string", minLength: 1 }, repo: { type: "string", minLength: 1 } },
+    },
+    verifier_seat: { type: "string", minLength: 1 },
+    implementer_seat: { type: "string", minLength: 1 },
+    excluded_lineage: stringArray,
+    environment: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "secrets_policy"],
+      properties: {
+        id: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        secrets_policy: { enum: ["none", "test-only"] },
+      },
+    },
+    checks: {
+      type: "object",
+      minProperties: 1,
+      additionalProperties: {
+        type: "object",
+        additionalProperties: false,
+        required: ["argv", "supports"],
+        properties: {
+          argv: argvSchema,
+          supports: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+          timeout_ms: { type: "integer", minimum: 1 },
+        },
+      },
+    },
+  },
+};
+export const isVerifyConfig = ajv.compile<VerifyConfig>({
+  oneOf: [
+    { type: "object", additionalProperties: false, required: ["command"], properties: { command: argvSchema } },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["lifecycle"],
+      properties: { lifecycle: lifecycleVerifySchema },
+    },
+  ],
 });
 export const isEventConfig = ajv.compile<EventConfig>({
   type: "object",
